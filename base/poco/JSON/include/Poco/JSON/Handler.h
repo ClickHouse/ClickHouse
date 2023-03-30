@@ -74,14 +74,12 @@ namespace JSON
         /// An unsigned value is read. This will only be triggered if the
         /// value cannot fit into a signed int.
 
-#if defined(POCO_HAVE_INT64)
         virtual void value(Int64 v) = 0;
         /// A 64-bit integer value is read.
 
         virtual void value(UInt64 v) = 0;
         /// An unsigned 64-bit integer value is read. This will only be
         /// triggered if the value cannot fit into a signed 64-bit integer.
-#endif
 
         virtual void value(const std::string & value) = 0;
         /// A string value is read.

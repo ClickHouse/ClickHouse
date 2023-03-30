@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsScope.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 namespace ProfileEvents
@@ -217,9 +218,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
-            if (!zero_copy_lock)
+            if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
                 LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
+                storage.watchZeroCopyLock(entry.new_part_name, disk);
                 /// Don't check for missing part -- it's missing because other replica still not
                 /// finished merge.
                 return PrepareResult{
@@ -290,9 +292,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get());
+            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
     }};
 }
 

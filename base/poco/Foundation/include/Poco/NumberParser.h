@@ -80,7 +80,6 @@ public:
     /// Returns true if a valid integer has been found, false otherwise.
     /// If parsing was not successful, value is undefined.
 
-#if defined(POCO_HAVE_INT64)
 
     static Int64 parse64(const std::string & s, char thousandSeparator = ',');
     /// Parses a 64-bit integer value in decimal notation from the given string.
@@ -118,7 +117,6 @@ public:
     /// Returns true if a valid integer has been found, false otherwise.
     /// If parsing was not successful, value is undefined.
 
-#endif // defined(POCO_HAVE_INT64)
 
     static double parseFloat(const std::string & s, char decimalSeparator = '.', char thousandSeparator = ',');
     /// Parses a double value in decimal floating point notation

@@ -471,3 +471,38 @@ Result:
 
 -   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
 -   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+
+
+## JSONArrayLength
+
+Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
+
+**Syntax**
+
+``` sql
+JSONArrayLength(json)
+```
+
+Alias: `JSON_ARRAY_LENGTH(json)`.
+
+**Arguments**
+
+-   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+
+**Returned value**
+
+-   If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
+
+Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+``` sql
+SELECT
+    JSONArrayLength(''),
+    JSONArrayLength('[1,2,3]')
+
+┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
+│                ᴺᵁᴸᴸ │                          3 │
+└─────────────────────┴────────────────────────────┘
+```

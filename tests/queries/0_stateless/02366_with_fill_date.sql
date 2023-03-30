@@ -1,4 +1,4 @@
--- Tags: no-backward-compatibility-check
+-- Tags: no-upgrade-check
 
 SELECT toDate('2022-02-01') AS d1
 FROM numbers(18) AS number

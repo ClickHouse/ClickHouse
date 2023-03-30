@@ -18,7 +18,11 @@ from clickhouse_helper import (
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import post_commit_status, update_mergeable_check
+from commit_status_helper import (
+    format_description,
+    post_commit_status,
+    update_mergeable_check,
+)
 from compress_files import compress_fast
 from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
@@ -341,8 +345,7 @@ def main():
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, args.check_name, test_results)
 
-    if len(description) >= 140:
-        description = description[:136] + "..."
+    description = format_description(description)
 
     post_commit_status(gh, pr_info.sha, args.check_name, description, state, report_url)
 

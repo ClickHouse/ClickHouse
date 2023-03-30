@@ -5,7 +5,7 @@ sidebar_label: USER
 title: "CREATE USER"
 ---
 
-Creates [user accounts](../../../operations/access-rights.md#user-account-management).
+Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
 
 Syntax:
 
@@ -36,7 +36,61 @@ There are multiple ways of user identification:
 -   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 -   `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
 
-For identification with sha256_hash using `SALT` - hash must be calculated from concatination of 'password' and 'salt'.
+## Examples
+
+1. The following username is `name1` and does not require a password - which obviously doesn't provide much security:
+
+    ```sql
+    CREATE USER name1 NOT IDENTIFIED
+    ```
+
+2. To specify a plaintext password:
+
+    ```sql
+    CREATE USER name2 IDENTIFIED WITH plaintext_password BY 'my_password'
+    ```
+
+    :::tip
+    The password is stored in a SQL text file in `/var/lib/clickhouse/access`, so it's not a good idea to use `plaintext_password`. Try `sha256_password` instead, as demonstrated next...
+    :::
+
+3. The best option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
+
+    ```sql
+    CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
+    ```
+
+    Notice ClickHouse generates and runs the following command for you:
+
+    ```response
+    CREATE USER name3
+    IDENTIFIED WITH sha256_hash
+    BY '8B3404953FCAA509540617F082DB13B3E0734F90FF6365C19300CC6A6EA818D6'
+    SALT 'D6489D8B5692D82FF944EA6415785A8A8A1AF33825456AFC554487725A74A609'
+    ```
+
+    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. THe following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
+
+    ```bash
+    /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql
+    ATTACH USER name3 IDENTIFIED WITH sha256_hash BY '0C268556C1680BEF0640AAC1E7187566704208398DA31F03D18C74F5C5BE5053' SALT '4FB16307F5E10048196966DD7E6876AE53DE6A1D1F625488482C75F14A5097C7';
+    ```
+
+    :::tip
+    If you have already created a hash value and corresponding salt value for a username, then you can use `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`. For identification with `sha256_hash` using `SALT` - hash must be calculated from concatenation of 'password' and 'salt'.
+    :::
+
+4. The `double_sha1_password` is not typically needed, but comes in handy when working with clients that require it (like the MySQL interface):
+
+    ```sql
+    CREATE USER name4 IDENTIFIED WITH double_sha1_password BY 'my_password'
+    ```
+
+    ClickHouse generates and runs the following query:
+
+    ```response
+    CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
+    ```
 
 ## User Host
 
@@ -55,7 +109,7 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 -   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
 -   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
-:::warning
+:::tip
 ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 :::
 

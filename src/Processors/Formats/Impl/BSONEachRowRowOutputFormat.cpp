@@ -116,7 +116,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
 {
     size_t size = 1; // Field type
     size += name.size() + 1; // Field name and \0
-    switch (column.getDataType())
+    switch (data_type->getTypeId())
     {
         case TypeIndex::Int8: [[fallthrough]];
         case TypeIndex::Int16: [[fallthrough]];
@@ -124,6 +124,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Decimal32: [[fallthrough]];
+        case TypeIndex::IPv4: [[fallthrough]];
         case TypeIndex::Int32:
         {
             return size + sizeof(Int32);
@@ -167,6 +168,10 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         {
             const auto & string_column = assert_cast<const ColumnFixedString &>(column);
             return size + sizeof(BSONSizeT) + string_column.getN() + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
+        }
+        case TypeIndex::IPv6:
+        {
+            return size + sizeof(BSONSizeT) + 1 + sizeof(IPv6); // Size of data + BSON binary subtype + 16 bytes of value
         }
         case TypeIndex::UUID:
         {
@@ -258,7 +263,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
 
 void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name)
 {
-    switch (column.getDataType())
+    switch (data_type->getTypeId())
     {
         case TypeIndex::Float32:
         {
@@ -371,6 +376,19 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONString<ColumnFixedString>(column, row_num, name, out, settings.bson.output_string_as_string);
             break;
         }
+        case TypeIndex::IPv4:
+        {
+            writeBSONNumber<ColumnIPv4, Int32>(BSONType::INT32, column, row_num, name, out);
+            break;
+        }
+        case TypeIndex::IPv6:
+        {
+            writeBSONTypeAndKeyName(BSONType::BINARY, name, out);
+            writeBSONSize(sizeof(IPv6), out);
+            writeBSONType(BSONBinarySubtype::BINARY, out);
+            writeBinary(assert_cast<const ColumnIPv6 &>(column).getElement(row_num), out);
+            break;
+        }
         case TypeIndex::UUID:
         {
             writeBSONTypeAndKeyName(BSONType::BINARY, name, out);
@@ -445,7 +463,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONSize(document_size, out);
 
             for (size_t i = 0; i < nested_columns.size(); ++i)
-                serializeField(*nested_columns[i], nested_types[i], row_num, toValidUTF8String(nested_names[i]));
+                serializeField(*nested_columns[i], nested_types[i], row_num, have_explicit_names ? toValidUTF8String(nested_names[i]) : std::to_string(i));
 
             writeChar(BSON_DOCUMENT_END, out);
             break;

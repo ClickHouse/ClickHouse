@@ -120,10 +120,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
                                              : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context_);
 
-    checkStorageSupportsTransactionsIfNeeded(table, context_);
-
     if (database && table)
     {
+        checkStorageSupportsTransactionsIfNeeded(table, context_);
+
         auto & ast_drop_query = query.as<ASTDropQuery &>();
 
         if (ast_drop_query.is_view && !table->isView())
@@ -282,11 +282,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             else if (kind == ASTDropQuery::Kind::Drop)
             {
                 context_handle->removeExternalTable(table_name);
-                table->flushAndShutdown();
-                auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-                /// Delete table data
-                table->drop();
-                table->is_dropped = true;
             }
             else if (kind == ASTDropQuery::Kind::Detach)
             {

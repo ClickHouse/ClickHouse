@@ -58,6 +58,7 @@ def test_simple_select(started_cluster):
     push_data(client, table, data)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS simple_meili_table")
     node.query(
         "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili1:7700', 'new_table', '')"
     )
@@ -83,6 +84,7 @@ def test_insert(started_cluster):
     big_table = client.index("big_table")
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS new_table")
     node.query(
         "CREATE TABLE new_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili1:7700', 'new_table', '')"
     )
@@ -90,9 +92,10 @@ def test_insert(started_cluster):
     node.query(
         "INSERT INTO new_table (id, data) VALUES (1, '1') (2, '2') (3, '3') (4, '4') (5, '5') (6, '6') (7, '7')"
     )
-    sleep(1)
+    sleep(5)
     assert len(new_table.get_documents()) == 7
 
+    node.query("DROP TABLE IF EXISTS big_table")
     node.query(
         "CREATE TABLE big_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili1:7700', 'big_table', '')"
     )
@@ -124,6 +127,7 @@ def test_meilimatch(started_cluster):
     push_movies(client)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS movies_table")
     node.query(
         "CREATE TABLE movies_table(id String, title String, release_date Int64) ENGINE = MeiliSearch('http://meili1:7700', 'movies', '')"
     )
@@ -208,6 +212,7 @@ def test_incorrect_data_type(started_cluster):
     push_data(client, table, data)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS strange_meili_table")
     node.query(
         "CREATE TABLE strange_meili_table(id UInt64, data String, bbbb String) ENGINE = MeiliSearch('http://meili1:7700', 'new_table', '')"
     )
@@ -230,10 +235,12 @@ def test_simple_select_secure(started_cluster):
     push_data(client, table, data)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS simple_meili_table")
     node.query(
         "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili_secure:7700', 'new_table', 'password')"
     )
 
+    node.query("DROP TABLE IF EXISTS wrong_meili_table")
     node.query(
         "CREATE TABLE wrong_meili_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili_secure:7700', 'new_table', 'wrong_password')"
     )
@@ -272,6 +279,7 @@ def test_meilimatch_secure(started_cluster):
     push_movies(client)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS movies_table")
     node.query(
         "CREATE TABLE movies_table(id String, title String, release_date Int64) ENGINE = MeiliSearch('http://meili_secure:7700', 'movies', 'password')"
     )
@@ -356,6 +364,7 @@ def test_incorrect_data_type_secure(started_cluster):
     push_data(client, table, data)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS strange_meili_table")
     node.query(
         "CREATE TABLE strange_meili_table(id UInt64, data String, bbbb String) ENGINE = MeiliSearch('http://meili_secure:7700', 'new_table', 'password')"
     )
@@ -374,6 +383,7 @@ def test_insert_secure(started_cluster):
     big_table = client.index("big_table")
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS new_table")
     node.query(
         "CREATE TABLE new_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili_secure:7700', 'new_table', 'password')"
     )
@@ -381,9 +391,10 @@ def test_insert_secure(started_cluster):
     node.query(
         "INSERT INTO new_table (id, data) VALUES (1, '1') (2, '2') (3, '3') (4, '4') (5, '5') (6, '6') (7, '7')"
     )
-    sleep(1)
+    sleep(5)
     assert len(new_table.get_documents()) == 7
 
+    node.query("DROP TABLE IF EXISTS big_table")
     node.query(
         "CREATE TABLE big_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili_secure:7700', 'big_table', 'password')"
     )
@@ -417,9 +428,11 @@ def test_security_levels(started_cluster):
         values += "(" + str(i) + ", " + "'" + str(i) + "'" + ") "
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS read_table")
     node.query(
         f"CREATE TABLE read_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili_secure:7700', 'new_table', '{search_key}')"
     )
+    node.query("DROP TABLE IF EXISTS write_table")
     node.query(
         f"CREATE TABLE write_table(id UInt64, data String) ENGINE = MeiliSearch('http://meili_secure:7700', 'new_table', '{admin_key}')"
     )
@@ -430,7 +443,7 @@ def test_security_levels(started_cluster):
     assert "MEILISEARCH_EXCEPTION" in error
 
     node.query("INSERT INTO write_table (id, data) VALUES " + values)
-    sleep(1)
+    sleep(5)
     assert len(new_table.get_documents({"limit": 40010})) == 100
 
     ans1 = (
@@ -493,6 +506,7 @@ def test_types(started_cluster):
     push_data(client, table, data)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS types_table")
     node.query(
         "CREATE TABLE types_table(\
                                         id UInt64,\
@@ -556,6 +570,7 @@ def test_named_collection(started_cluster):
     push_data(client, table, data)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS simple_meili_table")
     node.query(
         "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili )"
     )
@@ -589,14 +604,17 @@ def test_named_collection_secure(started_cluster):
     push_data(client_free, table_free, data)
 
     node = started_cluster.instances["meili"]
+    node.query("DROP TABLE IF EXISTS simple_meili_table")
     node.query(
         "CREATE TABLE simple_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure )"
     )
 
+    node.query("DROP TABLE IF EXISTS wrong_meili_table")
     node.query(
         "CREATE TABLE wrong_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure_no_password )"
     )
 
+    node.query("DROP TABLE IF EXISTS combine_meili_table")
     node.query(
         'CREATE TABLE combine_meili_table(id UInt64, data String) ENGINE = MeiliSearch( named_collection_for_meili_secure_no_password, key="password" )'
     )
