@@ -1153,6 +1153,10 @@ public:
 
     ThrottlerPtr getRemoteReadThrottler() const;
     ThrottlerPtr getRemoteWriteThrottler() const;
+
+private:
+    mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
+    mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
 };
 
 struct HTTPContext : public IHTTPContext
