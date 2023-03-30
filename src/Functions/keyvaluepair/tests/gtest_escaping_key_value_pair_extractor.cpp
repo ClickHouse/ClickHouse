@@ -1,4 +1,8 @@
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
+
+#include <Columns/ColumnString.h>
+
 #include <gtest/gtest.h>
 #include <string_view>
 

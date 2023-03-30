@@ -1,12 +1,19 @@
-#include <Functions/keyvaluepair/impl/NoEscapingKeyStateHandler.h>
+#include <Functions/keyvaluepair/impl/NoEscapingStateHandler.h>
+#include <Functions/keyvaluepair/impl/StateHandler.h>
+
 #include <gtest/gtest.h>
 
-namespace DB
+namespace
 {
+using namespace DB;
+using namespace DB::extractKV;
+
+using State = extractKV::StateHandler::State;
+using NextState = extractKV::StateHandler::NextState;
 
 void test_wait(const auto & handler, std::string_view input, std::size_t expected_pos, State expected_state)
 {
-    auto next_state = handler.wait(input);
+    auto next_state = handler.waitKey(input);
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
@@ -21,11 +28,11 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 
     if constexpr (quoted)
     {
-        next_state = handler.readQuoted(input, element);
+        next_state = handler.readQuotedKey(input, element);
     }
     else
     {
-        next_state = handler.read(input, element);
+        next_state = handler.readKey(input, element);
     }
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
@@ -45,23 +52,25 @@ void test_read_quoted(const auto & handler, std::string_view input, std::string_
     test_read<true>(handler, input, expected_element, expected_pos, expected_state);
 }
 
+}
+
 TEST(extractKVPair_NoEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' ', '$'};
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    NoEscapingKeyStateHandler handler(configuration);
+    NoEscapingStateHandler handler(configuration);
 
-    test_wait(handler, "name", 0u, READING_KEY);
-    test_wait(handler, "\\:name", 0u, READING_KEY);
+    test_wait(handler, "name", 0u, State::READING_KEY);
+    test_wait(handler, "\\:name", 0u, State::READING_KEY);
     // quoted expected pos is + 1 because as of now it is skipped, maybe I should change it
-    test_wait(handler, "\"name", 1u, READING_QUOTED_KEY);
+    test_wait(handler, "\"name", 1u, State::READING_QUOTED_KEY);
 
-    test_wait(handler, ", $name", 3u, READING_KEY);
-    test_wait(handler, ", $\"name", 4u, READING_QUOTED_KEY);
+    test_wait(handler, ", $name", 3u, State::READING_KEY);
+    test_wait(handler, ", $\"name", 4u, State::READING_QUOTED_KEY);
 
-    test_wait(handler, "", 0u, END);
+    test_wait(handler, "", 0u, State::END);
 }
 
 TEST(extractKVPair_NoEscapingKeyStateHandler, Read)
@@ -70,7 +79,7 @@ TEST(extractKVPair_NoEscapingKeyStateHandler, Read)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    NoEscapingKeyStateHandler handler(configuration);
+    NoEscapingStateHandler handler(configuration);
 
     std::string key_str = "name";
     std::string key_with_delimiter_str = key_str + ':';
@@ -78,15 +87,14 @@ TEST(extractKVPair_NoEscapingKeyStateHandler, Read)
     std::string key_with_delimiter_and_random_characters_str = key_str + ':' + "a$a\\:''\"";
 
     // no delimiter, should discard
-    test_read(handler, key_str, "", key_str.size(), END);
+    test_read(handler, key_str, "", key_str.size(), State::END);
 
     // valid
-    test_read(handler, key_with_delimiter_str, key_str, key_with_delimiter_str.size(), WAITING_VALUE);
+    test_read(handler, key_with_delimiter_str, key_str, key_with_delimiter_str.size(), State::WAITING_VALUE);
 
     // valid as well
-    test_read(handler, key_with_delimiter_and_random_characters_str, key_str, key_with_delimiter_str.size(), WAITING_VALUE);
+    test_read(handler, key_with_delimiter_and_random_characters_str, key_str, key_with_delimiter_str.size(), State::WAITING_VALUE);
 
-    test_read(handler, "", "", 0u, END);
+    test_read(handler, "", "", 0u, State::END);
 }
 
-}

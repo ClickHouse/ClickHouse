@@ -1,19 +1,28 @@
 #include <Functions/keyvaluepair/impl/InlineEscapingStateHandler.h>
 #include <gtest/gtest.h>
 
-namespace DB
+#include <Functions/keyvaluepair/impl/StateHandler.h>
+#include <gtest/gtest.h>
+
+namespace
 {
 
-void test_wait(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::size_t expected_pos, State expected_state)
+using namespace DB;
+using namespace DB::extractKV;
+
+using State = extractKV::StateHandler::State;
+using NextState = extractKV::StateHandler::NextState;
+
+void test_wait(const InlineEscapingStateHandler & handler, std::string_view input, std::size_t expected_pos, State expected_state)
 {
-    auto next_state = handler.wait(input);
+    auto next_state = handler.waitKey(input);
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
 }
 
 template <bool quoted>
-void test_read(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::string_view expected_element,
+void test_read(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     NextState next_state;
@@ -21,11 +30,11 @@ void test_read(const InlineEscapingKeyStateHandler & handler, std::string_view i
 
     if constexpr (quoted)
     {
-        next_state = handler.readQuoted(input, element);
+        next_state = handler.readQuotedKey(input, element);
     }
     else
     {
-        next_state = handler.read(input, element);
+        next_state = handler.readKey(input, element);
     }
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
@@ -33,16 +42,18 @@ void test_read(const InlineEscapingKeyStateHandler & handler, std::string_view i
     ASSERT_EQ(element, expected_element);
 }
 
-void test_read(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::string_view expected_element,
+void test_read(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     test_read<false>(handler, input, expected_element, expected_pos, expected_state);
 }
 
-void test_read_quoted(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::string_view expected_element,
+void test_read_quoted(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     test_read<true>(handler, input, expected_element, expected_pos, expected_state);
+}
+
 }
 
 TEST(extractKVPair_InlineEscapingKeyStateHandler, Wait)
@@ -51,14 +62,14 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, Wait)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    InlineEscapingKeyStateHandler handler(configuration);
+    InlineEscapingStateHandler handler(configuration);
 
-    test_wait(handler, "name", 0u, READING_KEY);
-    test_wait(handler, "\\:name", 2u, READING_KEY);
-    test_wait(handler, R"(\\"name)", 3u, READING_QUOTED_KEY);
+    test_wait(handler, "name", 0u, State::READING_KEY);
+    test_wait(handler, "\\:name", 2u, State::READING_KEY);
+    test_wait(handler, R"(\\"name)", 3u, State::READING_QUOTED_KEY);
 
-    test_wait(handler, "", 0u, END);
-    test_wait(handler, "\\\\", 2u, END);
+    test_wait(handler, "", 0u, State::END);
+    test_wait(handler, "\\\\", 2u, State::END);
 }
 
 TEST(extractKVPair_InlineEscapingKeyStateHandler, Read)
@@ -67,7 +78,7 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, Read)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    InlineEscapingKeyStateHandler handler(configuration);
+    InlineEscapingStateHandler handler(configuration);
 
     std::string key_str = "name";
     std::string key_with_delimiter_str = key_str + ':';
@@ -75,15 +86,15 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, Read)
     std::string key_with_delimiter_and_random_characters_str = key_str + ':' + "a$a\\:''\"";
 
     // no delimiter, should discard
-    test_read(handler, key_str, "", key_str.size(), END);
+    test_read(handler, key_str, "", key_str.size(), State::END);
 
     // valid
-    test_read(handler, key_with_delimiter_str, key_str, key_with_delimiter_str.size(), WAITING_VALUE);
+    test_read(handler, key_with_delimiter_str, key_str, key_with_delimiter_str.size(), State::WAITING_VALUE);
 
     // valid as well
-    test_read(handler, key_with_delimiter_and_random_characters_str, key_str, key_with_delimiter_str.size(), WAITING_VALUE);
+    test_read(handler, key_with_delimiter_and_random_characters_str, key_str, key_with_delimiter_str.size(), State::WAITING_VALUE);
 
-    test_read(handler, "", "", 0u, END);
+    test_read(handler, "", "", 0u, State::END);
 }
 
 TEST(extractKVPair_InlineEscapingKeyStateHandler, ReadEnclosed)
@@ -92,7 +103,7 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, ReadEnclosed)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    InlineEscapingKeyStateHandler handler(configuration);
+    InlineEscapingStateHandler handler(configuration);
 
     std::string regular_key = "name";
     std::string regular_key_with_end_quote = regular_key + "\"";
@@ -101,10 +112,8 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, ReadEnclosed)
 
     std::string key_with_escape_character = regular_key + R"(\n\x4E")";
 
-    test_read_quoted(handler, regular_key, "", regular_key.size(), END);
-    test_read_quoted(handler, regular_key_with_end_quote, regular_key, regular_key_with_end_quote.size(), READING_KV_DELIMITER);
-    test_read_quoted(handler, key_with_special_characters_with_end_quote, key_with_special_characters, key_with_special_characters_with_end_quote.size(), READING_KV_DELIMITER);
-    test_read_quoted(handler, key_with_escape_character, regular_key + "\nN", key_with_escape_character.size(), READING_KV_DELIMITER);
-}
-
+    test_read_quoted(handler, regular_key, "", regular_key.size(), State::END);
+    test_read_quoted(handler, regular_key_with_end_quote, regular_key, regular_key_with_end_quote.size(), State::READING_KV_DELIMITER);
+    test_read_quoted(handler, key_with_special_characters_with_end_quote, key_with_special_characters, key_with_special_characters_with_end_quote.size(), State::READING_KV_DELIMITER);
+    test_read_quoted(handler, key_with_escape_character, regular_key + "\nN", key_with_escape_character.size(), State::READING_KV_DELIMITER);
 }
