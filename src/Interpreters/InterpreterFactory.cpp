@@ -8,6 +8,7 @@
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -60,6 +61,7 @@
 #include <Interpreters/InterpreterDropFunctionQuery.h>
 #include <Interpreters/InterpreterDropIndexQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterUndropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterExternalDDLQuery.h>
@@ -160,6 +162,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDropQuery>())
     {
         return std::make_unique<InterpreterDropQuery>(query, context);
+    }
+    else if (query->as<ASTUndropQuery>())
+    {
+        return std::make_unique<InterpreterUndropQuery>(query, context);
     }
     else if (query->as<ASTRenameQuery>())
     {
