@@ -480,10 +480,10 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
+            if (arguments.size() != 2 && arguments.size() != 3)
                 throw Exception(
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
+                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                     getName(),
                     arguments.size());
 
@@ -494,14 +494,14 @@ namespace
                     arguments[0].type->getName(),
                     getName());
 
-            if (arguments.size() > 1 && !isString(arguments[1].type))
+            if (!isString(arguments[1].type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of second argument of function {}. Should be String",
                     arguments[0].type->getName(),
                     getName());
 
-            if (arguments.size() > 2 && !isString(arguments[2].type))
+            if (arguments.size() == 3 && !isString(arguments[2].type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of third argument of function {}. Should be String",
@@ -1776,14 +1776,6 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            if (arguments.size() < 2)
-            {
-                if constexpr (parse_syntax == ParseSyntax::Joda)
-                    return "yyyy-MM-dd HH:mm:ss";
-                else
-                    return "%Y-%m-%d %H:%M:%S";
-            }
-
             const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!format_column)
                 throw Exception(
