@@ -81,7 +81,7 @@ std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
     s << "Map(" << key_type->getName() << ", " << value_type->getName();
-    if (num_shards > 1)
+    if (num_shards != DEFAULT_NUMBER_OF_SHARDS)
         s << ", " << num_shards;
     s << ")";
 
@@ -148,7 +148,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         DataTypeFactory::instance().get(children[1]),
     };
 
-    size_t num_shards = 8;
+    size_t num_shards = DataTypeMap::DEFAULT_NUMBER_OF_SHARDS;
     if (arguments->children.size() == 3)
     {
         const auto * literal = arguments->children[2]->as<ASTLiteral>();

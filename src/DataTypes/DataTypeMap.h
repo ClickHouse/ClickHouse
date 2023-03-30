@@ -22,6 +22,7 @@ private:
     const size_t num_shards;
 
 public:
+    static constexpr auto DEFAULT_NUMBER_OF_SHARDS = 8;
     static constexpr bool is_parametric = true;
 
     explicit DataTypeMap(const DataTypePtr & nested_, size_t num_shards_ = 1);
