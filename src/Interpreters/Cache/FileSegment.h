@@ -183,7 +183,7 @@ public:
     DownloaderId getDownloader() const;
 
     /// Wait for the change of state from DOWNLOADING to any other.
-    State wait();
+    State wait(size_t offset);
 
     bool isDownloaded() const;
 

@@ -416,7 +416,7 @@ TEST_F(FileCacheTest, get)
                 }
                 cv.notify_one();
 
-                file_segment2.wait();
+                file_segment2.wait(file_segment2.range().left);
                 ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
             });
 
@@ -479,7 +479,7 @@ TEST_F(FileCacheTest, get)
                 }
                 cv.notify_one();
 
-                file_segment2.wait();
+                file_segment2.wait(file_segment2.range().left);
                 ASSERT_TRUE(file_segment2.state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED);
                 ASSERT_TRUE(file_segment2.getOrSetDownloader() == DB::FileSegment::getCallerId());
                 download(file_segment2);
