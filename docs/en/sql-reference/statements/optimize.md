@@ -7,7 +7,7 @@ title: "OPTIMIZE Statement"
 
 This query tries to initialize an unscheduled merge of data parts for tables.
 
-:::warning
+:::note
 `OPTIMIZE` can’t fix the `Too many parts` error.
 :::
 

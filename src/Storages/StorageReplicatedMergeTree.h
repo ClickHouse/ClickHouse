@@ -326,11 +326,12 @@ public:
     bool canUseZeroCopyReplication() const;
 
     bool isTableReadOnly () { return is_readonly; }
-private:
-    std::atomic_bool are_restoring_replica {false};
 
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+
+private:
+    std::atomic_bool are_restoring_replica {false};
 
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
