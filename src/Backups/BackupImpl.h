@@ -85,7 +85,7 @@ public:
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
 
 private:
-    void open(const ContextPtr & context);
+    void open();
     void close();
 
     void openArchive();
@@ -109,6 +109,7 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
+    ContextPtr context;
     const String backup_name_for_logging;
     const bool use_archive;
     const ArchiveParams archive_params;

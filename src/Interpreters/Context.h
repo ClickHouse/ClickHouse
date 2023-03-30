@@ -1109,6 +1109,9 @@ public:
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 
+    /** Get settings for reading from filesystem for BACKUPs. */
+    ReadSettings getBackupReadSettings() const;
+
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
 
@@ -1157,12 +1160,18 @@ public:
     ThrottlerPtr getLocalReadThrottler() const;
     ThrottlerPtr getLocalWriteThrottler() const;
 
+    ThrottlerPtr getBackupsReadThrottler() const;
+    ThrottlerPtr getBackupsWriteThrottler() const;
+
 private:
     mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
     mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
 
     mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
+
+    mutable ThrottlerPtr backups_read_query_throttler;      /// A query-wide throttler for backups reads
+    mutable ThrottlerPtr backups_write_query_throttler;     /// A query-wide throttler for backups writes
 };
 
 struct HTTPContext : public IHTTPContext
