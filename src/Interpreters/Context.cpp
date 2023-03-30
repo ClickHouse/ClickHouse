@@ -2097,12 +2097,16 @@ void Context::initializeBackupsWorker()
     shared->backups_worker.emplace(backup_restore_settings);
 
     if (hasZooKeeper())
+    {
         shared->backup_restore_cleanup_thread.emplace(
             [this](){ return getZooKeeper(); },
             getSchedulePool(),
             backup_restore_settings.root_zookeeper_path,
             backup_restore_settings.stale_backups_restores_check_period_ms,
             backup_restore_settings.stale_backups_restores_cleanup_timeout_ms);
+
+        shared->backup_restore_cleanup_thread->start();
+    }
 }
 
 BackupsWorker & Context::getBackupsWorker() const
