@@ -25,7 +25,7 @@ namespace ErrorCodes
  * So implementing VLQ for the whole 1<<64 range will require different set of
  * helpers.
  */
-constexpr size_t VAR_UINT_MAX = (1ULL<<63) - 1;
+constexpr UInt64 VAR_UINT_MAX = (1ULL<<63) - 1;
 
 /** Write UInt64 in variable length format (base128) */
 void writeVarUInt(UInt64 x, std::ostream & ostr);
