@@ -834,11 +834,9 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     auto writer_description = writer->getDataSourceDescription();
     auto reader_description = entry->getDataSourceDescription();
 
-    bool has_throttler = context->getBackupsReadThrottler() || context->getBackupsWriteThrottler();
-
     /// We need to copy whole file without archive, we can do it faster
     /// if source and destination are compatible
-    if (!use_archive && !has_throttler && writer->supportNativeCopy(reader_description))
+    if (!use_archive && !context->getBackupsThrottler() && writer->supportNativeCopy(reader_description))
     {
         /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", info.data_file_name);
@@ -864,8 +862,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
             auto read_buffer = entry->getReadBuffer();
             if (info.base_size != 0)
                 read_buffer->seek(info.base_size, SEEK_SET);
-            std::atomic<int> cancelled;
-            copyDataWithThrottler(*read_buffer, *out, cancelled, context->getBackupsWriteThrottler());
+            copyData(*read_buffer, *out);
             out->finalize();
         }
         else
@@ -874,7 +871,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
             auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
 
             /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
-            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name, context->getBackupsWriteThrottler());
+            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
         }
     }
 

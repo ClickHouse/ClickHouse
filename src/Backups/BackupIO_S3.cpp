@@ -190,7 +190,7 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
     if (objects.size() > 1)
     {
         auto create_read_buffer = [src_disk, src_file_name] { return src_disk->readFile(src_file_name); };
-        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name, /* throttler= */ {});
+        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
     }
     else
     {
@@ -203,10 +203,8 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
 }
 
 void BackupWriterS3::copyDataToFile(
-    const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name, ThrottlerPtr throttler)
+    const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name)
 {
-    // FIXME:
-    (void)throttler;
     copyDataToS3File(create_read_buffer, offset, size, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, request_settings, {},
                      threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
 }
