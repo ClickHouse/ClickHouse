@@ -284,8 +284,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
 
-    mutable ThrottlerPtr backups_read_server_throttler;     /// A server-wide throttler for backups reads
-    mutable ThrottlerPtr backups_write_server_throttler;    /// A server-wide throttler for backups writes
+    mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -1782,8 +1781,7 @@ void Context::makeQueryContext()
         getLocalReadThrottler();
         getLocalWriteThrottler();
 
-        getBackupsReadThrottler();
-        getBackupsWriteThrottler();
+        getBackupsThrottler();
     }
 }
 
@@ -2450,49 +2448,25 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
     return throttler;
 }
 
-ThrottlerPtr Context::getBackupsReadThrottler() const
+ThrottlerPtr Context::getBackupsThrottler() const
 {
     ThrottlerPtr throttler;
 
-    if (shared->server_settings.backup_read_bandwidth_for_server)
+    if (shared->server_settings.backup_bandwidth_for_server)
     {
         auto lock = getLock();
-        if (!shared->backups_read_server_throttler)
-            shared->backups_read_server_throttler = std::make_shared<Throttler>(shared->server_settings.backup_read_bandwidth_for_server);
-        throttler = shared->backups_read_server_throttler;
+        if (!shared->backups_server_throttler)
+            shared->backups_server_throttler = std::make_shared<Throttler>(shared->server_settings.backup_bandwidth_for_server);
+        throttler = shared->backups_server_throttler;
     }
 
     const auto & query_settings = getSettingsRef();
-    if (query_settings.backup_read_bandwidth)
+    if (query_settings.backup_bandwidth)
     {
         auto lock = getLock();
-        if (!backups_read_query_throttler)
-            backups_read_query_throttler = std::make_shared<Throttler>(query_settings.backup_read_bandwidth, throttler);
-        throttler = backups_read_query_throttler;
-    }
-
-    return throttler;
-}
-
-ThrottlerPtr Context::getBackupsWriteThrottler() const
-{
-    ThrottlerPtr throttler;
-
-    if (shared->server_settings.backup_write_bandwidth_for_server)
-    {
-        auto lock = getLock();
-        if (!shared->backups_write_server_throttler)
-            shared->backups_write_server_throttler = std::make_shared<Throttler>(shared->server_settings.backup_write_bandwidth_for_server);
-        throttler = shared->backups_write_server_throttler;
-    }
-
-    const auto & query_settings = getSettingsRef();
-    if (query_settings.backup_write_bandwidth)
-    {
-        auto lock = getLock();
-        if (!backups_write_query_throttler)
-            backups_write_query_throttler = std::make_shared<Throttler>(query_settings.backup_write_bandwidth, throttler);
-        throttler = backups_write_query_throttler;
+        if (!backups_query_throttler)
+            backups_query_throttler = std::make_shared<Throttler>(query_settings.backup_bandwidth, throttler);
+        throttler = backups_query_throttler;
     }
 
     return throttler;
@@ -4221,8 +4195,8 @@ ReadSettings Context::getReadSettings() const
 ReadSettings Context::getBackupReadSettings() const
 {
     ReadSettings settings = getReadSettings();
-    settings.remote_throttler = getBackupsReadThrottler();
-    settings.local_throttler = getBackupsReadThrottler();
+    settings.remote_throttler = getBackupsThrottler();
+    settings.local_throttler = getBackupsThrottler();
     return settings;
 }
 

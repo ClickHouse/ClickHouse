@@ -1160,8 +1160,7 @@ public:
     ThrottlerPtr getLocalReadThrottler() const;
     ThrottlerPtr getLocalWriteThrottler() const;
 
-    ThrottlerPtr getBackupsReadThrottler() const;
-    ThrottlerPtr getBackupsWriteThrottler() const;
+    ThrottlerPtr getBackupsThrottler() const;
 
 private:
     mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
@@ -1170,8 +1169,7 @@ private:
     mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
 
-    mutable ThrottlerPtr backups_read_query_throttler;      /// A query-wide throttler for backups reads
-    mutable ThrottlerPtr backups_write_query_throttler;     /// A query-wide throttler for backups writes
+    mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
 };
 
 struct HTTPContext : public IHTTPContext

@@ -46,7 +46,7 @@ public:
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
-    void copyDataToFile(const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name, ThrottlerPtr throttler) override;
+    void copyDataToFile(const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name) override;
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;

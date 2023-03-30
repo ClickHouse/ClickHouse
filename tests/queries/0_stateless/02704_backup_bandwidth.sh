@@ -10,11 +10,11 @@ $CLICKHOUSE_CLIENT -nm -q "
     create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, min_bytes_for_compact_part=0;
 "
 
-# 1e6*8 bytes with 1M bandwith it should take (8-1)/1=7 seconds
+# reading 1e6*8 bytes with 1M bandwith it should take (8-1)/1=7 seconds
 $CLICKHOUSE_CLIENT -q "insert into data select * from numbers(1e6)"
 
 query_id=$(random_str 10)
-$CLICKHOUSE_CLIENT --query_id "$query_id" -q "backup table data to Disk('default', 'backups/$CLICKHOUSE_DATABASE/data/backup1')" --backup_write_bandwidth=1M > /dev/null
+$CLICKHOUSE_CLIENT --query_id "$query_id" -q "backup table data to Disk('default', 'backups/$CLICKHOUSE_DATABASE/data/backup1')" --backup_bandwidth=1M > /dev/null
 $CLICKHOUSE_CLIENT -nm -q "
     SYSTEM FLUSH LOGS;
     SELECT

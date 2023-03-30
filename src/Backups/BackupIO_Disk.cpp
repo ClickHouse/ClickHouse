@@ -132,7 +132,7 @@ void BackupWriterDisk::copyFileNative(DiskPtr src_disk, const String & src_file_
     if ((src_offset != 0) || (src_size != src_disk->getFileSize(src_file_name)))
     {
         auto create_read_buffer = [src_disk, src_file_name] { return src_disk->readFile(src_file_name); };
-        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name, /* throttler= */ {});
+        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
         return;
     }
 
