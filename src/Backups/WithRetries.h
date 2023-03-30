@@ -35,7 +35,7 @@ public:
     /// Why ZooKeeperRetriesInfo is separate for each operation?
     /// The reason is that backup usually takes long time to finish and it makes no sense
     /// to limit the overall number of retries (for example 1000) for the whole backup
-    /// and have a continiously growing backoff.
+    /// and have a continuously growing backoff.
     class RetriesControlHolder
     {
     public:
