@@ -46,7 +46,6 @@ public:
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
-        auto nested_arguments = arguments;
         Adapter::extractNestedTypes(arguments);
         impl.getLambdaArgumentTypes(arguments);
     }
@@ -256,7 +255,6 @@ struct MapKeyLikeAdapter
         const auto & pattern_arg = arguments[1];
 
         ColumnPtr function_column;
-
         DataTypePtr return_type = std::make_shared<DataTypeUInt8>();
         DataTypes argument_types{map_type.getKeyType(), map_type.getValueType()};
         auto function_type = std::make_shared<DataTypeFunction>(argument_types, return_type);
@@ -330,19 +328,96 @@ using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPar
 
 REGISTER_FUNCTION(MapMiscellaneous)
 {
-    factory.registerFunction<FunctionMapConcat>();
-    factory.registerFunction<FunctionMapKeys>();
-    factory.registerFunction<FunctionMapValues>();
-    factory.registerFunction<FunctionMapContains>();
-    factory.registerFunction<FunctionMapFilter>();
-    factory.registerFunction<FunctionMapApply>();
-    factory.registerFunction<FunctionMapExists>();
-    factory.registerFunction<FunctionMapSort>();
-    factory.registerFunction<FunctionMapReverseSort>();
-    factory.registerFunction<FunctionMapPartialSort>();
-    factory.registerFunction<FunctionMapPartialReverseSort>();
-    factory.registerFunction<FunctionMapContainsKeyLike>();
-    factory.registerFunction<FunctionMapExtractKeyLike>();
+    factory.registerFunction<FunctionMapConcat>(
+    {
+        "The same as arrayConcat.",
+        Documentation::Examples{{"mapConcat", "SELECT mapConcat(map('k1', 'v1'), map('k2', 'v2'))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapKeys>(
+    {
+        "Returns an array with the keys of map.",
+        Documentation::Examples{{"mapKeys", "SELECT mapKeys(map('k1', 'v1', 'k2', 'v2'))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapValues>(
+    {
+        "Returns an array with the values of map.",
+        Documentation::Examples{{"mapValues", "SELECT mapValues(map('k1', 'v1', 'k2', 'v2'))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapContains>(
+    {
+        "Checks whether the map has the specified key.",
+        Documentation::Examples{{"mapContains", "SELECT mapContains(map('k1', 'v1', 'k2', 'v2'), 'k1')"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapFilter>(
+    {
+        "The same as arrayFilter.",
+        Documentation::Examples{{"mapFilter", "SELECT mapFilter((k, v) -> v > 1, map('k1', 1, 'k2', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapApply>(
+    {
+        "The same as arrayMap.",
+        Documentation::Examples{{"mapApply", "SELECT mapApply((k, v) -> (k, v * 2), map('k1', 1, 'k2', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapExists>(
+    {
+        "The same as arrayExists.",
+        Documentation::Examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapSort>(
+    {
+        "The same as arraySort.",
+        Documentation::Examples{{"mapSort", "SELECT mapSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapReverseSort>(
+    {
+        "The same as arrayReverseSort.",
+        Documentation::Examples{{"mapReverseSort", "SELECT mapReverseSort((k, v) -> v, map('k1', 3, 'k2', 1, 'k3', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapPartialSort>(
+    {
+        "The same as arrayReverseSort.",
+        Documentation::Examples{{"mapPartialSort", "SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapPartialReverseSort>(
+    {
+        "The same as arrayPartialReverseSort.",
+        Documentation::Examples{{"mapPartialReverseSort", "SELECT mapPartialReverseSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapContainsKeyLike>(
+    {
+        "Checks whether map contains key LIKE specified pattern.",
+        Documentation::Examples{{"mapContainsKeyLike", "SELECT mapContainsKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')"}},
+        Documentation::Categories{"Map"},
+    });
+
+    factory.registerFunction<FunctionMapExtractKeyLike>(
+    {
+        "Returns a map with elements which key matches the specified pattern.",
+        Documentation::Examples{{"mapExtractKeyLike", "SELECT mapExtractKeyLike(map('k1-1', 1, 'k2-1', 2), 'k1%')"}},
+        Documentation::Categories{"Map"},
+    });
 }
 
 }
