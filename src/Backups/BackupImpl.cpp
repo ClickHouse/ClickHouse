@@ -81,7 +81,8 @@ BackupImpl::BackupImpl(
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
     const ContextPtr & context_)
-    : backup_name_for_logging(backup_name_for_logging_)
+    : context(context_)
+    , backup_name_for_logging(backup_name_for_logging_)
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
@@ -90,7 +91,7 @@ BackupImpl::BackupImpl(
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
 {
-    open(context_);
+    open();
 }
 
 
@@ -104,7 +105,8 @@ BackupImpl::BackupImpl(
     const std::shared_ptr<IBackupCoordination> & coordination_,
     const std::optional<UUID> & backup_uuid_,
     bool deduplicate_files_)
-    : backup_name_for_logging(backup_name_for_logging_)
+    : context(context_)
+    , backup_name_for_logging(backup_name_for_logging_)
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
@@ -117,7 +119,7 @@ BackupImpl::BackupImpl(
     , deduplicate_files(deduplicate_files_)
     , log(&Poco::Logger::get("BackupImpl"))
 {
-    open(context_);
+    open();
 }
 
 
@@ -133,7 +135,7 @@ BackupImpl::~BackupImpl()
     }
 }
 
-void BackupImpl::open(const ContextPtr & context)
+void BackupImpl::open()
 {
     std::lock_guard lock{mutex};
 
@@ -832,9 +834,11 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     auto writer_description = writer->getDataSourceDescription();
     auto reader_description = entry->getDataSourceDescription();
 
+    bool has_throttler = context->getBackupsReadThrottler() || context->getBackupsWriteThrottler();
+
     /// We need to copy whole file without archive, we can do it faster
     /// if source and destination are compatible
-    if (!use_archive && writer->supportNativeCopy(reader_description))
+    if (!use_archive && !has_throttler && writer->supportNativeCopy(reader_description))
     {
         /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", info.data_file_name);
@@ -860,7 +864,8 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
             auto read_buffer = entry->getReadBuffer();
             if (info.base_size != 0)
                 read_buffer->seek(info.base_size, SEEK_SET);
-            copyData(*read_buffer, *out);
+            std::atomic<int> cancelled;
+            copyDataWithThrottler(*read_buffer, *out, cancelled, context->getBackupsWriteThrottler());
             out->finalize();
         }
         else
@@ -869,7 +874,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
             auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
 
             /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
-            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
+            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name, context->getBackupsWriteThrottler());
         }
     }
 
