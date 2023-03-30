@@ -1222,6 +1222,7 @@ bool StorageS3::Configuration::update(ContextPtr context)
         return false;
 
     auth_settings.updateFrom(s3_settings.auth_settings);
+    keys = {url.key};
     connect(context);
     return true;
 }
