@@ -20,18 +20,9 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric BackupsThreads;
-    extern const Metric BackupsThreadsActive;
-    extern const Metric RestoreThreads;
-    extern const Metric RestoreThreadsActive;
-}
 
 namespace DB
 {
@@ -162,8 +153,8 @@ namespace
 
 
 BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
-    : backups_thread_pool(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
-    , restores_thread_pool(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads)
+    : backups_thread_pool(num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
+    , restores_thread_pool(num_restore_threads, /* max_free_threads = */ 0, num_restore_threads)
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)

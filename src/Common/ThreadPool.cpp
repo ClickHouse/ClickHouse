@@ -26,37 +26,28 @@ namespace CurrentMetrics
 {
     extern const Metric GlobalThread;
     extern const Metric GlobalThreadActive;
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
 }
 
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_)
-    : ThreadPoolImpl(metric_threads_, metric_active_threads_, getNumberOfPhysicalCPUCores())
+ThreadPoolImpl<Thread>::ThreadPoolImpl()
+    : ThreadPoolImpl(getNumberOfPhysicalCPUCores())
 {
 }
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(
-    Metric metric_threads_,
-    Metric metric_active_threads_,
-    size_t max_threads_)
-    : ThreadPoolImpl(metric_threads_, metric_active_threads_, max_threads_, max_threads_, max_threads_)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
+    : ThreadPoolImpl(max_threads_, max_threads_, max_threads_)
 {
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(
-    Metric metric_threads_,
-    Metric metric_active_threads_,
-    size_t max_threads_,
-    size_t max_free_threads_,
-    size_t queue_size_,
-    bool shutdown_on_exception_)
-    : metric_threads(metric_threads_)
-    , metric_active_threads(metric_active_threads_)
-    , max_threads(max_threads_)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_)
+    : max_threads(max_threads_)
     , max_free_threads(std::min(max_free_threads_, max_threads))
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
@@ -333,7 +324,8 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    CurrentMetrics::Increment metric_pool_threads(metric_threads);
+    CurrentMetrics::Increment metric_all_threads(
+        std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
 
     /// Remove this thread from `threads` and detach it, that must be done before exiting from this worker.
     /// We can't wrap the following lambda function into `SCOPE_EXIT` because it requires `mutex` to be locked.
@@ -391,7 +383,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             try
             {
-                CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
+                CurrentMetrics::Increment metric_active_threads(
+                    std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 
                 job();
 
@@ -464,22 +457,6 @@ template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
 template class ThreadFromGlobalPoolImpl<true>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
-
-
-GlobalThreadPool::GlobalThreadPool(
-    size_t max_threads_,
-    size_t max_free_threads_,
-    size_t queue_size_,
-    const bool shutdown_on_exception_)
-    : FreeThreadPool(
-        CurrentMetrics::GlobalThread,
-        CurrentMetrics::GlobalThreadActive,
-        max_threads_,
-        max_free_threads_,
-        queue_size_,
-        shutdown_on_exception_)
-{
-}
 
 void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {

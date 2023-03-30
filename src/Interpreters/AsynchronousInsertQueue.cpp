@@ -32,8 +32,6 @@
 namespace CurrentMetrics
 {
     extern const Metric PendingAsyncInsert;
-    extern const Metric AsynchronousInsertThreads;
-    extern const Metric AsynchronousInsertThreadsActive;
 }
 
 namespace ProfileEvents
@@ -132,7 +130,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     : WithContext(context_)
     , pool_size(pool_size_)
     , queue_shards(pool_size)
-    , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, pool_size)
+    , pool(pool_size)
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");

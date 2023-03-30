@@ -5,20 +5,13 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric ParallelParsingInputFormatThreads;
-    extern const Metric ParallelParsingInputFormatThreadsActive;
-}
 
 namespace DB
 {
@@ -101,7 +94,7 @@ public:
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
         , is_server(params.is_server)
-        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, params.max_threads)
+        , pool(params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
