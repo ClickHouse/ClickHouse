@@ -96,6 +96,12 @@ def write_hudi_from_df(spark, table_name, df, result_path, mode="overwrite"):
     ).option(
         "hoodie.datasource.write.operation", hudi_write_mode
     ).option(
+        "hoodie.datasource.compaction.async.enable", "true"
+    ).option(
+        "hoodie.compact.inline", "false"
+    ).option(
+        "hoodie.compact.inline.max.delta.commits", "10"
+    ).option(
         "hoodie.parquet.compression.codec", "snappy"
     ).option(
         "hoodie.hfile.compression.algorithm", "uncompressed"
@@ -114,9 +120,9 @@ def write_hudi_from_file(spark, table_name, path, result_path):
     write_hudi_from_df(spark, table_name, df, result_path)
 
 
-def generate_data(spark, start, end):
+def generate_data(spark, start, end, append=1):
     a = spark.range(start, end, 1).toDF("a")
-    b = spark.range(start + 1, end + 1, 1).toDF("b")
+    b = spark.range(start + append, end + append, 1).toDF("b")
     b = b.withColumn("b", b["b"].cast(StringType()))
 
     a = a.withColumn(
@@ -213,12 +219,35 @@ def test_multiple_hudi_files(started_cluster):
         mode="append",
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    # assert len(files) == 3
+    assert len(files) == 3
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
     assert instance.query(
         f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1"
     ) == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
+
+    assert int(instance.query(f"SELECT b FROM {TABLE_NAME} WHERE a = 100")) == 101
+    write_hudi_from_df(
+        spark,
+        TABLE_NAME,
+        generate_data(spark, 100, 101, append=0),
+        f"/{TABLE_NAME}",
+        mode="append",
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
+    assert int(instance.query(f"SELECT b FROM {TABLE_NAME} WHERE a = 100")) == 100
+
+    write_hudi_from_df(
+        spark,
+        TABLE_NAME,
+        generate_data(spark, 100, 1000000, append=0),
+        f"/{TABLE_NAME}",
+        mode="append",
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1000000
 
 
 def test_types(started_cluster):

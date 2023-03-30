@@ -18,7 +18,7 @@ namespace ErrorCodes
 namespace
 {
     /**
-     * Documentation links:
+     * Useful links:
      *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
      */
 

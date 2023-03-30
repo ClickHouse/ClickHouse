@@ -21,8 +21,9 @@ namespace ErrorCodes
 namespace
 {
     /**
-     * Documentation links:
+     * Useful links:
      * - https://hudi.apache.org/tech-specs/
+     * - https://hudi.apache.org/docs/file_layouts/
      */
 
     /**
@@ -35,44 +36,54 @@ namespace
       * Data file name format:
       * [File Id]_[File Write Token]_[Transaction timestamp].[File Extension]
       *
-      * To find needed parts we need to find out latest part file for every partition.
-      * Part format is usually parquet, but can differ.
+      * To find needed parts we need to find out latest part file for every file group for every partition.
+      * Explanation why:
+      *    Hudi reads in and overwrites the entire table/partition with each update.
+      *    Hudi controls the number of file groups under a single partition according to the
+      *    hoodie.parquet.max.file.size option. Once a single Parquet file is too large, Hudi creates a second file group.
+      *    Each file group is identified by File Id.
       */
     Strings processMetadataFiles(const std::vector<String> & keys, const std::string & base_directory)
     {
         auto * log = &Poco::Logger::get("HudiMetadataParser");
 
+        using Partition = std::string;
+        using FileID = std::string;
         struct FileInfo
         {
-            String filename;
-            UInt64 timestamp;
+            String key;
+            UInt64 timestamp = 0;
         };
-        std::unordered_map<String, FileInfo> latest_parts; /// Partition path (directory) -> latest part file info.
+        std::unordered_map<Partition, std::unordered_map<FileID, FileInfo>> data_files;
 
-        /// For each partition path take only latest file.
         for (const auto & key : keys)
         {
-            const auto delim = key.find_last_of('_') + 1;
-            if (delim == std::string::npos)
+            auto key_file = std::filesystem::path(key);
+
+            Strings file_parts;
+            splitInto<'_'>(file_parts, key_file.stem());
+            if (file_parts.size() != 3)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 
-            const auto timestamp = parse<UInt64>(key.substr(delim + 1));
-            const auto file_path = key.substr(base_directory.size());
+            const auto partition = key_file.parent_path().stem();
+            const auto file_id = file_parts[0];
+            const auto timestamp = parse<UInt64>(file_parts[2]);
 
-            LOG_TEST(log, "Having path {}", file_path);
-
-            const auto [it, inserted] = latest_parts.emplace(/* partition_path */std::filesystem::path(key).parent_path(), FileInfo{});
-            if (inserted)
-                it->second = FileInfo{file_path, timestamp};
-            else if (it->second.timestamp < timestamp)
-                it->second = {file_path, timestamp};
+            auto & file_info = data_files[partition][file_id];
+            if (file_info.timestamp == 0 || file_info.timestamp < timestamp)
+            {
+                file_info.key = key.substr(base_directory.size());
+                file_info.timestamp = timestamp;
+            }
         }
 
-        LOG_TRACE(log, "Having {} result partitions", latest_parts.size());
-
         Strings result;
-        for (const auto & [_, file_info] : latest_parts)
-            result.push_back(file_info.filename);
+        for (const auto & [partition, partition_data] : data_files)
+        {
+            LOG_TRACE(log, "Adding {} data files from partition {}", partition, partition_data.size());
+            for (const auto & [file_id, file_data] : partition_data)
+                result.push_back(file_data.key);
+        }
         return result;
     }
 }
