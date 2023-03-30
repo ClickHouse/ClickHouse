@@ -366,6 +366,13 @@ BlockIO InterpreterGrantQuery::execute()
     AccessRightsElements elements_to_grant, elements_to_revoke;
     collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
 
+    if (query.current_grants)
+    {
+        AccessRights new_rights(elements_to_grant);
+        new_rights.makeIntersection(*current_user_access->getAccessRightsWithImplicit());
+        elements_to_grant = new_rights.getElements();
+    }
+
     std::vector<UUID> roles_to_grant;
     RolesOrUsersSet roles_to_revoke;
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
