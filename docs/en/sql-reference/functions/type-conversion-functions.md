@@ -13,7 +13,7 @@ incompatible datatypes (for example from `String` to `Int`). Make sure to check 
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-`to<type>` functions and [cast](#castx-t) have different behaviour in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standart, and it can changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
+`to<type>` functions and [cast](#castx-t) have different behaviour in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
 
 Example:
 
