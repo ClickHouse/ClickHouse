@@ -36,6 +36,8 @@ else
     read -rp "Would you like to setup git hook for automatic update? (y|n): " set_git_hook
   fi
 
+  git clone "$git_url" "clickhouse-docs"
+
   if [ "$set_git_hook" = "y" ]; then
     hook_command="$(pwd)/pull-clickhouse-docs-hook.sh $UPDATE_PERIOD_HOURS ||:"
     hook_file=$(realpath "$(pwd)/../.git/hooks/post-checkout")
@@ -49,6 +51,4 @@ else
   elif [ ! "$set_git_hook" = "n" ]; then
     echo "Expected 'y' or 'n', got '$set_git_hook', will not setup git hook"
   fi
-
-  git clone "$git_url" "clickhouse-docs"
 fi
