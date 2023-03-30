@@ -17,7 +17,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -49,7 +48,6 @@ StorageS3Cluster::StorageS3Cluster(
     ContextPtr context_,
     bool structure_argument_was_provided_)
     : IStorageCluster(table_id_)
-    , log(&Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"))
     , s3_configuration{configuration_}
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
@@ -104,20 +102,7 @@ Pipe StorageS3Cluster::read(
     auto extension = getTaskIteratorExtension(query_info.query, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-
-    Block sample_block;
-    ASTPtr query_to_send = query_info.query;
-
-    if (context->getSettingsRef().allow_experimental_analyzer)
-    {
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
-    }
-    else
-    {
-        auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
-        sample_block = interpreter.getSampleBlock();
-        query_to_send = interpreter.getQueryInfo().query->clone();
-    }
+    auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
@@ -125,6 +110,7 @@ Pipe StorageS3Cluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
+    ASTPtr query_to_send = interpreter.getQueryInfo().query->clone();
     if (!structure_argument_was_provided)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
@@ -147,9 +133,10 @@ Pipe StorageS3Cluster::read(
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                    shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
                     queryToString(query_to_send),
-                    sample_block,
+                    interpreter.getSampleBlock(),
                     context,
                     /*throttler=*/nullptr,
                     scalars,
@@ -157,7 +144,6 @@ Pipe StorageS3Cluster::read(
                     processed_stage,
                     extension);
 
-            remote_query_executor->setLogger(log);
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
     }

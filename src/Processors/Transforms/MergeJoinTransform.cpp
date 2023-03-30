@@ -844,7 +844,6 @@ MergeJoinTransform::MergeJoinTransform(
         output_header,
         /* have_all_inputs_= */ true,
         limit_hint_,
-        /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
     , log(&Poco::Logger::get("MergeJoinTransform"))

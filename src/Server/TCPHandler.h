@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -76,17 +75,8 @@ struct QueryState
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
-    enum class CancellationStatus: UInt8
-    {
-        FULLY_CANCELLED,
-        READ_CANCELLED,
-        NOT_CANCELLED
-    };
-
-    static std::string cancellationStatusToName(CancellationStatus status);
-
     /// Is request cancelled
-    CancellationStatus cancellation_status = CancellationStatus::NOT_CANCELLED;
+    bool is_cancelled = false;
     bool is_connection_closed = false;
     /// empty or not
     bool is_empty = true;
@@ -180,6 +170,7 @@ private:
     UInt64 interactive_delay = 100000;
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
+    Poco::Timespan sleep_in_receive_cancel;
     Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
@@ -198,10 +189,7 @@ private:
 
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    std::optional<UInt64> nonce;
     String cluster;
 
     std::mutex task_callback_mutex;
@@ -281,15 +269,10 @@ private:
     void initLogsBlockOutput(const Block & block);
     void initProfileEventsBlockOutput(const Block & block);
 
-    using CancellationStatus = QueryState::CancellationStatus;
-
-    void decreaseCancellationStatus(const std::string & log_message);
-    CancellationStatus getQueryCancellationStatus();
+    bool isQueryCancelled();
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
-
-    Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
 
 }

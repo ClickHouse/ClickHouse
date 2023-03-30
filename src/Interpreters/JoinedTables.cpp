@@ -173,14 +173,13 @@ using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIden
 
 }
 
-JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query_, bool include_all_columns_, bool is_create_parameterized_view_)
+JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query_, bool include_all_columns_)
     : context(context_)
     , table_expressions(getTableExpressions(select_query_))
     , include_all_columns(include_all_columns_)
     , left_table_expression(extractTableExpression(select_query_, 0))
     , left_db_and_table(getDatabaseAndTable(select_query_, 0))
     , select_query(select_query_)
-    , is_create_parameterized_view(is_create_parameterized_view_)
 {}
 
 bool JoinedTables::isLeftTableSubquery() const
@@ -240,7 +239,7 @@ bool JoinedTables::resolveTables()
     const auto & settings = context->getSettingsRef();
     bool include_alias_cols = include_all_columns || settings.asterisk_include_alias_columns;
     bool include_materialized_cols = include_all_columns || settings.asterisk_include_materialized_columns;
-    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols, is_create_parameterized_view);
+    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols);
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected tables count");
 

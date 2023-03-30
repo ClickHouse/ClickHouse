@@ -61,8 +61,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric Read;
-    extern const Metric ThreadPoolFSReaderThreads;
-    extern const Metric ThreadPoolFSReaderThreadsActive;
 }
 
 
@@ -87,7 +85,7 @@ static bool hasBugInPreadV2()
 #endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
-    : pool(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, pool_size, pool_size, queue_size_)
+    : pool(pool_size, pool_size, queue_size_)
 {
 }
 

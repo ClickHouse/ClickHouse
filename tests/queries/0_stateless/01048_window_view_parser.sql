@@ -1,6 +1,5 @@
 -- Tags: no-parallel
 
-SET allow_experimental_analyzer = 0;
 SET allow_experimental_window_view = 1;
 DROP DATABASE IF EXISTS test_01048;
 set allow_deprecated_database_ordinary=1;

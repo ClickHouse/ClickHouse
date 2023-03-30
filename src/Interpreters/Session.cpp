@@ -140,12 +140,9 @@ public:
         scheduleCloseSession(session, lock);
     }
 
-    void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
+    void closeSession(const UUID & user_id, const String & session_id)
     {
         std::unique_lock lock(mutex);
-        scheduleCloseSession(*session_data, lock);
-        session_data = nullptr;
-
         Key key{user_id, session_id};
         auto it = sessions.find(key);
         if (it == sessions.end())
@@ -562,7 +559,8 @@ void Session::closeSession(const String & session_id)
     if (!named_session)
         return;
 
-    NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
+    releaseSessionID();
+    NamedSessionsStorage::instance().closeSession(*user_id, session_id);
 }
 
 }

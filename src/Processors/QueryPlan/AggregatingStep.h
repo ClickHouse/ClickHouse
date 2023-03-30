@@ -22,8 +22,6 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
-class AggregatingProjectionStep;
-
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {
@@ -67,15 +65,6 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
 
-    bool canUseProjection() const;
-    /// When we apply aggregate projection (which is full), this step will only merge data.
-    /// Argument input_stream replaces current single input.
-    /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
-    void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
-    /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
-    /// Argument input_stream would be the second input (from projection).
-    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
-
 private:
     void updateOutputStream() override;
 
@@ -106,29 +95,6 @@ private:
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
-
-    Processors aggregating;
-};
-
-class AggregatingProjectionStep : public IQueryPlanStep
-{
-public:
-    AggregatingProjectionStep(
-        DataStreams input_streams_,
-        Aggregator::Params params_,
-        bool final_,
-        size_t merge_threads_,
-        size_t temporary_data_merge_threads_
-    );
-
-    String getName() const override { return "AggregatingProjection"; }
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
-
-private:
-    Aggregator::Params params;
-    bool final;
-    size_t merge_threads;
-    size_t temporary_data_merge_threads;
 
     Processors aggregating;
 };

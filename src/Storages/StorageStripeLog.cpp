@@ -622,7 +622,11 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file_path, WriteMode::Append);
+            auto backup_entry = backup->readFile(file_path_in_backup);
+            auto in = backup_entry->getReadBuffer();
+            auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
+            copyData(*in, *out);
+            out->finalize();
         }
 
         /// Append the index.
@@ -632,7 +636,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             if (!backup->fileExists(index_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_path_in_backup);
 
-            auto index_in = backup->readFile(index_path_in_backup);
+            auto backup_entry = backup->readFile(index_path_in_backup);
+            auto index_in = backup_entry->getReadBuffer();
             CompressedReadBuffer index_compressed_in{*index_in};
             extra_indices.read(index_compressed_in);
 

@@ -30,7 +30,7 @@
 #    include <openssl/sha.h>
 #endif
 
-#include <bit>
+#include <Poco/ByteOrder.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -150,13 +150,6 @@ struct IntHash64Impl
 template<typename T, typename HashFunction>
 T combineHashesFunc(T t1, T t2)
 {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        T tmp;
-        reverseMemcpy(&tmp, &t1, sizeof(T));
-        t1 = tmp;
-        reverseMemcpy(&tmp, &t2, sizeof(T));
-        t2 = tmp;
-#endif
     T hashes[] = {t1, t2};
     return HashFunction::apply(reinterpret_cast<const char *>(hashes), 2 * sizeof(T));
 }
@@ -181,19 +174,11 @@ struct HalfMD5Impl
         MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         MD5_Final(buf.char_data, &ctx);
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        return buf.uint64_data;        /// No need to flip bytes on big endian machines
-#else
-        return std::byteswap(buf.uint64_data);    /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
-#endif
+        return Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(buf.uint64_data));        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        h1 = std::byteswap(h1);
-        h2 = std::byteswap(h2);
-#endif
         UInt64 hashes[] = {h1, h2};
         return apply(reinterpret_cast<const char *>(hashes), 16);
     }
@@ -333,10 +318,6 @@ struct SipHash64KeyedImpl
 
     static UInt64 combineHashesKeyed(const Key & key, UInt64 h1, UInt64 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        h1 = std::byteswap(h1);
-        h2 = std::byteswap(h2);
-#endif
         UInt64 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt64));
     }
@@ -375,13 +356,6 @@ struct SipHash128KeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        UInt128 tmp;
-        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-        h1 = tmp;
-        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-        h2 = tmp;
-#endif
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }
@@ -417,13 +391,6 @@ struct SipHash128ReferenceKeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        UInt128 tmp;
-        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-        h1 = tmp;
-        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-        h2 = tmp;
-#endif
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }
@@ -1059,9 +1026,21 @@ private:
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                    {
+                        UInt64 v = bit_cast<UInt64>(vec_from[i]);
+
+                        /// Consider using std::byteswap() once ClickHouse builds with C++23
+                        if constexpr (std::endian::native == std::endian::big)
+                            v = __builtin_bswap64(v);
+                        h = IntHash64Impl::apply(v);
+                    }
                     else
-                        h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                    {
+                        UInt32 v = bit_cast<UInt32>(vec_from[i]);
+                        if constexpr (std::endian::native == std::endian::big)
+                            v = __builtin_bswap32(v);
+                        h = IntHash32Impl::apply(v);
+                    }
                 }
                 else
                 {
@@ -1091,9 +1070,20 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+            {
+                UInt64 v = bit_cast<UInt64>(value);
+                /// Consider using std::byteswap() once ClickHouse builds with C++23
+                if constexpr (std::endian::native == std::endian::big)
+                    v = __builtin_bswap64(v);
+                hash = IntHash64Impl::apply(v);
+            }
             else
-                hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+            {
+                UInt32 v = bit_cast<UInt32>(value);
+                if constexpr (std::endian::native == std::endian::big)
+                    v = __builtin_bswap32(v);
+                hash = IntHash32Impl::apply(v);
+            }
 
             size_t size = vec_to.size();
             if constexpr (first)
@@ -1245,7 +1235,7 @@ private:
     template <bool first>
     void executeArray(const KeyType & key, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        const IDataType * nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType().get();
+        const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
         if (const ColumnArray * col_from = checkAndGetColumn<ColumnArray>(column))
         {

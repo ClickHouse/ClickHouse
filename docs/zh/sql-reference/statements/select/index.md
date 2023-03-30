@@ -41,7 +41,7 @@ SELECT [DISTINCT] expr_list
 -   [WHERE 子句](../../../sql-reference/statements/select/where.md)
 -   [GROUP BY 子句](../../../sql-reference/statements/select/group-by.md)
 -   [LIMIT BY 子句](../../../sql-reference/statements/select/limit-by.md)
--   [HAVING 子句](../../../sql-reference/statements/select/having.md)
+-   [HAVING 子句](../../../sql-reference/statements/select/having)
 -   [SELECT 子句](#select-clause)
 -   [DISTINCT 子句](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT 子句](../../../sql-reference/statements/select/limit.md)

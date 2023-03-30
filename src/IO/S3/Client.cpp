@@ -123,8 +123,9 @@ Client::Client(
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
-    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
-    detect_region = explicit_region == Aws::Region::AWS_GLOBAL && initial_endpoint.find(".amazonaws.com") != std::string::npos;
+    std::string endpoint;
+    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
+    detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
@@ -132,7 +133,6 @@ Client::Client(
 
 Client::Client(const Client & other)
     : Aws::S3::S3Client(other)
-    , initial_endpoint(other.initial_endpoint)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , max_redirects(other.max_redirects)
@@ -564,8 +564,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & server_side_encryption_customer_key_base64,
     HTTPHeaderEntries headers,
     bool use_environment_credentials,
-    bool use_insecure_imds_request,
-    uint64_t expiration_window_seconds)
+    bool use_insecure_imds_request)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -593,8 +592,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             client_configuration,
             std::move(credentials),
             use_environment_credentials,
-            use_insecure_imds_request,
-            expiration_window_seconds);
+            use_insecure_imds_request);
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(

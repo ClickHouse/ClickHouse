@@ -417,15 +417,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 {
     assertInitialized();
 
-    bool schedule_now = true;
-    try
-    {
-        schedule_now = getConsumer()->consume();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    bool schedule_now = getConsumer()->consume();
 
     if (stop_synchronization)
     {

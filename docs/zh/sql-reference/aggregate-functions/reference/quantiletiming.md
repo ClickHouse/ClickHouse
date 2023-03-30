@@ -37,9 +37,8 @@ quantileTiming(level)(expr)
 
 否则，计算结果将四舍五入到16毫秒的最接近倍数。
 
-:::note
-对于计算页面加载时间分位数， 此函数比[quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile)更有效和准确。
-:::
+!!! note "注"
+    对于计算页面加载时间分位数， 此函数比[quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile)更有效和准确。
 
 **返回值**
 
@@ -47,9 +46,8 @@ quantileTiming(level)(expr)
 
 类型: `Float32`。
 
-:::note
-如果没有值传递给函数（当使用 `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf)被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 参见 [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) 对于 `NaN` 值排序注意事项。
-:::
+!!! note "注"
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf)被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 参见 [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) 对于 `NaN` 值排序注意事项。
 
 **示例**
 

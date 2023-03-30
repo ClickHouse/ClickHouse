@@ -26,8 +26,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric RemoteRead;
-    extern const Metric ThreadPoolRemoteFSReaderThreads;
-    extern const Metric ThreadPoolRemoteFSReaderThreadsActive;
 }
 
 namespace DB
@@ -62,7 +60,7 @@ IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t
 
 
 ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
-    : pool(CurrentMetrics::ThreadPoolRemoteFSReaderThreads, CurrentMetrics::ThreadPoolRemoteFSReaderThreadsActive, pool_size, pool_size, queue_size_)
+    : pool(pool_size, pool_size, queue_size_)
 {
 }
 

@@ -34,7 +34,9 @@
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
 #endif
 
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
 
 namespace DB
 {
@@ -107,8 +109,6 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(migrate_probability, "THREAD_FUZZER_MIGRATE_PROBABILITY");
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
     initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
-    initFromEnv(explicit_sleep_probability, "THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY");
-    initFromEnv(explicit_memory_exception_probability, "THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY");
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define INIT_WRAPPER_PARAMS(RET, NAME, ...) \
@@ -225,28 +225,14 @@ static void injection(
 void ThreadFuzzer::maybeInjectSleep()
 {
     auto & fuzzer = ThreadFuzzer::instance();
-    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.explicit_sleep_probability, fuzzer.sleep_time_us);
-}
-
-/// Sometimes maybeInjectSleep() is not enough and we need to inject an exception.
-/// The most suitable exception for this purpose is MEMORY_LIMIT_EXCEEDED: it can be thrown almost from everywhere.
-/// NOTE We also have a query setting fault_probability, but it does not work for background operations (maybe we should fix it).
-void ThreadFuzzer::maybeInjectMemoryLimitException()
-{
-    auto & fuzzer = ThreadFuzzer::instance();
-    if (fuzzer.explicit_memory_exception_probability <= 0.0)
-        return;
-    std::bernoulli_distribution fault(fuzzer.explicit_memory_exception_probability);
-    if (fault(thread_local_rng))
-        CurrentMemoryTracker::injectFault();
+    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us);
 }
 
 void ThreadFuzzer::signalHandler(int)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;
-    auto & fuzzer = ThreadFuzzer::instance();
-    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us);
+    maybeInjectSleep();
     errno = saved_errno;
 }
 

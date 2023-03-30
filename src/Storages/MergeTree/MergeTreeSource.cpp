@@ -7,6 +7,28 @@
 namespace DB
 {
 
+MergeTreeSource::MergeTreeSource(MergeTreeSelectAlgorithmPtr algorithm_)
+    : ISource(algorithm_->getHeader())
+    , algorithm(std::move(algorithm_))
+{
+#if defined(OS_LINUX)
+    if (algorithm->getSettings().use_asynchronous_read_from_pool)
+        async_reading_state = std::make_unique<AsyncReadingState>();
+#endif
+}
+
+MergeTreeSource::~MergeTreeSource() = default;
+
+std::string MergeTreeSource::getName() const
+{
+    return algorithm->getName();
+}
+
+void MergeTreeSource::onCancel()
+{
+    algorithm->cancel();
+}
+
 #if defined(OS_LINUX)
 struct MergeTreeSource::AsyncReadingState
 {
@@ -132,28 +154,6 @@ private:
     std::shared_ptr<Control> control;
 };
 #endif
-
-MergeTreeSource::MergeTreeSource(MergeTreeSelectAlgorithmPtr algorithm_)
-    : ISource(algorithm_->getHeader())
-    , algorithm(std::move(algorithm_))
-{
-#if defined(OS_LINUX)
-    if (algorithm->getSettings().use_asynchronous_read_from_pool)
-        async_reading_state = std::make_unique<AsyncReadingState>();
-#endif
-}
-
-MergeTreeSource::~MergeTreeSource() = default;
-
-std::string MergeTreeSource::getName() const
-{
-    return algorithm->getName();
-}
-
-void MergeTreeSource::onCancel()
-{
-    algorithm->cancel();
-}
 
 ISource::Status MergeTreeSource::prepare()
 {

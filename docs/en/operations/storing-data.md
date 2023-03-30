@@ -80,7 +80,7 @@ Required parameters:
 
 -   `type` — `encrypted`. Otherwise the encrypted disk is not created.
 -   `disk` — Type of disk for data storage.
--   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form.
+-   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
     You can specify multiple keys using the `id` attribute (see example above).
 
 Optional parameters:
@@ -135,13 +135,11 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <s3-cache>
-                <volumes>
-                    <main>
-                        <disk>cache</disk>
-                    </main>
-                </volumes>
-            </s3-cache>
+            <volumes>
+                <main>
+                    <disk>cache</disk>
+                </main>
+            </volumes>
         <policies>
     </storage_configuration>
 ```
@@ -161,13 +159,11 @@ Example of configuration for versions earlier than 22.8:
             </s3>
         </disks>
         <policies>
-            <s3-cache>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3-cache>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
         <policies>
     </storage_configuration>
 ```
@@ -471,6 +467,6 @@ Use [http_max_single_read_retries](/docs/en/operations/settings/settings.md/#htt
 
 Zero-copy replication is possible, but not recommended, with  `S3` and `HDFS` disks. Zero-copy replication means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
 
-:::note Zero-copy replication is not ready for production
+:::warning Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 :::

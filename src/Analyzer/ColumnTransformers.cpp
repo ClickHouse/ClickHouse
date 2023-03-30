@@ -91,7 +91,7 @@ QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
     return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode());
 }
 
-ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr ApplyColumnTransformerNode::toASTImpl() const
 {
     auto ast_apply_transformer = std::make_shared<ASTColumnsApplyTransformer>();
     const auto & expression_node = getExpressionNode();
@@ -100,14 +100,14 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
     {
         auto & function_expression = expression_node->as<FunctionNode &>();
         ast_apply_transformer->func_name = function_expression.getFunctionName();
-        ast_apply_transformer->parameters = function_expression.getParametersNode()->toAST(options);
+        ast_apply_transformer->parameters = function_expression.getParametersNode()->toAST();
     }
     else
     {
         auto & lambda_expression = expression_node->as<LambdaNode &>();
         if (!lambda_expression.getArgumentNames().empty())
             ast_apply_transformer->lambda_arg = lambda_expression.getArgumentNames()[0];
-        ast_apply_transformer->lambda = lambda_expression.toAST(options);
+        ast_apply_transformer->lambda = lambda_expression.toAST();
     }
 
     return ast_apply_transformer;
@@ -227,7 +227,7 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
     return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict);
 }
 
-ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* options */) const
+ASTPtr ExceptColumnTransformerNode::toASTImpl() const
 {
     auto ast_except_transformer = std::make_shared<ASTColumnsExceptTransformer>();
 
@@ -334,7 +334,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
     return result_replace_transformer;
 }
 
-ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr ReplaceColumnTransformerNode::toASTImpl() const
 {
     auto ast_replace_transformer = std::make_shared<ASTColumnsReplaceTransformer>();
 
@@ -347,8 +347,8 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
     {
         auto replacement_ast = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
         replacement_ast->name = replacements_names[i];
-        replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST(options));
-        ast_replace_transformer->children.push_back(std::move(replacement_ast));
+        replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST());
+        ast_replace_transformer->children.push_back(replacement_ast);
     }
 
     return ast_replace_transformer;

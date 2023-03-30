@@ -183,7 +183,7 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 
     auto rows = data.current_chunk.getNumRows();
 
-    if (rows_before_limit_at_least && !data.input_port_has_counter)
+    if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(rows);
 
     /// Skip block (for 'always_read_till_end' case).

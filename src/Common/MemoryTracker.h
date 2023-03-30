@@ -141,8 +141,6 @@ public:
         fault_probability = value;
     }
 
-    void injectFault() const;
-
     void setSampleProbability(double value)
     {
         sample_probability = value;

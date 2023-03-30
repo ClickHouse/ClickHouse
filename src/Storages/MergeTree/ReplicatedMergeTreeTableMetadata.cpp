@@ -456,14 +456,6 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key);
 
-    if (!projections_changed)
-    {
-        ProjectionsDescription recalculated_projections;
-        for (const auto & projection : new_metadata.projections)
-            recalculated_projections.add(ProjectionDescription::getProjectionFromAST(projection.definition_ast, new_metadata.columns, context));
-        new_metadata.projections = std::move(recalculated_projections);
-    }
-
     return new_metadata;
 }
 

@@ -9,16 +9,8 @@ cluster = ClickHouseCluster(__file__)
 node_insert = cluster.add_instance(
     "node_insert", main_configs=["configs/concurrent_insert_restriction.xml"]
 )
-node_select1 = cluster.add_instance(
-    "node_select1", main_configs=["configs/concurrent_select_restriction.xml"]
-)
-
-node_select2 = cluster.add_instance(
-    "node_select2", main_configs=["configs/concurrent_select_restriction.xml"]
-)
-
-node_select3 = cluster.add_instance(
-    "node_select3", main_configs=["configs/concurrent_select_restriction.xml"]
+node_select = cluster.add_instance(
+    "node_select", main_configs=["configs/concurrent_select_restriction.xml"]
 )
 
 
@@ -26,13 +18,7 @@ node_select3 = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
-        node_select1.query(
-            "create table test_concurrent_insert (x UInt64) ENGINE = MergeTree() order by tuple()"
-        )
-        node_select2.query(
-            "create table test_concurrent_insert (x UInt64) ENGINE = MergeTree() order by tuple()"
-        )
-        node_select3.query(
+        node_select.query(
             "create table test_concurrent_insert (x UInt64) ENGINE = MergeTree() order by tuple()"
         )
         node_insert.query(
@@ -93,7 +79,7 @@ def common_pattern(node, query_kind, restricted_sql, normal_sql, limit, wait_tim
 
 def test_select(started_cluster):
     common_pattern(
-        node_select1,
+        node_select,
         "select",
         "select sleep(3)",
         "insert into test_concurrent_insert values (0)",
@@ -103,7 +89,7 @@ def test_select(started_cluster):
 
     # subquery is not counted
     execute_with_background(
-        node_select2,
+        node_select,
         "select sleep(3)",
         "insert into test_concurrent_insert select sleep(3)",
         2,
@@ -112,7 +98,7 @@ def test_select(started_cluster):
 
     # intersect and except are counted
     common_pattern(
-        node_select3,
+        node_select,
         "select",
         "select sleep(1) INTERSECT select sleep(1) EXCEPT select sleep(1)",
         "insert into test_concurrent_insert values (0)",

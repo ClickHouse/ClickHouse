@@ -971,11 +971,11 @@ private:
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachQueryIfNotDetached();
         );
 
         if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+            CurrentThread::attachTo(thread_group);
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try

@@ -118,19 +118,14 @@ public:
         size_t size = value.size();
         writeVarUInt(size, buf);
 
-        /// In this version, pairs were serialized with padding.
-        /// We must ensure that padding bytes are zero-filled.
-
-        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, first) == 0);
-        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, second) > 0);
-
-        char zero_padding[offsetof(typename MaxIntersectionsData<PointType>::Value, second) - sizeof(value[0].first)]{};
-
         for (size_t i = 0; i < size; ++i)
         {
-            writePODBinary(value[i].first, buf);
-            writePODBinary(zero_padding, buf);
-            writePODBinary(value[i].second, buf);
+            /// In this version, pairs were serialized with padding.
+            /// We must ensure that padding bytes are zero-filled.
+            char bytes[sizeof(value[0])]{};
+            unalignedStore<PointType>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, first)], value[i].first);
+            unalignedStore<Int64>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, second)], value[i].second);
+            buf.write(bytes, sizeof(value[0]));
         }
     }
 

@@ -70,12 +70,6 @@ void TabSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
     buf->setSubBuffer(in_);
 }
 
-void TabSeparatedRowInputFormat::resetParser()
-{
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
-}
-
 TabSeparatedFormatReader::TabSeparatedFormatReader(PeekableReadBuffer & in_, const FormatSettings & format_settings_, bool is_raw_)
     : FormatWithNamesAndTypesReader(in_, format_settings_), buf(&in_), is_raw(is_raw_)
 {

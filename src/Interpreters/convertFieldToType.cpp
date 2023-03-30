@@ -149,8 +149,6 @@ Field convertDecimalType(const Field & from, const To & type)
         return convertDecimalToDecimalType<Decimal64>(from, type);
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
-    if (from.getType() == Field::Types::Decimal256)
-        return convertDecimalToDecimalType<Decimal256>(from, type);
 
     if (from.getType() == Field::Types::Float64)
         return convertFloatToDecimalType<Float64>(from, type);

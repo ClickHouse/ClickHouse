@@ -17,6 +17,7 @@
 namespace DB
 {
 
+
 namespace
 {
 
@@ -89,14 +90,9 @@ private:
     static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types)
     {
         auto result_type = function_node.getResultType();
-
-        std::string suffix = "If";
-        if (result_type->isNullable())
-            suffix = "OrNullIf";
-
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node.getFunctionName() + suffix,
+            function_node.getFunctionName() + (result_type->isNullable() ? "IfOrNull" : "If"),
             argument_types,
             function_node.getAggregateFunction()->getParameters(),
             properties);

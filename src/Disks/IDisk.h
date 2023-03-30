@@ -209,15 +209,6 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
 
-    /// Write a file using a custom function to write an object to the disk's object storage.
-    /// This method is alternative to writeFile(), the difference is that writeFile() calls IObjectStorage::writeObject()
-    /// to write an object to the object storage while this method allows to specify a callback for that.
-    virtual void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function);
-
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;
@@ -422,8 +413,6 @@ public:
     bool isCustomDisk() const { return is_custom_disk; }
 
     void markDiskAsCustom() { is_custom_disk = true; }
-
-    virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
 protected:
     friend class DiskDecorator;

@@ -64,6 +64,6 @@ struct fmt::formatter<wide::integer<Bits, Signed>>
     template <typename FormatContext>
     auto format(const wide::integer<Bits, Signed> & value, FormatContext & ctx)
     {
-        return fmt::format_to(ctx.out(), "{}", to_string(value));
+        return format_to(ctx.out(), "{}", to_string(value));
     }
 };
