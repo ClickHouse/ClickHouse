@@ -1,5 +1,6 @@
 #include <Functions/keyvaluepair/impl/InlineEscapingStateHandler.h>
-#include <gtest/gtest.h>
+#include <Columns/ColumnString.h>
+
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 #include <gtest/gtest.h>
@@ -25,8 +26,9 @@ template <bool quoted>
 void test_read(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
+    auto str = ColumnString::create();
     NextState next_state;
-    std::string element;
+    StringWriter element(*str);
 
     if constexpr (quoted)
     {
@@ -39,7 +41,7 @@ void test_read(const InlineEscapingStateHandler & handler, std::string_view inpu
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
-    ASSERT_EQ(element, expected_element);
+    ASSERT_EQ(element.uncommittedChunk(), expected_element);
 }
 
 void test_read(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,

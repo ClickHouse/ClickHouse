@@ -7,12 +7,15 @@
 
 namespace
 {
-size_t consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, std::string & output)
+size_t consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, DB::extractKV::StringWriter & output)
 {
-    output.insert(output.end(), file.begin() + start_pos, file.begin() + character_pos);
+    output.append(file.begin() + start_pos, file.begin() + character_pos);
 
+    std::string tmp_out;
     DB::ReadBufferFromMemory buf(file.begin() + character_pos, file.size() - character_pos);
-    DB::parseComplexEscapeSequence(output, buf);
+
+    DB::parseComplexEscapeSequence(tmp_out, buf);
+    output.append(tmp_out);
 
     return buf.getPosition();
 }
@@ -62,11 +65,11 @@ NextState InlineEscapingStateHandler::waitKey(std::string_view file) const
  * If I find a key value delimiter and that is empty, I do not need to copy? hm,m hm hm
  * */
 
-NextState InlineEscapingStateHandler::readKey(std::string_view file, KeyType & key) const
+NextState InlineEscapingStateHandler::readKey(std::string_view file, StringWriter & key) const
 {
     const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
-    key.clear();
+    key.reset();
 
     size_t pos = 0;
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
@@ -83,9 +86,10 @@ NextState InlineEscapingStateHandler::readKey(std::string_view file, KeyType & k
                 return {next_pos, State::WAITING_KEY};
             }
         }
-        else if (*p == key_value_delimiter)
+        else
+        if (*p == key_value_delimiter)
         {
-            key.insert(key.end(), file.begin() + pos, file.begin() + character_position);
+            key.append(file.begin() + pos, file.begin() + character_position);
 
             return {next_pos, State::WAITING_VALUE};
         }
@@ -102,11 +106,11 @@ NextState InlineEscapingStateHandler::readKey(std::string_view file, KeyType & k
     return {file.size(), State::END};
 }
 
-NextState InlineEscapingStateHandler::readQuotedKey(std::string_view file, KeyType & key) const
+NextState InlineEscapingStateHandler::readQuotedKey(std::string_view file, StringWriter & key) const
 {
     const auto quoting_character = extractor_configuration.quoting_character;
 
-    key.clear();
+    key.reset();
 
     size_t pos = 0;
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
@@ -126,9 +130,9 @@ NextState InlineEscapingStateHandler::readQuotedKey(std::string_view file, KeyTy
         }
         else if (*p == quoting_character)
         {
-            key.insert(key.end(), file.begin() + pos, file.begin() + character_position);
+            key.append(file.begin() + pos, file.begin() + character_position);
 
-            if (key.empty())
+            if (key.isEmpty())
             {
                 return {next_pos, State::WAITING_KEY};
             }
@@ -172,11 +176,11 @@ NextState InlineEscapingStateHandler::waitValue(std::string_view file) const
     return {pos, State::READING_VALUE};
 }
 
-NextState InlineEscapingStateHandler::readValue(std::string_view file, ValueType & value) const
+NextState InlineEscapingStateHandler::readValue(std::string_view file, StringWriter & value) const
 {
     const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
-    value.clear();
+    value.reset();
 
     size_t pos = 0;
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
@@ -192,11 +196,12 @@ NextState InlineEscapingStateHandler::readValue(std::string_view file, ValueType
             {
                 // It is agreed that value with an invalid escape seqence in it
                 // is considered malformed and shoudn't be included in result.
-                value.clear();
+                value.reset();
                 return {next_pos, State::WAITING_KEY};
             }
         }
-        else if (*p == key_value_delimiter)
+        else
+        if (*p == key_value_delimiter)
         {
             // reached new key
             return {next_pos, State::WAITING_KEY};
@@ -204,7 +209,7 @@ NextState InlineEscapingStateHandler::readValue(std::string_view file, ValueType
         else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), *p) != pair_delimiters.end())
         {
             // reached next pair
-            value.insert(value.end(), file.begin() + pos, file.begin() + character_position);
+            value.append(file.begin() + pos, file.begin() + character_position);
 
             return {next_pos, State::FLUSH_PAIR};
         }
@@ -213,17 +218,17 @@ NextState InlineEscapingStateHandler::readValue(std::string_view file, ValueType
     }
 
     // Reached end of input, consume rest of the file as value and make sure KV pair is produced.
-    value.insert(value.end(), file.begin() + pos, file.end());
+    value.append(file.begin() + pos, file.end());
     return {file.size(), State::FLUSH_PAIR};
 }
 
-NextState InlineEscapingStateHandler::readQuotedValue(std::string_view file, ValueType & value) const
+NextState InlineEscapingStateHandler::readQuotedValue(std::string_view file, StringWriter & value) const
 {
     const auto quoting_character = extractor_configuration.quoting_character;
 
     size_t pos = 0;
 
-    value.clear();
+    value.reset();
 
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
     {
@@ -239,9 +244,10 @@ NextState InlineEscapingStateHandler::readQuotedValue(std::string_view file, Val
                 return {next_pos, State::WAITING_KEY};
             }
         }
-        else if (*p == quoting_character)
+        else
+        if (*p == quoting_character)
         {
-            value.insert(value.end(), file.begin() + pos, file.begin() + character_position);
+            value.append(file.begin() + pos, file.begin() + character_position);
 
             return {next_pos, State::FLUSH_PAIR};
         }

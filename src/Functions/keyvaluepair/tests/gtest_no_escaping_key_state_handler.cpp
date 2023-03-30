@@ -1,6 +1,8 @@
 #include <Functions/keyvaluepair/impl/NoEscapingStateHandler.h>
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 
+#include <Columns/ColumnString.h>
+
 #include <gtest/gtest.h>
 
 namespace
@@ -24,7 +26,9 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
                std::size_t expected_pos, State expected_state)
 {
     NextState next_state;
-    std::string_view element;
+
+    auto col = ColumnString::create();
+    StringWriter element(*col);
 
     if constexpr (quoted)
     {
@@ -37,7 +41,7 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
-    ASSERT_EQ(element, expected_element);
+    ASSERT_EQ(element.uncommittedChunk(), expected_element);
 }
 
 void test_read(const auto & handler, std::string_view input, std::string_view expected_element,

@@ -16,18 +16,15 @@ namespace extractKV
 class NoEscapingStateHandler : public StateHandler
 {
 public:
-    using KeyType = std::string_view;
-    using ValueType = std::string_view;
-
     explicit NoEscapingStateHandler(Configuration extractor_configuration_);
 
     [[nodiscard]] NextState waitKey(std::string_view file) const;
-    [[nodiscard]] NextState readKey(std::string_view file, KeyType & key) const;
-    [[nodiscard]] NextState readQuotedKey(std::string_view file, KeyType & key) const;
+    [[nodiscard]] NextState readKey(std::string_view file, StringWriter & key) const;
+    [[nodiscard]] NextState readQuotedKey(std::string_view file, StringWriter & key) const;
     [[nodiscard]] NextState readKeyValueDelimiter(std::string_view file) const;
     [[nodiscard]] NextState waitValue(std::string_view file) const;
-    [[nodiscard]] NextState readValue(std::string_view file, ValueType & value) const;
-    [[nodiscard]] NextState readQuotedValue(std::string_view file, ValueType & value) const;
+    [[nodiscard]] NextState readValue(std::string_view file, StringWriter & value) const;
+    [[nodiscard]] NextState readQuotedValue(std::string_view file, StringWriter & value) const;
 
     const Configuration extractor_configuration;
 

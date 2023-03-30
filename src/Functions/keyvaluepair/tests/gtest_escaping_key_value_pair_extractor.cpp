@@ -30,8 +30,8 @@ TEST(extractKVPair_EscapingKeyValuePairExtractor, EscapeSequences)
     ASSERT_EQ(keys->size(), pairs_count);
     ASSERT_EQ(keys->size(), values->size());
 
-    ASSERT_EQ(keys->getDataAt(0), "key1");
-    ASSERT_EQ(keys->getDataAt(1), "key2");
+    ASSERT_EQ(keys->getDataAt(0).toView(), "key1");
+    ASSERT_EQ(keys->getDataAt(1).toView(), "key2");
 
     assert_byte_equality(values->getDataAt(0), {0xFF});
     assert_byte_equality(values->getDataAt(1), {0xA, 0x9, 0xD});
