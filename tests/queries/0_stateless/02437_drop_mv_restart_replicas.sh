@@ -20,8 +20,10 @@ function thread_ddl()
         $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW if not exists db_$CLICKHOUSE_DATABASE.test_mv_a Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1') order by tuple() AS SELECT test, A, count() c FROM db_$CLICKHOUSE_DATABASE.test group by test, A;"
         $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW if not exists db_$CLICKHOUSE_DATABASE.test_mv_b Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1') partition by A order by tuple() AS SELECT test, A, count() c FROM db_$CLICKHOUSE_DATABASE.test group by test, A;"
         $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW if not exists db_$CLICKHOUSE_DATABASE.test_mv_c Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1') order by tuple() AS SELECT test, A, count() c FROM db_$CLICKHOUSE_DATABASE.test group by test, A;"
-        sleep 0.$RANDOM;
-        sleep 0.$RANDOM;
+
+        # A kind of backoff
+        timeout 5s $CLICKHOUSE_CLIENT -q "select sleepEachRow(0.05) from system.dropped_tables" 2>/dev/null ||:
+
         $CLICKHOUSE_CLIENT -q "drop database if exists db_$CLICKHOUSE_DATABASE"
     done
 }
@@ -47,11 +49,11 @@ export -f thread_ddl;
 export -f thread_insert;
 export -f thread_restart;
 
-TIMEOUT=15
+TIMEOUT=20
 
 timeout $TIMEOUT bash -c thread_ddl 2>&1| grep -Fa "Exception: " | grep -Fv -e "TABLE_IS_DROPPED" -e "UNKNOWN_TABLE" -e "DATABASE_NOT_EMPTY" &
 timeout $TIMEOUT bash -c thread_insert 2> /dev/null &
-timeout $TIMEOUT bash -c thread_restart &
+timeout $TIMEOUT bash -c thread_restart 2>&1| grep -Fa "Exception: " | grep -Fv -e "is currently dropped or renamed" &
 
 wait
 
