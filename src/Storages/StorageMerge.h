@@ -3,7 +3,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
-#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
 namespace DB
@@ -115,7 +115,7 @@ private:
     friend class ReadFromMerge;
 };
 
-class ReadFromMerge final : public ISourceStep
+class ReadFromMerge final : public SourceStepWithFilter
 {
 public:
     static constexpr auto name = "ReadFromMerge";
@@ -141,12 +141,6 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void addFilter(ActionsDAGPtr expression, std::string column_name)
-    {
-        added_filter_dags.push_back(expression);
-        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
-    }
-
     const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
 
     /// Returns `false` if requested reading cannot be performed.
@@ -168,11 +162,6 @@ private:
     SelectQueryInfo query_info;
     ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;
-
-    std::vector<ActionsDAGPtr> added_filter_dags;
-    ActionDAGNodes added_filter_nodes;
-
-    std::string added_filter_column_name;
 
     InputOrderInfoPtr order_info;
 

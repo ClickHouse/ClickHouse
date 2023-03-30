@@ -197,13 +197,24 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
+    void setServerCompletelyStarted();
+
 private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
 
+    /// Fault injection
+    void maybeInjectSendFault();
+    void maybeInjectRecvFault();
+    void maybeInjectSendSleep();
+    void maybeInjectRecvSleep();
+    void setupFaultDistributions();
+    std::atomic_flag inject_setup = ATOMIC_FLAG_INIT;
     std::optional<std::bernoulli_distribution> send_inject_fault;
     std::optional<std::bernoulli_distribution> recv_inject_fault;
+    std::optional<std::bernoulli_distribution> send_inject_sleep;
+    std::optional<std::bernoulli_distribution> recv_inject_sleep;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.

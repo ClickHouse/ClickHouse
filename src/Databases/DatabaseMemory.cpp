@@ -41,6 +41,11 @@ DatabaseMemory::DatabaseMemory(const String & name_, UUID uuid, ContextPtr conte
 {
     assert(db_uuid != UUIDHelpers::Nil);
     fs::create_directories(path_to_table_symlinks);
+
+    /// Temporary database should not have any data on the moment of its creation
+    /// In case of sudden server shutdown remove database folder of temporary database
+    if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
+        removeDataPath(context_);
 }
 
 String DatabaseMemory::getTableDataPath(const String & table_name) const
@@ -147,8 +152,7 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            assert(getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE);
-            fs::path table_data_dir{getTableDataPath(table_name)};
+            fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
             if (fs::exists(table_data_dir))
                 fs::remove_all(table_data_dir);
         }
@@ -156,7 +160,6 @@ void DatabaseMemory::dropTable(
     catch (...)
     {
         std::lock_guard lock{mutex};
-        assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
         attachTableUnlocked(table_name, table);
         throw;
     }
@@ -313,18 +316,26 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::drop(ContextPtr)
+void DatabaseMemory::removeDataPath(ContextPtr local_context)
 {
-    /// Remove database directory and symlinks to the tables data
-    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
-    try
-    {
-        fs::remove_all(path_to_table_symlinks);
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
-    }
+    // /// Remove database directory and symlinks to the tables data
+    // assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    // try
+    // {
+    //     fs::remove_all(path_to_table_symlinks);
+    // }
+    // catch (...)
+    // {
+    //     LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+    // }
+
+    std::filesystem::remove_all(path_to_table_symlinks);
+}
+
+void DatabaseMemory::drop(ContextPtr local_context)
+{
+    /// Remove data on explicit DROP DATABASE
+    removeDataPath(local_context);
 }
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)

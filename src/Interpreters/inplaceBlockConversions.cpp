@@ -61,11 +61,17 @@ void addDefaultRequiredExpressionsRecursively(
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
+        auto required_type = std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName());
 
-        auto expr = makeASTFunction("_CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+        auto expr = makeASTFunction("_CAST", column_default_expr, required_type);
 
         if (is_column_in_query && convert_null_to_default)
+        {
             expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
+            /// ifNull does not respect LowCardinality.
+            /// It may be fixed later or re-implemented properly for identical types.
+            expr = makeASTFunction("_CAST", std::move(expr), required_type);
+        }
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
 
         added_columns.emplace(required_column_name);

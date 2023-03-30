@@ -5,61 +5,70 @@ description: Install ClickHouse
 slug: /en/install
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+
 # Install ClickHouse
 
 You have three options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
-- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture
-- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** Read the guide with the official image in Docker Hub
+- **[Quick Install](#quick-install):** an easy-to-download binary for testing and developing with ClickHouse
+- **[Production Deployments](#available-installation-options):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture
+- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** use the official Docker image in Docker Hub
 
 ## ClickHouse Cloud
 
 The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/).
 
-## Self-Managed Install
+## Quick Install
 
-1. The simplest way to download ClickHouse locally is to run the following command. If your operating system is supported, an appropriate ClickHouse binary will be downloaded and made runnable:
+:::tip
+For production installs of a specific release version see the [installation options](#available-installation-options) down below.
+:::
+
+On Linux and macOS:
+
+1. If you are just getting started and want to see what ClickHouse can do, the simplest way to download ClickHouse locally is to run the following command. It downloads a single binary for your operating system that can be used to run the ClickHouse server, clickhouse-client, clickhouse-local,
+ClickHouse Keeper, and other tools:
+
   ```bash
   curl https://clickhouse.com/ | sh
   ```
 
-1. Run the `install` command, which defines a collection of useful symlinks along with the files and folders used by ClickHouse - all of which you can see in the output of the install script:
-  ```bash
-  sudo ./clickhouse install
-  ```
-
-1. At the end of the install script, you are prompted for a password for the `default` user. Feel free to enter a password, or you can optionally leave it blank:
-  ```response
-  Creating log directory /var/log/clickhouse-server.
-  Creating data directory /var/lib/clickhouse.
-  Creating pid directory /var/run/clickhouse-server.
-   chown -R clickhouse:clickhouse '/var/log/clickhouse-server'
-   chown -R clickhouse:clickhouse '/var/run/clickhouse-server'
-   chown  clickhouse:clickhouse '/var/lib/clickhouse'
-  Enter password for default user:
-  ```
-  You should see the following output:
-  ```response
-   ClickHouse has been successfully installed.
-
-   Start clickhouse-server with:
-    sudo clickhouse start
-
-   Start clickhouse-client with:
-    clickhouse-client
-  ```
-
 1. Run the following command to start the ClickHouse server:
+    ```bash
+    ./clickhouse server
+    ```
+
+    The first time you run this script, the necessary files and folders are created in the current directory, then the server starts.
+
+1. Open a new terminal and use the **clickhouse-client** to connect to your service:
+
   ```bash
-  sudo clickhouse start
+  ./clickhouse client
   ```
+
+  ```response
+  ./clickhouse client
+  ClickHouse client version 23.2.1.1501 (official build).
+  Connecting to localhost:9000 as user default.
+  Connected to ClickHouse server version 23.2.1 revision 54461.
+
+  local-host :)
+  ```
+
+  You are ready to start sending DDL and SQL commands to ClickHouse!
+
 
 :::tip
-The [Quick Start](/docs/en/quick-start.mdx/#step-1-get-clickhouse) walks through the steps to download and run ClickHouse, connect to it, and insert data.
+The [Quick Start](/docs/en/quick-start.mdx) walks through the steps for creating tables and inserting data.
 :::
 
-## Available Installation Options {#available-installation-options}
+## Production Deployments {#available-installation-options}
+
+For production deployments of ClickHouse, choose from one of the following install options.
 
 ### From DEB Packages {#install-from-deb-packages}
 
@@ -68,9 +77,12 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 #### Setup the Debian repository
 ``` bash
 sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+GNUPGHOME=$(mktemp -d)
+sudo GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring --keyring /usr/share/keyrings/clickhouse-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754
+sudo rm -r "$GNUPGHOME"
+sudo chmod +r /usr/share/keyrings/clickhouse-keyring.gpg
 
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
 ```
@@ -124,7 +136,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](/knowledgebase/production) based on your needs.
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
@@ -222,7 +234,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](/knowledgebase/production) based on your needs.
 
 Then run these commands to install packages:
 

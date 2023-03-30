@@ -162,6 +162,11 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::IPv4:
+        {
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
+            break;
+        }
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack integer into column with type {}.", type->getName());
     }
@@ -187,6 +192,12 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
             readUUIDText(uuid, buf);
 
         assert_cast<ColumnUUID &>(column).insertValue(uuid);
+        return;
+    }
+
+    if (isIPv6(type) && bin)
+    {
+        assert_cast<ColumnIPv6 &>(column).insertData(value, size);
         return;
     }
 

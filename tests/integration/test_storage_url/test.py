@@ -75,3 +75,30 @@ def test_table_function_url_access_rights():
             ["c3", "Nullable(Int64)"],
         ]
     )
+
+
+@pytest.mark.parametrize("file_format", ["Parquet", "CSV", "TSV", "JSONEachRow"])
+def test_file_formats(file_format):
+    url = f"http://nginx:80/{file_format}_file"
+
+    values = ", ".join([f"({i}, {i + 1}, {i + 2})" for i in range(100)])
+    node1.query(
+        f"insert into table function url(url_file, url = '{url}', format = '{file_format}') values",
+        stdin=values,
+    )
+
+    for download_threads in [1, 4, 16]:
+        result = node1.query(
+            f"""
+SELECT *
+FROM url('{url}', '{file_format}')
+LIMIT 10
+SETTINGS remote_read_min_bytes_for_seek = 1, max_read_buffer_size = 1, max_download_buffer_size = 1, max_download_threads = {download_threads}
+"""
+        )
+
+        expected_result = ""
+        for i in range(10):
+            expected_result += f"{i}\t{i + 1}\t{i + 2}\n"
+
+        assert result == expected_result
