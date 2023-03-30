@@ -148,9 +148,6 @@ NextState NoEscapingStateHandler::waitValue(std::string_view file) const
     }
 
     return {pos, State::READING_VALUE};
-
-//    // TODO: can't bre reached, remove it?
-//    return {file.size(), State::READING_VALUE};
 }
 
 NextState NoEscapingStateHandler::readValue(std::string_view file, ValueType & value) const

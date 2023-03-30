@@ -76,7 +76,7 @@ public:
             }
 
             data.remove_prefix(next_state.position_in_string);
-            state =  next_state.state;
+            state = next_state.state;
 
             // No state expects empty input
             if (data.size() == 0)

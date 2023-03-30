@@ -190,6 +190,9 @@ NextState InlineEscapingStateHandler::readValue(std::string_view file, ValueType
             next_pos = character_position + escape_seq_len;
             if (escape_seq_len == 0)
             {
+                // It is agreed that value with an invalid escape seqence in it
+                // is considered malformed and shoudn't be included in result.
+                value.clear();
                 return {next_pos, State::WAITING_KEY};
             }
         }
@@ -211,7 +214,7 @@ NextState InlineEscapingStateHandler::readValue(std::string_view file, ValueType
 
     // Reached end of input, consume rest of the file as value and make sure KV pair is produced.
     value.insert(value.end(), file.begin() + pos, file.end());
-    return {pos, State::FLUSH_PAIR};
+    return {file.size(), State::FLUSH_PAIR};
 }
 
 NextState InlineEscapingStateHandler::readQuotedValue(std::string_view file, ValueType & value) const
@@ -246,7 +249,7 @@ NextState InlineEscapingStateHandler::readQuotedValue(std::string_view file, Val
         pos = next_pos;
     }
 
-    return {pos, State::END};
+    return {file.size(), State::END};
 }
 
 }
