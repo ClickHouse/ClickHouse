@@ -14,31 +14,25 @@ a	b	c	\nd
 a	b	c	\nd
 CSV with dates
 c0	Int64					
-c1	Date					
-c2	Int64					
+c1	DateTime64(9)					
+c2	DateTime64(9)					
 c3	Int64					
-c4	Int64					
-c5	Date					
-c6	Int64					
+c4	Float64					
+c5	Int64					
+c6	String					
 c7	Int64					
 c8	Int64					
 c9	Int64					
 c10	Float64					
 c11	Int64					
-c12	String					
-c13	Int64					
+c12	Float64					
+c13	Float64					
 c14	Int64					
-c15	Int64					
+c15	Float64					
 c16	Float64					
-c17	Int64					
-c18	Float64					
-c19	Float64					
-c20	Int64					
-c21	Float64					
-c22	Float64					
-c23	Float64					
-1	2021-04-01	0	0	18	2021-04-01	0	21	54	1	8.4	1	N	79	116	1	25.5	3	0.5	5.85	0	0.3	35.15	2.5
-1	2021-04-01	0	42	37	2021-04-01	0	46	23	1	0.9	1	N	75	236	2	5	3	0.5	0	0	0.3	8.8	2.5
+c17	Float64					
+1	2021-04-01 00:00:18.000000000	2021-04-01 00:21:54.000000000	1	8.4	1	N	79	116	1	25.5	3	0.5	5.85	0	0.3	35.15	2.5
+1	2021-04-01 00:42:37.000000000	2021-04-01 00:46:23.000000000	1	0.9	1	N	75	236	2	5	3	0.5	0	0	0.3	8.8	2.5
 ClickHouse logs
 c0	Date					
 c1	Int64					
