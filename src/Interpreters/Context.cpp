@@ -43,7 +43,6 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -2226,11 +2225,8 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_buffer_flush_schedule_pool_size,
+            shared->server_settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -2275,11 +2271,8 @@ BackgroundSchedulePool & Context::getSchedulePool() const
     auto lock = getLock();
     if (!shared->schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_schedule_pool_size,
+            shared->server_settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -2293,11 +2286,8 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_distributed_schedule_pool_size,
+            shared->server_settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -2311,11 +2301,8 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     auto lock = getLock();
     if (!shared->message_broker_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_message_broker_schedule_pool_size,
+            shared->server_settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -3959,11 +3946,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     if (shared->are_background_executors_initialized)
         return;
 
-    const auto & config = getConfigRef();
-
-    ServerSettings server_settings;
-    server_settings.loadSettingsFromConfig(config);
-
+    const ServerSettings & server_settings = shared->server_settings;
     size_t background_pool_size = server_settings.background_pool_size;
     auto background_merges_mutations_concurrency_ratio = server_settings.background_merges_mutations_concurrency_ratio;
     size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
