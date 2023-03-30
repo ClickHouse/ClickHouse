@@ -281,6 +281,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
     mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
 
+    mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
+    mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -1772,6 +1775,12 @@ void Context::makeQueryContext()
     {
         getRemoteReadThrottler();
         getRemoteWriteThrottler();
+
+        getLocalReadThrottler();
+        getLocalWriteThrottler();
+
+        getBackupsReadThrottler();
+        getBackupsWriteThrottler();
     }
 }
 
@@ -2385,6 +2394,54 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
         if (!remote_write_query_throttler)
             remote_write_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_write_network_bandwidth, throttler);
         throttler = remote_write_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getLocalReadThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_local_read_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->local_read_throttler)
+            shared->local_read_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_read_bandwidth_for_server);
+        throttler = shared->local_read_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_local_read_bandwidth)
+    {
+        auto lock = getLock();
+        if (!local_read_query_throttler)
+            local_read_query_throttler = std::make_shared<Throttler>(query_settings.max_local_read_bandwidth, throttler);
+        throttler = local_read_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getLocalWriteThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_local_write_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->local_write_throttler)
+            shared->local_write_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_write_bandwidth_for_server);
+        throttler = shared->local_write_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_local_write_bandwidth)
+    {
+        auto lock = getLock();
+        if (!local_write_query_throttler)
+            local_write_query_throttler = std::make_shared<Throttler>(query_settings.max_local_write_bandwidth, throttler);
+        throttler = local_write_query_throttler;
     }
 
     return throttler;
@@ -4098,6 +4155,7 @@ ReadSettings Context::getReadSettings() const
     res.priority = settings.read_priority;
 
     res.remote_throttler = getRemoteReadThrottler();
+    res.local_throttler = getLocalReadThrottler();
 
     res.http_max_tries = settings.http_max_tries;
     res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
@@ -4120,6 +4178,7 @@ WriteSettings Context::getWriteSettings() const
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
+    res.local_throttler = getLocalWriteThrottler();
 
     return res;
 }
