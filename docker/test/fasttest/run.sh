@@ -16,7 +16,8 @@ export LLVM_VERSION=${LLVM_VERSION:-13}
 # it being undefined. Also read it as array so that we can pass an empty list
 # of additional variable to cmake properly, and it doesn't generate an extra
 # empty parameter.
-read -ra FASTTEST_CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
+# Read it as CMAKE_FLAGS to not lose exported FASTTEST_CMAKE_FLAGS on subsequential launch
+read -ra CMAKE_FLAGS <<< "${FASTTEST_CMAKE_FLAGS:-}"
 
 # Run only matching tests.
 FASTTEST_FOCUS=${FASTTEST_FOCUS:-""}
@@ -36,6 +37,13 @@ export FASTTEST_BUILD
 export FASTTEST_DATA
 export FASTTEST_OUT
 export PATH
+
+function ccache_status
+{
+    ccache --show-config ||:
+    ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
+}
 
 function start_server
 {
@@ -171,14 +179,14 @@ function run_cmake
     export CCACHE_COMPILERCHECK=content
     export CCACHE_MAXSIZE=15G
 
-    ccache --show-stats ||:
+    ccache_status
     ccache --zero-stats ||:
 
     mkdir "$FASTTEST_BUILD" ||:
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
@@ -193,7 +201,7 @@ function build
             strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
             zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
-        ccache --show-stats ||:
+        ccache_status
         ccache --evict-older-than 1d ||:
     )
 }

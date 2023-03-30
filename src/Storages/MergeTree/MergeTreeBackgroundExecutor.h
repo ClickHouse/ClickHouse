@@ -21,6 +21,12 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeBackgroundExecutorThreads;
+    extern const Metric MergeTreeBackgroundExecutorThreadsActive;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -255,6 +261,7 @@ public:
         , max_tasks_count(max_tasks_count_)
         , metric(metric_)
         , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
+        , pool(CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive)
     {
         if (max_tasks_count == 0)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");

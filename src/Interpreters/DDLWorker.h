@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>

@@ -36,5 +36,7 @@ SELECT kafkaMurmurHash('foo');
 SELECT kafkaMurmurHash('\x01');
 SELECT kafkaMurmurHash(1);
 
-SELECT hex(murmurHash3_128('foo'));
-SELECT hex(murmurHash3_128('\x01'));
+-- Comparison with reverse for big endian
+SELECT hex(murmurHash3_128('foo')) = hex(reverse(unhex('6145F501578671E2877DBA2BE487AF7E'))) or hex(murmurHash3_128('foo')) = '6145F501578671E2877DBA2BE487AF7E';
+-- Comparison with reverse for big endian
+SELECT hex(murmurHash3_128('\x01')) = hex(reverse(unhex('16FE7483905CCE7A85670E43E4678877'))) or hex(murmurHash3_128('\x01')) = '16FE7483905CCE7A85670E43E4678877';

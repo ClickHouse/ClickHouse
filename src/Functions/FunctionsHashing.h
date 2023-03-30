@@ -30,7 +30,7 @@
 #    include <openssl/sha.h>
 #endif
 
-#include <Poco/ByteOrder.h>
+#include <bit>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -150,6 +150,13 @@ struct IntHash64Impl
 template<typename T, typename HashFunction>
 T combineHashesFunc(T t1, T t2)
 {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        T tmp;
+        reverseMemcpy(&tmp, &t1, sizeof(T));
+        t1 = tmp;
+        reverseMemcpy(&tmp, &t2, sizeof(T));
+        t2 = tmp;
+#endif
     T hashes[] = {t1, t2};
     return HashFunction::apply(reinterpret_cast<const char *>(hashes), 2 * sizeof(T));
 }
@@ -177,12 +184,16 @@ struct HalfMD5Impl
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
         return buf.uint64_data;        /// No need to flip bytes on big endian machines
 #else
-        return Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(buf.uint64_data));        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
+        return std::byteswap(buf.uint64_data);    /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
 #endif
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        h1 = std::byteswap(h1);
+        h2 = std::byteswap(h2);
+#endif
         UInt64 hashes[] = {h1, h2};
         return apply(reinterpret_cast<const char *>(hashes), 16);
     }
@@ -322,6 +333,10 @@ struct SipHash64KeyedImpl
 
     static UInt64 combineHashesKeyed(const Key & key, UInt64 h1, UInt64 h2)
     {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        h1 = std::byteswap(h1);
+        h2 = std::byteswap(h2);
+#endif
         UInt64 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt64));
     }
@@ -360,6 +375,13 @@ struct SipHash128KeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        UInt128 tmp;
+        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
+        h1 = tmp;
+        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
+        h2 = tmp;
+#endif
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }
@@ -395,6 +417,13 @@ struct SipHash128ReferenceKeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        UInt128 tmp;
+        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
+        h1 = tmp;
+        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
+        h2 = tmp;
+#endif
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }
