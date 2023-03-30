@@ -104,7 +104,8 @@ TEST_P(extractKVPair_KeyValuePairExtractorTest, Match)
     }
 }
 
-const std::vector<std::pair<std::string, std::string>> neymar_expected{
+using ExpectedValues = std::vector<std::pair<std::string, std::string>>;
+const ExpectedValues neymar_expected{
     {"name","neymar"},
     {"age","31"},
     {"team","psg"},
@@ -135,3 +136,65 @@ INSTANTIATE_TEST_SUITE_P(Simple, extractKVPair_KeyValuePairExtractorTest,
         }
     )
 );
+
+// It is agreed that value with an invalid escape seqence in it is considered malformed and shoudn't be included in result.
+INSTANTIATE_TEST_SUITE_P(InvalidEscapeSeqInValue, extractKVPair_KeyValuePairExtractorTest,
+        ::testing::ValuesIn(std::initializer_list<KeyValuePairExtractorTestParam>
+        {
+            {
+                KeyValuePairExtractorBuilder().withEscaping(),
+                R"in(valid_key:valid_value key:invalid_val\\ third_key:third_value)in",
+                ExpectedValues{
+                    {"valid_key", "valid_value"},
+                    {"third_key", "third_value"}
+                }
+            },
+            {
+                // Special case when invalid seq is the last symbol
+                KeyValuePairExtractorBuilder().withEscaping(),
+                R"in(valid_key:valid_value key:invalid_val\\)in",
+                ExpectedValues{
+                    {"valid_key", "valid_value"}
+                }
+            },
+            {
+                KeyValuePairExtractorBuilder().withEscaping().withQuotingCharacter('"'),
+                R"in(valid_key:valid_value key:"invalid val\\ " "third key":"third value")in",
+                ExpectedValues{
+                    {"valid_key", "valid_value"},
+                    {"third key", "third value"}
+                }
+            },
+            // Not handling escape sequences == do not care of broken one, `invalid_val\` must be present
+            {
+                KeyValuePairExtractorBuilder(),
+                R"in(valid_key:valid_value key:invalid_val\ third_key:third_value)in",
+                ExpectedValues{
+                    {"valid_key", "valid_value"},
+                    {"key", "invalid_val\\"},
+                    {"third_key", "third_value"}
+                }
+            },
+            {
+                // Special case when invalid seq is the last symbol
+                KeyValuePairExtractorBuilder(),
+                R"in(valid_key:valid_value key:invalid_val\)in",
+                ExpectedValues{
+                    {"valid_key", "valid_value"},
+                    {"key", "invalid_val\\"}
+                }
+            },
+            {
+                KeyValuePairExtractorBuilder().withQuotingCharacter('"'),
+                R"in(valid_key:valid_value key:"invalid val\ " "third key":"third value")in",
+                ExpectedValues{
+                    {"valid_key", "valid_value"},
+                    {"key", "invalid val\\ "},
+                    {"third key", "third value"},
+                }
+            },
+        }
+    )
+);
+
+
