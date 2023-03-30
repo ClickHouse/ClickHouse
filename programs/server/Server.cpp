@@ -1467,6 +1467,9 @@ try
     /// This is needed to load proper values of background_pool_size etc.
     global_context->initializeBackgroundExecutorsIfNeeded();
 
+    /// Initialize BackupsWorker and a cleanup thread if we have ZooKeeper.
+    global_context->initializeBackupsWorker();
+
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,

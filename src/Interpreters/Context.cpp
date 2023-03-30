@@ -98,6 +98,7 @@
 #include <Common/logger_useful.h>
 #include <base/EnumReflection.h>
 #include <Common/RemoteHostFilter.h>
+#include "Backups/BackupRestoreCleanupThread.h"
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -247,6 +248,7 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 
     std::optional<BackupsWorker> backups_worker;
+    std::optional<BackupRestoreCleanupThread> backup_restore_cleanup_thread;
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -491,6 +493,9 @@ struct ContextSharedPart : boost::noncopyable
         /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
         if (backups_worker)
             backups_worker->shutdown();
+
+        if (backup_restore_cleanup_thread)
+            backup_restore_cleanup_thread->shutdown();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
@@ -2068,20 +2073,44 @@ Lemmatizers & Context::getLemmatizers() const
 }
 #endif
 
+void Context::initializeBackupsWorker()
+{
+    auto lock = getLock();
+
+    if (shared->backups_worker)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BackupsWorker already initialized. This is a bug");
+
+    const auto & config = getConfigRef();
+    const auto & settings_ = getSettingsRef();
+
+    BackupsWorker::Settings backup_restore_settings
+    {
+        .num_backup_threads = config.getUInt64("backup_threads", settings_.backup_threads),
+        .num_restore_threads = config.getUInt64("restore_threads", settings_.restore_threads),
+        .allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true),
+        .allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true),
+        .stale_backups_restores_check_period_ms = config.getUInt64("backups.stale_backups_restores_check_period_ms", 600000), // 10 minutes
+        .stale_backups_restores_cleanup_timeout_ms = config.getUInt64("backups.stale_backups_restores_cleanup_timeout_ms", 86400000), // 24 hours
+        .root_zookeeper_path = config.getString("backups.zookeeper_path", "/clickhouse/backups")
+    };
+
+    shared->backups_worker.emplace(backup_restore_settings);
+
+    if (hasZooKeeper())
+        shared->backup_restore_cleanup_thread.emplace(
+            [this](){ return getZooKeeper(); },
+            getSchedulePool(),
+            backup_restore_settings.root_zookeeper_path,
+            backup_restore_settings.stale_backups_restores_check_period_ms,
+            backup_restore_settings.stale_backups_restores_cleanup_timeout_ms);
+}
+
 BackupsWorker & Context::getBackupsWorker() const
 {
     auto lock = getLock();
 
-    const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
-    const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
-
-    const auto & config = getConfigRef();
-    const auto & settings_ = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings_.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings_.restore_threads);
-
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BackupsWorker is not initialized. This is a bug");
 
     return *shared->backups_worker;
 }

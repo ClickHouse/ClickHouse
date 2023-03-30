@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupStatus.h>
+#include <Backups/BackupRestoreCleanupThread.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
@@ -30,7 +31,19 @@ using DataRestoreTasks = std::vector<std::function<void()>>;
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+
+    struct Settings
+    {
+        size_t num_backup_threads;
+        size_t num_restore_threads;
+        bool allow_concurrent_backups;
+        bool allow_concurrent_restores;
+        size_t stale_backups_restores_check_period_ms;
+        size_t stale_backups_restores_cleanup_timeout_ms;
+        String root_zookeeper_path;
+    };
+
+    explicit BackupsWorker(const Settings & global_backup_settings);
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -133,6 +146,7 @@ private:
     void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
+    Settings global_settings;
     std::unique_ptr<ThreadPool> backups_thread_pool;
     std::unique_ptr<ThreadPool> restores_thread_pool;
 

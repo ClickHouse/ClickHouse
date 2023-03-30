@@ -726,6 +726,7 @@ public:
     Lemmatizers & getLemmatizers() const;
 #endif
 
+    void initializeBackupsWorker();
     BackupsWorker & getBackupsWorker() const;
 
     /// I/O formats.
