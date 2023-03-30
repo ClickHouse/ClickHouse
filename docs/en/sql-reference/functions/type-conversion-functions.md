@@ -737,6 +737,44 @@ Result:
 └────────────┴───────┘
 ```
 
+## toDecimalString
+
+Converts a numeric value to String with the number of fractional digits in the output specified by the user.
+
+**Syntax**
+
+``` sql
+toDecimalString(number, scale)
+```
+
+**Parameters**
+
+-   `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+-   `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+    * Maximum scale for [Decimal](/docs/en/sql-reference/data-types/decimal.md) and [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+    * Maximum scale for [Float](/docs/en/sql-reference/data-types/float.md) is 60.
+
+**Returned value**
+
+-   Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
+    The number is rounded up or down according to common arithmetics in case requested scale is smaller than original number's scale.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
+```
+
+Result:
+
+```response
+┌toDecimalString(CAST('64.32', 'Float64'), 5)─┐
+│ 64.32000                                    │
+└─────────────────────────────────────────────┘
+```
+
 ## reinterpretAsUInt(8\|16\|32\|64)
 
 ## reinterpretAsInt(8\|16\|32\|64)
@@ -1188,6 +1226,16 @@ SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 Alias: `TO_TIMESTAMP`.
 
+## parseDateTimeOrZero
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeOrNull
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+Alias: `str_to_date`.
+
 ## parseDateTimeInJodaSyntax {#type_conversion_functions-parseDateTimeInJodaSyntax}
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
@@ -1226,6 +1274,14 @@ SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', '
 │                                                                     2023-02-24 14:53:31 │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## parseDateTimeInJodaSyntaxOrZero
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeInJodaSyntaxOrNull
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
