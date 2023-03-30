@@ -110,9 +110,9 @@ void KeyMetadata::addToCleanupQueue(const FileCacheKey & key, const KeyGuard::Lo
     cleanup_state = CleanupState::SUBMITTED_TO_CLEANUP_QUEUE;
 }
 
-void KeyMetadata::removeFromCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &)
+void KeyMetadata::removeFromCleanupQueue(const FileCacheKey &, const KeyGuard::Lock &)
 {
-    cleanup_queue.remove(key);
+    /// Just mark cleanup_state as "not to be removed", the cleanup thread will check it and skip the key.
     cleanup_state = CleanupState::NOT_SUBMITTED;
 }
 
@@ -246,7 +246,7 @@ void CacheMetadata::doCleanup()
     {
         auto it = find(cleanup_key);
         if (it == end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in metadata", cleanup_key.toString());
+            continue;
 
         auto key_metadata = it->second;
         auto key_lock = key_metadata->lock();
@@ -391,12 +391,7 @@ void LockedKeyMetadata::assertFileSegmentCorrectness(const FileSegment & file_se
 void CleanupQueue::add(const FileCacheKey & key)
 {
     std::lock_guard lock(mutex);
-    auto [_, inserted] = keys.insert(key);
-    if (!inserted)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Key {} is already in removal queue", key.toString());
-    }
+    keys.insert(key);
 }
 
 void CleanupQueue::remove(const FileCacheKey & key)

@@ -602,12 +602,12 @@ bool FileCache::tryReserveImpl(
         auto * file_segment_metadata = current_locked_key.getKeyMetadata()->getByOffset(entry.offset);
 
         chassert(file_segment_metadata->queue_iterator);
-        chassert(entry.size == file_segment_metadata->size());
+        chassert((entry.size == file_segment_metadata->size()) || (file_segment_metadata->file_segment->state() == FileSegment::State::DOWNLOADING));
 
         /// It is guaranteed that file_segment_metadata is not removed from cache as long as
         /// pointer to corresponding file segment is hold by any other thread.
 
-        const size_t file_segment_size = file_segment_metadata->size();
+        const size_t file_segment_size = entry.size;
 
         bool remove_current_it = false;
         bool save_locked_key = false;

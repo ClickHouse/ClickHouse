@@ -203,6 +203,7 @@ void FileSegment::resetDownloaderUnlocked(const FileSegmentGuard::Lock &)
 {
     LOG_TEST(log, "Resetting downloader from {}", downloader_id);
     downloader_id.clear();
+    cv.notify_all();
 }
 
 void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock & lock) const
@@ -356,7 +357,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     chassert(getFirstNonDownloadedOffset(false) == offset + size);
 }
 
-FileSegment::State FileSegment::wait()
+FileSegment::State FileSegment::wait(size_t offset)
 {
     auto lock = segment_guard.lock();
 
@@ -373,7 +374,13 @@ FileSegment::State FileSegment::wait()
         chassert(!getDownloaderUnlocked(lock).empty());
         chassert(!isDownloaderUnlocked(lock));
 
-        cv.wait_for(lock, std::chrono::seconds(60), [this]() { return download_state != State::DOWNLOADING; });
+        [[maybe_unused]] const bool ok = cv.wait_for(lock, std::chrono::seconds(60), [&, this]()
+        {
+            return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset(true);
+        });
+        /// If we exited by timeout, it means we are missing notify somewhere.
+        /// Make sure this case is caught by stress tests.
+        chassert(ok);
     }
 
     return download_state;
@@ -519,15 +526,19 @@ void FileSegment::completePartAndResetDownloaderUnlocked(const FileSegmentGuard:
     resetDownloaderUnlocked(lock);
 
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lock));
-    cv.notify_all();
 }
 
 void FileSegment::setBroken()
 {
     auto lock = segment_guard.lock();
+
     assertNotDetachedUnlocked(lock);
     assertIsDownloaderUnlocked("setBroken", lock);
+
     resetDownloadingStateUnlocked(lock);
+    if (download_state != State::DOWNLOADED)
+        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+
     resetDownloaderUnlocked(lock);
 }
 

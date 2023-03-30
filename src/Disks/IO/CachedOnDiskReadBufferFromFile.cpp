@@ -278,7 +278,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     return getCacheReadBuffer(file_segment);
                 }
 
-                download_state = file_segment.wait();
+                download_state = file_segment.wait(file_offset_of_buffer_end);
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
@@ -390,10 +390,11 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
 
     LOG_TEST(
         log,
-        "Current file segment: {}, read type: {}, current file offset: {}",
-        range.toString(),
+        "Current read type: {}, read offset: {}, impl read range: {}, file segment: {}",
         toString(read_type),
-        file_offset_of_buffer_end);
+        file_offset_of_buffer_end,
+        read_buffer_for_file_segment->getRemainingReadRange().toString(),
+        file_segment.getInfoForLog());
 
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
@@ -439,7 +440,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
 
             if (bytes_to_predownload)
             {
-                size_t current_write_offset = file_segment.getCurrentWriteOffset(false);
+                const size_t current_write_offset = file_segment.getCurrentWriteOffset(false);
                 read_buffer_for_file_segment->seek(current_write_offset, SEEK_SET);
             }
             else
@@ -450,7 +451,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
                 assert(static_cast<size_t>(read_buffer_for_file_segment->getFileOffsetOfBufferEnd()) == file_offset_of_buffer_end);
             }
 
-            auto current_write_offset = file_segment.getCurrentWriteOffset(false);
+            const auto current_write_offset = file_segment.getCurrentWriteOffset(false);
             if (current_write_offset != static_cast<size_t>(read_buffer_for_file_segment->getPosition()))
             {
                 throw Exception(
@@ -830,9 +831,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     LOG_TEST(
         log,
-        "Current count: {}, position: {}, read range: {}, file segment: {}",
-        implementation_buffer->count(),
-        implementation_buffer->getPosition(),
+        "Current read type: {}, read offset: {}, impl read range: {}, file segment: {}",
+        toString(read_type),
+        file_offset_of_buffer_end,
         implementation_buffer->getRemainingReadRange().toString(),
         file_segment.getInfoForLog());
 
@@ -980,7 +981,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     LOG_TEST(
         log,
         "Key: {}. Returning with {} bytes, buffer position: {} (offset: {}, predownloaded: {}), "
-        "buffer available: {}, current range: {}, current offset: {}, file segment state: {}, "
+        "buffer available: {}, current range: {}, file offset of buffer end: {}, impl offset: {}, file segment state: {}, "
         "current write offset: {}, read_type: {}, reading until position: {}, started with offset: {}, "
         "remaining ranges: {}",
         cache_key.toString(),
@@ -991,6 +992,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         available(),
         current_read_range.toString(),
         file_offset_of_buffer_end,
+        implementation_buffer->getFileOffsetOfBufferEnd(),
         FileSegment::stateToString(file_segment.state()),
         file_segment.getCurrentWriteOffset(false),
         toString(read_type),
