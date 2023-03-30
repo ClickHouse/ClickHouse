@@ -111,7 +111,12 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
         case capnp::DynamicValue::Type::INT:
             return capnp::DynamicValue::Reader(column->getInt(row_num));
         case capnp::DynamicValue::Type::UINT:
+        {
+            /// IPv4 column doesn't support getUInt method.
+            if (isIPv4(data_type))
+                return capnp::DynamicValue::Reader(assert_cast<const ColumnIPv4 *>(column.get())->getElement(row_num));
             return capnp::DynamicValue::Reader(column->getUInt(row_num));
+        }
         case capnp::DynamicValue::Type::BOOL:
             return capnp::DynamicValue::Reader(column->getBool(row_num));
         case capnp::DynamicValue::Type::FLOAT:

@@ -129,13 +129,21 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundMovePoolSize;
     extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric BackgroundSchedulePoolSize;
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
+    extern const Metric BackgroundBufferFlushSchedulePoolSize;
     extern const Metric BackgroundDistributedSchedulePoolTask;
+    extern const Metric BackgroundDistributedSchedulePoolSize;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric BackgroundMessageBrokerSchedulePoolSize;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolSize;
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
+    extern const Metric BackgroundCommonPoolSize;
 }
 
 namespace DB
@@ -1289,7 +1297,7 @@ void Context::addQueryAccessInfo(
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    std::lock_guard lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
@@ -1650,8 +1658,8 @@ void Context::setCurrentQueryId(const String & query_id)
         UUID uuid{};
     } random;
 
-    random.words.a = thread_local_rng(); //-V656
-    random.words.b = thread_local_rng(); //-V656
+    random.words.a = thread_local_rng();
+    random.words.b = thread_local_rng();
 
 
     String query_id_to_set = query_id;
@@ -1910,8 +1918,13 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
+    const auto & config = getConfigRef();
+    const auto & settings = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings.restore_threads);
+
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -1946,14 +1959,14 @@ QueryStatusPtr Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy)
+void Context::setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(uncompressed_cache_policy, max_size_in_bytes);
 }
 
 
@@ -1972,14 +1985,14 @@ void Context::dropUncompressedCache() const
 }
 
 
-void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy)
+void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, mark_cache_policy);
+    shared->mark_cache = std::make_shared<MarkCache>(mark_cache_policy, cache_size_in_bytes);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -2175,6 +2188,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
+            CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
     }
 
@@ -2226,6 +2240,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
+            CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
     }
 
@@ -2246,6 +2261,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
     }
 
@@ -2266,6 +2282,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
     }
 
@@ -2571,8 +2588,12 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
-static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk,
-                                         std::shared_ptr<ZooKeeperLog> zk_log)
+static void reloadZooKeeperIfChangedImpl(
+    const ConfigurationPtr & config,
+    const std::string & config_name,
+    zkutil::ZooKeeperPtr & zk,
+    std::shared_ptr<ZooKeeperLog> zk_log,
+    bool server_started)
 {
     if (!zk || zk->configChanged(*config, config_name))
     {
@@ -2580,18 +2601,22 @@ static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const 
             zk->finalize("Config changed");
 
         zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
+        if (server_started)
+            zk->setServerCompletelyStarted();
     }
 }
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
+    bool server_started = isServerCompletelyStarted();
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper, getZooKeeperLog());
+    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper, getZooKeeperLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
 {
+    bool server_started = isServerCompletelyStarted();
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
 
     shared->auxiliary_zookeepers_config = config;
@@ -2602,7 +2627,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
             it = shared->auxiliary_zookeepers.erase(it);
         else
         {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog());
+            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), server_started);
             ++it;
         }
     }
@@ -3678,6 +3703,15 @@ bool Context::isServerCompletelyStarted() const
 
 void Context::setServerCompletelyStarted()
 {
+    {
+        std::lock_guard lock(shared->zookeeper_mutex);
+        if (shared->zookeeper)
+            shared->zookeeper->setServerCompletelyStarted();
+
+        for (auto & zk : shared->auxiliary_zookeepers)
+            zk.second->setServerCompletelyStarted();
+    }
+
     auto lock = getLock();
     assert(global_context.lock().get() == this);
     assert(!shared->is_server_completely_started);
@@ -3826,6 +3860,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
         background_merges_mutations_scheduling_policy
     );
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
@@ -3836,7 +3871,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Move",
         background_move_pool_size,
         background_move_pool_size,
-        CurrentMetrics::BackgroundMovePoolTask
+        CurrentMetrics::BackgroundMovePoolTask,
+        CurrentMetrics::BackgroundMovePoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
@@ -3845,7 +3881,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Fetch",
         background_fetches_pool_size,
         background_fetches_pool_size,
-        CurrentMetrics::BackgroundFetchesPoolTask
+        CurrentMetrics::BackgroundFetchesPoolTask,
+        CurrentMetrics::BackgroundFetchesPoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
@@ -3854,7 +3891,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Common",
         background_common_pool_size,
         background_common_pool_size,
-        CurrentMetrics::BackgroundCommonPoolTask
+        CurrentMetrics::BackgroundCommonPoolTask,
+        CurrentMetrics::BackgroundCommonPoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 
@@ -4056,21 +4094,34 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
+Context::ParallelReplicasMode Context::getParallelReplicasMode() const
+{
+    const auto & settings = getSettingsRef();
+
+    using enum Context::ParallelReplicasMode;
+    if (!settings.parallel_replicas_custom_key.value.empty())
+        return CUSTOM_KEY;
+
+    if (settings.allow_experimental_parallel_reading_from_replicas
+        && !settings.use_hedged_requests)
+        return READ_TASKS;
+
+    return SAMPLE_KEY;
+}
+
 bool Context::canUseParallelReplicasOnInitiator() const
 {
     const auto & settings = getSettingsRef();
-    return settings.allow_experimental_parallel_reading_from_replicas
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
         && settings.max_parallel_replicas > 1
-        && !settings.use_hedged_requests
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
     const auto & settings = getSettingsRef();
-    return settings.allow_experimental_parallel_reading_from_replicas
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
         && settings.max_parallel_replicas > 1
-        && !settings.use_hedged_requests
         && getClientInfo().collaborate_with_initiator;
 }
 

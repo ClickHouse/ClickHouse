@@ -29,7 +29,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <Storages/ReadFromStorageProgress.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
@@ -53,8 +52,10 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
+#include <Common/CurrentMetrics.h>
 #include <re2/re2.h>
 
 #include <Processors/ISource.h>
@@ -64,6 +65,12 @@
 
 namespace fs = std::filesystem;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric StorageS3Threads;
+    extern const Metric StorageS3ThreadsActive;
+}
 
 namespace ProfileEvents
 {
@@ -150,7 +157,7 @@ public:
         , object_infos(object_infos_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
-        , list_objects_pool(1)
+        , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
         , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
@@ -574,7 +581,7 @@ StorageS3Source::StorageS3Source(
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
     , download_thread_num(download_thread_num_)
-    , create_reader_pool(1)
+    , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
     reader = createReader();
@@ -1266,7 +1273,8 @@ void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & u
         upd.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
         upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+        upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
+        upd.auth_settings.expiration_window_seconds.value_or(ctx->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)));
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
@@ -1294,7 +1302,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 {
     StorageS3::Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
         processNamedCollectionResult(configuration, *named_collection);
     }

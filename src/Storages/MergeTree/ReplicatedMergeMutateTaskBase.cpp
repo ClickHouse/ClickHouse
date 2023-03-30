@@ -2,6 +2,7 @@
 
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -29,6 +30,9 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
+    /// Metrics will be saved in the local profile_counters.
+    ProfileEventsScope profile_events_scope(&profile_counters);
+
     std::exception_ptr saved_exception;
 
     bool retryable_error = false;
@@ -82,7 +86,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
     {
         saved_exception = std::current_exception();
     }
-
 
     if (!retryable_error && saved_exception)
     {
