@@ -1,3 +1,5 @@
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -452,8 +454,15 @@ namespace
         Joda
     };
 
+    enum class ErrorHandling
+    {
+        Exception,
+        Zero,
+        Null
+    };
+
     /// _FUNC_(str[, format, timezone])
-    template <typename Name, ParseSyntax parse_syntax>
+    template <typename Name, ParseSyntax parse_syntax, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
@@ -500,11 +509,14 @@ namespace
                     getName());
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
-            return std::make_shared<DataTypeDateTime>(time_zone_name);
+            DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            if (error_handling == ErrorHandling::Null)
+                return std::make_shared<DataTypeNullable>(date_type);
+            else
+                return date_type;
         }
 
-        ColumnPtr
-        executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
             if (!col_str)
@@ -518,8 +530,12 @@ namespace
             const auto & time_zone = getTimeZone(arguments);
             std::vector<Instruction> instructions = parseFormat(format);
 
-            auto col_res = ColumnDateTime::create();
-            col_res->reserve(input_rows_count);
+            auto col_res = ColumnDateTime::create(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map;
+            if constexpr (error_handling == ErrorHandling::Null)
+                col_null_map = ColumnUInt8::create(input_rows_count, 0);
+
             auto & res_data = col_res->getData();
 
             /// Make datetime fit in a cache line.
@@ -527,29 +543,77 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
-
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
+                bool error = false;
+
                 for (const auto & instruction : instructions)
                 {
-                    cur = instruction.perform(cur, end, datetime);
+                    try
+                    {
+                        cur = instruction.perform(cur, end, datetime);
+                    }
+                    catch (...)
+                    {
+                        if constexpr (error_handling == ErrorHandling::Zero)
+                        {
+                            res_data[i] = 0;
+                            error = true;
+                            break;
+                        }
+                        else if constexpr (error_handling == ErrorHandling::Null)
+                        {
+                            res_data[i] = 0;
+                            col_null_map->getData()[i] = 1;
+                            error = true;
+                            break;
+                        }
+                        else
+                        {
+                            static_assert(error_handling == ErrorHandling::Exception);
+                            throw;
+                        }
+                    }
                 }
 
-                // Ensure all input was consumed.
-                if (cur < end)
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Invalid format input {} is malformed at {}",
-                        str_ref.toView(),
-                        std::string_view(cur, end - cur));
+                if (error)
+                    continue;
 
-                Int64 time = datetime.buildDateTime(time_zone);
-                res_data.push_back(static_cast<UInt32>(time));
+                try
+                {
+                    /// Ensure all input was consumed
+                    if (cur < end)
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Invalid format input {} is malformed at {}",
+                            str_ref.toView(),
+                            std::string_view(cur, end - cur));
+                    Int64 time = datetime.buildDateTime(time_zone);
+                    res_data[i] = static_cast<UInt32>(time);
+                }
+                catch (...)
+                {
+                    if constexpr (error_handling == ErrorHandling::Zero)
+                        res_data[i] = 0;
+                    else if constexpr (error_handling == ErrorHandling::Null)
+                    {
+                        res_data[i] = 0;
+                        col_null_map->getData()[i] = 1;
+                    }
+                    else
+                    {
+                        static_assert(error_handling == ErrorHandling::Exception);
+                        throw;
+                    }
+                }
             }
 
-            return col_res;
-        }
+            if constexpr (error_handling == ErrorHandling::Null)
+                return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
+            else
+                return col_res;
+            }
 
 
     private:
@@ -1032,11 +1096,12 @@ namespace
                 bool allow_negative,
                 bool allow_plus_sign,
                 bool is_year,
-                int repetitions,
-                int max_digits_to_read,
+                size_t repetitions,
+                size_t max_digits_to_read,
                 const String & fragment,
                 Int32 & result)
             {
+
                 bool negative = false;
                 if (allow_negative && cur < end && *cur == '-')
                 {
@@ -1051,6 +1116,15 @@ namespace
 
                 Int64 number = 0;
                 const Pos start = cur;
+
+                /// Avoid integer overflow in (*)
+                if (max_digits_to_read >= std::numeric_limits<decltype(number)>::digits10) [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because max_digits_to_read is too big",
+                        fragment,
+                        std::string_view(start, cur - start));
+
                 if (is_year && repetitions == 2)
                 {
                     // If abbreviated two year digit is provided in format string, try to read
@@ -1059,10 +1133,10 @@ namespace
                     //                                  [70, 99] -> [1970, 1999]
                     // If more than two digits are provided, then simply read in full year
                     // normally without conversion
-                    int count = 0;
+                    size_t count = 0;
                     while (cur < end && cur < start + max_digits_to_read && *cur >= '0' && *cur <= '9')
                     {
-                        number = number * 10 + (*cur - '0');
+                        number = number * 10 + (*cur - '0'); /// (*)
                         ++cur;
                         ++count;
                     }
@@ -1077,7 +1151,7 @@ namespace
                     {
                         while (cur < end && cur < start + max_digits_to_read && *cur >= '0' && *cur <= '9')
                         {
-                            number = number * 10 + (*cur - '0');
+                            number = number * 10 + (*cur - '0'); /// (*)
                             ++cur;
                         }
                     }
@@ -1091,24 +1165,25 @@ namespace
                     }
                 }
 
+                if (negative)
+                    number *= -1;
+
                 /// Need to have read at least one digit.
-                if (cur == start)
+                if (cur == start) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because read number failed",
                         fragment,
                         std::string_view(cur, end - cur));
 
-                if (negative)
-                    number *= -1;
-
                 /// Check if number exceeds the range of Int32
-                if (number < std::numeric_limits<Int32>::lowest() || number > std::numeric_limits<Int32>::max())
+                if (number < std::numeric_limits<Int32>::min() || number > std::numeric_limits<Int32>::max()) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because number is out of range of Int32",
                         fragment,
                         std::string_view(start, cur - start));
+
                 result = static_cast<Int32>(number);
 
                 return cur;
@@ -1125,7 +1200,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaCenturyOfEra(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 century;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century);
@@ -1133,7 +1208,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaYearOfEra(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year_of_era;
                 cur = readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era);
@@ -1141,7 +1216,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaWeekYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 week_year;
                 cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year);
@@ -1149,15 +1224,15 @@ namespace
                 return cur;
             }
 
-            static Pos jodaWeekOfWeekYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 week;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, week);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week);
                 date.setWeek(week);
                 return cur;
             }
 
-            static Pos jodaDayOfWeek1Based(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_week;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week);
@@ -1197,7 +1272,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year;
                 cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year);
@@ -1205,15 +1280,15 @@ namespace
                 return cur;
             }
 
-            static Pos jodaDayOfYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_year;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), fragment, day_of_year);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year);
                 date.setDayOfYear(day_of_year);
                 return cur;
             }
 
-            static Pos jodaMonthOfYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 month;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month);
@@ -1251,11 +1326,11 @@ namespace
                 return cur;
             }
 
-            static Pos jodaDayOfMonth(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_month;
                 cur = readNumberWithVariableLength(
-                    cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, day_of_month);
+                    cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month);
                 date.setDayOfMonth(day_of_month);
                 return cur;
             }
@@ -1271,50 +1346,50 @@ namespace
                 return cur;
             }
 
-            static Pos jodaHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, true, false);
                 return cur;
             }
 
-            static Pos jodaClockHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, true, true);
                 return cur;
             }
 
-            static Pos jodaHourOfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, false, false);
                 return cur;
             }
 
-            static Pos jodaClockHourOfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, false, true);
                 return cur;
             }
 
-            static Pos jodaMinuteOfHour(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 minute;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, minute);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute);
                 date.setMinute(minute);
                 return cur;
             }
 
-            static Pos jodaSecondOfMinute(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 second;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, second);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second);
                 date.setSecond(second);
                 return cur;
             }
@@ -1612,7 +1687,7 @@ namespace
                 }
                 else
                 {
-                    int repetitions = 1;
+                    size_t repetitions = 1;
                     ++pos;
                     while (pos < end && *cur_token == *pos)
                     {
@@ -1742,23 +1817,50 @@ namespace
         static constexpr auto name = "parseDateTime";
     };
 
+    struct NameParseDateTimeOrZero
+    {
+        static constexpr auto name = "parseDateTimeOrZero";
+    };
+
+    struct NameParseDateTimeOrNull
+    {
+        static constexpr auto name = "parseDateTimeOrNull";
+    };
+
     struct NameParseDateTimeInJodaSyntax
     {
         static constexpr auto name = "parseDateTimeInJodaSyntax";
     };
 
+    struct NameParseDateTimeInJodaSyntaxOrZero
+    {
+        static constexpr auto name = "parseDateTimeInJodaSyntaxOrZero";
+    };
 
-    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL>;
-    using FunctionParseDateTimeInJodaSyntax
-        = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda>;
+    struct NameParseDateTimeInJodaSyntaxOrNull
+    {
+        static constexpr auto name = "parseDateTimeInJodaSyntaxOrNull";
+    };
+
+    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL, ErrorHandling::Exception>;
+    using FunctionParseDateTimeOrZero = FunctionParseDateTimeImpl<NameParseDateTimeOrZero, ParseSyntax::MySQL, ErrorHandling::Zero>;
+    using FunctionParseDateTimeOrNull = FunctionParseDateTimeImpl<NameParseDateTimeOrNull, ParseSyntax::MySQL, ErrorHandling::Null>;
+    using FunctionParseDateTimeInJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda, ErrorHandling::Exception>;
+    using FunctionParseDateTimeInJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrZero, ParseSyntax::Joda, ErrorHandling::Zero>;
+    using FunctionParseDateTimeInJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrNull, ParseSyntax::Joda, ErrorHandling::Null>;
 }
 
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name);
+    factory.registerFunction<FunctionParseDateTimeOrZero>();
+    factory.registerFunction<FunctionParseDateTimeOrNull>();
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>();
 }
 
 
