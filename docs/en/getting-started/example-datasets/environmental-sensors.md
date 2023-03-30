@@ -132,7 +132,7 @@ GROUP BY
 ORDER BY size DESC;
 ```
 
-The 1.67T is compressed down to 1.30T, and there are 20.69 billion rows:
+The 1.67T is compressed down to 310 GiB, and there are 20.69 billion rows:
 
 ```response
 ┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬────────rows─┬─part_count─┐
