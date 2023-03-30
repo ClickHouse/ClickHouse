@@ -94,11 +94,11 @@ TEST_P(extractKVPair_KeyValuePairExtractorTest, Match)
     {
         EXPECT_EQ(expected_kv.first,  keys->getDataAt(i))
                 << fancyQuote(expected_kv.first) << "\nvs\n"
-                << fancyQuote(keys->getDataAt(i));
+                << fancyQuote(keys->getDataAt(i).toView());
 
         EXPECT_EQ(expected_kv.second, values->getDataAt(i))
                 << fancyQuote(expected_kv.second) << "\nvs\n"
-                << fancyQuote(values->getDataAt(i));
+                << fancyQuote(values->getDataAt(i).toView());
 
         ++i;
     }

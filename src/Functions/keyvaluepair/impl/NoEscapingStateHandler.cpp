@@ -3,14 +3,10 @@
 #include <Functions/keyvaluepair/impl/NeedleFactory.h>
 
 #include <base/find_symbols.h>
+#include "Functions/keyvaluepair/impl/StateHandler.h"
 
 namespace
 {
-
-std::string_view createElement(std::string_view file, std::size_t begin, std::size_t end)
-{
-    return std::string_view{file.begin() + begin, file.begin() + end};
-}
 
 using NextState = DB::extractKV::StateHandler::NextState;
 
@@ -51,11 +47,11 @@ NextState NoEscapingStateHandler::waitKey(std::string_view file) const
     return {file.size(), State::END};
 }
 
-NextState NoEscapingStateHandler::readKey(std::string_view file, KeyType & key) const
+NextState NoEscapingStateHandler::readKey(std::string_view file, StringWriter & key) const
 {
     const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
-    key = {};
+    key.reset();
 
     size_t pos = 0;
     auto start_index = pos;
@@ -67,9 +63,9 @@ NextState NoEscapingStateHandler::readKey(std::string_view file, KeyType & key) 
 
         if (*p == key_value_delimiter)
         {
-            key = createElement(file, start_index, character_position);
+            key.append(file.begin() + start_index, file.begin() + character_position);
 
-            if (key.empty())
+            if (key.isEmpty())
             {
                 return {next_pos, State::WAITING_KEY};
             }
@@ -88,25 +84,25 @@ NextState NoEscapingStateHandler::readKey(std::string_view file, KeyType & key) 
     return {file.size(), State::END};
 }
 
-NextState NoEscapingStateHandler::readQuotedKey(std::string_view file, KeyType & key) const
+NextState NoEscapingStateHandler::readQuotedKey(std::string_view file, StringWriter & key) const
 {
     const auto quoting_character = extractor_configuration.quoting_character;
 
-    key = {};
+    key.reset();
 
     size_t pos = 0;
     auto start_index = pos;
 
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
     {
-        const size_t character_position = p - file.begin();
-        auto next_pos = character_position + 1u;
+        size_t character_position = p - file.begin();
+        size_t next_pos = character_position + 1u;
 
         if (*p == quoting_character)
         {
-            key = createElement(file, start_index, character_position);
+            key.append(file.begin() + start_index, file.begin() + character_position);
 
-            if (key.empty())
+            if (key.isEmpty())
             {
                 return {next_pos, State::WAITING_KEY};
             }
@@ -150,11 +146,11 @@ NextState NoEscapingStateHandler::waitValue(std::string_view file) const
     return {pos, State::READING_VALUE};
 }
 
-NextState NoEscapingStateHandler::readValue(std::string_view file, ValueType & value) const
+NextState NoEscapingStateHandler::readValue(std::string_view file, StringWriter & value) const
 {
     const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
-    value = {};
+    value.reset();
 
     size_t pos = 0;
     auto start_index = pos;
@@ -170,7 +166,7 @@ NextState NoEscapingStateHandler::readValue(std::string_view file, ValueType & v
         else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), *p) != pair_delimiters.end())
         {
             // reached next pair
-            value = createElement(file, start_index, character_position);
+            value.append(file.begin() + start_index, file.begin() + character_position);
 
             return {next_pos, State::FLUSH_PAIR};
         }
@@ -180,18 +176,18 @@ NextState NoEscapingStateHandler::readValue(std::string_view file, ValueType & v
 
     // TODO: do I really need the below logic?
     // this allows empty values at the end
-    value = createElement(file, start_index, file.size());
+    value.append(file.begin() + start_index, file.end());
     return {file.size(), State::FLUSH_PAIR};
 }
 
-NextState NoEscapingStateHandler::readQuotedValue(std::string_view file, ValueType & value) const
+NextState NoEscapingStateHandler::readQuotedValue(std::string_view file, StringWriter & value) const
 {
     const auto quoting_character = extractor_configuration.quoting_character;
 
     size_t pos = 0;
     auto start_index = pos;
 
-    value = {};
+    value.reset();
 
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
     {
@@ -200,7 +196,7 @@ NextState NoEscapingStateHandler::readQuotedValue(std::string_view file, ValueTy
 
         if (*p == quoting_character)
         {
-            value = createElement(file, start_index, character_position);
+            value.append(file.begin() + start_index, file.begin() + character_position);
 
             std::cerr << "NoEscapingStateHandler::readQuoted Going to consume up to: «" << fancyQuote(file.substr(0, next_pos)) << " to " << fancyQuote(file.substr(next_pos)) << std::endl;
             return {next_pos, State::FLUSH_PAIR};
