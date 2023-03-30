@@ -1856,7 +1856,7 @@ REGISTER_FUNCTION(ParseDateTime)
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name);
     factory.registerFunction<FunctionParseDateTimeOrZero>();
     factory.registerFunction<FunctionParseDateTimeOrNull>();
-    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name);
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();
