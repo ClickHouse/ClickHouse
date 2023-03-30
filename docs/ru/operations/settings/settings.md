@@ -4046,7 +4046,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 
 Значение по умолчанию: `''`.
 
-## stop_reading_on_first_cancel {#stop_reading_on_first_cancel}
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 Если установлено значение `true` и пользователь хочет прервать запрос (например, с помощью `Ctrl+C` на клиенте), то запрос продолжает выполнение только для данных, которые уже были считаны из таблицы. После этого он вернет частичный результат запроса для той части таблицы, которая была прочитана. Чтобы полностью остановить выполнение запроса без частичного результата, пользователь должен отправить 2 запроса отмены.
 
 **Пример с выключенной настройкой при нажатии Ctrl+C**
@@ -4062,7 +4062,7 @@ Query was cancelled.
 
 **Пример с включенной настройкой при нажатии Ctrl+C**
 ```sql
-SELECT sum(number) FROM numbers(10000000000) SETTINGS stop_reading_on_first_cancel=true
+SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_cancel=true
 
 ┌──────sum(number)─┐
 │ 1355411451286266 │
