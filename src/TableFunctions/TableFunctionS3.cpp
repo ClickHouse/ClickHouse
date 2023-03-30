@@ -106,6 +106,8 @@ void TableFunctionS3::parseArgumentsImpl(
             s3_configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
     }
 
+    s3_configuration.keys = {s3_configuration.url.key};
+
     /// For DataLake table functions, we should specify default format.
     if (s3_configuration.format == "auto" && get_format_from_file)
         s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
