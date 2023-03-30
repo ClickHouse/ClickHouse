@@ -139,7 +139,7 @@ def test_single_log_file(started_cluster):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) == 1
+    assert len(files) == 2 # 1 metadata files + 1 data file
 
     create_delta_table(instance, TABLE_NAME)
 
@@ -160,7 +160,7 @@ def test_multiple_log_files(started_cluster):
         spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) == 1
+    assert len(files) == 2 # 1 metadata files + 1 data file
 
     s3_objects = list(
         minio_client.list_objects(bucket, f"/{TABLE_NAME}/_delta_log/", recursive=True)
@@ -174,7 +174,7 @@ def test_multiple_log_files(started_cluster):
         spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) == 2
+    assert len(files) == 4 # 2 metadata files + 2 data files
 
     s3_objects = list(
         minio_client.list_objects(bucket, f"/{TABLE_NAME}/_delta_log/", recursive=True)
