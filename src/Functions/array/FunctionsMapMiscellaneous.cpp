@@ -198,6 +198,7 @@ public:
     String getName() const override { return "mapKeyLike"; }
     size_t getNumberOfArguments() const override { return 3; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -240,8 +241,12 @@ struct MapKeyLikeAdapter
     {
         checkTypes(types);
         const auto & map_type = assert_cast<const DataTypeMap &>(*types[0]);
+
+        DataTypes lambda_argument_types{types[1], map_type.getKeyType(), map_type.getValueType()};
+        auto result_type = FunctionMapKeyLike().getReturnTypeImpl(lambda_argument_types);
+
         DataTypes argument_types{map_type.getKeyType(), map_type.getValueType()};
-        auto function_type = std::make_shared<DataTypeFunction>(argument_types, std::make_shared<DataTypeUInt8>());
+        auto function_type = std::make_shared<DataTypeFunction>(argument_types, result_type);
 
         types = {function_type, types[0]};
         MapToNestedAdapter<Name, returns_map>::extractNestedTypes(types);
@@ -255,16 +260,17 @@ struct MapKeyLikeAdapter
         const auto & pattern_arg = arguments[1];
 
         ColumnPtr function_column;
-        DataTypePtr return_type = std::make_shared<DataTypeUInt8>();
+        auto function = std::make_shared<FunctionMapKeyLike>();
+
+        DataTypes lambda_argument_types{pattern_arg.type, map_type.getKeyType(), map_type.getValueType()};
+        auto result_type = function->getReturnTypeImpl(lambda_argument_types);
+
         DataTypes argument_types{map_type.getKeyType(), map_type.getValueType()};
-        auto function_type = std::make_shared<DataTypeFunction>(argument_types, return_type);
+        auto function_type = std::make_shared<DataTypeFunction>(argument_types, result_type);
 
         if (pattern_arg.column)
         {
-            DataTypes function_argument_types{pattern_arg.type, map_type.getKeyType(), map_type.getValueType()};
-
-            auto function = std::make_shared<FunctionMapKeyLike>();
-            auto function_base = std::make_shared<FunctionToFunctionBaseAdaptor>(function, function_argument_types, return_type);
+            auto function_base = std::make_shared<FunctionToFunctionBaseAdaptor>(function, lambda_argument_types, result_type);
             function_column = ColumnFunction::create(pattern_arg.column->size(), std::move(function_base), ColumnsWithTypeAndName{pattern_arg});
         }
 
