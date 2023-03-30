@@ -42,6 +42,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -2247,14 +2248,11 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
     {
-        size_t background_buffer_flush_schedule_pool_size = 16;
-        if (getConfigRef().has("background_buffer_flush_schedule_pool_size"))
-            background_buffer_flush_schedule_pool_size = getConfigRef().getUInt64("background_buffer_flush_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_buffer_flush_schedule_pool_size"))
-            background_buffer_flush_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_buffer_flush_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_buffer_flush_schedule_pool_size,
+            server_settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -2299,14 +2297,11 @@ BackgroundSchedulePool & Context::getSchedulePool() const
     auto lock = getLock();
     if (!shared->schedule_pool)
     {
-        size_t background_schedule_pool_size = 128;
-        if (getConfigRef().has("background_schedule_pool_size"))
-            background_schedule_pool_size = getConfigRef().getUInt64("background_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_schedule_pool_size"))
-            background_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_schedule_pool_size,
+            server_settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -2320,14 +2315,11 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
     {
-        size_t background_distributed_schedule_pool_size = 16;
-        if (getConfigRef().has("background_distributed_schedule_pool_size"))
-            background_distributed_schedule_pool_size = getConfigRef().getUInt64("background_distributed_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_distributed_schedule_pool_size"))
-            background_distributed_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_distributed_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_distributed_schedule_pool_size,
+            server_settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -2341,14 +2333,11 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     auto lock = getLock();
     if (!shared->message_broker_schedule_pool)
     {
-        size_t background_message_broker_schedule_pool_size = 16;
-        if (getConfigRef().has("background_message_broker_schedule_pool_size"))
-            background_message_broker_schedule_pool_size = getConfigRef().getUInt64("background_message_broker_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_message_broker_schedule_pool_size"))
-            background_message_broker_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_message_broker_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_message_broker_schedule_pool_size,
+            server_settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -3885,54 +3874,29 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     const auto & config = getConfigRef();
 
-    size_t background_pool_size = 16;
-    if (config.has("background_pool_size"))
-        background_pool_size = config.getUInt64("background_pool_size");
-    else if (config.has("profiles.default.background_pool_size"))
-        background_pool_size = config.getUInt64("profiles.default.background_pool_size");
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config);
 
-    size_t background_merges_mutations_concurrency_ratio = 2;
-    if (config.has("background_merges_mutations_concurrency_ratio"))
-        background_merges_mutations_concurrency_ratio = config.getUInt64("background_merges_mutations_concurrency_ratio");
-    else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
-        background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
-
-    String background_merges_mutations_scheduling_policy = "round_robin";
-    if (config.has("background_merges_mutations_scheduling_policy"))
-        background_merges_mutations_scheduling_policy = config.getString("background_merges_mutations_scheduling_policy");
-    else if (config.has("profiles.default.background_merges_mutations_scheduling_policy"))
-        background_merges_mutations_scheduling_policy = config.getString("profiles.default.background_merges_mutations_scheduling_policy");
-
-    size_t background_move_pool_size = 8;
-    if (config.has("background_move_pool_size"))
-        background_move_pool_size = config.getUInt64("background_move_pool_size");
-    else if (config.has("profiles.default.background_move_pool_size"))
-        background_move_pool_size = config.getUInt64("profiles.default.background_move_pool_size");
-
-    size_t background_fetches_pool_size = 8;
-    if (config.has("background_fetches_pool_size"))
-        background_fetches_pool_size = config.getUInt64("background_fetches_pool_size");
-    else if (config.has("profiles.default.background_fetches_pool_size"))
-        background_fetches_pool_size = config.getUInt64("profiles.default.background_fetches_pool_size");
-
-    size_t background_common_pool_size = 8;
-    if (config.has("background_common_pool_size"))
-        background_common_pool_size = config.getUInt64("background_common_pool_size");
-    else if (config.has("profiles.default.background_common_pool_size"))
-        background_common_pool_size = config.getUInt64("profiles.default.background_common_pool_size");
+    size_t background_pool_size = server_settings.background_pool_size;
+    auto background_merges_mutations_concurrency_ratio = server_settings.background_merges_mutations_concurrency_ratio;
+    size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
+    String background_merges_mutations_scheduling_policy = server_settings.background_merges_mutations_scheduling_policy;
+    size_t background_move_pool_size = server_settings.background_move_pool_size;
+    size_t background_fetches_pool_size = server_settings.background_fetches_pool_size;
+    size_t background_common_pool_size = server_settings.background_common_pool_size;
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
     (
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
-        /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
+        /*max_tasks_count*/background_pool_max_tasks_count,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
         CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
         background_merges_mutations_scheduling_policy
     );
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
-        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio, background_merges_mutations_scheduling_policy);
+        background_pool_size, background_pool_max_tasks_count, background_merges_mutations_scheduling_policy);
 
     shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
