@@ -9,6 +9,7 @@
 ### <a id="233"></a> ClickHouse release 23.3 LTS, 2023-03-30
 
 #### Upgrade Notes
+* Lightweight DELETEs are production ready and enabled by default. The `DELETE` query for MergeTree tables is now available by default.
 * The behavior of `*domain*RFC` and `netloc` functions is slightly changed: relaxed the set of symbols that are allowed in the URL authority for better conformance. [#46841](https://github.com/ClickHouse/ClickHouse/pull/46841) ([Azat Khuzhin](https://github.com/azat)).
 * Prohibited creating tables based on KafkaEngine with DEFAULT/EPHEMERAL/ALIAS/MATERIALIZED statements for columns. [#47138](https://github.com/ClickHouse/ClickHouse/pull/47138) ([Aleksandr Musorin](https://github.com/AVMusorin)).
 * An "asynchronous connection drain" feature is removed. Related settings and metrics are removed as well. It was an internal feature, so the removal should not affect users who had never heard about that feature. [#47486](https://github.com/ClickHouse/ClickHouse/pull/47486) ([Alexander Tokmakov](https://github.com/tavplubix)).
