@@ -284,22 +284,22 @@ def test_types(started_cluster):
     create_hudi_table(instance, TABLE_NAME)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
     assert (
-        instance.query(f"SELECT * FROM {TABLE_NAME}").strip()
+        instance.query(f"SELECT a, b, c, d, e FROM {TABLE_NAME}").strip()
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
     )
 
-    # table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', 'minio', 'minio123')"
-    # assert (
-    #    instance.query(f"SELECT * FROM {table_function}").strip()
-    #    == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
-    # )
+    table_function = f"hudi(s3, filename='{TABLE_NAME}/', 'minio', 'minio123')"
+    assert (
+       instance.query(f"SELECT a, b, c, d, e FROM {table_function}").strip()
+       == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
 
-    # assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
-    #    [
-    #        ["a", "Nullable(Int32)"],
-    #        ["b", "Nullable(String)"],
-    #        ["c", "Nullable(Date32)"],
-    #        ["d", "Array(Nullable(String))"],
-    #        ["e", "Nullable(Bool)"],
-    #    ]
-    # )
+    assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
+       [
+           ["a", "Nullable(Int32)"],
+           ["b", "Nullable(String)"],
+           ["c", "Nullable(Date32)"],
+           ["d", "Array(Nullable(String))"],
+           ["e", "Nullable(Bool)"],
+       ]
+    )
