@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int ABORTED;
 }
 
 static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
@@ -295,6 +296,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block, num_shards]()
     {
+        /// Avoid Logical error: 'Pipeline for PushingPipelineExecutor was finished before all data was inserted' (whatever it means)
+        if (isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
+
         SCOPE_EXIT_SAFE(
             if (thread_group)
                 CurrentThread::detachFromGroupIfNotDetached();
