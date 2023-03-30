@@ -9,6 +9,7 @@
 ### <a id="233"></a> ClickHouse release 23.3 LTS, 2023-03-30
 
 #### Upgrade Notes
+* Lightweight DELETEs are production ready and enabled by default. The `DELETE` query for MergeTree tables is now available by default.
 * The behavior of `*domain*RFC` and `netloc` functions is slightly changed: relaxed the set of symbols that are allowed in the URL authority for better conformance. [#46841](https://github.com/ClickHouse/ClickHouse/pull/46841) ([Azat Khuzhin](https://github.com/azat)).
 * Prohibited creating tables based on KafkaEngine with DEFAULT/EPHEMERAL/ALIAS/MATERIALIZED statements for columns. [#47138](https://github.com/ClickHouse/ClickHouse/pull/47138) ([Aleksandr Musorin](https://github.com/AVMusorin)).
 * An "asynchronous connection drain" feature is removed. Related settings and metrics are removed as well. It was an internal feature, so the removal should not affect users who had never heard about that feature. [#47486](https://github.com/ClickHouse/ClickHouse/pull/47486) ([Alexander Tokmakov](https://github.com/tavplubix)).
@@ -18,7 +19,7 @@
 
 #### New Feature
 * Add new mode for splitting the work on replicas using settings `parallel_replicas_custom_key` and `parallel_replicas_custom_key_filter_type`. If the cluster consists of a single shard with multiple replicas, up to `max_parallel_replicas` will be randomly picked and turned into shards. For each shard, a corresponding filter is added to the query on the initiator before being sent to the shard. If the cluster consists of multiple shards, it will behave the same as `sample_key` but with the possibility to define an arbitrary key. [#45108](https://github.com/ClickHouse/ClickHouse/pull/45108) ([Antonio Andelic](https://github.com/antonio2368)).
-* An option to display partial result on cancel: Added query setting `stop_reading_on_first_cancel` allowing the canceled query (e.g. due to Ctrl-C) to return a partial result. [#45689](https://github.com/ClickHouse/ClickHouse/pull/45689) ([Alexey Perevyshin](https://github.com/alexX512)).
+* An option to display partial result on cancel: Added query setting `partial_result_on_first_cancel` allowing the canceled query (e.g. due to Ctrl-C) to return a partial result. [#45689](https://github.com/ClickHouse/ClickHouse/pull/45689) ([Alexey Perevyshin](https://github.com/alexX512)).
 * Added support of arbitrary tables engines for temporary tables (except for Replicated and KeeperMap engines). Close [#31497](https://github.com/ClickHouse/ClickHouse/issues/31497). [#46071](https://github.com/ClickHouse/ClickHouse/pull/46071) ([Roman Vasin](https://github.com/rvasin)).
 * Add support for replication of user-defined SQL functions using a centralized storage in Keeper. [#46085](https://github.com/ClickHouse/ClickHouse/pull/46085) ([Aleksei Filatov](https://github.com/aalexfvk)).
 * Implement `system.server_settings` (similar to `system.settings`), which will contain server configurations. [#46550](https://github.com/ClickHouse/ClickHouse/pull/46550) ([pufit](https://github.com/pufit)).
