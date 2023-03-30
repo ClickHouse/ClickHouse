@@ -17,6 +17,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/setThreadName.h>
 #include <Common/randomSeed.h>
