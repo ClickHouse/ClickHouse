@@ -42,6 +42,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -144,6 +145,12 @@ namespace CurrentMetrics
     extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
     extern const Metric BackgroundCommonPoolSize;
+    extern const Metric MarksLoaderThreads;
+    extern const Metric MarksLoaderThreadsActive;
+    extern const Metric IOPrefetchThreads;
+    extern const Metric IOPrefetchThreadsActive;
+    extern const Metric IOWriterThreads;
+    extern const Metric IOWriterThreadsActive;
 }
 
 namespace DB
@@ -1918,8 +1925,13 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
+    const auto & config = getConfigRef();
+    const auto & settings = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings.restore_threads);
+
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -1954,14 +1966,14 @@ QueryStatusPtr Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy)
+void Context::setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(uncompressed_cache_policy, max_size_in_bytes);
 }
 
 
@@ -1980,14 +1992,14 @@ void Context::dropUncompressedCache() const
 }
 
 
-void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy)
+void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, mark_cache_policy);
+    shared->mark_cache = std::make_shared<MarkCache>(mark_cache_policy, cache_size_in_bytes);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -2012,7 +2024,8 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     {
         auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
         auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
-        shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+        shared->load_marks_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, pool_size, pool_size, queue_size);
     }
     return *shared->load_marks_threadpool;
 }
@@ -2037,7 +2050,8 @@ ThreadPool & Context::getPrefetchThreadpool() const
     {
         auto pool_size = getPrefetchThreadpoolSize();
         auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
-        shared->prefetch_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+        shared->prefetch_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, pool_size, pool_size, queue_size);
     }
     return *shared->prefetch_threadpool;
 }
@@ -2174,14 +2188,11 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
     {
-        size_t background_buffer_flush_schedule_pool_size = 16;
-        if (getConfigRef().has("background_buffer_flush_schedule_pool_size"))
-            background_buffer_flush_schedule_pool_size = getConfigRef().getUInt64("background_buffer_flush_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_buffer_flush_schedule_pool_size"))
-            background_buffer_flush_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_buffer_flush_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_buffer_flush_schedule_pool_size,
+            server_settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -2226,14 +2237,11 @@ BackgroundSchedulePool & Context::getSchedulePool() const
     auto lock = getLock();
     if (!shared->schedule_pool)
     {
-        size_t background_schedule_pool_size = 128;
-        if (getConfigRef().has("background_schedule_pool_size"))
-            background_schedule_pool_size = getConfigRef().getUInt64("background_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_schedule_pool_size"))
-            background_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_schedule_pool_size,
+            server_settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -2247,14 +2255,11 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
     {
-        size_t background_distributed_schedule_pool_size = 16;
-        if (getConfigRef().has("background_distributed_schedule_pool_size"))
-            background_distributed_schedule_pool_size = getConfigRef().getUInt64("background_distributed_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_distributed_schedule_pool_size"))
-            background_distributed_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_distributed_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_distributed_schedule_pool_size,
+            server_settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -2268,14 +2273,11 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     auto lock = getLock();
     if (!shared->message_broker_schedule_pool)
     {
-        size_t background_message_broker_schedule_pool_size = 16;
-        if (getConfigRef().has("background_message_broker_schedule_pool_size"))
-            background_message_broker_schedule_pool_size = getConfigRef().getUInt64("background_message_broker_schedule_pool_size");
-        else if (getConfigRef().has("profiles.default.background_message_broker_schedule_pool_size"))
-            background_message_broker_schedule_pool_size = getConfigRef().getUInt64("profiles.default.background_message_broker_schedule_pool_size");
+        ServerSettings server_settings;
+        server_settings.loadSettingsFromConfig(getConfigRef());
 
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            background_message_broker_schedule_pool_size,
+            server_settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -2583,8 +2585,12 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
-static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk,
-                                         std::shared_ptr<ZooKeeperLog> zk_log)
+static void reloadZooKeeperIfChangedImpl(
+    const ConfigurationPtr & config,
+    const std::string & config_name,
+    zkutil::ZooKeeperPtr & zk,
+    std::shared_ptr<ZooKeeperLog> zk_log,
+    bool server_started)
 {
     if (!zk || zk->configChanged(*config, config_name))
     {
@@ -2592,18 +2598,22 @@ static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const 
             zk->finalize("Config changed");
 
         zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
+        if (server_started)
+            zk->setServerCompletelyStarted();
     }
 }
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
+    bool server_started = isServerCompletelyStarted();
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper, getZooKeeperLog());
+    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper, getZooKeeperLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
 {
+    bool server_started = isServerCompletelyStarted();
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
 
     shared->auxiliary_zookeepers_config = config;
@@ -2614,7 +2624,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
             it = shared->auxiliary_zookeepers.erase(it);
         else
         {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog());
+            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog(), server_started);
             ++it;
         }
     }
@@ -3690,6 +3700,15 @@ bool Context::isServerCompletelyStarted() const
 
 void Context::setServerCompletelyStarted()
 {
+    {
+        std::lock_guard lock(shared->zookeeper_mutex);
+        if (shared->zookeeper)
+            shared->zookeeper->setServerCompletelyStarted();
+
+        for (auto & zk : shared->auxiliary_zookeepers)
+            zk.second->setServerCompletelyStarted();
+    }
+
     auto lock = getLock();
     assert(global_context.lock().get() == this);
     assert(!shared->is_server_completely_started);
@@ -3795,54 +3814,29 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     const auto & config = getConfigRef();
 
-    size_t background_pool_size = 16;
-    if (config.has("background_pool_size"))
-        background_pool_size = config.getUInt64("background_pool_size");
-    else if (config.has("profiles.default.background_pool_size"))
-        background_pool_size = config.getUInt64("profiles.default.background_pool_size");
+    ServerSettings server_settings;
+    server_settings.loadSettingsFromConfig(config);
 
-    size_t background_merges_mutations_concurrency_ratio = 2;
-    if (config.has("background_merges_mutations_concurrency_ratio"))
-        background_merges_mutations_concurrency_ratio = config.getUInt64("background_merges_mutations_concurrency_ratio");
-    else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
-        background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
-
-    String background_merges_mutations_scheduling_policy = "round_robin";
-    if (config.has("background_merges_mutations_scheduling_policy"))
-        background_merges_mutations_scheduling_policy = config.getString("background_merges_mutations_scheduling_policy");
-    else if (config.has("profiles.default.background_merges_mutations_scheduling_policy"))
-        background_merges_mutations_scheduling_policy = config.getString("profiles.default.background_merges_mutations_scheduling_policy");
-
-    size_t background_move_pool_size = 8;
-    if (config.has("background_move_pool_size"))
-        background_move_pool_size = config.getUInt64("background_move_pool_size");
-    else if (config.has("profiles.default.background_move_pool_size"))
-        background_move_pool_size = config.getUInt64("profiles.default.background_move_pool_size");
-
-    size_t background_fetches_pool_size = 8;
-    if (config.has("background_fetches_pool_size"))
-        background_fetches_pool_size = config.getUInt64("background_fetches_pool_size");
-    else if (config.has("profiles.default.background_fetches_pool_size"))
-        background_fetches_pool_size = config.getUInt64("profiles.default.background_fetches_pool_size");
-
-    size_t background_common_pool_size = 8;
-    if (config.has("background_common_pool_size"))
-        background_common_pool_size = config.getUInt64("background_common_pool_size");
-    else if (config.has("profiles.default.background_common_pool_size"))
-        background_common_pool_size = config.getUInt64("profiles.default.background_common_pool_size");
+    size_t background_pool_size = server_settings.background_pool_size;
+    auto background_merges_mutations_concurrency_ratio = server_settings.background_merges_mutations_concurrency_ratio;
+    size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
+    String background_merges_mutations_scheduling_policy = server_settings.background_merges_mutations_scheduling_policy;
+    size_t background_move_pool_size = server_settings.background_move_pool_size;
+    size_t background_fetches_pool_size = server_settings.background_fetches_pool_size;
+    size_t background_common_pool_size = server_settings.background_common_pool_size;
 
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
     (
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
-        /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
+        /*max_tasks_count*/background_pool_max_tasks_count,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
         CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
         background_merges_mutations_scheduling_policy
     );
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
-        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio, background_merges_mutations_scheduling_policy);
+        background_pool_size, background_pool_max_tasks_count, background_merges_mutations_scheduling_policy);
 
     shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
@@ -3981,7 +3975,8 @@ ThreadPool & Context::getThreadPoolWriter() const
         auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
 
-        shared->threadpool_writer = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+        shared->threadpool_writer = std::make_unique<ThreadPool>(
+            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, pool_size, pool_size, queue_size);
     }
 
     return *shared->threadpool_writer;

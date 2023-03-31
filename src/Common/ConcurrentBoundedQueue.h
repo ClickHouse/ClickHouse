@@ -128,7 +128,7 @@ public:
     template <typename... Args>
     [[nodiscard]] bool emplace(Args &&... args)
     {
-        return emplaceImpl</* back= */ true>(std::nullopt /* timeout in milliseconds */, std::forward<Args...>(args...));
+        return emplaceImpl</* back= */ true>(std::nullopt /* timeout in milliseconds */, std::forward<Args>(args)...);
     }
 
     /// Returns false if queue is finished or object was not pushed during timeout
@@ -146,7 +146,7 @@ public:
     template <typename... Args>
     [[nodiscard]] bool tryEmplace(UInt64 milliseconds, Args &&... args)
     {
-        return emplaceImpl</* back= */ true>(milliseconds, std::forward<Args...>(args...));
+        return emplaceImpl</* back= */ true>(milliseconds, std::forward<Args>(args)...);
     }
 
     /// Returns false if queue is finished and empty

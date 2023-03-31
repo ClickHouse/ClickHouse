@@ -423,6 +423,8 @@ public:
 
     void markDiskAsCustom() { is_custom_disk = true; }
 
+    virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
+
 protected:
     friend class DiskDecorator;
 

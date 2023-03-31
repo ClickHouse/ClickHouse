@@ -14,7 +14,7 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression, con
     bool preserves_sorting = expression->isSortingPreserved(header, sort_description, remove_filter_column ? filter_column_name : "");
     if (remove_filter_column)
     {
-        preserves_sorting &= find_if(
+        preserves_sorting &= std::find_if(
                                  begin(sort_description),
                                  end(sort_description),
                                  [&](const auto & column_desc) { return column_desc.column_name == filter_column_name; })

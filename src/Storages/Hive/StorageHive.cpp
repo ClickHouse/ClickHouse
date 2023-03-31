@@ -7,6 +7,7 @@
 #include <fmt/core.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -40,6 +41,11 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric StorageHiveThreads;
+    extern const Metric StorageHiveThreadsActive;
+}
 
 namespace DB
 {
@@ -844,7 +850,7 @@ HiveFiles StorageHive::collectHiveFiles(
     Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
-    ThreadPool pool{max_threads};
+    ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, max_threads};
     if (!partitions.empty())
     {
         for (const auto & partition : partitions)
