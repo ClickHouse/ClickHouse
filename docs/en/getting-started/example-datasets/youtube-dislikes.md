@@ -217,3 +217,148 @@ The results look like:
 │       8710 │         62 │             4 │ https://youtu.be/PeV1mC2z--M │ What is JDBC DriverManager? | JDBC                                                                     │
 │       3534 │         62 │             1 │ https://youtu.be/8nWRhK9gw10 │ CLICKHOUSE - Arquitetura Modular                                                                       │
 ```
+
+## Questions
+
+### If someone disables comments does it lower the chance someone will actually click like or dislike?
+
+When commenting is disabled, are people more likely to like or dislike to express their feelings about a video?
+
+
+```sql
+SELECT
+    concat('< ', formatReadableQuantity(view_range)) AS views,
+    is_comments_enabled,
+    total_clicks / num_views AS prob_like_dislike
+FROM
+(
+    SELECT
+        is_comments_enabled,
+        power(10, CEILING(log10(view_count + 1))) AS view_range,
+        sum(like_count + dislike_count) AS total_clicks,
+        sum(view_count) AS num_views
+    FROM youtube
+    GROUP BY
+        view_range,
+        is_comments_enabled
+) WHERE view_range > 1
+ORDER BY
+    is_comments_enabled ASC,
+    num_views ASC;
+```
+
+```response
+┌─views─────────────┬─is_comments_enabled─┬────prob_like_dislike─┐
+│ < 10.00           │ false               │  0.08224180712685371 │
+│ < 100.00          │ false               │  0.06346337759167248 │
+│ < 1.00 thousand   │ false               │  0.03201883652987105 │
+│ < 10.00 thousand  │ false               │  0.01716073540410903 │
+│ < 10.00 billion   │ false               │ 0.004555639481829971 │
+│ < 100.00 thousand │ false               │  0.01293351460515323 │
+│ < 1.00 billion    │ false               │ 0.004761811192464957 │
+│ < 1.00 million    │ false               │ 0.010472604018980551 │
+│ < 10.00 million   │ false               │  0.00788902538420125 │
+│ < 100.00 million  │ false               │  0.00579152804250582 │
+│ < 10.00           │ true                │  0.09819517478134059 │
+│ < 100.00          │ true                │  0.07403784478585775 │
+│ < 1.00 thousand   │ true                │  0.03846294910067627 │
+│ < 10.00 billion   │ true                │ 0.005615217329358215 │
+│ < 10.00 thousand  │ true                │  0.02505881391701455 │
+│ < 1.00 billion    │ true                │ 0.007434998802482997 │
+│ < 100.00 thousand │ true                │ 0.022694648130822004 │
+│ < 100.00 million  │ true                │ 0.011761563746575625 │
+│ < 1.00 million    │ true                │ 0.020776022304589435 │
+│ < 10.00 million   │ true                │ 0.016917095718089584 │
+└───────────────────┴─────────────────────┴──────────────────────┘
+
+22 rows in set. Elapsed: 8.460 sec. Processed 4.56 billion rows, 77.48 GB (538.73 million rows/s., 9.16 GB/s.)
+```
+
+Enabling comments seems to be correlated with a higher rate of engagement.
+
+### How do like ratio changes as views go up?
+
+```sql
+SELECT
+    concat('< ', formatReadableQuantity(view_range)) AS view_range,
+    is_comments_enabled,
+    round(like_ratio, 2) AS like_ratio
+FROM
+(
+SELECT
+    power(10, CEILING(log10(view_count + 1))) as view_range,
+    is_comments_enabled,
+    avg(like_count / dislike_count) as like_ratio
+FROM youtube WHERE dislike_count > 0
+GROUP BY
+    view_range,
+    is_comments_enabled HAVING view_range > 1
+ORDER BY
+    view_range ASC,
+    is_comments_enabled ASC
+);
+```
+
+```response
+┌─view_range────────┬─is_comments_enabled─┬─like_ratio─┐
+│ < 10.00           │ false               │       0.66 │
+│ < 10.00           │ true                │       0.66 │
+│ < 100.00          │ false               │          3 │
+│ < 100.00          │ true                │       3.95 │
+│ < 1.00 thousand   │ false               │       8.45 │
+│ < 1.00 thousand   │ true                │      13.07 │
+│ < 10.00 thousand  │ false               │      18.57 │
+│ < 10.00 thousand  │ true                │      30.92 │
+│ < 100.00 thousand │ false               │      23.55 │
+│ < 100.00 thousand │ true                │      42.13 │
+│ < 1.00 million    │ false               │      19.23 │
+│ < 1.00 million    │ true                │      37.86 │
+│ < 10.00 million   │ false               │      12.13 │
+│ < 10.00 million   │ true                │      30.72 │
+│ < 100.00 million  │ false               │       6.67 │
+│ < 100.00 million  │ true                │      23.32 │
+│ < 1.00 billion    │ false               │       3.08 │
+│ < 1.00 billion    │ true                │      20.69 │
+│ < 10.00 billion   │ false               │       1.77 │
+│ < 10.00 billion   │ true                │       19.5 │
+└───────────────────┴─────────────────────┴────────────┘
+
+20 rows in set. Elapsed: 63.664 sec. Processed 4.56 billion rows, 113.93 GB (71.59 million rows/s., 1.79 GB/s.)
+```
+
+### How are views distributed?
+
+```sql
+SELECT
+    labels AS percentile,
+    round(quantiles) AS views
+FROM
+(
+    SELECT
+        quantiles(0.999, 0.99, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1)(view_count) AS quantiles,
+        ['99.9th', '99th', '95th', '90th', '80th', '70th','60th', '50th', '40th', '30th', '20th', '10th'] AS labels
+    FROM youtube
+)
+ARRAY JOIN
+    quantiles,
+    labels;
+```
+
+```response
+┌─percentile─┬───views─┐
+│ 99.9th     │ 1216624 │
+│ 99th       │  143519 │
+│ 95th       │   13542 │
+│ 90th       │    4054 │
+│ 80th       │     950 │
+│ 70th       │     363 │
+│ 60th       │     177 │
+│ 50th       │      97 │
+│ 40th       │      57 │
+│ 30th       │      32 │
+│ 20th       │      16 │
+│ 10th       │       6 │
+└────────────┴─────────┘
+
+12 rows in set. Elapsed: 1.864 sec. Processed 4.56 billion rows, 36.46 GB (2.45 billion rows/s., 19.56 GB/s.)
+```

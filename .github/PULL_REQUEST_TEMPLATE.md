@@ -7,7 +7,7 @@ tests/ci/run_check.py
 ### Changelog category (leave one):
 - New Feature
 - Improvement
-- Bug Fix (user-visible misbehavior in official stable or prestable release)
+- Bug Fix (user-visible misbehavior in an official stable release)
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
