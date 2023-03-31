@@ -1818,14 +1818,14 @@ void TCPHandler::decreaseCancellationStatus(const std::string & log_message)
 {
     auto prev_status = magic_enum::enum_name(state.cancellation_status);
 
-    bool stop_reading_on_first_cancel = false;
+    bool partial_result_on_first_cancel = false;
     if (query_context)
     {
         const auto & settings = query_context->getSettingsRef();
-        stop_reading_on_first_cancel = settings.stop_reading_on_first_cancel;
+        partial_result_on_first_cancel = settings.partial_result_on_first_cancel;
     }
 
-    if (stop_reading_on_first_cancel && state.cancellation_status == CancellationStatus::NOT_CANCELLED)
+    if (partial_result_on_first_cancel && state.cancellation_status == CancellationStatus::NOT_CANCELLED)
     {
         state.cancellation_status = CancellationStatus::READ_CANCELLED;
     }
@@ -1895,7 +1895,7 @@ void TCPHandler::sendData(const Block & block)
         {
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(UInt64(-1), *out);
+                writeVarUInt(VAR_UINT_MAX, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);
