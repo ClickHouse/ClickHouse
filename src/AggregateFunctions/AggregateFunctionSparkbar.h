@@ -46,9 +46,17 @@ struct AggregateFunctionSparkbarData
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
         {
-            Y res;
-            bool has_overfllow = common::addOverflow(it->getMapped(), y, res)
-            it->getMapped() = has_overfllow ? std::numeric_limits<Y>::max() : res;
+            if constexpr (std::is_floating_point_v<Y>)
+            {
+                it->getMapped() += y;
+                return it->getMapped();
+            }
+            else
+            {
+                Y res;
+                bool has_overfllow = common::addOverflow(it->getMapped(), y, res);
+                it->getMapped() = has_overfllow ? std::numeric_limits<Y>::max() : res;
+            }
         }
         return it->getMapped();
     }
@@ -184,7 +192,12 @@ private:
             size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
 
             Y res;
-            bool has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
+            bool has_overfllow = false;
+            if constexpr (std::is_floating_point_v<Y>)
+                res = histogram[index] + point.getMapped();
+            else
+                has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
+
             if (unlikely(has_overfllow))
             {
                 /// In case of overflow, just saturate
@@ -229,13 +242,20 @@ private:
             }
 
             constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
-            /// handle potential overflow
-            Y scaled;
-            bool has_overfllow = common::mulOverflow(y, levels_num, scaled);
-            if (has_overfllow)
+            if constexpr (std::is_floating_point_v<Y>)
+            {
                 y = y / (y_max / levels_num) + 1;
+            }
             else
-                y = scaled / y_max + 1;
+            {
+                Y scaled;
+                bool has_overfllow = common::mulOverflow<Y>(y, levels_num, scaled);
+
+                if (has_overfllow)
+                    y = y / (y_max / levels_num) + 1;
+                else
+                    y = scaled / y_max + 1;
+            }
         }
 
         size_t sz = 0;
