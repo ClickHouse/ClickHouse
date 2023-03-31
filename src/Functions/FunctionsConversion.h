@@ -3106,9 +3106,7 @@ private:
         {
             /// Recreate array of unnamed tuples because otherwise it may work
             /// unexpectedly while converting to array of named tuples.
-            const auto & from_array = assert_cast<const DataTypeArray &>(*from_type_map->getNestedType());
-            const auto & from_tuple = assert_cast<const DataTypeTuple &>(*from_array.getNestedType());
-            from_type_holder = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
+            from_type_holder = from_type_map->getNestedTypeWithUnnamedTuple();
             from_type = assert_cast<const DataTypeArray *>(from_type_holder.get());
         }
 
