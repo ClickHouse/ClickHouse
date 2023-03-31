@@ -1,14 +1,12 @@
 #!/bin/sh
 
-echo "Using sparse checkout for openssl"
+echo "Using sparse checkout for aws-s2n-tls"
 
 FILES_TO_CHECKOUT=$(git rev-parse --git-dir)/info/sparse-checkout
 echo '/*' > $FILES_TO_CHECKOUT
-echo '!/fuzz/*' >> $FILES_TO_CHECKOUT
 echo '!/test/*' >> $FILES_TO_CHECKOUT
-echo '!/doc/*' >> $FILES_TO_CHECKOUT
-echo '!/providers/*' >> $FILES_TO_CHECKOUT
-echo '!/apps/*' >> $FILES_TO_CHECKOUT
+echo '!/docs/*' >> $FILES_TO_CHECKOUT
+echo '!/compliance/*' >> $FILES_TO_CHECKOUT
 
 git config core.sparsecheckout true
 git checkout $1
