@@ -919,15 +919,6 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     RequiredSourceColumnsVisitor::Data columns_context;
     columns_context.visit_index_hint = visit_index_hint;
-
-    if (auto * t = query->as<ASTSelectQuery>())
-    {
-        auto & select_query = *t;
-        for (size_t i = 0; i < select_query.select()->children.size(); ++i)
-            if (auto * identifier = select_query.select()->children[i]->as<ASTIdentifier>())
-                if (identifier->name().empty())
-                    select_query.select()->children.erase(select_query.select()->children.begin()+i);
-    }
     RequiredSourceColumnsVisitor(columns_context).visit(query);
 
     NameSet source_column_names;
