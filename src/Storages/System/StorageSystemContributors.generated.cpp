@@ -1349,6 +1349,7 @@ const char * auto_contributors[] {
     "rnbondarenko",
     "robert",
     "robot-clickhouse",
+    "robot-clickhouse-ci-1",
     "robot-metrika-test",
     "rodrigargar",
     "roman",
