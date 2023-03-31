@@ -219,9 +219,9 @@ The optional keyword `FULL` causes the output to include the collation, comment 
 - key - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
 - default - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
 - extra - Additional information, currently unused (String)
-- collation - Collation of the column, always `NULL` because ClickHouse has no per-column collations, only if `FULL` keyword was specified (Nullable(String))
-- comment - Comment on the column, only if `FULL` keyword was specified (String)
-- privilege - The privilege you have on this column, currently not available, only if `FULL` keyword was specified (String)
+- collation - (only if `FULL` keyword was specified) Collation of the column, always `NULL` because ClickHouse has no per-column collations (Nullable(String))
+- comment - (only if `FULL` keyword was specified) Comment on the column (String)
+- privilege - (only if `FULL` keyword was specified) The privilege you have on this column, currently not available (String)
 
 **Examples**
 
