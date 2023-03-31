@@ -46,6 +46,8 @@ public:
 
     std::optional<AuthenticationData> auth_data;
 
+    mutable std::optional<String> temporary_password_for_checks;
+
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -61,5 +63,7 @@ public:
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

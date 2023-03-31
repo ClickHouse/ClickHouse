@@ -2,6 +2,7 @@
 # Tags: long, no-replicated-database, no-ordinary-database
 
 # shellcheck disable=SC2015
+# shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -102,7 +103,7 @@ function thread_partition_src_to_dst()
         if echo "$output" | is_tx_aborted_with "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO"
         then
             echo "thread_partition_src_to_dst tx_id: $tx_id session_id: $session_id" >&2
-            echо "select throwIf has failed with FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" >&2
+            echo "select throwIf has failed with FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" >&2
             echo -e "trace_output:\n $trace_output" >&2
             echo -e "output:\n $output" >&2
             return 1

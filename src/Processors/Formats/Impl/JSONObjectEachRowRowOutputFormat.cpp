@@ -6,8 +6,8 @@
 namespace DB
 {
 
-JSONObjectEachRowRowOutputFormat::JSONObjectEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
-    : JSONEachRowRowOutputFormat(out_, header_, params_, settings_), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(header_, settings_))
+JSONObjectEachRowRowOutputFormat::JSONObjectEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    : JSONEachRowRowOutputFormat(out_, header_, settings_), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(header_, settings_))
 {
 }
 
@@ -71,12 +71,11 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
     factory.registerOutputFormat("JSONObjectEachRow", [](
                        WriteBuffer & buf,
                        const Block & sample,
-                       const RowOutputFormatParams & params,
                        const FormatSettings & _format_settings)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
-        return std::make_shared<JSONObjectEachRowRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<JSONObjectEachRowRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
     factory.markFormatHasNoAppendSupport("JSONObjectEachRow");

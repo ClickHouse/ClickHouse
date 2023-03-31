@@ -71,7 +71,8 @@ public:
 
     /// Read expression from istr, assert it has the same structure and the same types of literals (template matches)
     /// and parse literals into temporary columns
-    bool parseExpression(ReadBuffer & istr, const FormatSettings & format_settings, const Settings & settings);
+    bool parseExpression(
+        ReadBuffer & istr, const TokenIterator & token_iterator, const FormatSettings & format_settings, const Settings & settings);
 
     /// Evaluate batch of expressions were parsed using template.
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
@@ -80,8 +81,14 @@ public:
     size_t rowsCount() const { return rows_count; }
 
 private:
-    bool tryParseExpression(ReadBuffer & istr, const FormatSettings & format_settings, size_t & cur_column, const Settings & settings);
-    bool parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * type, size_t column_idx, const Settings & settings);
+    bool tryParseExpression(
+        ReadBuffer & istr,
+        const TokenIterator & token_iterator,
+        const FormatSettings & format_settings,
+        size_t & cur_column,
+        const Settings & settings);
+    bool parseLiteralAndAssertType(
+        ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * type, size_t column_idx, const Settings & settings);
 
 private:
     TemplateStructurePtr structure;

@@ -9,12 +9,14 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -32,8 +34,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), packer(out_), format_settings(format_settings_) {}
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), packer(out_), format_settings(format_settings_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
 {
@@ -56,21 +58,29 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_uint32(assert_cast<const ColumnUInt32 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::IPv4:
+        {
+            packer.pack_uint32(assert_cast<const ColumnIPv4 &>(column).getElement(row_num));
+            return;
+        }
         case TypeIndex::UInt64:
         {
             packer.pack_uint64(assert_cast<const ColumnUInt64 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             packer.pack_int8(assert_cast<const ColumnInt8 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             packer.pack_int16(assert_cast<const ColumnInt16 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Int32:
         {
             packer.pack_int32(assert_cast<const ColumnInt32 &>(column).getElement(row_num));
@@ -79,6 +89,30 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::Int64:
         {
             packer.pack_int64(assert_cast<const ColumnInt64 &>(column).getElement(row_num));
+            return;
+        }
+        case TypeIndex::Int128:
+        {
+            packer.pack_bin(static_cast<unsigned>(sizeof(Int128)));
+            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Int128));
+            return;
+        }
+        case TypeIndex::UInt128:
+        {
+            packer.pack_bin(static_cast<unsigned>(sizeof(UInt128)));
+            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(UInt128));
+            return;
+        }
+        case TypeIndex::Int256:
+        {
+            packer.pack_bin(static_cast<unsigned>(sizeof(Int256)));
+            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Int256));
+            return;
+        }
+        case TypeIndex::UInt256:
+        {
+            packer.pack_bin(static_cast<unsigned>(sizeof(UInt256)));
+            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(UInt256));
             return;
         }
         case TypeIndex::Float32:
@@ -96,6 +130,28 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_uint64(assert_cast<const DataTypeDateTime64::ColumnType &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::Decimal32:
+        {
+            packer.pack_int32(assert_cast<const ColumnDecimal<Decimal32> &>(column).getElement(row_num));
+            return;
+        }
+        case TypeIndex::Decimal64:
+        {
+            packer.pack_int64(assert_cast<const ColumnDecimal<Decimal64> &>(column).getElement(row_num));
+            return;
+        }
+        case TypeIndex::Decimal128:
+        {
+            packer.pack_bin(static_cast<unsigned>(sizeof(Decimal128)));
+            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal128));
+            return;
+        }
+        case TypeIndex::Decimal256:
+        {
+            packer.pack_bin(static_cast<unsigned>(sizeof(Decimal256)));
+            packer.pack_bin_body(column.getDataAt(row_num).data, sizeof(Decimal256));
+            return;
+        }
         case TypeIndex::String:
         {
             const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
@@ -108,6 +164,13 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
             packer.pack_bin(static_cast<unsigned>(string.size()));
             packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
+            return;
+        }
+        case TypeIndex::IPv6:
+        {
+            const std::string_view & data = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
+            packer.pack_bin(static_cast<unsigned>(data.size()));
+            packer.pack_bin_body(data.data(), static_cast<unsigned>(data.size()));
             return;
         }
         case TypeIndex::Array:
@@ -124,7 +187,18 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 serializeField(nested_column, nested_type, offset + i);
             }
             return;
-         }
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
+            const auto & nested_types = tuple_type.getElements();
+            const ColumnTuple & column_tuple = assert_cast<const ColumnTuple &>(column);
+            const auto & nested_columns = column_tuple.getColumns();
+            packer.pack_array(static_cast<unsigned>(nested_types.size()));
+            for (size_t i = 0; i < nested_types.size(); ++i)
+                serializeField(*nested_columns[i], nested_types[i], row_num);
+            return;
+        }
         case TypeIndex::Nullable:
         {
             auto nested_type = removeNullable(data_type);
@@ -208,7 +282,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         default:
             break;
     }
-    throw Exception("Type " + data_type->getName() + " is not supported for MsgPack output format", ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for MsgPack output format", data_type->getName());
 }
 
 void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
@@ -226,10 +300,9 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
     factory.registerOutputFormat("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
             const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
 }

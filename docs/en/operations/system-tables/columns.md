@@ -88,5 +88,3 @@ numeric_precision_radix: ᴺᵁᴸᴸ
 numeric_scale:           ᴺᵁᴸᴸ
 datetime_precision:      ᴺᵁᴸᴸ
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/columns) <!--hide-->

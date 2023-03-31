@@ -60,10 +60,20 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
-    std::shared_ptr<NotJoinedBlocks>
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {
         return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+    }
+
+    IBlocksStreamPtr getDelayedBlocks() override
+    {
+        return join->getDelayedBlocks();
+    }
+
+    bool hasDelayedBlocks() const override
+    {
+        return join->hasDelayedBlocks();
     }
 
 private:
@@ -76,7 +86,7 @@ private:
 
     /// Change join-in-memory to join-on-disk moving right hand JOIN data from one to another.
     /// Throws an error if join-on-disk do not support JOIN kind or strictness.
-    void switchJoin();
+    bool switchJoin();
 };
 
 }

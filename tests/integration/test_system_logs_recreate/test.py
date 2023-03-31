@@ -6,7 +6,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node_default", stay_alive=True)
+node = cluster.add_instance(
+    "node_default",
+    main_configs=["configs/config.d/storage_configuration.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -76,6 +80,45 @@ def test_system_logs_recreate():
             == 2
         )
 
+    # apply only storage_policy for all system tables
+    for table in system_logs:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"""echo "
+        <clickhouse>
+            <{table}>
+                 <storage_policy>system_tables</storage_policy>
+            </{table}>
+        </clickhouse>
+        " > /etc/clickhouse-server/config.d/zzz-override-{table}.xml
+        """,
+            ]
+        )
+    node.restart_clickhouse()
+    node.query("SYSTEM FLUSH LOGS")
+    import logging
+
+    for table in system_logs:
+        create_table_sql = node.query(f"SHOW CREATE TABLE system.{table} FORMAT TSVRaw")
+        logging.debug(
+            "With storage policy, SHOW CREATE TABLE system.%s is: %s",
+            table,
+            create_table_sql,
+        )
+        assert "ENGINE = MergeTree" in create_table_sql
+        assert "ENGINE = Null" not in create_table_sql
+        assert "SETTINGS storage_policy = 'system_tables'" in create_table_sql
+        assert (
+            len(
+                node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
+                .strip()
+                .split("\n")
+            )
+            == 3
+        )
+
     for table in system_logs:
         node.exec_in_container(
             ["rm", f"/etc/clickhouse-server/config.d/zzz-override-{table}.xml"]
@@ -92,7 +135,7 @@ def test_system_logs_recreate():
                 .strip()
                 .split("\n")
             )
-            == 3
+            == 4
         )
 
     node.query("SYSTEM FLUSH LOGS")
@@ -105,7 +148,7 @@ def test_system_logs_recreate():
                 .strip()
                 .split("\n")
             )
-            == 3
+            == 4
         )
 
 

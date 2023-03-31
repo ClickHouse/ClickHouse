@@ -25,7 +25,9 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
 {
     size_t size = config.getUInt64(dictionary_layout_prefix + ".size_in_cells");
     if (size == 0)
-        throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE, "{}: dictionary of layout '{}' setting 'size_in_cells' must be greater than 0", full_name, layout_type);
+        throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
+                        "{}: dictionary of layout '{}' setting 'size_in_cells' must be greater than 0",
+                        full_name, layout_type);
 
     size_t dict_lifetime_seconds = static_cast<size_t>(dict_lifetime.max_sec);
     size_t strict_max_lifetime_seconds = config.getUInt64(dictionary_layout_prefix + ".strict_max_lifetime_seconds", dict_lifetime_seconds);

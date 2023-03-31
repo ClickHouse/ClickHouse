@@ -93,15 +93,29 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
 
-    for (const auto & file_name : files_to_remove_after_finish)
-        part->getDataPartStorage().removeFile(file_name);
-
     for (auto & file : written_files)
     {
         file->finalize();
         if (sync)
             file->sync();
     }
+
+    /// TODO: this code looks really stupid. It's because DiskTransaction is
+    /// unable to see own write operations. When we merge part with column TTL
+    /// and column completely outdated we first write empty column and after
+    /// remove it. In case of single DiskTransaction it's impossible because
+    /// remove operation will not see just written files. That is why we finish
+    /// one transaction and start new...
+    ///
+    /// FIXME: DiskTransaction should see own writes. Column TTL implementation shouldn't be so stupid...
+    if (!files_to_remove_after_finish.empty())
+    {
+        part->getDataPartStorage().commitTransaction();
+        part->getDataPartStorage().beginTransaction();
+    }
+
+    for (const auto & file_name : files_to_remove_after_finish)
+        part->getDataPartStorage().removeFile(file_name);
 }
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
@@ -186,7 +200,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const MergeTreeMutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums)
 {
+    /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
+
     if (new_part->isProjectionPart())
     {
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
@@ -226,8 +242,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
-                throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
-                    + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}. It is a bug.",
+                    new_part->name);
         }
 
         {
@@ -282,8 +298,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
     else
     {
-        throw Exception("Compression codec have to be specified for part on disk, empty for" + new_part->name
-                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for{}. "
+                "It is a bug.", new_part->name);
     }
 
     {

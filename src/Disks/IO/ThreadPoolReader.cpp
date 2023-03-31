@@ -61,6 +61,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric Read;
+    extern const Metric ThreadPoolFSReaderThreads;
+    extern const Metric ThreadPoolFSReaderThreadsActive;
 }
 
 
@@ -85,7 +87,7 @@ static bool hasBugInPreadV2()
 #endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
-    : pool(pool_size, pool_size, queue_size_)
+    : pool(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, pool_size, pool_size, queue_size_)
 {
 }
 
@@ -145,7 +147,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             if (!res)
             {
                 /// The file has ended.
-                promise.set_value({0, 0});
+                promise.set_value({0, 0, nullptr});
                 return future;
             }
 
@@ -190,7 +192,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitBytes, bytes_read);
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
 
-            promise.set_value({bytes_read, request.ignore});
+            promise.set_value({bytes_read, request.ignore, nullptr});
             return future;
         }
     }

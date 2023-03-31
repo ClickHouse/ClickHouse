@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
+"""
+Lambda function to:
+    - calculate number of running runners
+    - cleaning dead runners from GitHub
+    - terminating stale lost runners in EC2
+"""
 
 import argparse
 import sys
 import json
 import time
 from collections import namedtuple
+from datetime import datetime
+from typing import Dict, List, Tuple
 
 import jwt
-import requests
-import boto3
-from botocore.exceptions import ClientError
+import requests  # type: ignore
+import boto3  # type: ignore
+from botocore.exceptions import ClientError  # type: ignore
 
 UNIVERSAL_LABEL = "universal"
 RUNNER_TYPE_LABELS = [
@@ -22,28 +30,36 @@ RUNNER_TYPE_LABELS = [
     "style-checker-aarch64",
 ]
 
+RunnerDescription = namedtuple(
+    "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
+)
+RunnerDescriptions = List[RunnerDescription]
 
-def get_dead_runners_in_ec2(runners):
+
+def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
+    """Returns instances that are offline/dead in EC2, or not found in EC2"""
     ids = {
         runner.name: runner
         for runner in runners
         # Only `i-deadbead123` are valid names for an instance ID
-        if runner.offline and not runner.busy and runner.name.startswith("i-")
+        if runner.name.startswith("i-") and runner.offline and not runner.busy
     }
+    if not ids:
+        return []
+
+    # Delete all offline runners with wrong name
     result_to_delete = [
         runner
         for runner in runners
         if not ids.get(runner.name) and runner.offline and not runner.busy
     ]
-    if not ids:
-        return []
 
     client = boto3.client("ec2")
 
     i = 0
     inc = 100
 
-    print("Checking ids", ids.keys())
+    print("Checking ids: ", " ".join(ids.keys()))
     instances_statuses = []
     while i < len(ids.keys()):
         try:
@@ -52,6 +68,7 @@ def get_dead_runners_in_ec2(runners):
                     InstanceIds=list(ids.keys())[i : i + inc]
                 )
             )
+            # It applied only if all ids exist in EC2
             i += inc
         except ClientError as e:
             # The list of non-existent instances is in the message:
@@ -80,14 +97,57 @@ def get_dead_runners_in_ec2(runners):
         print("Instance", runner.name, "is not alive, going to remove it")
     for instance_id, runner in ids.items():
         if instance_id not in found_instances:
-            print("Instance", instance_id, "is not alive, going to remove it")
+            print("Instance", instance_id, "is not found in EC2, going to remove it")
             result_to_delete.append(runner)
     return result_to_delete
 
 
-def get_key_and_app_from_aws():
-    import boto3
+def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[dict]:
+    client = boto3.client("ec2")
+    reservations = client.describe_instances(
+        Filters=[{"Name": "tag-key", "Values": ["github:runner-type"]}]
+    )["Reservations"]
+    lost_instances = []
+    offline_runners = [
+        runner.name for runner in runners if runner.offline and not runner.busy
+    ]
+    # Here we refresh the runners to get the most recent state
+    now = datetime.now().timestamp()
 
+    for reservation in reservations:
+        for instance in reservation["Instances"]:
+            # Do not consider instances started 20 minutes ago as problematic
+            if now - instance["LaunchTime"].timestamp() < 1200:
+                continue
+
+            runner_type = [
+                tag["Value"]
+                for tag in instance["Tags"]
+                if tag["Key"] == "github:runner-type"
+            ][0]
+            # If there's no necessary labels in runner type it's fine
+            if not (
+                UNIVERSAL_LABEL in runner_type or runner_type in RUNNER_TYPE_LABELS
+            ):
+                continue
+
+            if instance["InstanceId"] in offline_runners:
+                lost_instances.append(instance)
+                continue
+
+            if instance["State"]["Name"] == "running" and (
+                not [
+                    runner
+                    for runner in runners
+                    if runner.name == instance["InstanceId"]
+                ]
+            ):
+                lost_instances.append(instance)
+
+    return lost_instances
+
+
+def get_key_and_app_from_aws() -> Tuple[str, int]:
     secret_name = "clickhouse_github_secret_key"
     session = boto3.session.Session()
     client = session.client(
@@ -103,7 +163,7 @@ def handler(event, context):
     main(private_key, app_id, True, True)
 
 
-def get_installation_id(jwt_token):
+def get_installation_id(jwt_token: str) -> int:
     headers = {
         "Authorization": f"Bearer {jwt_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -114,10 +174,12 @@ def get_installation_id(jwt_token):
     for installation in data:
         if installation["account"]["login"] == "ClickHouse":
             installation_id = installation["id"]
-    return installation_id
+            break
+
+    return installation_id  # type: ignore
 
 
-def get_access_token(jwt_token, installation_id):
+def get_access_token(jwt_token: str, installation_id: int) -> str:
     headers = {
         "Authorization": f"Bearer {jwt_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -128,34 +190,33 @@ def get_access_token(jwt_token, installation_id):
     )
     response.raise_for_status()
     data = response.json()
-    return data["token"]
+    return data["token"]  # type: ignore
 
 
-RunnerDescription = namedtuple(
-    "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
-)
-
-
-def list_runners(access_token):
+def list_runners(access_token: str) -> RunnerDescriptions:
     headers = {
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
+    per_page = 100
     response = requests.get(
-        "https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100",
+        f"https://api.github.com/orgs/ClickHouse/actions/runners?per_page={per_page}",
         headers=headers,
     )
     response.raise_for_status()
     data = response.json()
     total_runners = data["total_count"]
+    print("Expected total runners", total_runners)
     runners = data["runners"]
 
-    total_pages = int(total_runners / 100 + 1)
+    # round to 0 for 0, 1 for 1..100, but to 2 for 101..200
+    total_pages = (total_runners - 1) // per_page + 1
+
     print("Total pages", total_pages)
     for i in range(2, total_pages + 1):
         response = requests.get(
             "https://api.github.com/orgs/ClickHouse/actions/runners"
-            f"?page={i}&per_page=100",
+            f"?page={i}&per_page={per_page}",
             headers=headers,
         )
         response.raise_for_status()
@@ -178,8 +239,10 @@ def list_runners(access_token):
     return result
 
 
-def group_runners_by_tag(listed_runners):
-    result = {}
+def group_runners_by_tag(
+    listed_runners: RunnerDescriptions,
+) -> Dict[str, RunnerDescriptions]:
+    result = {}  # type: Dict[str, RunnerDescriptions]
 
     def add_to_result(tag, runner):
         if tag not in result:
@@ -201,7 +264,9 @@ def group_runners_by_tag(listed_runners):
     return result
 
 
-def push_metrics_to_cloudwatch(listed_runners, namespace):
+def push_metrics_to_cloudwatch(
+    listed_runners: RunnerDescriptions, namespace: str
+) -> None:
     client = boto3.client("cloudwatch")
     metrics_data = []
     busy_runners = sum(
@@ -231,7 +296,7 @@ def push_metrics_to_cloudwatch(listed_runners, namespace):
         }
     )
     if total_active_runners == 0:
-        busy_ratio = 100
+        busy_ratio = 100.0
     else:
         busy_ratio = busy_runners / total_active_runners * 100
 
@@ -246,7 +311,7 @@ def push_metrics_to_cloudwatch(listed_runners, namespace):
     client.put_metric_data(Namespace=namespace, MetricData=metrics_data)
 
 
-def delete_runner(access_token, runner):
+def delete_runner(access_token: str, runner: RunnerDescription) -> bool:
     headers = {
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
@@ -258,10 +323,15 @@ def delete_runner(access_token, runner):
     )
     response.raise_for_status()
     print(f"Response code deleting {runner.name} is {response.status_code}")
-    return response.status_code == 204
+    return bool(response.status_code == 204)
 
 
-def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_runners):
+def main(
+    github_secret_key: str,
+    github_app_id: int,
+    push_to_cloudwatch: bool,
+    delete_offline_runners: bool,
+) -> None:
     payload = {
         "iat": int(time.time()) - 60,
         "exp": int(time.time()) + (10 * 60),
@@ -271,11 +341,11 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
     encoded_jwt = jwt.encode(payload, github_secret_key, algorithm="RS256")
     installation_id = get_installation_id(encoded_jwt)
     access_token = get_access_token(encoded_jwt, installation_id)
-    runners = list_runners(access_token)
-    grouped_runners = group_runners_by_tag(runners)
+    gh_runners = list_runners(access_token)
+    grouped_runners = group_runners_by_tag(gh_runners)
     for group, group_runners in grouped_runners.items():
         if push_to_cloudwatch:
-            print(group)
+            print(f"Pushing metrics for group '{group}'")
             push_metrics_to_cloudwatch(group_runners, "RunnersMetrics/" + group)
         else:
             print(group, f"({len(group_runners)})")
@@ -284,10 +354,17 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
 
     if delete_offline_runners:
         print("Going to delete offline runners")
-        dead_runners = get_dead_runners_in_ec2(runners)
+        dead_runners = get_dead_runners_in_ec2(gh_runners)
         for runner in dead_runners:
             print("Deleting runner", runner)
             delete_runner(access_token, runner)
+
+        lost_instances = get_lost_ec2_instances(gh_runners)
+        if lost_instances:
+            print("Going to terminate lost runners")
+            ids = [i["InstanceId"] for i in lost_instances]
+            print("Terminating runners:", ids)
+            boto3.client("ec2").terminate_instances(InstanceIds=ids)
 
 
 if __name__ == "__main__":

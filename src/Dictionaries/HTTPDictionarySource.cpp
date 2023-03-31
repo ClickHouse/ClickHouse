@@ -1,7 +1,6 @@
 #include "HTTPDictionarySource.h"
 #include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -39,7 +38,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     , configuration(configuration_)
     , sample_block(sample_block_)
     , context(context_)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
 {
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
@@ -52,7 +51,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     , configuration(other.configuration)
     , sample_block(other.sample_block)
     , context(Context::createCopy(other.context))
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
 {
     credentials.setUsername(other.credentials.getUsername());
     credentials.setPassword(other.credentials.getPassword());
@@ -227,7 +226,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         auto settings_config_prefix = config_prefix + ".http";
         Poco::Net::HTTPBasicCredentials credentials;
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
+        HTTPHeaderEntries header_entries;
         String url;
         String endpoint;
         String format;
@@ -246,7 +245,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
             header_entries.reserve(named_collection->configuration.headers.size());
             for (const auto & [key, value] : named_collection->configuration.headers)
-                header_entries.emplace_back(std::make_tuple(key, value));
+                header_entries.emplace_back(key, value);
         }
         else
         {
@@ -271,7 +270,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                 {
                     const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
                     const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
-                    header_entries.emplace_back(std::make_tuple(header_key, header_value));
+                    header_entries.emplace_back(header_key, header_value);
                 }
             }
 
@@ -294,7 +293,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries) //-V1030
+            .header_entries = std::move(header_entries)
         };
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);

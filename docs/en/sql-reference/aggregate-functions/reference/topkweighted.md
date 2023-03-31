@@ -28,15 +28,16 @@ Returns an array of the values with maximum approximate sum of weights.
 Query:
 
 ``` sql
-SELECT topKWeighted(10)(number, number) FROM numbers(1000)
+SELECT topKWeighted(2)(k, w) FROM
+VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10))
 ```
 
 Result:
 
 ``` text
-┌─topKWeighted(10)(number, number)──────────┐
-│ [999,998,997,996,995,994,993,992,991,990] │
-└───────────────────────────────────────────┘
+┌─topKWeighted(2)(k, w)──┐
+│ ['z','x']              │
+└────────────────────────┘
 ```
 
 **See Also**

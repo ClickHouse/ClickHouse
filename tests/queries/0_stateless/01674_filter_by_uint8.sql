@@ -10,5 +10,6 @@ ENGINE = MergeTree ORDER BY u;
 
 INSERT INTO t_filter SELECT toString(number), ['foo', 'bar'], number, toUInt8(number) FROM numbers(1000);
 SELECT * FROM t_filter WHERE f LIMIT 5;
+SELECT * FROM t_filter WHERE f != 0 LIMIT 5;
 
 DROP TABLE IF EXISTS t_filter;

@@ -8,7 +8,6 @@ namespace DB
 {
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
-void registerDiskMemory(DiskFactory & factory, bool global_skip_access_check);
 
 #if USE_AWS_S3
 void registerDiskS3(DiskFactory & factory, bool global_skip_access_check);
@@ -35,7 +34,6 @@ void registerDisks(bool global_skip_access_check)
     auto & factory = DiskFactory::instance();
 
     registerDiskLocal(factory, global_skip_access_check);
-    registerDiskMemory(factory, global_skip_access_check);
 
 #if USE_AWS_S3
     registerDiskS3(factory, global_skip_access_check);

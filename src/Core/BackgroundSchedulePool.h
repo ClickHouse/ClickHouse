@@ -15,6 +15,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -53,7 +54,7 @@ public:
     void increaseThreadsCount(size_t new_threads_count);
 
     /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
-    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_);
+    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char *thread_name_);
     ~BackgroundSchedulePool();
 
 private:
@@ -89,13 +90,9 @@ private:
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
 
-    /// Thread group used for profiling purposes
-    ThreadGroupStatusPtr thread_group;
-
     CurrentMetrics::Metric tasks_metric;
+    CurrentMetrics::Increment size_metric;
     std::string thread_name;
-
-    void attachToThreadGroup();
 };
 
 

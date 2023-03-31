@@ -11,8 +11,8 @@
 #include <Common/Throttler_fwd.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/SessionAwareIOStream.h>
-#include <Storages/HeaderCollection.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
@@ -51,7 +51,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool for_disk_s3;
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
-    HeaderCollection extra_headers;
+    HTTPHeaderEntries extra_headers;
 
     void updateSchemeAndRegion();
 
@@ -169,7 +169,7 @@ private:
     /// NOTE: DELETE and CANCEL requests are not throttled by either put or get throttler
     ThrottlerPtr put_request_throttler;
 
-    const HeaderCollection extra_headers;
+    const HTTPHeaderEntries extra_headers;
 };
 
 }

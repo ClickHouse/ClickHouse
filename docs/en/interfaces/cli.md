@@ -2,10 +2,9 @@
 slug: /en/interfaces/cli
 sidebar_position: 17
 sidebar_label: Command-Line Client
+title: Command-Line Client
 ---
 import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_native.md';
-
-# Command-line Client
 
 ## clickhouse-client
 

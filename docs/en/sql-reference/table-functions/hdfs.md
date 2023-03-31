@@ -79,7 +79,7 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
 
-:::warning    
+:::note    
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
@@ -100,4 +100,3 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 **See Also**
 
 -   [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
-

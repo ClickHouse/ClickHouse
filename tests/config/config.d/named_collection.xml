@@ -18,7 +18,11 @@
             <headers>
                 <header>
                     <name>X-ClickHouse-Format</name>
-                    <value>JSONEachRow</value>
+                    <value>Vertical</value>
+                </header>
+                <header>
+                    <name>X-ClickHouse-Database</name>
+                    <value>non_existing_database</value>
                 </header>
             </headers>
         </url_with_headers>

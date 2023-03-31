@@ -124,12 +124,12 @@ int io_submit(int ctx, long nr, struct iocb * iocbpp[])
         }
     }
 
-    return nr;
+    return static_cast<int>(nr);
 }
 
 int io_getevents(int ctx, long, long max_nr, struct kevent * events, struct timespec * timeout)
 {
-    return kevent(ctx, nullptr, 0, events, max_nr, timeout);
+    return kevent(ctx, nullptr, 0, events, static_cast<int>(max_nr), timeout);
 }
 
 

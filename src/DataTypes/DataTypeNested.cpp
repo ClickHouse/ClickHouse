@@ -35,7 +35,7 @@ String DataTypeNestedCustomName::getName() const
 static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
-        throw Exception("Nested cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Nested cannot be empty");
 
     DataTypes nested_types;
     Strings nested_names;

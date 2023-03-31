@@ -49,4 +49,3 @@ last_exception:
 **See Also**
 
 -   [Distributed table engine](../../engines/table-engines/special/distributed.md)
-

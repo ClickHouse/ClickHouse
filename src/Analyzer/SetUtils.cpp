@@ -170,7 +170,7 @@ SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const Field 
             value_type->getName());
     }
 
-    auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
+    auto set = std::make_shared<Set>(size_limits_for_set, true /*fill_set_elements*/, tranform_null_in);
 
     set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
     set->insertFromBlock(result_block.getColumnsWithTypeAndName());

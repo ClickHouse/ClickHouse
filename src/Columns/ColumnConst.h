@@ -222,7 +222,7 @@ public:
 
     void gather(ColumnGathererStream &) override
     {
-        throw Exception("Cannot gather into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
     }
 
     void getExtremes(Field & min, Field & max) const override
@@ -251,6 +251,11 @@ public:
     double getRatioOfDefaultRows(double) const override
     {
         return data->isDefaultAt(0) ? 1.0 : 0.0;
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return data->isDefaultAt(0) ? s : 0;
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
