@@ -7487,7 +7487,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                     {
                         /// Move will be retried but with backoff.
                         LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
-                        result = MovePartsOutcome::false;
+                        result = false;
                         break;
                     }
                 }
