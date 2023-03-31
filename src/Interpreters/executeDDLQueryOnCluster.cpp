@@ -37,25 +37,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct RetriesForDDL
-{
-    ZooKeeperRetriesInfo info;
-    ZooKeeperRetriesControl ctl;
-};
-
-static RetriesForDDL getRetriesForDistributedDDL()
+static ZooKeeperRetriesInfo getRetriesInfo()
 {
     const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
-    auto info = ZooKeeperRetriesInfo(
+    return ZooKeeperRetriesInfo(
         "DistributedDDL",
         &Poco::Logger::get("DDLQueryStatusSource"),
         config_ref.getInt("distributed_ddl_keeper_max_retries", 5),
         config_ref.getInt("distributed_ddl_keeper_initial_backoff_ms", 100),
         config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000)
-        );
-
-    auto ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", info);
-    return {info, ctl};
+    );
 }
 
 bool isSupportedAlterType(int type)
@@ -195,7 +186,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker.enqueueQuery(entry);
 
-    return getDistributedDDLStatus(node_path, entry, context, /* hosts_to_wait */ std::nullopt);
+    return getDistributedDDLStatus(node_path, entry, context, /* hosts_to_wait */ nullptr);
 }
 
 
@@ -203,7 +194,7 @@ class DDLQueryStatusSource final : public ISource
 {
 public:
     DDLQueryStatusSource(
-        const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait);
+        const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const Strings * hosts_to_wait);
 
     String getName() const override { return "DDLQueryStatus"; }
     Chunk generate() override;
@@ -251,8 +242,7 @@ private:
 };
 
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context,
-                                const std::optional<Strings> & hosts_to_wait)
+BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const Strings * hosts_to_wait)
 {
     BlockIO io;
     if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
@@ -313,8 +303,8 @@ Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wa
 }
 
 DDLQueryStatusSource::DDLQueryStatusSource(
-    const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait)
-    : ISource(getSampleBlock(context_, hosts_to_wait.has_value()))
+    const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const Strings * hosts_to_wait)
+    : ISource(getSampleBlock(context_, static_cast<bool>(hosts_to_wait)))
     , node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
@@ -445,13 +435,17 @@ Chunk DDLQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
-        getRetriesForDistributedDDL().ctl.retryLoop([&]()
         {
-            auto zookeeper = context->getZooKeeper();
-            node_exists = zookeeper->exists(node_path);
-            tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
-            tmp_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
-        });
+            auto retries_info = getRetriesInfo();
+            auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info);
+            retries_ctl.retryLoop([&]()
+            {
+                auto zookeeper = context->getZooKeeper();
+                node_exists = zookeeper->exists(node_path);
+                tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
+                tmp_active_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "active");
+            });
+        }
 
         if (!node_exists)
         {
@@ -481,7 +475,10 @@ Chunk DDLQueryStatusSource::generate()
             {
                 String status_data;
                 bool finished_exists = false;
-                getRetriesForDistributedDDL().ctl.retryLoop([&]()
+
+                auto retries_info = getRetriesInfo();
+                auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info);
+                retries_ctl.retryLoop([&]()
                 {
                     finished_exists = context->getZooKeeper()->tryGet(fs::path(node_path) / "finished" / host_id, status_data);
                 });
