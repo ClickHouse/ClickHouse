@@ -1,19 +1,19 @@
-#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/RequestResponse.h>
+#include <city.h>
 #include <Columns/FilterDescription.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Storages/BlockNumberDescription.h>
-#include <city.h>
+#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/RequestResponse.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/typeid_cast.h>
 
 namespace ProfileEvents
 {
@@ -529,7 +529,7 @@ static void injectNonConstVirtualColumns(
                 inserter.insertUInt8Column(column, virtual_column_name);
         }
 
-        if (virtual_column_name == BlockNumberDescription::COLUMN.name)
+        if (virtual_column_name == BlockNumberColumn.name)
         {
             ColumnPtr column;
             if (rows)
@@ -539,10 +539,10 @@ static void injectNonConstVirtualColumns(
                 {
                     value = task->data_part ? task->data_part->info.min_block : 0;
                 }
-                column = BlockNumberDescription::COLUMN.type->createColumnConst(rows, value)->convertToFullColumnIfConst();
+                column = BlockNumberColumn.type->createColumnConst(rows, value)->convertToFullColumnIfConst();
             }
             else
-                column = BlockNumberDescription::COLUMN.type->createColumn();
+                column = BlockNumberColumn.type->createColumn();
 
             inserter.insertUInt64Column(column, virtual_column_name);
         }

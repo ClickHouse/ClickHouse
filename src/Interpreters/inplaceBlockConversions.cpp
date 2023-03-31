@@ -1,26 +1,26 @@
 #include "inplaceBlockConversions.h"
 
+#include <utility>
+#include <Columns/ColumnArray.h>
 #include <Core/Block.h>
-#include <Parsers/queryToString.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <utility>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/ObjectUtils.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Common/checkStackSize.h>
+#include <Parsers/ASTWithAlias.h>
+#include <Parsers/queryToString.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/ColumnsDescription.h>
-#include <DataTypes/NestedUtils.h>
-#include <Columns/ColumnArray.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/BlockNumberDescription.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -338,12 +338,11 @@ void fillMissingColumns(
         }
         else
         {
-            /// We must turn a constant column into a full column because the interpreter could infer
-            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-
-            if (requested_column->name == BlockNumberDescription::COLUMN.name)
+            if (requested_column->name == BlockNumberColumn.name)
                 res_columns[i] = type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
             else
+                /// We must turn a constant column into a full column because the interpreter could infer
+                /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
                 res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
 
 

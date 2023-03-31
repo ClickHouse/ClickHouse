@@ -1,28 +1,28 @@
 #pragma once
 
-#include <IO/WriteSettings.h>
 #include <Core/Block.h>
-#include <base/types.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <IO/WriteSettings.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <Storages/BlockNumberColumn.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/ColumnsDescription.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/IPartMetadataManager.h>
-#include <Storages/BlockNumberDescription.h>
+#include <base/types.h>
 
 
 namespace zkutil
@@ -428,10 +428,6 @@ public:
     /// Moar hardening: this method is supposed to be used for debug assertions
     bool assertHasValidVersionMetadata() const;
 
-    /// Return hardlink count for part.
-    /// Required for keep data on remote FS when part has shadow copies.
-    UInt32 getNumberOfRefereneces() const;
-
     /// Get checksums of metadata file in part directory
     IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_name) const;
 
@@ -443,8 +439,6 @@ public:
 
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
-
-    bool hasBlockNumber() const { return columns.contains(BlockNumberDescription::COLUMN.name); }
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 

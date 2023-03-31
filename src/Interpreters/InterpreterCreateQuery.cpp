@@ -817,6 +817,13 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                             "Cannot create table with column '{}' for *MergeTree engines because it "
                             "is reserved for lightweight delete feature",
                             LightweightDeleteDescription::FILTER_COLUMN.name);
+
+        auto search_block_number = all_columns.find(BlockNumberColumn.name);
+        if (search_block_number != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for storing block number",
+                            BlockNumberColumn.name);
     }
 
     const auto & settings = getContext()->getSettingsRef();

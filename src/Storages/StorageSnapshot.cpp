@@ -1,13 +1,13 @@
-#include <Storages/StorageSnapshot.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/IStorage.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Storages/BlockNumberColumn.h>
+#include <Storages/IStorage.h>
+#include <Storages/LightweightDeleteDescription.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/StorageView.h>
 #include <sparsehash/dense_hash_set>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include <Storages/BlockNumberDescription.h>
 
 namespace DB
 {
@@ -27,7 +27,7 @@ void StorageSnapshot::init()
 
     if (storage.hasLightweightDeletedMask())
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
-    system_columns[BlockNumberDescription::COLUMN.name] = BlockNumberDescription::COLUMN.type;
+    system_columns[BlockNumberColumn.name] = BlockNumberColumn.type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const

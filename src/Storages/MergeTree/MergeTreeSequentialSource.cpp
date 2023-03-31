@@ -1,15 +1,15 @@
-#include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/QueryPlan/ISourceStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Storages/BlockNumberDescription.h>
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 
 namespace DB
 {
@@ -240,7 +240,7 @@ Pipe createMergeTreeSequentialSource(
     auto columns = columns_to_read;
     if (need_to_filter_deleted_rows)
         columns.emplace_back(LightweightDeleteDescription::FILTER_COLUMN.name);
-    columns.emplace_back(BlockNumberDescription::COLUMN.name);
+    columns.emplace_back(BlockNumberColumn.name);
 
     bool apply_deleted_mask = false;
 

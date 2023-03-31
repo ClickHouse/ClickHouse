@@ -1,28 +1,28 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Columns/ColumnsNumber.h>
-#include <Parsers/queryToString.h>
-#include <Interpreters/SquashingTransform.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Interpreters/SquashingTransform.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MutationCommands.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MutationCommands.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
-#include <Storages/BlockNumberDescription.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -170,7 +170,7 @@ getColumnsForNewDataPart(
     if (source_part->supportLightweightDeleteMutate())
         system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
 
-    system_columns.push_back(BlockNumberDescription::COLUMN);
+    system_columns.push_back(BlockNumberColumn);
 
     /// Preserve system columns that have persisted values in the source_part
     for (const auto & column : system_columns)

@@ -11,26 +11,26 @@
 
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Merges/CollapsingSortedTransform.h>
-#include <Processors/Merges/SummingSortedTransform.h>
-#include <Processors/Merges/ReplacingSortedTransform.h>
-#include <Processors/Merges/GraphiteRollupSortedTransform.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Storages/BlockNumberDescription.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 
 namespace DB
 {
@@ -247,7 +247,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         }
     }
 
-    global_ctx->storage_columns.emplace_back(BlockNumberDescription::COLUMN);
+    global_ctx->storage_columns.emplace_back(BlockNumberColumn);
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos);
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;

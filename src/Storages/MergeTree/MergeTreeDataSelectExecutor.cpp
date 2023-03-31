@@ -44,8 +44,8 @@
 
 #include <IO/WriteBufferFromOStream.h>
 
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/CommonANNIndexes.h>
-#include <Storages/BlockNumberDescription.h>
 
 namespace DB
 {
@@ -1229,7 +1229,7 @@ static void selectColumnNames(
         {
             virt_column_names.push_back(name);
         }
-        else if (name == BlockNumberDescription::COLUMN.name)
+        else if (name == BlockNumberColumn.name)
         {
             virt_column_names.push_back(name);
         }

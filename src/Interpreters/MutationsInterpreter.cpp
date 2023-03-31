@@ -1,44 +1,44 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/StorageMergeTree.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Transforms/CheckSortedTransform.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
-#include <IO/WriteHelpers.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <DataTypes/NestedUtils.h>
-#include <Interpreters/PreparedSets.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <DataTypes/NestedUtils.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Storages/BlockNumberDescription.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/BlockNumberColumn.h>
+#include <Storages/LightweightDeleteDescription.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/StorageMergeTree.h>
 
 namespace DB
 {
@@ -476,7 +476,7 @@ static void validateUpdateColumns(
         }
 
         /// Dont allow to override value of block number virtual column
-        if (!found && column_name == BlockNumberDescription::COLUMN.name)
+        if (!found && column_name == BlockNumberColumn.name)
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
         }
@@ -556,7 +556,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (source.hasLightweightDeleteMask())
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
 
-    all_columns.push_back({BlockNumberDescription::COLUMN});
+    if (this->source.getMergeTreeData())
+        all_columns.push_back({BlockNumberColumn});
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
@@ -653,8 +654,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     type = physical_column->type;
                 else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
                     type = LightweightDeleteDescription::FILTER_COLUMN.type;
-                else if (column == BlockNumberDescription::COLUMN.name)
-                    type = BlockNumberDescription::COLUMN.type;
+                else if (column == BlockNumberColumn.name)
+                    type = BlockNumberColumn.type;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
@@ -922,7 +923,8 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     if (source.hasLightweightDeleteMask())
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
 
-    all_columns.push_back({BlockNumberDescription::COLUMN});
+    if (this->source.getMergeTreeData())
+        all_columns.push_back({BlockNumberColumn});
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
@@ -1068,13 +1070,13 @@ struct VirtualColumns
 
                 virtuals.emplace_back(ColumnAndPosition{.column = std::move(column), .position = i});
             }
-            else if (columns_to_read[i] == BlockNumberDescription::COLUMN.name)
+            else if (columns_to_read[i] == BlockNumberColumn.name)
             {
                 LoadedMergeTreeDataPartInfoForReader part_info_reader(part);
-                if (!part_info_reader.getColumns().contains(BlockNumberDescription::COLUMN.name))
+                if (!part_info_reader.getColumns().contains(BlockNumberColumn.name))
                 {
                     ColumnWithTypeAndName mask_column;
-                    mask_column.type = BlockNumberDescription::COLUMN.type;
+                    mask_column.type = BlockNumberColumn.type;
                     mask_column.column = mask_column.type->createColumnConst(0, part->info.min_block);
                     mask_column.name = std::move(columns_to_read[i]);
 
