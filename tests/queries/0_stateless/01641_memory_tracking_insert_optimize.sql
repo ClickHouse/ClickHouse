@@ -15,7 +15,7 @@ insert into data_01641 select number, toString(number) from numbers(120000);
 
 set max_memory_usage='10Mi', max_untracked_memory=0;
 
--- It fails iif memory is tracked in OPTIMIZE query, but it doesn't. OPTIMIZE query doesn't rely on query context.
+-- It fails iff memory is tracked in OPTIMIZE query, but it doesn't. OPTIMIZE query doesn't rely on query context.
 optimize table data_01641 final;
 
 drop table data_01641;
