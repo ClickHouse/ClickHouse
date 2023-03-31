@@ -7584,6 +7584,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                     {
                         if (lock->isLocked())
                         {
+                            LOG_DEBUG(log, "Lock is taken for part {}, moving it", moving_part.part->name);
                             cloned_part = parts_mover.clonePart(moving_part);
                             parts_mover.swapClonedPart(cloned_part);
                             break;
@@ -7607,8 +7608,6 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                         result = false;
                         break;
                     }
-                    cloned_part = parts_mover.clonePart(moving_part);
-                    parts_mover.swapClonedPart(cloned_part);
                 }
             }
             else /// Ordinary move as it should be
