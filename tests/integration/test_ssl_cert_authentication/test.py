@@ -87,7 +87,6 @@ config = """<clickhouse>
 
 
 def execute_query_native(node, query, user, cert_name):
-
     config_path = f"{SCRIPT_DIR}/configs/client.xml"
 
     formatted = config.format(

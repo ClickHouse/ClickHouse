@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -136,6 +137,11 @@ Block NativeReader::read()
     {
         readVarUInt(columns, istr);
         readVarUInt(rows, istr);
+
+        if (columns > 1'000'000uz)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many columns in Native format: {}", columns);
+        if (rows > 1'000'000'000'000uz)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Native format: {}", rows);
     }
     else
     {

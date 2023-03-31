@@ -120,7 +120,7 @@ Query:
 CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 ```
 
-## LDAP Exernal User Directory {#ldap-external-user-directory}
+## LDAP External User Directory {#ldap-external-user-directory}
 
 In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. To achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
 
