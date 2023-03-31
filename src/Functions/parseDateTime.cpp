@@ -480,33 +480,15 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                    getName(),
-                    arguments.size());
+            FunctionArgumentDescriptors args{
+                {"time", &isString<IDataType>, nullptr, "String"},
+                {"format", &isString<IDataType>, nullptr, "String"},
+            };
 
-            if (!isString(arguments[0].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            if (arguments.size() == 3)
+                args.emplace_back(FunctionArgumentDescriptor{"timezone", &isString<IDataType>, nullptr, "String"});
 
-            if (!isString(arguments[1].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
-
-            if (arguments.size() == 3 && !isString(arguments[2].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            validateFunctionArgumentTypes(*this, arguments, args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
