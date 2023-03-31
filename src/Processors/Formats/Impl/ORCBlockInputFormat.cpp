@@ -129,7 +129,7 @@ void ORCBlockInputFormat::prepareReader()
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching);
 
-    ArrowFieldIndexUtil<true> field_util(
+    ArrowFieldIndexUtil field_util(
         format_settings.orc.case_insensitive_column_matching,
         format_settings.orc.allow_missing_columns);
     include_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
