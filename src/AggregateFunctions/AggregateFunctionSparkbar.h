@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/arithmeticOverflow.h>
+
 #include <array>
 #include <string_view>
 #include <DataTypes/DataTypeString.h>
@@ -44,14 +46,9 @@ struct AggregateFunctionSparkbarData
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
         {
-            if (std::numeric_limits<Y>::max() - it->getMapped() > y)
-            {
-                it->getMapped() += y;
-            }
-            else
-            {
-                it->getMapped() = std::numeric_limits<Y>::max();
-            }
+            Y res;
+            bool has_overfllow = common::addOverflow(it->getMapped(), y, res)
+            it->getMapped() = has_overfllow ? std::numeric_limits<Y>::max() : res;
         }
         return it->getMapped();
     }
@@ -186,15 +183,18 @@ private:
             Float64 w = histogram.size();
             size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
 
-            if (std::numeric_limits<Y>::max() - histogram[index] > point.getMapped())
+            Y res;
+            bool has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
+            if (unlikely(has_overfllow))
             {
-                histogram[index] += point.getMapped();
-                count_histogram[index] += 1;
+                /// In case of overflow, just saturate
+                /// Do not count new values, because we do not know how many of them were added
+                histogram[index] = std::numeric_limits<Y>::max();
             }
             else
             {
-                /// In case of overflow, just saturate
-                histogram[index] = std::numeric_limits<Y>::max();
+                histogram[index] = res;
+                count_histogram[index] += 1;
             }
         }
 
@@ -230,10 +230,12 @@ private:
 
             constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
             /// handle potential overflow
-            if (y_max > levels_num && y >= std::numeric_limits<Y>::max() / levels_num)
+            Y scaled;
+            bool has_overfllow = common::mulOverflow(y, levels_num, scaled);
+            if (has_overfllow)
                 y = y / (y_max / levels_num) + 1;
             else
-                y = y * levels_num / y_max + 1;
+                y = scaled / y_max + 1;
         }
 
         size_t sz = 0;
