@@ -48,6 +48,7 @@ private:
 
     const SortDescription sort_description;
     const SortDescription fill_description; /// Contains all columns with WITH FILL
+    SortDescription sort_prefix;
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
 
     FillingRow filling_row; /// Current row, which is used to fill gaps.

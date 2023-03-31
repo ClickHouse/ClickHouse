@@ -205,6 +205,7 @@ FillingTransform::FillingTransform(
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
+        /// TODO: shouldn't it be only debug check? i.e. consider interpolate_description as already correct
         if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
@@ -254,6 +255,15 @@ FillingTransform::FillingTransform(
     if (interpolate_description)
         for (const auto & name : interpolate_description->result_columns_order)
             interpolate_column_positions.push_back(header_.getPositionByName(name));
+
+    /// build sorting prefix for first fill column
+    for (const auto & desc : sort_description)
+    {
+        if (desc.column_name == fill_description[0].column_name)
+            break;
+
+        sort_prefix.push_back(desc);
+    }
 }
 
 IProcessor::Status FillingTransform::prepare()
