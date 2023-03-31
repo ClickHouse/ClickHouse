@@ -56,7 +56,7 @@ NextState NoEscapingStateHandler::readKey(std::string_view file, StringWriter & 
     size_t pos = 0;
     auto start_index = pos;
 
-    while (auto p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
+    while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
     {
         const size_t character_position = p - file.begin();
         auto next_pos = character_position + 1u;
@@ -118,10 +118,14 @@ NextState NoEscapingStateHandler::readQuotedKey(std::string_view file, StringWri
 
 NextState NoEscapingStateHandler::readKeyValueDelimiter(std::string_view file) const
 {
-    const auto current_character = file[0];
-    if (current_character == extractor_configuration.key_value_delimiter)
+    if (!file.empty())
     {
-        return {1, WAITING_VALUE};
+        const auto current_character = file[0];
+
+        if (current_character == extractor_configuration.key_value_delimiter)
+        {
+            return {1, WAITING_VALUE};
+        }
     }
 
     return {0, State::WAITING_KEY};
@@ -132,15 +136,19 @@ NextState NoEscapingStateHandler::waitValue(std::string_view file) const
     const auto & [key_value_delimiter, quoting_character, _] = extractor_configuration;
 
     size_t pos = 0;
-    const auto current_character = file[pos];
 
-    if (current_character == quoting_character)
+    if (!file.empty())
     {
-        return {pos + 1u, State::READING_QUOTED_VALUE};
-    }
-    else if (current_character == key_value_delimiter)
-    {
-        return {pos, State::WAITING_KEY};
+        const auto current_character = file[pos];
+
+        if (current_character == quoting_character)
+        {
+            return {pos + 1u, State::READING_QUOTED_VALUE};
+        }
+        else if (current_character == key_value_delimiter)
+        {
+            return {pos, State::WAITING_KEY};
+        }
     }
 
     return {pos, State::READING_VALUE};
@@ -153,7 +161,9 @@ NextState NoEscapingStateHandler::readValue(std::string_view file, StringWriter 
     value.reset();
 
     size_t pos = 0;
+
     auto start_index = pos;
+
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
     {
         const size_t character_position = p - file.begin();

@@ -2,6 +2,7 @@
 
 #include <Functions/keyvaluepair/impl/Configuration.h>
 #include <Functions/keyvaluepair/impl/StateHandler.h>
+#include <Functions/keyvaluepair/impl/StringWriter.h>
 
 #include <string_view>
 #include <string>
