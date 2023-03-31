@@ -6,6 +6,7 @@
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/impl/StringWriter.h>
 
 // TODO: debug stuff, remove it before merging
 #include <fmt/core.h>
@@ -57,7 +58,6 @@ public:
 
         // below reset discards invalid keys and values
         reset(key, value);
-        validate(keys, values);
 
         return row_offset;
     }
@@ -123,12 +123,6 @@ private:
     {
         key.reset();
         value.reset();
-    }
-
-    void validate(ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
-    {
-        keys->validate();
-        values->validate();
     }
 
     StateHandler state_handler;

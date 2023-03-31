@@ -65,6 +65,9 @@ ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> 
         offsets->insert(offset);
     }
 
+    keys->validate();
+    values->validate();
+
     ColumnPtr keys_ptr = std::move(keys);
 
     return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
