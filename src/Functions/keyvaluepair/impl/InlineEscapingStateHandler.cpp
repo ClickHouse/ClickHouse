@@ -7,17 +7,21 @@
 
 namespace
 {
-size_t consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, DB::extractKV::StringWriter & output)
+std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, DB::extractKV::StringWriter & output)
 {
-    output.append(file.begin() + start_pos, file.begin() + character_pos);
-
-    std::string tmp_out;
+    std::string escaped_sequence;
     DB::ReadBufferFromMemory buf(file.begin() + character_pos, file.size() - character_pos);
 
-    DB::parseComplexEscapeSequence(tmp_out, buf);
-    output.append(tmp_out);
+    if (DB::parseComplexEscapeSequence(escaped_sequence, buf))
+    {
+        output.append(file.begin() + start_pos, file.begin() + character_pos);
+        output.append(escaped_sequence);
 
-    return buf.getPosition();
+        return {true, buf.getPosition()};
+    }
+
+
+    return {false, buf.getPosition()};
 }
 
 using NextState = DB::extractKV::StateHandler::NextState;
@@ -72,6 +76,7 @@ NextState InlineEscapingStateHandler::readKey(std::string_view file, StringWrite
     key.reset();
 
     size_t pos = 0;
+
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
     {
         auto character_position = p - file.begin();
@@ -79,15 +84,15 @@ NextState InlineEscapingStateHandler::readKey(std::string_view file, StringWrite
 
         if (*p == '\\')
         {
-            const size_t escape_seq_len = consumeWithEscapeSequence(file, pos, character_position, key);
-            next_pos = character_position + escape_seq_len;
-            if (escape_seq_len == 0)
+            auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, key);
+            next_pos = character_position + escape_sequence_length;
+
+            if (!parsed_successfully)
             {
                 return {next_pos, State::WAITING_KEY};
             }
         }
-        else
-        if (*p == key_value_delimiter)
+        else if (*p == key_value_delimiter)
         {
             key.append(file.begin() + pos, file.begin() + character_position);
 
@@ -113,6 +118,7 @@ NextState InlineEscapingStateHandler::readQuotedKey(std::string_view file, Strin
     key.reset();
 
     size_t pos = 0;
+
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
     {
         size_t character_position = p - file.begin();
@@ -120,10 +126,10 @@ NextState InlineEscapingStateHandler::readQuotedKey(std::string_view file, Strin
 
         if (*p == '\\')
         {
-            const size_t escape_seq_len = consumeWithEscapeSequence(file, pos, character_position, key);
-            next_pos = character_position + escape_seq_len;
+            auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, key);
+            next_pos = character_position + escape_sequence_length;
 
-            if (escape_seq_len == 0)
+            if (!parsed_successfully)
             {
                 return {next_pos, State::WAITING_KEY};
             }
@@ -162,15 +168,19 @@ NextState InlineEscapingStateHandler::waitValue(std::string_view file) const
     const auto & [key_value_delimiter, quoting_character, _] = extractor_configuration;
 
     size_t pos = 0;
-    const auto current_character = file[pos];
 
-    if (current_character == quoting_character)
+    if (!file.empty())
     {
-        return {pos + 1u, State::READING_QUOTED_VALUE};
-    }
-    else if (current_character == key_value_delimiter)
-    {
-        return {pos, State::WAITING_KEY};
+        const auto current_character = file[pos];
+
+        if (current_character == quoting_character)
+        {
+            return {pos + 1u, State::READING_QUOTED_VALUE};
+        }
+        else if (current_character == key_value_delimiter)
+        {
+            return {pos, State::WAITING_KEY};
+        }
     }
 
     return {pos, State::READING_VALUE};
@@ -183,6 +193,7 @@ NextState InlineEscapingStateHandler::readValue(std::string_view file, StringWri
     value.reset();
 
     size_t pos = 0;
+
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
     {
         const size_t character_position = p - file.begin();
@@ -190,25 +201,20 @@ NextState InlineEscapingStateHandler::readValue(std::string_view file, StringWri
 
         if (*p == '\\')
         {
-            const size_t escape_seq_len = consumeWithEscapeSequence(file, pos, character_position, value);
-            next_pos = character_position + escape_seq_len;
-            if (escape_seq_len == 0)
+            auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, value);
+            next_pos = character_position + escape_sequence_length;
+
+            if (!parsed_successfully)
             {
-                // It is agreed that value with an invalid escape seqence in it
-                // is considered malformed and shoudn't be included in result.
-                value.reset();
                 return {next_pos, State::WAITING_KEY};
             }
         }
-        else
-        if (*p == key_value_delimiter)
+        else if (*p == key_value_delimiter)
         {
-            // reached new key
             return {next_pos, State::WAITING_KEY};
         }
         else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), *p) != pair_delimiters.end())
         {
-            // reached next pair
             value.append(file.begin() + pos, file.begin() + character_position);
 
             return {next_pos, State::FLUSH_PAIR};
@@ -237,15 +243,15 @@ NextState InlineEscapingStateHandler::readQuotedValue(std::string_view file, Str
 
         if (*p == '\\')
         {
-            const size_t escape_seq_len = consumeWithEscapeSequence(file, pos, character_position, value);
-            next_pos = character_position + escape_seq_len;
-            if (escape_seq_len == 0)
+            auto [parsed_successfully, escape_sequence_length] = consumeWithEscapeSequence(file, pos, character_position, value);
+            next_pos = character_position + escape_sequence_length;
+
+            if (!parsed_successfully)
             {
                 return {next_pos, State::WAITING_KEY};
             }
         }
-        else
-        if (*p == quoting_character)
+        else if (*p == quoting_character)
         {
             value.append(file.begin() + pos, file.begin() + character_position);
 
