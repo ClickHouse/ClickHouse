@@ -6,7 +6,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context.h>
 

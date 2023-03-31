@@ -203,6 +203,7 @@ class CommandRequest:
             self.timer.start()
 
     def remove_trash_from_stderr(self, stderr):
+        # FIXME https://github.com/ClickHouse/ClickHouse/issues/48181
         if not stderr:
             return stderr
         lines = stderr.split("\n")
