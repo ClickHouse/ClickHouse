@@ -131,7 +131,7 @@ bool RestoreCoordinationRemote::acquireCreatingTableInReplicatedDatabase(const S
             }
 
             /// We need to check who created that node
-            result =  zk->get(path) == toString(current_host_index);
+            result = zk->get(path) == toString(current_host_index);
         });
     return result;
 }
