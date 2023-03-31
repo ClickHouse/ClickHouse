@@ -431,7 +431,8 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     return required_access;
 }
 
-void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync)
+void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
+                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
@@ -448,6 +449,8 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context::createCopy(global_context);
+        if (ignore_sync_setting)
+            drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {

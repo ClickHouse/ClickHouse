@@ -221,15 +221,17 @@ void StorageMaterializedView::drop()
     /// DDLGuard does not protect from that, because RESTART REPLICA acquires DDLGuard for the inner table name,
     /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
     /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
-    auto modified_context = Context::createCopy(getContext());
-    modified_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
-    dropInnerTableIfAny(/* sync */ false, modified_context);
+    dropInnerTableIfAny(/* sync */ false, getContext());
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
+    /// We will use `sync` argument wneh this function is called from a DROP query
+    /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
+    /// See the comment in StorageMaterializedView::drop
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id,
+                                               sync, /* ignore_sync_setting */ true);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
