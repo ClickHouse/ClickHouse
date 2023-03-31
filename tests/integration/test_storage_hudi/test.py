@@ -290,16 +290,16 @@ def test_types(started_cluster):
 
     table_function = f"hudi(s3, filename='{TABLE_NAME}/', 'minio', 'minio123')"
     assert (
-       instance.query(f"SELECT a, b, c, d, e FROM {table_function}").strip()
-       == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
     )
 
     assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
-       [
-           ["a", "Nullable(Int32)"],
-           ["b", "Nullable(String)"],
-           ["c", "Nullable(Date32)"],
-           ["d", "Array(Nullable(String))"],
-           ["e", "Nullable(Bool)"],
-       ]
+        [
+            ["a", "Nullable(Int32)"],
+            ["b", "Nullable(String)"],
+            ["c", "Nullable(Date32)"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
+        ]
     )
