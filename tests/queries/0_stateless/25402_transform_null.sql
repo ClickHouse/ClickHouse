@@ -1,0 +1,20 @@
+select transform(2, [1,2], [9,1], materialize(null));
+select transform(2, [1,2], [9,1], materialize(7));
+select transform(2, [1,2], [9,1], null);
+select transform(2, [1,2], [9,1], 7);
+select transform(1, [1,2], [9,1], null);
+select transform(1, [1,2], [9,1], 7);
+select transform(5, [1,2], [9,1], null);
+select transform(5, [1,2], [9,1], 7);
+select transform(2, [1,2], [9,1]);
+select transform(1, [1,2], [9,1]);
+select transform(7, [1,2], [9,1]);
+
+select transform(2, [1,2], ['a','b'], materialize(null));
+select transform(2, [1,2], ['a','b'], materialize('c'));
+select transform(2, [1,2], ['a','b'], null);
+select transform(2, [1,2], ['a','b'], 'c');
+select transform(1, [1,2], ['a','b'], null);
+select transform(1, [1,2], ['a','b'], 'c');
+select transform(5, [1,2], ['a','b'], null);
+select transform(5, [1,2], ['a','b'], 'c');
