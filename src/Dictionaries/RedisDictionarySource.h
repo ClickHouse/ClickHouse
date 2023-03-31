@@ -52,15 +52,8 @@ namespace DB
 
         struct Connection
         {
-            Connection(PoolPtr pool_, ClientPtr client_)
-                : pool(std::move(pool_)), client(std::move(client_))
-            {
-            }
-
-            ~Connection()
-            {
-                pool->returnObject(std::move(client));
-            }
+            Connection(PoolPtr pool_, ClientPtr client_);
+            ~Connection();
 
             PoolPtr pool;
             ClientPtr client;

@@ -670,7 +670,6 @@ if args.report == "main":
     )
 
 elif args.report == "all-queries":
-
     print((header_template.format()))
 
     add_tested_commits()
