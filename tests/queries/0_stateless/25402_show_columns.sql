@@ -17,40 +17,29 @@ ORDER BY (uint64, str);
 
 SHOW COLUMNS FROM tab;
 
-SELECT '---';
-
+SELECT '--- EXTENDED';
 SHOW EXTENDED COLUMNS FROM tab;
 
-SELECT '---';
-
+SELECT '--- FULL';
 SHOW FULL COLUMNS FROM tab;
 
-SELECT '---';
-
+SELECT '--- LIKE';
 SHOW COLUMNS FROM tab LIKE '%int%';
 
-SELECT '---';
-
+SELECT '--- NOT LIKE';
 SHOW COLUMNS FROM tab NOT LIKE '%int%';
 
-SELECT '---';
-
+SELECT '--- ILIKE';
 SHOW COLUMNS FROM tab ILIKE '%INT%';
 
-SELECT '---';
-
+SELECT '--- NOT ILIKE';
 SHOW COLUMNS FROM tab NOT ILIKE '%INT%';
 
-SELECT '---';
-
+SELECT '--- WHERE';
 SHOW COLUMNS FROM tab WHERE field LIKE '%int%';
 
-SELECT '---';
-
+SELECT '--- LIMIT';
 SHOW COLUMNS FROM tab LIMIT 1;
-
-SELECT '---';
-
 
 -- Create a table in a different database. Intentionally useing the same table/column names as above so
 -- we notice if something is buggy in the implementation of SHOW COLUMNS.
@@ -67,14 +56,13 @@ CREATE TABLE database_123456789abcde.tab
 ENGINE = MergeTree
 ORDER BY uint64;
 
+SELECT '--- Original table';
 SHOW COLUMNS FROM tab;
 
-SELECT '---';
-
+SELECT '--- Equally named table in other database';
 SHOW COLUMNS FROM tab FROM database_123456789abcde;
 
-SELECT '---';
-
+SELECT '--- Short form';
 SHOW COLUMNS FROM database_123456789abcde.tab;
 
 DROP DATABASE database_123456789abcde;
