@@ -14,30 +14,34 @@ class TableJoin;
 class IColumn;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
+using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
 {
 
-/// Store boolean column handling constant value without materializing
-/// Behaves similar to std::variant<bool, ColumnPtr>, but provides more convenient specialized interface
+/// Helper interface to work with mask from JOIN ON section
 class JoinMask
 {
 public:
-    explicit JoinMask(bool value)
+    explicit JoinMask()
         : column(nullptr)
-        , const_value(value)
+    {}
+
+    explicit JoinMask(bool value, size_t size)
+        : column(ColumnUInt8::create(size, value))
     {}
 
     explicit JoinMask(ColumnPtr col)
         : column(col)
-        , const_value(false)
     {}
 
-    bool isConstant() { return !column; }
+    bool hasData()
+    {
+        return column != nullptr;
+    }
 
-    /// Return data if mask is not constant
     UInt8ColumnDataPtr getData()
     {
         if (column)
@@ -47,15 +51,11 @@ public:
 
     inline bool isRowFiltered(size_t row) const
     {
-        if (column)
-            return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
-        return !const_value;
+        return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }
 
 private:
     ColumnPtr column;
-    /// Used if column is null
-    bool const_value;
 };
 
 
@@ -71,7 +71,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
-ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names);
+ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void convertToFullColumnsInplace(Block & block);
 void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type = true);
@@ -106,13 +106,19 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
+Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
+
+bool hasNonJoinedBlocks(const TableJoin & table_join);
+
 /// Insert default values for rows marked in filter
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
 
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
-class NotJoinedBlocks final
+class NotJoinedBlocks final : public IBlocksStream
 {
 public:
     using LeftToRightKeyRemap = std::unordered_map<String, String>;
@@ -132,9 +138,9 @@ public:
     NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
               const Block & result_sample_block_,
               size_t left_columns_count,
-              const LeftToRightKeyRemap & left_to_right_key_remap);
+              const TableJoin & table_join);
 
-    Block read();
+    Block nextImpl() override;
 
 private:
     void extractColumnChanges(size_t right_pos, size_t result_pos);

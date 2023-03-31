@@ -21,6 +21,13 @@ ENGINE = HDFS(URI, format)
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
+- [PARTITION BY expr]
+
+### PARTITION BY
+
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/en/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
 **Example:**
 
@@ -57,7 +64,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
     -   Indexes.
     -   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
   
-  :::warning Zero-copy replication is not ready for production
+  :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
 
@@ -103,7 +110,7 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::warning
+:::note
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
@@ -229,5 +236,3 @@ libhdfs3 support HDFS namenode HA.
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->

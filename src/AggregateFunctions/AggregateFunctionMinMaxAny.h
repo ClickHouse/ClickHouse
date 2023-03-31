@@ -481,7 +481,7 @@ struct Compatibility
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString //-V730
+struct SingleValueDataString
 {
 private:
     using Self = SingleValueDataString;
@@ -795,7 +795,7 @@ public:
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            serialization.serializeBinary(value, buf);
+            serialization.serializeBinary(value, buf, {});
         }
         else
             writeBinary(false, buf);
@@ -807,7 +807,7 @@ public:
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            serialization.deserializeBinary(value, buf);
+            serialization.deserializeBinary(value, buf, {});
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
@@ -1075,34 +1075,33 @@ struct AggregateFunctionSingleValueOrNullData : Data
     bool first_value = true;
     bool is_null = false;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
+    void changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (first_value)
         {
             first_value = false;
             this->change(column, row_num, arena);
-            return true;
         }
         else if (!this->isEqualTo(column, row_num))
         {
             is_null = true;
         }
-        return false;
     }
 
-    bool changeIfBetter(const Self & to, Arena * arena)
+    void changeIfBetter(const Self & to, Arena * arena)
     {
+        if (!to.has())
+            return;
+
         if (first_value)
         {
             first_value = false;
             this->change(to, arena);
-            return true;
         }
         else if (!this->isEqualTo(to))
         {
             is_null = true;
         }
-        return false;
     }
 
     void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfBetter(column, 0, arena); }
@@ -1164,6 +1163,9 @@ struct AggregateFunctionAnyHeavyData : Data
 
     bool changeIfBetter(const Self & to, Arena * arena)
     {
+        if (!to.has())
+            return false;
+
         if (this->isEqualTo(to))
         {
             counter += to.counter;
@@ -1220,26 +1222,25 @@ private:
 
 public:
     explicit AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {}, createResultType(type))
         , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))
         {
             if (!type->isComparable())
-                throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
-                    + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of aggregate function {} "
+                                "because the values of that data type are not comparable", type->getName(), getName());
         }
     }
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const DataTypePtr & type_)
     {
-        auto result_type = this->argument_types.at(0);
         if constexpr (Data::is_nullable)
-            return makeNullable(result_type);
-        return result_type;
+            return makeNullable(type_);
+        return type_;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -1382,7 +1383,7 @@ public:
         }
         else
         {
-            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
         }
     }
 
@@ -1394,7 +1395,7 @@ public:
         }
         else
         {
-            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
         }
     }
 
@@ -1406,7 +1407,7 @@ public:
         }
         else
         {
-            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
         }
     }
 

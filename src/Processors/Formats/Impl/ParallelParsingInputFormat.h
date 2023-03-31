@@ -5,13 +5,20 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric ParallelParsingInputFormatThreads;
+    extern const Metric ParallelParsingInputFormatThreadsActive;
+}
 
 namespace DB
 {
@@ -94,7 +101,7 @@ public:
         , min_chunk_bytes(params.min_chunk_bytes)
         , max_block_size(params.max_block_size)
         , is_server(params.is_server)
-        , pool(params.max_threads)
+        , pool(CurrentMetrics::ParallelParsingInputFormatThreads, CurrentMetrics::ParallelParsingInputFormatThreadsActive, params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
@@ -111,7 +118,7 @@ public:
 
     void resetParser() override final
     {
-        throw Exception("resetParser() is not allowed for " + getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
     const BlockMissingValues & getMissingValues() const override final
@@ -172,8 +179,8 @@ private:
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
                     case IProcessor::Status::ExpandPipeline:
-                        throw Exception("One of the parsers returned status " + IProcessor::statusToName(status) +
-                                             " during parallel parsing", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
+                                             IProcessor::statusToName(status));
                 }
             }
         }
@@ -292,7 +299,7 @@ private:
 
         {
             /// Additionally notify condvars
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
         }

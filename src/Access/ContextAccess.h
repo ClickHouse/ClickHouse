@@ -174,7 +174,6 @@ private:
     void initialize();
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
-    void setSettingsAndConstraints() const;
     void calculateAccessRights() const;
 
     template <bool throw_if_denied, bool grant_option>

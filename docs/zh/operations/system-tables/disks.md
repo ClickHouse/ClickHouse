@@ -16,7 +16,7 @@ slug: /zh/operations/system-tables/disks
 **示例**
 
 ```sql
-:) SELECT * FROM system.disks;
+SELECT * FROM system.disks;
 ```
 
 ```text
@@ -26,5 +26,3 @@ slug: /zh/operations/system-tables/disks
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/disks) <!--hide-->

@@ -17,12 +17,6 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
-    MergeTreeDataPartInMemory(
-        MergeTreeData & storage_,
-        const String & name_,
-        const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr);
-
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
         const StorageMetadataPtr & metadata_snapshot,
@@ -47,7 +41,7 @@ public:
     bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) override;
-    void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
+    DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
 
     MutableDataPartStoragePtr flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;
 

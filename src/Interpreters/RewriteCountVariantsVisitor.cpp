@@ -6,6 +6,7 @@
 #include <Poco/String.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -52,7 +53,7 @@ void RewriteCountVariantsVisitor::visit(ASTFunction & func)
         if (first_arg_literal->value.getType() == Field::Types::UInt64)
         {
             auto constant = first_arg_literal->value.get<UInt64>();
-            if (constant == 1)
+            if (constant == 1 && !context->getSettingsRef().aggregate_functions_null_for_empty)
                 transform = true;
         }
     }

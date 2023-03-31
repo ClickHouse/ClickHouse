@@ -1,3 +1,11 @@
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+endif ()
+
+# TODO: Remove this. We like to compile with C++23 (set by top-level CMakeLists) but Clang crashes with our libcxx
+# when instantiated from JSON.cpp. Try again when libcxx(abi) and Clang are upgraded to 16.
+set (CMAKE_CXX_STANDARD 20)
+
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
@@ -8,16 +16,13 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     JSON.cpp
-    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
-    setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    ReplxxLineReader.cpp
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
@@ -41,10 +46,6 @@ else ()
 endif ()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
-
-if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
-    target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
-endif()
 
 target_link_libraries (common
     PUBLIC

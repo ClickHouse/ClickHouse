@@ -1,4 +1,4 @@
--- Tags: no-backward-compatibility-check
+-- Tags: no-upgrade-check, no-random-merge-tree-settings
 
 drop table if exists test_02381;
 create table test_02381(a UInt64, b UInt64) ENGINE = MergeTree order by (a, b) SETTINGS compress_marks=false, compress_primary_key=false;

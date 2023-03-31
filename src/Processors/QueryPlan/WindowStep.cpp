@@ -15,7 +15,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -35,7 +34,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
     {
         ColumnWithTypeAndName column_with_type;
         column_with_type.name = f.column_name;
-        column_with_type.type = f.aggregate_function->getReturnType();
+        column_with_type.type = f.aggregate_function->getResultType();
         column_with_type.column = column_with_type.type->createColumn();
 
         result.insert(column_with_type);

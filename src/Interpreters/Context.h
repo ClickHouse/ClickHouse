@@ -1,35 +1,38 @@
 #pragma once
 
+#include <base/types.h>
+#include <Common/isLocalAddress.h>
+#include <Common/MultiVersion.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/ThreadPool.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Parsers/IAST_fwd.h>
+#include <IO/IResourceManager.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Storages/IStorage_fwd.h>
-#include <Common/MultiVersion.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/RemoteHostFilter.h>
-#include <Common/isLocalAddress.h>
-#include <base/types.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Parsers/IAST_fwd.h>
+#include <Processors/ResizeProcessor.h>
+#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
+#include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
-
+#include <Storages/IStorage_fwd.h>
 
 #include "config.h"
 
 #include <boost/container/flat_set.hpp>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-
 #include <thread>
-#include <exception>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -77,6 +80,7 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
+class QueryCache;
 class QueryLog;
 class QueryThreadLog;
 class QueryViewsLog;
@@ -92,8 +96,13 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
+class IAsynchronousReader;
 struct MergeTreeSettings;
+struct InitialAllRangesAnnouncement;
+struct ParallelReadRequest;
+struct ParallelReadResponse;
 class StorageS3Settings;
 class IDatabase;
 class DDLWorker;
@@ -107,6 +116,7 @@ class AccessControl;
 class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
+class SettingsProfileElements;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -121,11 +131,17 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
-class MergeMutateRuntimeQueue;
-class OrdinaryRuntimeQueue;
-using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+
+/// Scheduling policy can be changed using `background_merges_mutations_scheduling_policy` config option.
+/// By default concurrent merges are scheduled using "round_robin" to ensure fair and starvation-free operation.
+/// Previously in heavily overloaded shards big merges could possibly be starved by smaller
+/// merges due to the use of strict priority scheduling "shortest_task_first".
+class DynamicRuntimeQueue;
+using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
 using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
-using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+
+class RoundRobinRuntimeQueue;
+using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
@@ -166,10 +182,14 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
-using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
+using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
+using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+
+class ParallelReplicasReadingCoordinator;
+using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -236,6 +256,7 @@ private:
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
+    bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
@@ -255,6 +276,11 @@ private:
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
+    std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
+    UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
+
+    /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
+    UInt64 client_protocol_version = 0;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -354,6 +380,8 @@ private:
 
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Query metrics for reading data asynchronously with IAsynchronousReader.
+    mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -371,11 +399,9 @@ private:
 
     inline static ContextPtr global_context_instance;
 
-    /// A flag, used to mark if reader needs to apply deleted rows mask.
-    bool apply_deleted_mask = true;
-
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -397,6 +423,8 @@ public:
     };
 
     KitchenSink kitchen_sink;
+
+    ParallelReplicasReadingCoordinatorPtr parallel_reading_coordinator;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -461,7 +489,9 @@ public:
 
     void addWarningMessage(const String & msg) const;
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name, size_t max_size);
+    void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
+    void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
+    void setTemporaryStoragePath(const String & path, size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -534,6 +564,10 @@ public:
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
+
+    /// Resource management related
+    ResourceManagerPtr getResourceManager() const;
+    ClassifierPtr getClassifier() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -626,7 +660,7 @@ public:
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    void killCurrentQuery();
+    void killCurrentQuery() const;
 
     bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
@@ -654,10 +688,12 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
     void checkSettingsConstraints(const SettingChange & change) const;
     void checkSettingsConstraints(const SettingsChanges & changes) const;
     void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
     void resetSettingsToDefaultValue(const std::vector<String> & names);
@@ -795,6 +831,8 @@ public:
     bool tryCheckClientConnectionToMyKeeperCluster() const;
 
     UInt32 getZooKeeperSessionUptime() const;
+    UInt64 getClientProtocolVersion() const;
+    void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
     MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
@@ -823,15 +861,22 @@ public:
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy);
+    void setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void dropUncompressedCache() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
+    void setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
+
+    ThreadPool & getPrefetchThreadpool() const;
+
+    /// Note: prefetchThreadpool is different from threadpoolReader
+    /// in the way that its tasks are - wait for marks to be loaded
+    /// and make a prefetch by putting a read task to threadpoolReader.
+    size_t getPrefetchThreadpoolSize() const;
 
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
@@ -847,6 +892,12 @@ public:
     void setMMappedFileCache(size_t cache_size_in_num_entries);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void dropMMappedFileCache() const;
+
+    /// Create a cache of query results for statements which run repeatedly.
+    void setQueryCache(const Poco::Util::AbstractConfiguration & config);
+    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryCache> getQueryCache() const;
+    void dropQueryCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -914,6 +965,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
@@ -938,14 +990,17 @@ public:
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
+    using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
+    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
 
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
-
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+
+    StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
@@ -958,9 +1013,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool applyDeletedMask() const { return apply_deleted_mask; }
-    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -1031,6 +1083,12 @@ public:
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
+    MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
+    void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    UUID getParallelReplicasGroupUUID() const;
+    void setParallelReplicasGroupUUID(UUID uuid);
+
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
     bool areBackgroundExecutorsInitialized();
@@ -1049,6 +1107,10 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 
+    size_t getThreadPoolReaderSize(FilesystemReaderType type) const;
+
+    std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
+
     ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
@@ -1056,6 +1118,19 @@ public:
 
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
+
+    /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    bool canUseParallelReplicasOnInitiator() const;
+    bool canUseParallelReplicasOnFollower() const;
+
+    enum class ParallelReplicasMode : uint8_t
+    {
+        SAMPLE_KEY,
+        CUSTOM_KEY,
+        READ_TASKS,
+    };
+
+    ParallelReplicasMode getParallelReplicasMode() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -1074,7 +1149,58 @@ private:
 
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
-    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
+
+    DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
+};
+
+struct HTTPContext : public IHTTPContext
+{
+    explicit HTTPContext(ContextPtr context_)
+        : context(Context::createCopy(context_))
+    {}
+
+    uint64_t getMaxHstsAge() const override
+    {
+        return context->getSettingsRef().hsts_max_age;
+    }
+
+    uint64_t getMaxUriSize() const override
+    {
+        return context->getSettingsRef().http_max_uri_size;
+    }
+
+    uint64_t getMaxFields() const override
+    {
+        return context->getSettingsRef().http_max_fields;
+    }
+
+    uint64_t getMaxFieldNameSize() const override
+    {
+        return context->getSettingsRef().http_max_field_name_size;
+    }
+
+    uint64_t getMaxFieldValueSize() const override
+    {
+        return context->getSettingsRef().http_max_field_value_size;
+    }
+
+    uint64_t getMaxChunkSize() const override
+    {
+        return context->getSettingsRef().http_max_chunk_size;
+    }
+
+    Poco::Timespan getReceiveTimeout() const override
+    {
+        return context->getSettingsRef().http_receive_timeout;
+    }
+
+    Poco::Timespan getSendTimeout() const override
+    {
+        return context->getSettingsRef().http_send_timeout;
+    }
+
+    ContextPtr context;
 };
 
 }

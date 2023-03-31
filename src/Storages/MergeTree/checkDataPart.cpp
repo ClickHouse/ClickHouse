@@ -71,9 +71,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
 
     if (columns_txt != columns_list)
-        throw Exception("Columns doesn't match in part " + data_part_storage.getFullPath()
-            + ". Expected: " + columns_list.toString()
-            + ". Found: " + columns_txt.toString(), ErrorCodes::CORRUPTED_DATA);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
+            data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
@@ -144,7 +143,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
     else
     {
-        throw Exception("Unknown type in part " + data_part_storage.getFullPath(), ErrorCodes::UNKNOWN_PART_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown type in part {}", data_part_storage.getFullPath());
     }
 
     /// Checksums from the rest files listed in checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
@@ -158,25 +157,29 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
 
     NameSet projections_on_disk;
-    const auto & checksum_files_txt = checksums_txt.files;
+    const auto & checksums_txt_files = checksums_txt.files;
     for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
     {
         auto file_name = it->name();
 
         /// We will check projections later.
-        if (data_part_storage.isDirectory(file_name) && endsWith(file_name, ".proj"))
+        if (data_part_storage.isDirectory(file_name) && file_name.ends_with(".proj"))
         {
             projections_on_disk.insert(file_name);
             continue;
         }
+
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
+        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
+            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
 
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
         if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
-            auto txt_checksum_it = checksum_files_txt.find(file_name);
-            if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
+            auto txt_checksum_it = checksums_txt_files.find(file_name);
+            if (txt_checksum_it == checksums_txt_files.end() || txt_checksum_it->second.uncompressed_size == 0)
             {
                 /// The file is not compressed.
                 checksum_file(file_name);

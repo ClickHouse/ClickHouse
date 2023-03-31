@@ -42,10 +42,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isUnsignedInteger(arguments[0].type))
-            throw Exception("First argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
 
         if (!arguments[0].column || !isColumnConst(*arguments[0].column))
-            throw Exception("First argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be constant", getName());
 
         const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
         return std::make_shared<DataTypeFixedString>(n);
@@ -66,7 +66,7 @@ public:
 
         size_t total_size;
         if (common::mulOverflow(input_rows_count, n, total_size))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
         /// Fill random bytes.
         data_to.resize(total_size);

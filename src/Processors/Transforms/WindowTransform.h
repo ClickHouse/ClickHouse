@@ -373,7 +373,7 @@ struct fmt::formatter<DB::RowNumber>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -381,6 +381,6 @@ struct fmt::formatter<DB::RowNumber>
     template <typename FormatContext>
     auto format(const DB::RowNumber & x, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}:{}", x.block, x.row);
+        return fmt::format_to(ctx.out(), "{}:{}", x.block, x.row);
     }
 };

@@ -289,4 +289,9 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
     return new_query;
 }
 
+IAST::QueryKind ASTBackupQuery::getQueryKind() const
+{
+    return kind == Kind::BACKUP ? QueryKind::Backup : QueryKind::Restore;
+}
+
 }

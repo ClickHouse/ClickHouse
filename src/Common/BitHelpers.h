@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cassert>
 #include <type_traits>
 #include <base/defines.h>
 
@@ -116,4 +117,10 @@ inline T maskLowBits(unsigned char bits)
     }
 
     return result;
+}
+
+template <std::integral T>
+constexpr bool isPowerOf2(T number)
+{
+    return number > 0 && (number & (number - 1)) == 0;
 }

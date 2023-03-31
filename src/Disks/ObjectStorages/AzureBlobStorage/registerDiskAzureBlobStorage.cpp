@@ -4,8 +4,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/DiskRestartProxy.h>
-
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
@@ -51,7 +49,7 @@ void registerDiskAzureBlobStorage(DiskFactory & factory, bool global_skip_access
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         azure_blob_storage_disk->startup(context, skip_access_check);
 
-        return std::make_shared<DiskRestartProxy>(azure_blob_storage_disk);
+        return azure_blob_storage_disk;
     };
 
     factory.registerDiskType("azure_blob_storage", creator);

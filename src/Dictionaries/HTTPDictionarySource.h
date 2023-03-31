@@ -29,7 +29,7 @@ public:
         const std::string format;
         const std::string update_field;
         const UInt64 update_lag;
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
+        const HTTPHeaderEntries header_entries;
     };
 
     HTTPDictionarySource(

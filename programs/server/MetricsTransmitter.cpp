@@ -1,6 +1,6 @@
 #include "MetricsTransmitter.h"
 
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Common/AsynchronousMetrics.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>

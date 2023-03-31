@@ -64,28 +64,31 @@ void WriteBufferFromPocoSocket::nextImpl()
         }
         catch (const Poco::Net::NetException & e)
         {
-            throw NetException(e.displayText() + ", while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
+                               our_address.toString(), peer_address.toString());
         }
         catch (const Poco::TimeoutException &)
         {
-            throw NetException(fmt::format("Timeout exceeded while writing to socket ({}, {} ms)",
+            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms)",
                 peer_address.toString(),
-                socket.impl()->getSendTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+                socket.impl()->getSendTimeout().totalMilliseconds());
         }
         catch (const Poco::IOException & e)
         {
-            throw NetException(e.displayText() + ", while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
+                               our_address.toString(), peer_address.toString());
         }
 
         if (res < 0)
-            throw NetException("Cannot write to socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+            throw NetException(ErrorCodes::CANNOT_WRITE_TO_SOCKET, "Cannot write to socket ({} -> {})",
+                               our_address.toString(), peer_address.toString());
 
         bytes_written += res;
     }
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress())
+    : BufferWithOwnMemory<WriteBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress()), our_address(socket.address())
 {
 }
 

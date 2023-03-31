@@ -2,7 +2,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <Common/VariableContext.h>
-#include <Interpreters/TraceCollector.h>
+#include <Common/TraceSender.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -68,17 +68,17 @@ inline std::string_view toDescription(OvercommitResult result)
     switch (result)
     {
     case OvercommitResult::NONE:
-        return "Memory overcommit isn't used. OvercommitTracker isn't set";
+        return "";
     case OvercommitResult::DISABLED:
-        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero";
+        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero.";
     case OvercommitResult::MEMORY_FREED:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OvercommitResult::MEMORY_FREED shouldn't be asked for description");
     case OvercommitResult::SELECTED:
-        return "Query was selected to stop by OvercommitTracker";
+        return "Query was selected to stop by OvercommitTracker.";
     case OvercommitResult::TIMEOUTED:
-        return "Waiting timeout for memory to be freed is reached";
+        return "Waiting timeout for memory to be freed is reached.";
     case OvercommitResult::NOT_ENOUGH_FREED:
-        return "Memory overcommit has freed not enough memory";
+        return "Memory overcommit has freed not enough memory.";
     }
 }
 
@@ -134,6 +134,27 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
         "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
+void MemoryTracker::injectFault() const
+{
+    if (!memoryTrackerCanThrow(level, true))
+    {
+        LOG_WARNING(&Poco::Logger::get("MemoryTracker"),
+                    "Cannot inject fault at specific point. Uncaught exceptions: {}, stack trace:\n{}",
+                    std::uncaught_exceptions(), StackTrace().toString());
+        return;
+    }
+
+    /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+
+    ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
+    throw DB::Exception(
+        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+        "Memory tracker{}{}: fault injected (at specific point)",
+        description ? " " : "",
+        description ? description : "");
+}
 
 void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker)
 {
@@ -178,7 +199,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
+        DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {.size = size});
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
         allocation_traced = true;
     }
@@ -187,7 +208,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
+        DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = size});
         allocation_traced = true;
     }
 
@@ -261,14 +282,17 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
-                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                    "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
-                    description ? " " : "",
-                    description ? description : "",
-                    formatReadableSizeWithBinarySuffix(will_be),
-                    size,
-                    formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    toDescription(overcommit_result));
+                                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                                    "Memory limit{}{} exceeded: "
+                                    "would use {} (attempt to allocate chunk of {} bytes), maximum: {}."
+                                    "{}{}",
+                                    description ? " " : "",
+                                    description ? description : "",
+                                    formatReadableSizeWithBinarySuffix(will_be),
+                                    size,
+                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                    overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
+                                    toDescription(overcommit_result));
             }
             else
             {
@@ -305,7 +329,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (peak_updated && allocation_traced)
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemoryPeak, StackTrace(), will_be);
+        DB::TraceSender::send(DB::TraceType::MemoryPeak, StackTrace(), {.size = will_be});
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
@@ -361,7 +385,7 @@ void MemoryTracker::free(Int64 size)
     if (unlikely(sample_probability > 0.0 && sample(thread_local_rng)))
     {
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), -size);
+        DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {.size = -size});
     }
 
     Int64 accounted_size = size;

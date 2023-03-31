@@ -26,16 +26,16 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
     assertNoParameters(name, params);
 
     if (arguments.size() != 2)
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for aggregate function {}", name);
 
     if (!isInteger(arguments[0]) && !isFloat(arguments[0]) && !isDate(arguments[0]) && !isDateTime(arguments[0]))
-        throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " +
-            name + ", must be Int, Float, Date, DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+                        "must be Int, Float, Date, DateTime", arguments[0]->getName(), name);
 
     if (!isInteger(arguments[1]) && !isFloat(arguments[1]) && !isDate(arguments[1]) && !isDateTime(arguments[1]))
-        throw Exception("Illegal type " + arguments[1]->getName() + " of argument for aggregate function " +
-            name + ", must be Int, Float, Date, DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+                        "must be Int, Float, Date, DateTime", arguments[1]->getName(), name);
 
     return AggregateFunctionPtr(createWithTwoNumericOrDateTypes<AggregationFunctionDeltaSumTimestamp>(
         *arguments[0], *arguments[1], arguments, params));
