@@ -1349,6 +1349,22 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     }
 }
 
+static bool findIdentifier(const ASTFunction * function)
+{
+    if (!function || !function->arguments)
+        return false;
+    if (const auto * arguments = function->arguments->as<ASTExpressionList>())
+    {
+        for (const auto & argument : arguments->children)
+        {
+            if (argument->as<ASTIdentifier>())
+                return true;
+            if (const auto * f = argument->as<ASTFunction>(); f && findIdentifier(f))
+                return true;
+        }
+    }
+    return false;
+}
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
@@ -1404,27 +1420,6 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             bool use_columns_from_insert_query = true;
 
-            auto find_identifier = [](const ASTFunction * function) -> bool
-            {
-                auto find_identifier_impl = [](const ASTFunction * function, auto && self) -> bool
-                {
-                    if (!function || !function->arguments)
-                        return false;
-                    if (const auto * arguments = function->arguments->as<ASTExpressionList>())
-                    {
-                        for (const auto & argument : arguments->children)
-                        {
-                            if (argument->as<ASTIdentifier>())
-                                return true;
-                            if (const auto * f = argument->as<ASTFunction>(); f && self(f, self))
-                                return true;
-                        }
-                    }
-                    return false;
-                };
-                return find_identifier_impl(function, find_identifier_impl);
-            };
-
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
@@ -1435,6 +1430,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
             const auto * expression = expression_list.begin();
 
+            /// We want to go through SELECT expression list and correspond each expression to column in insert table
+            /// which type will be used as a hint for the file structure inference.
             for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
@@ -1453,6 +1450,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                         structure_hint.add({ identifier->name(), insert_column->type });
                     }
 
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
                         --insert_structure_end;
                     else
@@ -1481,12 +1480,14 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 }
                 else if (auto * function = (*expression)->as<ASTFunction>())
                 {
-                    if (use_structure_from_insertion_table_in_table_functions == 2 && find_identifier(function))
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(function))
                     {
                         use_columns_from_insert_query = false;
                         break;
                     }
 
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
                         --insert_structure_end;
                     else
@@ -1494,6 +1495,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 }
                 else
                 {
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
                         --insert_structure_end;
                     else
@@ -1505,6 +1508,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             {
                 if (expression == expression_list.end())
                 {
+                    /// Append tail of insert structure to the hint
                     if (asterisk)
                     {
                         for (; insert_column != insert_structure_end; ++insert_column)

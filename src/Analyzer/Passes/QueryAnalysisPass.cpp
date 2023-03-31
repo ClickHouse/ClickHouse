@@ -6079,6 +6079,18 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
 }
 
+static bool findIdentifier(const FunctionNode & function)
+{
+    for (const auto & argument : function.getArguments())
+    {
+        if (argument->as<IdentifierNode>())
+            return true;
+        if (const auto * f = argument->as<FunctionNode>(); f && findIdentifier(*f))
+            return true;
+    }
+    return false;
+}
+
 /// Resolve table function node in scope
 void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     IdentifierResolveScope & scope,
@@ -6123,22 +6135,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             bool use_columns_from_insert_query = true;
 
-            auto find_identifier = [](const FunctionNode & function) -> bool
-            {
-                auto find_identifier_impl = [](const FunctionNode & function, auto && self) -> bool
-                {
-                    for (const auto & argument : function.getArguments())
-                    {
-                        if (argument->as<IdentifierNode>())
-                            return true;
-                        if (const auto * f = argument->as<FunctionNode>(); f && self(*f, self))
-                            return true;
-                    }
-                    return false;
-                };
-                return find_identifier_impl(function, find_identifier_impl);
-            };
-
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
@@ -6149,6 +6145,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
             auto expression = expression_list.begin();
 
+            /// We want to go through SELECT expression list and correspond each expression to column in insert table
+            /// which type will be used as a hint for the file structure inference.
             for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
                 if (auto * identifier_node = (*expression)->as<IdentifierNode>())
@@ -6168,6 +6166,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         structure_hint.add({ identifier_node->getIdentifier().getFullName(), insert_column->type });
                     }
 
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
                         --insert_structure_end;
                     else
@@ -6196,12 +6196,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 }
                 else if (auto * function = (*expression)->as<FunctionNode>())
                 {
-                    if (use_structure_from_insertion_table_in_table_functions == 2 && find_identifier(*function))
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(*function))
                     {
                         use_columns_from_insert_query = false;
                         break;
                     }
 
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
                         --insert_structure_end;
                     else
@@ -6209,6 +6211,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 }
                 else
                 {
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
                         --insert_structure_end;
                     else
@@ -6220,6 +6224,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             {
                 if (expression == expression_list.end())
                 {
+                    /// Append tail of insert structure to the hint
                     if (asterisk)
                     {
                         for (; insert_column != insert_structure_end; ++insert_column)
