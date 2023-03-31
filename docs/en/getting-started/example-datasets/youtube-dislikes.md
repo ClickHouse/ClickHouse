@@ -142,12 +142,6 @@ Some comments about our `INSERT` command:
 - We used `ifNull` to avoid getting `NULL` values in our table. If an incoming value is `NULL`, the `ifNull` function is setting the value to an empty string
 - It takes a long time to download the data, so we added a `SETTINGS` clause to spread out the work over more threads while making sure the block sizes stayed fairly large
 
-Here is the response when the data is fully loaded:
-
-```response
-
-```
-
 4. Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase. It will take a while to insert 4.56B rows, depending on your server resources. (Without any tweaking of settings, it takes about 4.5 hours.)
 
 ```sql
@@ -221,7 +215,7 @@ FROM youtube
 WHERE (title ILIKE '%ClickHouse%') OR (description ILIKE '%ClickHouse%')
 ORDER BY
     like_count DESC,
-    view_count DESC
+    view_count DESC;
 ```
 
 This query has to process every row, and also parse through two columns of strings. Even then, we get decent performance at 4.15M rows/second:
@@ -268,7 +262,6 @@ ORDER BY
 ```
 
 ```response
-
 ┌─views─────────────┬─is_comments_enabled─┬────prob_like_dislike─┐
 │ < 10.00           │ false               │  0.08224180712685371 │
 │ < 100.00          │ false               │  0.06346337759167248 │
@@ -293,7 +286,6 @@ ORDER BY
 └───────────────────┴─────────────────────┴──────────────────────┘
 
 22 rows in set. Elapsed: 8.460 sec. Processed 4.56 billion rows, 77.48 GB (538.73 million rows/s., 9.16 GB/s.)
-
 ```
 
 Enabling comments seems to be correlated with a higher rate of engagement.
