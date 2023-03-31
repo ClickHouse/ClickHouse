@@ -141,6 +141,10 @@ Clusters are configured in the [server configuration file](../../../operations/c
              be used as current user for the query.
         -->
         <!-- <secret></secret> -->
+        
+        <!-- Optional. Whether distributed DDL queries (ON CLUSTER clause) are allowed for this cluster. Default: true (allowed). -->        
+        <!-- <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries> -->
+        
         <shard>
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>

@@ -87,7 +87,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
 
         /// (*)
-        rewritten_query << " ORDER BY cluster";
+        rewritten_query << " ORDER BY cluster, shard_num, replica_num, host_name, host_address, port";
 
         return rewritten_query.str();
     }
