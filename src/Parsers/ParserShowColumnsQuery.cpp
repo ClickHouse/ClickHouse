@@ -13,7 +13,7 @@ namespace DB
 bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr like;
-    ASTPtr from_db;
+    ASTPtr from_database;
     ASTPtr from_table;
 
     auto query = std::make_shared<ASTShowColumnsQuery>();
@@ -43,10 +43,10 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (!abbreviated_form)
         if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
-            if (!ParserIdentifier().parse(pos, from_db, expected))
+            if (!ParserIdentifier().parse(pos, from_database, expected))
                 return false;
 
-    tryGetIdentifierNameInto(from_db, query->from_database);
+    tryGetIdentifierNameInto(from_database, query->from_database);
 
     if (ParserKeyword("NOT").ignore(pos, expected))
         query->not_like = true;
