@@ -288,7 +288,16 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
     {
         current_grants = true;
-        elements.emplace_back(AccessType::ALL);
+        if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+        {
+            if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
+                return false;
+
+            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                return false;
+        }
+        else
+            elements.emplace_back(AccessType::ALL);
     }
     else
     {
