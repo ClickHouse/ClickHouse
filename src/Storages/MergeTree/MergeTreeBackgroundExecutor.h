@@ -13,12 +13,19 @@
 #include <boost/circular_buffer.hpp>
 #include <boost/noncopyable.hpp>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeBackgroundExecutorThreads;
+    extern const Metric MergeTreeBackgroundExecutorThreadsActive;
+}
 
 namespace DB
 {
@@ -247,11 +254,14 @@ public:
         String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
-        CurrentMetrics::Metric metric_)
+        CurrentMetrics::Metric metric_,
+        CurrentMetrics::Metric max_tasks_metric_)
         : name(name_)
         , threads_count(threads_count_)
         , max_tasks_count(max_tasks_count_)
         , metric(metric_)
+        , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
+        , pool(CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive)
     {
         if (max_tasks_count == 0)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
@@ -272,9 +282,10 @@ public:
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
+        CurrentMetrics::Metric max_tasks_metric_,
         std::string_view policy)
         requires requires(Queue queue) { queue.updatePolicy(policy); } // Because we use explicit template instantiation
-        : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_)
+        : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_, max_tasks_metric_)
     {
         pending.updatePolicy(policy);
     }
@@ -311,6 +322,7 @@ private:
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;
+    CurrentMetrics::Increment max_tasks_metric;
 
     void routine(TaskRuntimeDataPtr item);
 

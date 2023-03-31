@@ -448,7 +448,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(static_cast<size_t>(1), current_streams);
+        current_streams = std::max(1uz, current_streams);
 
         const auto & storage = std::get<1>(table);
 
@@ -655,7 +655,9 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
-        QueryPlan plan;
+        /// Steps for reading from child tables should have the same lifetime as the current step
+        /// because `builder` can have references to them (mainly for EXPLAIN PIPELINE).
+        QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (!view || allow_experimental_analyzer)

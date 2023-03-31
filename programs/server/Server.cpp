@@ -67,7 +67,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <IO/Resource/registerSchedulerNodes.h>
@@ -816,8 +815,6 @@ try
         }
     );
 
-    ConnectionCollector::init(global_context, server_settings.max_threads_for_connection_collector);
-
     bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
@@ -1274,7 +1271,7 @@ try
             {
                 auto new_pool_size = server_settings.background_pool_size;
                 auto new_ratio = server_settings.background_merges_mutations_concurrency_ratio;
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings.background_merges_mutations_scheduling_policy.toString());
             }
 
@@ -1459,7 +1456,7 @@ try
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -1484,7 +1481,7 @@ try
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     if (server_settings.index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);

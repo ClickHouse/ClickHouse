@@ -36,7 +36,7 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */) {}
+    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
@@ -163,7 +163,7 @@ public:
         , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_
         , const std::optional<std::string> & content_type_override_);
 
-    virtual void customizeContext(HTTPServerRequest & request, ContextMutablePtr context) override;
+    void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 

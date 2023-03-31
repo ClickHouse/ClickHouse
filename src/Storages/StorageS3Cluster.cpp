@@ -49,6 +49,7 @@ StorageS3Cluster::StorageS3Cluster(
     ContextPtr context_,
     bool structure_argument_was_provided_)
     : IStorageCluster(table_id_)
+    , log(&Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"))
     , s3_configuration{configuration_}
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
@@ -146,7 +147,6 @@ Pipe StorageS3Cluster::read(
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
                     queryToString(query_to_send),
                     sample_block,
@@ -157,6 +157,7 @@ Pipe StorageS3Cluster::read(
                     processed_stage,
                     extension);
 
+            remote_query_executor->setLogger(log);
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
     }
