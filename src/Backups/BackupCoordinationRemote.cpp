@@ -164,17 +164,18 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     , current_host_index(findCurrentHostIndex(all_hosts, current_host))
     , plain_backup(plain_backup_)
     , is_internal(is_internal_)
+    , log(&Poco::Logger::get("BackupCoordinationRemote"))
 {
     zookeeper_retries_info = ZooKeeperRetriesInfo(
         "BackupCoordinationRemote",
-        &Poco::Logger::get("BackupCoordinationRemote"),
+        log,
         keeper_settings.keeper_max_retries,
         keeper_settings.keeper_retry_initial_backoff_ms,
         keeper_settings.keeper_retry_max_backoff_ms);
 
     createRootNodes();
     stage_sync.emplace(
-        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
+        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, log);
 }
 
 BackupCoordinationRemote::~BackupCoordinationRemote()
@@ -664,7 +665,10 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
 
             const auto status = zk->get(root_zookeeper_path + "/" + existing_backup_path + "/stage");
             if (status != Stage::COMPLETED)
+            {
+                LOG_WARNING(log, "Found a concurrent backup: {}, current backup: {}", existing_backup_uuid, toString(backup_uuid));
                 return true;
+            }
         }
 
         zk->createIfNotExists(backup_stage_path, "");
