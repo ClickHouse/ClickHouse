@@ -612,7 +612,10 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
     frame_nested.expression_list_always_start_on_new_line = true;
-    static_cast<ASTExpressionList *>(command_list)->formatImplMultiline(settings, state, frame_nested);
+    frame_nested.expression_list_prepend_whitespace = true;
+    settings.one_line
+        ? command_list->formatImpl(settings, state, frame_nested)
+        : command_list->as<ASTExpressionList &>().formatImplMultiline(settings, state, frame_nested);
 }
 
 }
