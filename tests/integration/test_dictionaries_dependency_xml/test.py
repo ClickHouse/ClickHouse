@@ -161,3 +161,29 @@ def test_xml_dict_same_name(started_cluster):
     instance.restart_clickhouse()
     assert "node" in instance.query("show tables from default")
     instance.query("drop table default.node")
+
+
+def test_xml_dict_table_distr(start_cluster):
+    query = instance.query
+
+    query("CREATE DATABASE test_db;")
+    query("CREATE TABLE test_db.test(id UInt32,data UInt32,key1 UInt8,key2 UInt8) ENGINE=MergeTree  ORDER BY id;")
+    query("INSERT INTO test_db.test SELECT"  
+          "abs(rand32())%100, rand32()%1000, abs(rand32())%1, abs(rand32())%1  FROM numbers(100);")
+    
+    query("CREATE TABLE test_db.dictback (key1 UInt8,key2 UInt8, value UInt8) ENGINE=MergeTree  ORDER BY key1;")
+    
+    query("INSERT INTO test_db.dictback VALUES (0,0,0);")
+    query("CREATE DICTIONARY test_db.mdict (key1 UInt8,key2 UInt8, value UInt8)"
+          "PRIMARY KEY key1,key2"
+          "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DATABASE 'test_db' TABLE 'dictback'))"
+          "LIFETIME(MIN 100 MAX 100)"
+          "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000));")
+    query("CREATE TABLE test_db.distr (id UInt32, data UInt32, key1 UInt8, key2 UInt8)  ENGINE = Distributed(mdbk06dgqh73mdmtb1pf, test_db, test,"
+          "dictGetOrDefault('test_db.mdict','value',(key1,key2),0));")
+    query("DETACH TABLE test_db.distr;")
+    query("ATTACH TABLE test_db.distr;") 
+
+    instance.restart_clickhouse()
+    
+    query("DROP DATABASE test_db;")
