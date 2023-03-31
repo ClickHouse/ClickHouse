@@ -12,7 +12,7 @@ namespace DB
 
 BlockIO InterpreterShowProcesslistQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.processes ORDER BY query_id", getContext(), true);
+    return executeQuery("SELECT * FROM system.processes ORDER BY elapsed DESC", getContext(), true);
 }
 
 }
