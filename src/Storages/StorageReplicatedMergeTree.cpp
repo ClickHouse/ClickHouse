@@ -7593,10 +7593,6 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
 
     std::unordered_set<String> wait_for_ids;
     bool was_interrupted = false;
-    if (sync_mode == SyncReplicaMode::DEFAULT)
-        wait_for_ids = queue.getEntryNamesSet(/* lightweight_entries_only */ false);
-    else if (sync_mode == SyncReplicaMode::LIGHTWEIGHT)
-        wait_for_ids = queue.getEntryNamesSet(/* lightweight_entries_only */ true);
 
     Poco::Event target_entry_event;
     auto callback = [this, &target_entry_event, &wait_for_ids, &was_interrupted, sync_mode]
@@ -7624,7 +7620,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         if (wait_for_ids.empty())
             target_entry_event.set();
     };
-    const auto handler = queue.addSubscriber(std::move(callback));
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode);
 
     if (!target_entry_event.tryWait(max_wait_milliseconds))
         return false;
