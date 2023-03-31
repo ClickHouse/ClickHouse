@@ -12,12 +12,13 @@ class StringWriter
 {
     ColumnString & col;
     ColumnString::Chars & chars;
-    UInt64 prev_commit_pos = 0;
+    UInt64 prev_commit_pos;
 
 public:
     explicit StringWriter(ColumnString & col_)
         : col(col_),
-        chars(col.getChars())
+        chars(col.getChars()),
+        prev_commit_pos(chars.size())
     {}
 
     ~StringWriter()
@@ -50,8 +51,7 @@ public:
 
     void commit()
     {
-        chars.push_back('\0');
-        col.getOffsets().emplace_back(chars.size());
+        col.insertData(nullptr, 0);
         prev_commit_pos = chars.size();
     }
 

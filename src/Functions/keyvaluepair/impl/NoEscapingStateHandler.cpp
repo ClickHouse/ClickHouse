@@ -208,7 +208,6 @@ NextState NoEscapingStateHandler::readQuotedValue(std::string_view file, StringW
         {
             value.append(file.begin() + start_index, file.begin() + character_position);
 
-            std::cerr << "NoEscapingStateHandler::readQuoted Going to consume up to: «" << fancyQuote(file.substr(0, next_pos)) << " to " << fancyQuote(file.substr(next_pos)) << std::endl;
             return {next_pos, State::FLUSH_PAIR};
         }
 

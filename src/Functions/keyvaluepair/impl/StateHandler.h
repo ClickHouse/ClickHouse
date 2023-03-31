@@ -49,46 +49,46 @@ public:
 }
 
 // TODO(vnemkov): Debug stuff, remove before merging
-
-template <typename T, bool prepend_length>
-struct CustomQuoted
-{
-    const char * start_quote = "\"";
-    const char * end_quote = "\"";
-
-    const T & value;
-};
-
-template <bool prepend_with_length, typename T>
-CustomQuoted<T, prepend_with_length> customQuote(const char * start_quote, const T & value, const char * end_quote = nullptr)
-{
-    assert(start_quote != nullptr);
-
-    return CustomQuoted<T, prepend_with_length>{
-        .start_quote = start_quote,
-        .end_quote = end_quote ? end_quote : start_quote,
-        .value = value
-    };
-}
-
-inline auto fancyQuote(const std::string_view & value)
-{
-    return CustomQuoted<std::string_view, true>{
-        .start_quote = "«",
-        .end_quote = "»",
-        .value = value
-    };
-}
-
-template <typename T, bool prepend_length>
-std::ostream & operator<<(std::ostream & ostr, const CustomQuoted<T, prepend_length> & val)
-{
-    if constexpr (prepend_length)
-    {
-        ostr << "(" << val.value.length() << ") ";
-    }
-
-    return ostr << val.start_quote << val.value << val.end_quote;
-}
+//
+//template <typename T, bool prepend_length>
+//struct CustomQuoted
+//{
+//    const char * start_quote = "\"";
+//    const char * end_quote = "\"";
+//
+//    const T & value;
+//};
+//
+//template <bool prepend_with_length, typename T>
+//CustomQuoted<T, prepend_with_length> customQuote(const char * start_quote, const T & value, const char * end_quote = nullptr)
+//{
+//    assert(start_quote != nullptr);
+//
+//    return CustomQuoted<T, prepend_with_length>{
+//        .start_quote = start_quote,
+//        .end_quote = end_quote ? end_quote : start_quote,
+//        .value = value
+//    };
+//}
+//
+//inline auto fancyQuote(const std::string_view & value)
+//{
+//    return CustomQuoted<std::string_view, true>{
+//        .start_quote = "«",
+//        .end_quote = "»",
+//        .value = value
+//    };
+//}
+//
+//template <typename T, bool prepend_length>
+//std::ostream & operator<<(std::ostream & ostr, const CustomQuoted<T, prepend_length> & val)
+//{
+//    if constexpr (prepend_length)
+//    {
+//        ostr << "(" << val.value.length() << ") ";
+//    }
+//
+//    return ostr << val.start_quote << val.value << val.end_quote;
+//}
 
 }
