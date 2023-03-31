@@ -137,7 +137,7 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
 
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {
-        return type_map.getNestedType();
+        return type_map.getNestedTypeWithUnnamedTuple();
     }
 
     static ColumnPtr extractNestedColumn(const ColumnMap & column_map)
@@ -274,7 +274,7 @@ struct MapKeyLikeAdapter
             function_column = ColumnFunction::create(pattern_arg.column->size(), std::move(function_base), ColumnsWithTypeAndName{pattern_arg});
         }
 
-        ColumnWithTypeAndName function_arg{std::move(function_column), std::move(function_type), "__function_map_key_like"};
+        ColumnWithTypeAndName function_arg{function_column, function_type, "__function_map_key_like"};
         arguments = {function_arg, arguments[0]};
         MapToNestedAdapter<Name, returns_map>::extractNestedTypesAndColumns(arguments);
     }
