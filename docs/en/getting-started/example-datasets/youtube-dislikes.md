@@ -67,7 +67,8 @@ CREATE TABLE youtube
 (
     `id` String,
     `fetch_date` DateTime,
-    `upload_date` String,
+    `upload_date_str` String,
+    `upload_date` Date,
     `title` String,
     `uploader_id` String,
     `uploader` String,
@@ -87,7 +88,7 @@ CREATE TABLE youtube
     `video_badges` String
 )
 ENGINE = MergeTree
-ORDER BY (upload_date, uploader);
+ORDER BY (uploader, upload_date);
 ```
 
 3. The following command streams the records from the S3 files into the `youtube` table.
@@ -101,8 +102,9 @@ INSERT INTO youtube
 SETTINGS input_format_null_as_default = 1
 SELECT
     id,
-    parseDateTimeBestEffortUS(toString(fetch_date)) AS fetch_date,
-    upload_date,
+    parseDateTimeBestEffortUSOrZero(toString(fetch_date)) AS fetch_date,
+    upload_date AS upload_date_str,
+    toDate(parseDateTimeBestEffortUS(upload_date::String)) AS upload_date,
     ifNull(title, '') AS title,
     uploader_id,
     ifNull(uploader, '') AS uploader,
@@ -121,11 +123,22 @@ SELECT
     ifNull(uploader_badges, '') AS uploader_badges,
     ifNull(video_badges, '') AS video_badges
 FROM s3Cluster(
-       'default',
-       'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
-       'JSONLines'
-    );
+    'default',
+    'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
+    'JSONLines'
+)
+SETTINGS
+   max_download_threads = 24,
+   max_insert_threads = 64,
+   max_insert_block_size = 100000000,
+   min_insert_block_size_rows = 100000000,
+   min_insert_block_size_bytes = 500000000;
 ```
+
+Some comments about our `INSERT` command:
+
+- The `parseDateTimeBestEffortUSOrZero` function is handy when the incoming date fields may not be in the proper format. If `fetch_date` does not get parsed properly, it will be set to `0`
+-
 
 4. Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase. It will take a while to insert 4.56B rows, depending on your server resources. (Withtout any tweaking of settings, it takes about 4.5 hours.)
 
@@ -276,6 +289,132 @@ ORDER BY
 
 Enabling comments seems to be correlated with a higher rate of engagement.
 
+<<<<<<< Updated upstream
+=======
+
+### How does the number of videos change over time - notable events?
+
+```sql
+SELECT
+    toStartOfMonth(toDateTime(upload_date)) AS month,
+    uniq(uploader_id) AS uploaders,
+    count() as num_videos,
+    sum(view_count) as view_count
+FROM youtube
+WHERE (month >= '2005-01-01') AND (month < '2021-12-01')
+GROUP BY month
+ORDER BY month ASC
+```
+
+```response
+┌──────month─┬─uploaders─┬─num_videos─┬───view_count─┐
+│ 2005-04-01 │         5 │          6 │    213597737 │
+│ 2005-05-01 │         6 │          9 │      2944005 │
+│ 2005-06-01 │       165 │        351 │     18624981 │
+│ 2005-07-01 │       395 │       1168 │     94164872 │
+│ 2005-08-01 │      1171 │       3128 │    124540774 │
+│ 2005-09-01 │      2418 │       5206 │    475536249 │
+│ 2005-10-01 │      6750 │      13747 │    737593613 │
+│ 2005-11-01 │     13706 │      28078 │   1896116976 │
+│ 2005-12-01 │     24756 │      49885 │   2478418930 │
+│ 2006-01-01 │     49992 │     100447 │   4532656581 │
+│ 2006-02-01 │     67882 │     138485 │   5677516317 │
+│ 2006-03-01 │    103358 │     212237 │   8430301366 │
+│ 2006-04-01 │    114615 │     234174 │   9980760440 │
+│ 2006-05-01 │    152682 │     332076 │  14129117212 │
+│ 2006-06-01 │    193962 │     429538 │  17014143263 │
+│ 2006-07-01 │    234401 │     530311 │  18721143410 │
+│ 2006-08-01 │    281280 │     614128 │  20473502342 │
+│ 2006-09-01 │    312434 │     679906 │  23158422265 │
+│ 2006-10-01 │    404873 │     897590 │  27357846117 │
+```
+
+A spike of uploaders [around covid is noticeable](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
+
+
+### More subtitiles over time and when
+
+With advances in speech recognition, it’s easier than ever to create subtitles for video with youtube adding auto-captioning in late 2009 - was the jump then?
+
+```sql
+SELECT
+    toStartOfMonth(upload_date) AS month,
+    countIf(has_subtitles) / count() AS percent_subtitles,
+    percent_subtitles - any(percent_subtitles) OVER (ORDER BY month ASC ROWS BETWEEN 1 PRECEDING AND 1 PRECEDING) AS previous
+FROM youtube
+WHERE (month >= '2015-01-01') AND (month < '2021-12-02')
+GROUP BY month
+ORDER BY month ASC
+```
+
+```response
+┌──────month─┬───percent_subtitles─┬────────────────previous─┐
+│ 2015-01-01 │  0.2652653881082824 │      0.2652653881082824 │
+│ 2015-02-01 │  0.3147556050309162 │    0.049490216922633834 │
+│ 2015-03-01 │ 0.32460464492371877 │    0.009849039892802558 │
+│ 2015-04-01 │ 0.33471963051468445 │    0.010114985590965686 │
+│ 2015-05-01 │  0.3168087575501062 │   -0.017910872964578273 │
+│ 2015-06-01 │  0.3162609788438222 │  -0.0005477787062839745 │
+│ 2015-07-01 │ 0.31828767677518033 │   0.0020266979313581235 │
+│ 2015-08-01 │  0.3045551564286859 │   -0.013732520346494415 │
+│ 2015-09-01 │   0.311221133995152 │    0.006665977566466086 │
+│ 2015-10-01 │ 0.30574870926812175 │   -0.005472424727030245 │
+│ 2015-11-01 │ 0.31125409712077234 │   0.0055053878526505895 │
+│ 2015-12-01 │  0.3190967954651779 │    0.007842698344405541 │
+│ 2016-01-01 │ 0.32636021432496176 │    0.007263418859783877 │
+
+```
+
+The data results show a spike in 2009. Apparently at that, time YouTube was removing their community captions feature, which allowed you to upload captions for other people's video.
+This prompted a very successful campaign to have creators add captions to their videos for hard of hearing and deaf viewers.
+
+
+### Top uploaders over time
+
+```sql
+WITH uploaders AS
+    (
+        SELECT uploader
+        FROM youtube
+        GROUP BY uploader
+        ORDER BY sum(view_count) DESC
+        LIMIT 10
+    )
+SELECT
+    month,
+    uploader,
+    sum(view_count) AS total_views,
+    avg(dislike_count / like_count) AS like_to_dislike_ratio
+FROM youtube
+WHERE uploader IN (uploaders)
+GROUP BY
+    toStartOfMonth(upload_date) AS month,
+    uploader
+ORDER BY
+    month ASC,
+    total_views DESC
+
+1001 rows in set. Elapsed: 34.917 sec. Processed 4.58 billion rows, 69.08 GB (131.15 million rows/s., 1.98 GB/s.)
+```
+
+```response
+┌──────month─┬─uploader───────────────────┬─total_views─┬─like_to_dislike_ratio─┐
+│ 1970-01-01 │ T-Series                   │    10957099 │  0.022784656361208206 │
+│ 1970-01-01 │ Ryan's World               │           0 │  0.003035559410234172 │
+│ 1970-01-01 │ SET India                  │           0 │                   nan │
+│ 2006-09-01 │ Cocomelon - Nursery Rhymes │   256406497 │    0.7005566715978622 │
+│ 2007-06-01 │ Cocomelon - Nursery Rhymes │    33641320 │    0.7088650914344298 │
+│ 2008-02-01 │ WWE                        │    43733469 │   0.07198856488734842 │
+│ 2008-03-01 │ WWE                        │    16514541 │    0.1230603715431997 │
+│ 2008-04-01 │ WWE                        │     5907295 │    0.2089399470159618 │
+│ 2008-05-01 │ WWE                        │     7779627 │   0.09101676560436774 │
+│ 2008-06-01 │ WWE                        │     7018780 │    0.0974184753155297 │
+│ 2008-07-01 │ WWE                        │     4686447 │    0.1263845422065158 │
+│ 2008-08-01 │ WWE                        │     4514312 │   0.08384574274791441 │
+│ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
+```
+
+>>>>>>> Stashed changes
 ### How do like ratio changes as views go up?
 
 ```sql
@@ -296,7 +435,13 @@ GROUP BY
 ORDER BY
     view_range ASC,
     is_comments_enabled ASC
+<<<<<<< Updated upstream
 );
+=======
+)
+
+20 rows in set. Elapsed: 9.043 sec. Processed 4.56 billion rows, 77.48 GB (503.99 million rows/s., 8.57 GB/s.)
+>>>>>>> Stashed changes
 ```
 
 ```response
