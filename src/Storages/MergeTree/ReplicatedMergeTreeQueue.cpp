@@ -2463,10 +2463,32 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 
 
 ReplicatedMergeTreeQueue::SubscriberHandler
-ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
+ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
+                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
+
+    if (sync_mode != SyncReplicaMode::PULL)
+    {
+        /// We must get the list of entries to wait atomically with adding the callback
+        bool lightweight_entries_only = sync_mode == SyncReplicaMode::LIGHTWEIGHT;
+        static constexpr std::array lightweight_entries =
+        {
+            LogEntry::GET_PART,
+            LogEntry::ATTACH_PART,
+            LogEntry::DROP_RANGE,
+            LogEntry::REPLACE_RANGE,
+            LogEntry::DROP_PART
+        };
+        out_entry_names.reserve(queue.size());
+        for (const auto & entry : queue)
+        {
+            if (!lightweight_entries_only
+                || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
+                out_entry_names.insert(entry->znode_name);
+        }
+    }
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
@@ -2474,21 +2496,6 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
     (*it)(queue.size(), nullptr);
 
     return SubscriberHandler(it, *this);
-}
-
-std::unordered_set<String> ReplicatedMergeTreeQueue::getEntryNamesSet(bool lightweight_entries_only)
-{
-    std::lock_guard lock(state_mutex);
-    std::unordered_set<String> result;
-    result.reserve(queue.size());
-    for (const auto & entry : queue)
-    {
-        bool is_lightweight = entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART
-            || entry->type == LogEntry::DROP_RANGE || entry->type == LogEntry::REPLACE_RANGE || entry->type == LogEntry::DROP_PART;
-        if (!lightweight_entries_only || is_lightweight)
-            result.insert(entry->znode_name);
-    }
-    return result;
 }
 
 void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
