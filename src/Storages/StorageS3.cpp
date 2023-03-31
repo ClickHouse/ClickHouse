@@ -880,12 +880,12 @@ public:
 private:
     const String format;
     const Block sample_block;
-    ContextPtr context;
+    const ContextPtr context;
     const CompressionMethod compression_method;
-    const StorageS3::Configuration & s3_configuration;
+    const StorageS3::Configuration s3_configuration;
     const String bucket;
     const String key;
-    std::optional<FormatSettings> format_settings;
+    const std::optional<FormatSettings> format_settings;
 
     ExpressionActionsPtr partition_by_expr;
 
