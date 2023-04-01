@@ -278,7 +278,7 @@ def need_retry(args, stdout, stderr, total_time):
 def get_processlist_with_stacktraces(args):
     try:
         if args.replicated_database:
-            return clickhouse_execute_json(
+            return clickhouse_execute(
                 args,
                 """
             SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
@@ -295,14 +295,14 @@ def get_processlist_with_stacktraces(args):
                 WHERE query NOT LIKE '%system.processes%'
                 GROUP BY p.*
             ))
-            ORDER BY elapsed DESC
+            ORDER BY elapsed DESC FORMAT Vertical
             """,
                 settings={
                     "allow_introspection_functions": 1,
                 },
             )
         else:
-            return clickhouse_execute_json(
+            return clickhouse_execute(
                 args,
                 """
             SELECT
@@ -315,7 +315,7 @@ def get_processlist_with_stacktraces(args):
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
             GROUP BY p.*
-            ORDER BY elapsed DESC
+            ORDER BY elapsed DESC FORMAT Vertical
             """,
                 settings={
                     "allow_introspection_functions": 1,
@@ -2058,7 +2058,10 @@ def reportLogStats(args):
               'Table {} is not replicated', '{} {}.{} already exists', 'Attempt to read after eof',
               'Replica {} already exists', 'Convert overflow', 'key must be a tuple', 'Division by zero',
               'No part {} in committed state', 'Files set to {}', 'Bytes set to {}', 'Sharding key {} is not used',
-              'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow'
+              'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow',
+              'Polygon is not valid: {}', 'Decimal math overflow', '{} only accepts maps', 'Dictionary ({}) not found',
+              'Unknown format {}', 'Invalid IPv4 value', 'Invalid IPv6 value', 'Unknown setting {}',
+              'Unknown table function {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
