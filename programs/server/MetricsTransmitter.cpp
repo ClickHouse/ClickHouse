@@ -110,7 +110,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 
     if (send_metrics)
     {
-        for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+        for (CurrentMetrics::Metric i = CurrentMetrics::Metric(0), end = CurrentMetrics::end(); i < end; ++i)
         {
             const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 

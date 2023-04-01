@@ -50,7 +50,7 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(profile_events[i]);
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        columns[column_idx++]->insert(current_metrics[i]);
+        columns[column_idx++]->insert(current_metrics[i].toUnderType());
 }
 
 

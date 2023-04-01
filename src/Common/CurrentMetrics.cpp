@@ -186,10 +186,10 @@
 
 namespace CurrentMetrics
 {
-    #define M(NAME, DOCUMENTATION) extern const Metric NAME = __COUNTER__;
+    #define M(NAME, DOCUMENTATION) extern const Metric NAME = Metric(__COUNTER__);
         APPLY_FOR_METRICS(M)
     #undef M
-    constexpr Metric END = __COUNTER__;
+    constexpr Metric END = Metric(__COUNTER__);
 
     std::atomic<Value> values[END] {};    /// Global variable, initialized by zeros.
 
