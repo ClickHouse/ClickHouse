@@ -25,14 +25,14 @@ String toString(FileSegmentKind kind)
 }
 
 FileSegment::FileSegment(
-        size_t offset_,
-        size_t size_,
-        const Key & key_,
+        const Key & key_, size_t offset_, size_t size_,
         std::weak_ptr<KeyMetadata> key_metadata_,
+        IFileCachePriority::Iterator queue_iterator_,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & settings)
     : segment_range(offset_, offset_ + size_ - 1)
+    , queue_iterator(queue_iterator_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
     , file_key(key_)
@@ -464,7 +464,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         if (is_unbound && is_file_segment_size_exceeded)
             segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
-        reserved = cache->tryReserve(key(), offset(), size_to_reserve, getKeyMetadata());
+        reserved = cache->tryReserve(*this, size_to_reserve);
         if (reserved)
         {
             /// No lock is required because reserved size is always
@@ -703,13 +703,6 @@ String FileSegment::stateToString(FileSegment::State state)
 
 bool FileSegment::assertCorrectness() const
 {
-    auto key_lock = lockKeyMetadata(true);
-    key_lock->assertFileSegmentCorrectness(*this);
-    return true;
-}
-
-bool FileSegment::assertCorrectnessUnlocked(const FileSegmentMetadata & metadata, const KeyGuard::Lock &) const
-{
     auto lock = segment_guard.lock();
 
     auto current_downloader = getDownloaderUnlocked(lock);
@@ -717,10 +710,10 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentMetadata & metadata
     chassert(!current_downloader.empty() == (download_state == FileSegment::State::DOWNLOADING));
     chassert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(file_path) > 0);
 
-    chassert(reserved_size == 0 || metadata.queue_iterator);
-    if (metadata.queue_iterator)
+    chassert(reserved_size == 0 || queue_iterator);
+    if (queue_iterator)
     {
-        const auto & entry = *metadata.queue_iterator;
+        const auto & entry = *queue_iterator;
         if (isCompleted(false))
             chassert(reserved_size == entry.getEntry().size);
         else
@@ -757,10 +750,11 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
     auto lock = file_segment->segment_guard.lock();
 
     auto snapshot = std::make_shared<FileSegment>(
+        file_segment->key(),
         file_segment->offset(),
         file_segment->range().size(),
-        file_segment->key(),
         std::weak_ptr<KeyMetadata>(),
+        nullptr,
         file_segment->cache,
         State::DETACHED,
         CreateFileSegmentSettings(file_segment->getKind()));
@@ -817,25 +811,21 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 {
     auto & file_segment = front();
     if (file_segment.isDetached())
-    {
         return file_segments.erase(file_segments.begin());
-    }
 
     auto cache_lock = file_segment.cache->cacheLock();
 
-    /// File segment pointer must be reset right after calling complete() and
-    /// under the same mutex, because complete() checks for segment pointers.
-    auto locked_key = file_segment.lockKeyMetadata(/* assert_exists */false);
-    if (locked_key)
-    {
-        auto queue_iter = locked_key->getKeyMetadata()->tryGetByOffset(file_segment.offset())->queue_iterator;
-        if (queue_iter)
-            LockedCachePriorityIterator(cache_lock, queue_iter).use();
+    auto queue_iter = file_segment.getQueueIterator();
+    if (queue_iter)
+        LockedCachePriorityIterator(cache_lock, queue_iter).use();
 
-        if (!file_segment.isCompleted())
-        {
+    if (!file_segment.isCompleted())
+    {
+        /// File segment pointer must be reset right after calling complete() and
+        /// under the same mutex, because complete() checks for segment pointers.
+        auto locked_key = file_segment.lockKeyMetadata(/* assert_exists */false);
+        if (locked_key)
             file_segment.completeUnlocked(*locked_key, cache_lock);
-        }
     }
 
     return file_segments.erase(file_segments.begin());

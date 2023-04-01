@@ -29,7 +29,6 @@ namespace DB
 
 struct LockedKeyMetadata;
 using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
-using LockedKeyMetadataMap = std::unordered_map<FileCacheKey, LockedKeyMetadataPtr>;
 
 namespace ErrorCodes
 {
@@ -98,7 +97,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata);
+    bool tryReserve(const FileSegment & file_segment, size_t size);
 
     FileSegmentsHolderPtr getSnapshot();
 
@@ -205,10 +204,9 @@ private:
         const CacheGuard::Lock &);
 
     bool tryReserveImpl(
-        IFileCachePriority & priority_queue,
-        LockedKeyMetadataPtr locked_key,
-        size_t offset,
+        const FileSegment & file_segment,
         size_t size,
+        IFileCachePriority & priority_queue,
         QueryLimit::LockedQueryContext * query_context,
         const CacheGuard::Lock &);
 
@@ -217,12 +215,6 @@ private:
         IFileCachePriority::IterationResult iteration_result;
         bool lock_key = false;
     };
-
-    using IterateAndCollectLocksFunc = std::function<IterateAndLockResult(const IFileCachePriority::Entry &, LockedKeyMetadata &)>;
-    void iterateCacheAndCollectKeyLocks(
-        LockedCachePriority & priority,
-        IterateAndCollectLocksFunc && func,
-        LockedKeyMetadataMap & locked_map) const;
 
     void assertCacheCorrectness();
 
