@@ -111,4 +111,16 @@ void FillingRow::initFromDefaults(size_t from_pos)
         row[i] = getFillDescription(i).fill_from;
 }
 
+String FillingRow::dump() const
+{
+    WriteBufferFromOwnString out;
+    for(size_t i = 0; i < row.size(); ++i)
+    {
+        if (i != 0)
+            out << ", ";
+        out << row[i].dump();
+    }
+    return out.str();
+}
+
 }

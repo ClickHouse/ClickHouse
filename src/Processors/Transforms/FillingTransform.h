@@ -29,13 +29,23 @@ public:
     static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
-    void transform(Chunk & Chunk) override;
+    void transform(Chunk & chunk) override;
 
 private:
-    void saveLastRow(const MutableColumns & result_columns);
-    void interpolate(const MutableColumns& result_columns, Block & interpolate_block);
-
     using MutableColumnRawPtrs = std::vector<IColumn *>;
+    void transformImpl(
+        const Columns & old_fill_columns,
+        const Columns & old_interpolate_columns,
+        const Columns & old_other_columns,
+        const MutableColumns & result_columns,
+        const MutableColumnRawPtrs & res_fill_columns,
+        const MutableColumnRawPtrs & res_interpolate_columns,
+        const MutableColumnRawPtrs & res_other_columns,
+        std::pair<size_t, size_t> range);
+
+    void saveLastRow(const MutableColumns & result_columns);
+    void interpolate(const MutableColumns & result_columns, Block & interpolate_block);
+
     void initColumns(
         const Columns & input_columns,
         Columns & input_fill_columns,
@@ -58,6 +68,7 @@ private:
     Positions fill_column_positions;
     Positions interpolate_column_positions;
     Positions other_column_positions;
+    Positions sort_prefix_positions;
     std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     bool first = true;

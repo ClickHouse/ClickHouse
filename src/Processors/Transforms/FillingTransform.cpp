@@ -45,7 +45,7 @@ void logDebug(String key, const T & value, const char * separator = " : ")
         else
             ss << value;
 
-        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
+        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "\n{}{}{}", key, separator, ss.str());
     }
 }
 
@@ -197,7 +197,8 @@ FillingTransform::FillingTransform(
     , filling_row(fill_description_)
     , next_row(fill_description_)
 {
-    logDebug("filling sort desc", dumpSortDescription(sort_description_));
+    logDebug("filling sort desc", dumpSortDescription(sort_description));
+    logDebug("filling desc", dumpSortDescription(fill_description));
 
     if (interpolate_description)
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
@@ -262,8 +263,12 @@ FillingTransform::FillingTransform(
         if (desc.column_name == fill_description[0].column_name)
             break;
 
+        size_t pos = header_.getPositionByName(desc.column_name);
+        sort_prefix_positions.push_back(pos);
+
         sort_prefix.push_back(desc);
     }
+    logDebug("sort prefix", dumpSortDescription(sort_prefix));
 }
 
 IProcessor::Status FillingTransform::prepare()
@@ -401,6 +406,38 @@ void FillingTransform::initColumns(
     initColumnsByPositions(non_const_columns, input_other_columns, output_columns, output_other_columns, other_column_positions);
 }
 
+template<typename Predicate>
+size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
+{
+    assert(begin < end);
+
+    const size_t linear_probe_threadhold = 16;
+    size_t linear_probe_end = begin + linear_probe_threadhold;
+    if (linear_probe_end > end)
+        linear_probe_end = end;
+
+    for (size_t pos = begin; pos < linear_probe_end; ++pos)
+    {
+        if (!pred(begin, pos))
+            return pos;
+    }
+
+    size_t low = linear_probe_end;
+    size_t high = end - 1;
+    while (low <= high)
+    {
+        size_t mid = low + (high - low) / 2;
+        if (pred(begin, mid))
+            low = mid + 1;
+        else
+        {
+            high = mid - 1;
+            end = mid;
+        }
+    }
+    return end;
+}
+
 void FillingTransform::transform(Chunk & chunk)
 {
     if (!chunk.hasRows() && !generate_suffix)
@@ -462,11 +499,75 @@ void FillingTransform::transform(Chunk & chunk)
         res_interpolate_columns,
         res_other_columns);
 
+    if (sort_prefix.empty())
+    {
+        transformImpl(
+            old_fill_columns,
+            old_interpolate_columns,
+            old_other_columns,
+            result_columns,
+            res_fill_columns,
+            res_interpolate_columns,
+            res_other_columns,
+            {0, num_rows});
+
+        size_t num_output_rows = result_columns[0]->size();
+        chunk.setColumns(std::move(result_columns), num_output_rows);
+        return;
+    }
+
+    transformImpl(
+        old_fill_columns,
+        old_interpolate_columns,
+        old_other_columns,
+        result_columns,
+        res_fill_columns,
+        res_interpolate_columns,
+        res_other_columns,
+        {0, num_rows});
+
+    size_t num_output_rows = result_columns[0]->size();
+    chunk.setColumns(std::move(result_columns), num_output_rows);
+
+    // /// find next range
+    // MutableColumns current_sort_prefix;
+    // for (size_t i = 0, size = sort_prefix_positions.size(); i < size; ++i)
+    //     current_sort_prefix.push_back(old_fill_columns[sort_prefix_positions[i]]->cloneEmpty()->assumeMutable());
+
+    // for (size_t row_ind = 0; row_ind < num_rows;)
+    // {
+
+    //     for (size_t i = 0, size = sort_prefix_positions.size(); i < size; ++i)
+    //     {
+    //         current_sort_prefix.push_back(old_fill_columns[sort_prefix_positions[i]]->cloneEmpty()->assumeMutable());
+    //         current_sort_prefix.back().get()->insertRangeFrom(*old_fill_columns[sort_prefix_positions[i]], 0, num_rows);
+    //     }
+
+    // }
+
+
+}
+
+void FillingTransform::transformImpl(
+    const Columns & old_fill_columns,
+    const Columns & old_interpolate_columns,
+    const Columns & old_other_columns,
+    const MutableColumns & result_columns,
+    const MutableColumnRawPtrs & res_fill_columns,
+    const MutableColumnRawPtrs & res_interpolate_columns,
+    const MutableColumnRawPtrs & res_other_columns,
+    std::pair<size_t, size_t> range)
+{
+    const size_t range_begin = range.first;
+    const size_t range_end = range.second;
+    Block interpolate_block;
+
     if (first)
     {
+
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*old_fill_columns[i])[0];
+            auto current_value = (*old_fill_columns[i])[range_begin];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
             if (!fill_from.isNull() && !equals(current_value, fill_from))
@@ -479,12 +580,17 @@ void FillingTransform::transform(Chunk & chunk)
                 }
                 break;
             }
+
             filling_row[i] = current_value;
         }
         first = false;
+
+        logDebug("first filling_row", filling_row.dump());
     }
 
-    for (size_t row_ind = 0; row_ind < num_rows; ++row_ind)
+    Row sort_prefix_row; sort_prefix_row.reserve(sort_prefix.size());
+
+    for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
         should_insert_first = next_row < filling_row;
 
@@ -520,8 +626,6 @@ void FillingTransform::transform(Chunk & chunk)
     }
 
     saveLastRow(result_columns);
-    size_t num_output_rows = result_columns[0]->size();
-    chunk.setColumns(std::move(result_columns), num_output_rows);
 }
 
 void FillingTransform::saveLastRow(const MutableColumns & result_columns)
