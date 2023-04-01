@@ -121,3 +121,29 @@ with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) a
 ADaaa012	ADaaa012	ADaaa012	ADaaa012
 with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'G\'a\'\'aa\'DDD'), formatDateTimeInJodaSyntax(datetime64, 'G\'a\'\'aa\'DDD'), formatDateTimeInJodaSyntax(date, 'G\'a\'\'aa\'DDD'), formatDateTimeInJodaSyntax(date32, 'G\'a\'\'aa\'DDD');
 ADa\'aa012	ADa\'aa012	ADa\'aa012	ADa\'aa012
+with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'x'), formatDateTimeInJodaSyntax(datetime64, 'x'), formatDateTimeInJodaSyntax(date, 'x'), formatDateTimeInJodaSyntax(date32, 'x');
+2018	2018	2018	2018
+with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'w'), formatDateTimeInJodaSyntax(datetime64, 'w'), formatDateTimeInJodaSyntax(date, 'w'), formatDateTimeInJodaSyntax(date32, 'w');
+2	2	2	2
+with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'S'), formatDateTimeInJodaSyntax(datetime64, 'S'), formatDateTimeInJodaSyntax(date, 'S'), formatDateTimeInJodaSyntax(date32, 'S');
+0	0	0	0
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'S');
+5
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SS');
+55
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSS');
+550
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSS');
+5500
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSS');
+55000
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSS');
+550000
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSS');
+5500000
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSSS');
+55000000
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSSSS');
+550000000
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSSSSS');
+550000000

@@ -147,7 +147,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext(), false);
+        table->mutate(mutation_commands, getContext());
     }
 
     if (!partition_commands.empty())
@@ -446,7 +446,6 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
 {
     const auto & alter = ast->as<const ASTAlterQuery &>();
 
-    elem.query_kind = "Alter";
     if (alter.command_list != nullptr && alter.alter_object != ASTAlterQuery::AlterObjectType::DATABASE)
     {
         // Alter queries already have their target table inserted into `elem`.

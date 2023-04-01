@@ -119,12 +119,8 @@ struct RestoreSettings
     std::vector<Strings> cluster_host_ids;
 
     /// Internal, should not be specified by user.
-    /// Path in Zookeeper used to coordinate restoring process while executing by RESTORE ON CLUSTER.
-    String coordination_zk_path;
-
-    /// Internal, should not be specified by user.
     /// UUID of the restore. If it's not set it will be generated randomly.
-    /// This is used to validate internal restores when allow_concurrent_restores is turned off
+    /// This is used to generate coordination path and for concurrency check
     std::optional<UUID> restore_uuid;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);

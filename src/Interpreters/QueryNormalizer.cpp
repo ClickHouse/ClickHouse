@@ -118,6 +118,15 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
                 alias_node->checkSize(data.settings.max_expanded_ast_elements);
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
+
+                /// If the cloned AST was finished, this one should also be considered finished
+                if (data.finished_asts.contains(alias_node))
+                    data.finished_asts[ast] = ast;
+
+                /// If we had an alias for node_alias, point it instead to the new node so we don't have to revisit it
+                /// on subsequent calls
+                if (auto existing_alias = data.aliases.find(node_alias); existing_alias != data.aliases.end())
+                    existing_alias->second = ast;
             }
         }
         else
@@ -127,6 +136,15 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             auto alias_name = ast->getAliasOrColumnName();
             ast = alias_node->clone();
             ast->setAlias(alias_name);
+
+            /// If the cloned AST was finished, this one should also be considered finished
+            if (data.finished_asts.contains(alias_node))
+                data.finished_asts[ast] = ast;
+
+            /// If we had an alias for node_alias, point it instead to the new node so we don't have to revisit it
+            /// on subsequent calls
+            if (auto existing_alias = data.aliases.find(node_alias); existing_alias != data.aliases.end())
+                existing_alias->second = ast;
         }
     }
 }

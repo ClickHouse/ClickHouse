@@ -54,10 +54,6 @@ if (TARGET ch_contrib::fastops)
     list (APPEND PRIVATE_LIBS ch_contrib::fastops)
 endif ()
 
-if (ENABLE_EXAMPLES)
-    add_subdirectory(examples)
-endif ()
-
 if (TARGET ch_contrib::llvm)
     list (APPEND PRIVATE_LIBS ch_contrib::llvm)
 endif ()

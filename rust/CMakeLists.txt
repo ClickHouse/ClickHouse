@@ -51,8 +51,20 @@ file(COPY ".cargo" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 function(add_rust_subdirectory src)
     set(dst "${CMAKE_CURRENT_BINARY_DIR}/${src}")
     message(STATUS "Copy ${src} to ${dst}")
-    file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+    file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+        PATTERN target EXCLUDE)
     add_subdirectory("${dst}" "${dst}")
+
+    # cmake -E copy* do now know how to exclude files
+    # but we need to exclude "target" folder from copying, if someone or semantic
+    # completion created it.
+    add_custom_target(${src}-update ALL
+        COMMAND ${CMAKE_COMMAND}
+            -DFROM=${src}
+            -DTO=${CMAKE_CURRENT_BINARY_DIR}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/copy_exclude.cmake"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        VERBATIM)
 endfunction()
 
 add_rust_subdirectory (BLAKE3)

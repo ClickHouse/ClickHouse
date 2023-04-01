@@ -82,7 +82,12 @@ FilterDescription::FilterDescription(const IColumn & column_)
         const auto size = res.size();
         assert(size == null_map.size());
         for (size_t i = 0; i < size; ++i)
-            res[i] = res[i] && !null_map[i];
+        {
+            auto has_val = static_cast<UInt8>(!!res[i]);
+            auto not_null = static_cast<UInt8>(!null_map[i]);
+            /// Instead of the logical AND operator(&&), the bitwise one(&) is utilized for the auto vectorization.
+            res[i] = has_val & not_null;
+        }
 
         data = &res;
         data_holder = std::move(mutable_holder);

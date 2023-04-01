@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
+#include <Parsers/SyncReplicaMode.h>
 
 #include "config.h"
 
@@ -25,12 +26,15 @@ public:
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
-        DROP_QUERY_RESULT_CACHE,
+        DROP_QUERY_CACHE,
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
         DROP_FILESYSTEM_CACHE,
         DROP_SCHEMA_CACHE,
+#if USE_AWS_S3
+        DROP_S3_CLIENT_CACHE,
+#endif
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
@@ -104,6 +108,8 @@ public:
     String backup_name;
 
     String schema_cache_storage;
+
+    SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     String getID(char) const override { return "SYSTEM query"; }
 

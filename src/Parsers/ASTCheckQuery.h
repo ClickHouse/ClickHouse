@@ -23,6 +23,8 @@ struct ASTCheckQuery : public ASTQueryWithTableAndOutput
         return res;
     }
 
+    QueryKind getQueryKind() const override { return QueryKind::Check; }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {

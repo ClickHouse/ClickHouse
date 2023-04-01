@@ -283,7 +283,7 @@ Result:
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `0` by default.
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
 
 Behavior for
 * `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
@@ -1126,15 +1126,48 @@ Rounds the time to the half hour.
 
 ## toYYYYMM
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMM(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMM(now(), 'US/Eastern')─┐
+│                        202303 │
+└───────────────────────────────┘
+```
 
 ## toYYYYMMDD
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDD(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDD(now(), 'US/Eastern')─┐
+│                        20230302 │
+└─────────────────────────────────┘
+```
 
 ## toYYYYMMDDhhmmss
 
-Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss).
+Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDDhhmmss(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
+│                        20230302112209 │
+└───────────────────────────────────────┘
+```
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
 
@@ -1199,11 +1232,15 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## formatDateTime
+## formatDateTime {#date_time_functions-formatDateTime}
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
 formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+
+The opposite operation of this function is [parseDateTime](/docs/en/sql-reference/functions/type-conversion-functions.md#type_conversion_functions-parseDateTime).
+
+Alias: `DATE_FORMAT`.
 
 **Syntax**
 
@@ -1220,29 +1257,39 @@ Using replacement fields, you can define a pattern for the resulting string. “
 
 | Placeholder | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
+| %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
+| %b       | abbreviated month name (Jan-Dec)                        | Jan        |
+| %c       | month as an integer number (01-12)                      | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
-| %e       | day of the month, space-padded ( 1-31)                  | &nbsp; 2   |
+| %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
 | %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
+| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
+| %h       | hour in 12h format (01-12)                              | 09         |
 | %H       | hour in 24h format (00-23)                              | 22         |
+| %i       | minute (00-59)                                          | 33         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
-| %m       | month as a decimal number (01-12)                       | 01         |
+| %k       | hour in 24h format (00-23)                              | 22         |
+| %l       | hour in 12h format (01-12)                              | 09         |
+| %m       | month as an integer number (01-12)                      | 01         |
 | %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%M %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%M                 | 22:33      |
+| %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
 | %t       | horizontal-tab character (’)                            |            |
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
-| %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
+| %w       | weekday as a integer number with Sunday as 0 (0-6)      | 2          |
+| %W       | full weekday name (Monday-Sunday)                       | Monday     |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
 | %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
@@ -1283,14 +1330,15 @@ Result:
 -   [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
 
 
-## formatDateTimeInJodaSyntax
+## formatDateTimeInJodaSyntax {#date_time_functions-formatDateTimeInJodaSyntax}
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
+The opposite operation of this function is [parseDateTimeInJodaSyntax](/docs/en/sql-reference/functions/type-conversion-functions.md#type_conversion_functions-parseDateTimeInJodaSyntax).
 
 **Replacement fields**
 
-Using replacement fields, you can define a pattern for the resulting string. 
+Using replacement fields, you can define a pattern for the resulting string.
 
 
 | Placeholder | Description                              | Presentation  | Examples                           |

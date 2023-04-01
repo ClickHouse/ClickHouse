@@ -91,6 +91,7 @@ private:
     const FormatSettings format_settings;
     String hints_str;
     std::unordered_map<String, DataTypePtr> hints;
+    String hints_parsing_error;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;
     JSONInferenceInfo inference_info;

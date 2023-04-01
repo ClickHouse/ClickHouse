@@ -136,7 +136,7 @@ plus(id, id)	UInt64
 SELECT '--';
 --
 DESCRIBE (SELECT test_table.* REPLACE id + (id AS id_alias) AS id, id_alias FROM test_table);
-plus(id, id_alias)	UInt64					
+id	UInt64					
 value	String					
 id_alias	UInt64					
 SELECT 'Matcher';
@@ -264,7 +264,7 @@ DESCRIBE (WITH x -> x + 1 AS test_lambda SELECT test_lambda(1));
 test_lambda(1)	UInt16					
 SELECT '--';
 --
-DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS value, value FROM test_table);
+DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS lambda_value, lambda_value FROM test_table);
 id	UInt64					
 value	String					
 id	UInt64					

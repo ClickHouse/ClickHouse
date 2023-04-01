@@ -1,4 +1,4 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-random-merge-tree-settings
 
 drop table if exists data_01641;
 

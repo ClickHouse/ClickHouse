@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "create table mt (n int) engine=MergeTree order by n"
+$CLICKHOUSE_CLIENT -q "create table mt (n int) engine=MergeTree order by n settings parts_to_throw_insert=1000"
 $CLICKHOUSE_CLIENT -q "insert into mt values (1)"
 $CLICKHOUSE_CLIENT -q "insert into mt values (2)"
 $CLICKHOUSE_CLIENT -q "insert into mt values (3)"
@@ -28,7 +28,7 @@ function thread_detach_attach()
 function thread_drop_detached()
 {
     while true; do
-        $CLICKHOUSE_CLIENT --allow_drop_detached -q "alter table mt drop detached partition id 'all'";
+        $CLICKHOUSE_CLIENT --allow_drop_detached 1 -q "alter table mt drop detached partition id 'all'";
     done
 }
 

@@ -131,6 +131,7 @@ namespace
 
             type_indexes.erase(TypeIndex::Date);
             type_indexes.erase(TypeIndex::DateTime);
+            type_indexes.insert(TypeIndex::String);
             return;
         }
 
@@ -444,7 +445,19 @@ namespace
 
     bool tryInferDate(std::string_view field)
     {
+        if (field.empty())
+            return false;
+
         ReadBufferFromString buf(field);
+        Float64 tmp_float;
+        /// Check if it's just a number, and if so, don't try to infer Date from it,
+        /// because we can interpret this number as a Date (for example 20000101 will be 2000-01-01)
+        /// and it will lead to inferring Date instead of simple Int64/UInt64 in some cases.
+        if (tryReadFloatText(tmp_float, buf) && buf.eof())
+            return false;
+
+        buf.seek(0, SEEK_SET); /// Return position to the beginning
+
         DayNum tmp;
         return tryReadDateText(tmp, buf) && buf.eof();
     }
@@ -971,13 +984,16 @@ DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSetting
         if (tryReadIntText(tmp_int, buf) && buf.eof())
             return std::make_shared<DataTypeInt64>();
 
+        /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
+        buf.position() = buf.buffer().begin();
+
         /// In case of Int64 overflow, try to infer UInt64
         UInt64 tmp_uint;
         if (tryReadIntText(tmp_uint, buf) && buf.eof())
             return std::make_shared<DataTypeUInt64>();
     }
 
-    /// We cam safely get back to the start of buffer, because we read from a string and we didn't reach eof.
+    /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
     buf.position() = buf.buffer().begin();
 
     Float64 tmp;
@@ -1072,7 +1088,7 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
-    if (which.isLowCarnality())
+    if (which.isLowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
         auto nested_type = makeNullableRecursively(lc_type->getDictionaryType());

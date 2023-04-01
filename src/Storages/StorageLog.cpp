@@ -118,7 +118,7 @@ private:
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, file_size - offset, false);
+                limited.emplace(*plain, file_size - offset, /* trow_exception */ false, /* exact_limit */ std::optional<size_t>());
                 compressed.emplace(*limited);
             }
             else
@@ -204,7 +204,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     auto create_stream_getter = [&](bool stream_for_prefix)
     {
-        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer * //-V1047
+        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
         {
             if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
                 return nullptr;
@@ -1027,11 +1027,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto in = backup_entry->getReadBuffer();
-            auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
-            copyData(*in, *out);
-            out->finalize();
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append);
         }
 
         if (use_marks_file)
@@ -1062,8 +1058,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
                 old_num_rows[i] = num_marks ? data_files[i].marks[num_marks - 1].rows : 0;
             }
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto marks_rb = backup_entry->getReadBuffer();
+            auto marks_rb = backup->readFile(file_path_in_backup);
 
             for (size_t i = 0; i != num_extra_marks; ++i)
             {
@@ -1104,7 +1099,7 @@ void registerStorageLog(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
 
-        String disk_name = getDiskName(*args.storage_def);
+        String disk_name = getDiskName(*args.storage_def, args.getContext());
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return std::make_shared<StorageLog>(
