@@ -69,6 +69,7 @@ Optional parameters:
 - `rabbitmq_skip_broken_messages` – RabbitMQ message parser tolerance to schema-incompatible messages per block. If `rabbitmq_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data). Default: `0`.
 - `rabbitmq_max_block_size` - Number of row collected before flushing data from RabbitMQ. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
 - `rabbitmq_flush_interval_ms` - Timeout for flushing data from RabbitMQ. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
+- `rabbitmq_empty_queue_sleep_before_flush_timeout_ms` - Time of sleep on empty queue when waiting for `rabbitmq_flush_interval_ms` or `rabbitmq_max_block_size` to be satisfied (by default: `200`).
 - `rabbitmq_queue_settings_list` - allows to set RabbitMQ settings when creating a queue. Available settings: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. The `durable` setting is enabled automatically for the queue.
 - `rabbitmq_address` - Address for connection. Use ether this setting or `rabbitmq_host_port`.
 - `rabbitmq_vhost` - RabbitMQ vhost. Default: `'\'`.

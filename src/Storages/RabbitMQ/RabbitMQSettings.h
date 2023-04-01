@@ -30,6 +30,7 @@ namespace DB
     M(UInt64, rabbitmq_empty_queue_backoff_start_ms, 10, "A minimum backoff point to reschedule read if the rabbitmq queue is empty", 0) \
     M(UInt64, rabbitmq_empty_queue_backoff_end_ms, 10000, "A maximum backoff point to reschedule read if the rabbitmq queue is empty", 0) \
     M(UInt64, rabbitmq_empty_queue_backoff_step_ms, 100, "A backoff step to reschedule read if the rabbitmq queue is empty", 0) \
+    M(UInt64, rabbitmq_empty_queue_sleep_before_flush_timeout_ms, 200, "Time of sleep on empty queue when waiting for `rabbitmq_flush_interval_ms` or `rabbitmq_max_block_size` to be satisfied", 0) \
     M(Bool, rabbitmq_queue_consume, false, "Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings", 0) \
     M(String, rabbitmq_username, "", "RabbitMQ username", 0) \
     M(String, rabbitmq_password, "", "RabbitMQ password", 0) \
