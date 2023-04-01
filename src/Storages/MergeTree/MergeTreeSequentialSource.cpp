@@ -240,7 +240,6 @@ Pipe createMergeTreeSequentialSource(
     auto columns = columns_to_read;
     if (need_to_filter_deleted_rows)
         columns.emplace_back(LightweightDeleteDescription::FILTER_COLUMN.name);
-    columns.emplace_back(BlockNumberColumn.name);
 
     bool apply_deleted_mask = false;
 
