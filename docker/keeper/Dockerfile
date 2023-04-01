@@ -1,3 +1,6 @@
+# The Dockerfile.ubuntu exists for the tests/ci/docker_server.py script
+# If the image is built from Dockerfile.alpine, then the `-alpine` suffix is added automatically,
+# so the only purpose of Dockerfile.ubuntu is to push `latest`, `head` and so on w/o suffixes
 FROM ubuntu:20.04 AS glibc-donor
 
 ARG TARGETARCH
