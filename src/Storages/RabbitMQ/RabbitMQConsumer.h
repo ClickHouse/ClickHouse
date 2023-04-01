@@ -20,6 +20,7 @@ namespace DB
 
 class RabbitMQHandler;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
+static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
 
 class RabbitMQConsumer
 {
@@ -76,6 +77,14 @@ public:
     auto getMessageID() const { return current.message_id; }
     auto getTimestamp() const { return current.timestamp; }
 
+    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt)
+    {
+        std::unique_lock lock(mutex);
+        if (!timeout_ms)
+            timeout_ms = SANITY_TIMEOUT;
+        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty(); });
+    }
+
 private:
     void subscribe();
     void iterateEventLoop();
@@ -96,6 +105,9 @@ private:
 
     AckTracker last_inserted_record_info;
     UInt64 prev_tag = 0, channel_id_counter = 0;
+
+    std::condition_variable cv;
+    std::mutex mutex;
 };
 
 }

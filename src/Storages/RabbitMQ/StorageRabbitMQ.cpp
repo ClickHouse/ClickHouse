@@ -718,8 +718,8 @@ void StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, modified_context, column_names, 1, max_execution_time_ms,
-            rabbitmq_settings->rabbitmq_empty_queue_sleep_before_flush_timeout_ms, rabbitmq_settings->rabbitmq_commit_on_select);
+            *this, storage_snapshot, modified_context, column_names, 1,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -1088,8 +1088,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms,
-            rabbitmq_settings->rabbitmq_empty_queue_sleep_before_flush_timeout_ms, false);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
