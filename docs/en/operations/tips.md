@@ -55,7 +55,7 @@ For Linux, software RAID is better (with `mdadm`).
 When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
 
-LVM by itself (without RAID or `mdadm`) is ok, but making RAID with it or combining it with mdadm is a less explored option, and there will be more chances for mistakes
+LVM by itself (without RAID or `mdadm`) is ok, but making RAID with it or combining it with `mdadm` is a less explored option, and there will be more chances for mistakes
 (selecting wrong chunk size; misalignment of chunks; choosing a wrong raid type; forgetting to cleanup disks). If you are confident
 in using LVM, there is nothing against using it.
 
