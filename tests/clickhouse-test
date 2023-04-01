@@ -2053,7 +2053,7 @@ def reportLogStats(args):
               'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
               'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
               'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', 'Query was cancelled',
-              'Table {} already exists', '{}%', 'Cancelled merging parts', 'All replicas are lost',
+              'Table {} already exists.', '{}%', 'Cancelled merging parts', 'All replicas are lost',
               'Cancelled mutating parts', 'Read object: {}', 'New segment: {}', 'Unknown geometry type {}',
               'Table {} is not replicated', '{} {}.{} already exists', 'Attempt to read after eof',
               'Replica {} already exists', 'Convert overflow', 'key must be a tuple', 'Division by zero',
@@ -2061,7 +2061,15 @@ def reportLogStats(args):
               'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow',
               'Polygon is not valid: {}', 'Decimal math overflow', '{} only accepts maps', 'Dictionary ({}) not found',
               'Unknown format {}', 'Invalid IPv4 value', 'Invalid IPv6 value', 'Unknown setting {}',
-              'Unknown table function {}'
+              'Unknown table function {}', 'Database {} already exists.', 'Table {} doesn''t exist',
+              'Invalid credentials', 'Part {} already exists', 'Invalid mode: {}', 'Log pulling is cancelled',
+              'JOIN {} cannot get JOIN keys', 'Unknown function {}{}', 'Cannot parse IPv6 {}',
+              'Not found address of host: {}', '{} must contain a tuple', 'Unknown codec family: {}',
+              'Expected const String column', 'Invalid partition format: {}', 'Cannot parse IPv4 {}',
+              'AST is too deep. Maximum: {}', 'Array sizes are too large: {}', 'Unable to connect to HDFS: {}',
+              'Shutdown is called for table', 'File is not inside {}',
+              'Table {} doesn''t exist', 'Database {} doesn''t exist', 'Table {}.{} doesn''t exist',
+              'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
