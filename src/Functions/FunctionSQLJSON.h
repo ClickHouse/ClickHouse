@@ -42,7 +42,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, const bool & return_type_allow_complex)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, const ContextPtr & context)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -126,7 +126,7 @@ public:
                 bool added_to_column = false;
                 if (document_ok)
                 {
-                    added_to_column = impl.insertResultToColumn(*to, document, res, return_type_allow_complex);
+                    added_to_column = impl.insertResultToColumn(*to, document, res, context);
                 }
                 if (!added_to_column)
                 {
@@ -168,11 +168,9 @@ public:
         unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
-            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth,
-                getContext()->getSettingsRef().function_json_value_return_type_allow_complex);
+            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
 #endif
-        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth,
-                getContext()->getSettingsRef().function_json_value_return_type_allow_complex);
+        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
     }
 };
 
@@ -201,7 +199,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const bool &)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
@@ -238,7 +236,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const ContextPtr & context)
     {
-        if (context->getSettingsRef().function_return_type_allow_nullable)
+        if (context->getSettingsRef().function_json_value_return_type_allow_nullable)
         {
             DataTypePtr string_type = std::make_shared<DataTypeString>();
             return std::make_shared<DataTypeNullable>(string_type);
@@ -251,7 +249,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const bool & return_type_allow_complex)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr & context)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
@@ -261,7 +259,7 @@ public:
         {
             if (status == VisitorStatus::Ok)
             {
-                if (return_type_allow_complex)
+                if (context->getSettingsRef().function_json_value_return_type_allow_complex)
                 {
                     break;
                 }
@@ -328,7 +326,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const bool &)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
