@@ -23,8 +23,10 @@ RUN apt-get update && \
         libc6 \
         libc6-dev \
         libc6-dev-arm64-cross \
-        zstd && \
-    apt-get clean
+        python3-boto3 \
+        zstd \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists
 
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
@@ -56,7 +58,7 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && rm -rf cctools-port
 
 # Download toolchain and SDK for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
+RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
 # NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
@@ -87,8 +89,10 @@ ENV PATH="$PATH:/usr/local/go/bin"
 ENV GOPATH=/workdir/go
 ENV GOCACHE=/workdir/
 
-RUN curl https://raw.githubusercontent.com/matus-chochlik/ctcache/7fd516e91c17779cbc6fc18bd119313d9532dd90/clang-tidy-cache -Lo /usr/bin/clang-tidy-cache \
-  && chmod +x /usr/bin/clang-tidy-cache
+ARG CLANG_TIDY_SHA1=c191254ea00d47ade11d7170ef82fe038c213774
+RUN curl -Lo /usr/bin/clang-tidy-cache \
+        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
+    && chmod +x /usr/bin/clang-tidy-cache
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
