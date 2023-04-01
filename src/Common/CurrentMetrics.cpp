@@ -126,6 +126,8 @@
     M(DDLWorkerThreadsActive, "Number of threads in the DDLWORKER thread pool for ON CLUSTER queries running a task.") \
     M(StorageDistributedThreads, "Number of threads in the StorageDistributed thread pool.") \
     M(StorageDistributedThreadsActive, "Number of threads in the StorageDistributed thread pool running a task.") \
+    M(DistributedInsertThreads, "Number of threads used for INSERT into Distributed.") \
+    M(DistributedInsertThreadsActive, "Number of threads used for INSERT into Distributed running a task.") \
     M(StorageS3Threads, "Number of threads in the StorageS3 thread pool.") \
     M(StorageS3ThreadsActive, "Number of threads in the StorageS3 thread pool running a task.") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
