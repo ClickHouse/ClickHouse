@@ -4049,12 +4049,12 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 Possible values: `true`, `false`
 
 Default value: `false`
-## function_return_type_allow_nullable
+## function_json_value_return_type_allow_nullable
 
 Control whether allow to return `NULL` when value is not exist for JSON_VALUE function.
 
 ```sql
-SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
+SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
 
 ┌─JSON_VALUE('{"hello":"world"}', '$.b')─┐
 │ ᴺᵁᴸᴸ                                   │

@@ -31,7 +31,7 @@ select JSON_VALUE('{"a":"\\n\\u0000"}', '$.a');
 \n\0
 select JSON_VALUE('{"a":"\\u263a"}', '$.a');
 ☺
-select JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
+select JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
 \N
 select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 {"world":"!"}
