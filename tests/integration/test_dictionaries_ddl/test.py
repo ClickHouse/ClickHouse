@@ -592,3 +592,22 @@ def test_secure(started_cluster):
 
     node1.query("DROP DICTIONARY test.clickhouse_secure")
     node1.query("DROP TABLE test.foo_dict")
+
+
+def test_named_collection(started_cluster):
+    node1.query(
+        """
+        CREATE DICTIONARY test.clickhouse_named_collection(
+            id UInt64,
+            SomeValue1 UInt8
+        )
+        PRIMARY KEY id
+        LAYOUT(FLAT())
+        SOURCE(CLICKHOUSE(NAME click1))
+        LIFETIME(MIN 1 MAX 10)
+        """
+    )
+
+    node1.query(
+        "select dictGetUInt8('test.clickhouse_named_collection', 'SomeValue1', toUInt64(23))"
+    ) == "0\n"
