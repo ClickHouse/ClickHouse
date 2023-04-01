@@ -18,6 +18,8 @@ public:
             ContextPtr context_,
             const Names & columns,
             size_t max_block_size_,
+            UInt64 max_execution_time_,
+            UInt64 empty_queue_sleep_before_flush_timeout_ms_,
             bool ack_in_suffix = false);
 
     ~RabbitMQSource() override;
@@ -27,12 +29,10 @@ public:
 
     Chunk generate() override;
 
-    bool queueEmpty() const { return !consumer || consumer->hasPendingMessages(); }
+    bool hasPendingMessages() const { return consumer && consumer->hasPendingMessages(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
-
-    void setTimeLimit(uint64_t max_execution_time_ms_) { max_execution_time_ms = max_execution_time_ms_; }
 
 private:
     StorageRabbitMQ & storage;
@@ -50,9 +50,11 @@ private:
     RabbitMQConsumerPtr consumer;
 
     uint64_t max_execution_time_ms = 0;
+    uint64_t empty_queue_sleep_before_flush_timeout_ms = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     bool isTimeLimitExceeded() const;
+    UInt64 getSingleIterationWaitOnEmptyQueue() const;
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,
@@ -61,6 +63,8 @@ private:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_,
+        UInt64 max_execution_time_,
+        UInt64 empty_queue_sleep_before_flush_timeout_ms_,
         bool ack_in_suffix);
 
     Chunk generateImpl();

@@ -711,16 +711,15 @@ void StorageRabbitMQ::read(
     Pipes pipes;
     pipes.reserve(num_created_consumers);
 
+    uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+        ? rabbitmq_settings->rabbitmq_flush_interval_ms
+        : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
-
-        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
-
-        rabbit_source->setTimeLimit(max_execution_time_ms);
+            *this, storage_snapshot, modified_context, column_names, 1, max_execution_time_ms,
+            rabbitmq_settings->rabbitmq_empty_queue_sleep_before_flush_timeout_ms, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -1082,16 +1081,15 @@ bool StorageRabbitMQ::tryStreamToViews()
     sources.reserve(num_created_consumers);
     pipes.reserve(num_created_consumers);
 
+    uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+        ? rabbitmq_settings->rabbitmq_flush_interval_ms
+        : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
-
-        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
-
-        source->setTimeLimit(max_execution_time_ms);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms,
+            rabbitmq_settings->rabbitmq_empty_queue_sleep_before_flush_timeout_ms, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1142,7 +1140,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         /// Commit
         for (auto & source : sources)
         {
-            if (source->queueEmpty())
+            if (!source->hasPendingMessages())
                 ++queue_empty;
 
             if (source->needChannelUpdate())
