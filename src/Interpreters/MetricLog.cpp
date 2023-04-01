@@ -97,7 +97,7 @@ void MetricLog::metricThreadFunction()
             elem.milliseconds = timeInMilliseconds(current_time) - timeInSeconds(current_time) * 1000;
 
             elem.profile_events.resize(ProfileEvents::end());
-            for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+            for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
             {
                 const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
                 auto & old_value = prev_profile_events[i];
