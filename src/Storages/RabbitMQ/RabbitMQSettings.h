@@ -8,7 +8,7 @@ namespace DB
     class ASTStorage;
 
 
-#define RABBITMQ_RELATED_SETTINGS(M) \
+#define RABBITMQ_RELATED_SETTINGS(M, ALIAS) \
     M(String, rabbitmq_host_port, "", "A host-port to connect to RabbitMQ server.", 0) \
     M(String, rabbitmq_exchange_name, "clickhouse-exchange", "The exchange name, to which messages are sent.", 0) \
     M(String, rabbitmq_format, "", "The message format.", 0) \
@@ -24,18 +24,21 @@ namespace DB
     M(String, rabbitmq_address, "", "Address for connection", 0) \
     M(UInt64, rabbitmq_skip_broken_messages, 0, "Skip at least this number of broken messages from RabbitMQ per block", 0) \
     M(UInt64, rabbitmq_max_block_size, 0, "Number of row collected before flushing data from RabbitMQ.", 0) \
-    M(Milliseconds, rabbitmq_flush_interval_ms, 0, "Timeout for flushing data from RabbitMQ.", 0) \
+    M(UInt64, rabbitmq_flush_interval_ms, 0, "Timeout for flushing data from RabbitMQ.", 0) \
     M(String, rabbitmq_vhost, "/", "RabbitMQ vhost.", 0) \
     M(String, rabbitmq_queue_settings_list, "", "A list of rabbitmq queue settings", 0) \
+    M(UInt64, rabbitmq_empty_queue_backoff_start_ms, 10, "A minimum backoff point to reschedule read if the rabbitmq queue is empty", 0) \
+    M(UInt64, rabbitmq_empty_queue_backoff_end_ms, 10000, "A maximum backoff point to reschedule read if the rabbitmq queue is empty", 0) \
+    M(UInt64, rabbitmq_empty_queue_backoff_step_ms, 100, "A backoff step to reschedule read if the rabbitmq queue is empty", 0) \
     M(Bool, rabbitmq_queue_consume, false, "Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings", 0) \
     M(String, rabbitmq_username, "", "RabbitMQ username", 0) \
     M(String, rabbitmq_password, "", "RabbitMQ password", 0) \
     M(Bool, rabbitmq_commit_on_select, false, "Commit messages when select query is made", 0) \
     M(UInt64, rabbitmq_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
 
-#define LIST_OF_RABBITMQ_SETTINGS(M) \
-    RABBITMQ_RELATED_SETTINGS(M) \
-    FORMAT_FACTORY_SETTINGS(M)
+#define LIST_OF_RABBITMQ_SETTINGS(M, ALIAS) \
+    RABBITMQ_RELATED_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS)
 

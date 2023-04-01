@@ -1,2 +1,2 @@
-SleepFunctionCalls: 3 (increment)
-SleepFunctionMicroseconds: 300000 (increment)
+SleepFunctionCalls: 1 (increment)
+SleepFunctionMicroseconds: 100000 (increment)

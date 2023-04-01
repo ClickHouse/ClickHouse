@@ -8,7 +8,7 @@ namespace DB
 {
 
 JSONColumnsBlockOutputFormat::JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8, size_t indent_)
-    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_, validate_utf8), indent(indent_)
+    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_, validate_utf8), indent(indent_), header(header_)
 {
     names = JSONUtils::makeNamesValidJSONStrings(header_.getNames(), format_settings, validate_utf8);
 }
@@ -25,6 +25,18 @@ void JSONColumnsBlockOutputFormat::writeColumnStart(size_t column_index)
 
 void JSONColumnsBlockOutputFormat::writeChunkEnd()
 {
+    /// Write empty chunk
+    if (!written_rows)
+    {
+        const auto & columns = header.getColumns();
+        for (size_t i = 0; i != columns.size(); ++i)
+        {
+            writeColumnStart(i);
+            writeColumn(*columns[i], *serializations[i]);
+            writeColumnEnd(i == columns.size() - 1);
+        }
+    }
+
     JSONUtils::writeObjectEnd(*ostr, indent);
     writeChar('\n', *ostr);
 }

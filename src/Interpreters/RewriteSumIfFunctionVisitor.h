@@ -12,8 +12,11 @@ class ASTFunction;
 
 /// Rewrite 'sum(if())' and 'sumIf' functions to counIf.
 /// sumIf(1, cond) -> countIf(1, cond)
+/// sumIf(123, cond) -> 123 * countIf(1, cond)
 /// sum(if(cond, 1, 0)) -> countIf(cond)
+/// sum(if(cond, 123, 0)) -> 123 * countIf(cond)
 /// sum(if(cond, 0, 1)) -> countIf(not(cond))
+/// sum(if(cond, 0, 123)) -> 123 * countIf(not(cond))
 class RewriteSumIfFunctionMatcher
 {
 public:

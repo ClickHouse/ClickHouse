@@ -70,7 +70,6 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
-    String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
 
     /// AST potentially could be transformed to literal during TreeRewriter analyze.
@@ -78,33 +77,38 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (ASTLiteral * literal = ast->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
 
-    ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
+    auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
 
-    /// There must be at least one column in the block so that it knows the number of rows.
-    Block block_with_constants{{ ColumnConst::create(ColumnUInt8::create(1, 0), 1), std::make_shared<DataTypeUInt8>(), "_dummy" }};
+    ColumnPtr result_column;
+    DataTypePtr result_type;
+    String result_name = ast->getColumnName();
+    for (const auto & action_node : actions->getOutputs())
+    {
+        if ((action_node->result_name == result_name) && action_node->column)
+        {
+            result_column = action_node->column;
+            result_type = action_node->result_type;
+            break;
+        }
+    }
 
-    expr_for_constant_folding->execute(block_with_constants);
+    if (!result_column)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
+                        "is not a constant expression (result column not found): {}", result_name);
 
-    if (!block_with_constants || block_with_constants.rows() == 0)
+    if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Logical error: empty block after evaluation "
+                        "Logical error: empty result column after evaluation "
                         "of constant expression for IN, VALUES or LIMIT or aggregate function parameter");
 
-    if (!block_with_constants.has(name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
-                        "is not a constant expression (result column not found): {}", name);
-
-    const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
-    const IColumn & result_column = *result.column;
-
     /// Expressions like rand() or now() are not constant
-    if (!isColumnConst(result_column))
+    if (!isColumnConst(*result_column))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
-                        "is not a constant expression (result column is not const): {}", name);
+                        "is not a constant expression (result column is not const): {}", result_name);
 
-    return std::make_pair(result_column[0], result.type);
+    return std::make_pair((*result_column)[0], result_type);
 }
 
 

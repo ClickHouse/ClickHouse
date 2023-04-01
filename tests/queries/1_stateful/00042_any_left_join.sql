@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 SELECT
     EventDate,
     hits,

@@ -13,9 +13,11 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths:
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'SECURITY.md'
       - 'docker/docs/**'
       - 'docs/**'
-      - 'website/**'
       - 'utils/check-style/aspell-ignore/**'
 jobs:
   CheckLabels:

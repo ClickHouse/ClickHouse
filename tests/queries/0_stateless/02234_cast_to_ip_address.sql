@@ -56,6 +56,12 @@ SELECT toIPv6('::ffff:127.0.0.1');
 SELECT toIPv6OrDefault('::ffff:127.0.0.1');
 SELECT toIPv6OrNull('::ffff:127.0.0.1');
 
+SELECT toIPv6('::.1.2.3'); --{serverError CANNOT_PARSE_IPV6}
+SELECT toIPv6OrDefault('::.1.2.3');
+SELECT toIPv6OrNull('::.1.2.3');
+
+SELECT count() FROM numbers_mt(100000000) WHERE NOT ignore(toIPv6OrZero(randomString(8)));
+
 SELECT '--';
 
 SELECT cast('test' , 'IPv6'); --{serverError CANNOT_PARSE_IPV6}

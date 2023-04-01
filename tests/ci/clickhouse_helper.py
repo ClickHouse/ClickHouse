@@ -141,7 +141,6 @@ def prepare_tests_results_for_clickhouse(
     report_url: str,
     check_name: str,
 ) -> List[dict]:
-
     pull_request_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     base_ref = "master"
     head_ref = "master"
@@ -183,6 +182,11 @@ def prepare_tests_results_for_clickhouse(
         current_row["test_duration_ms"] = int(test_time * 1000)
         current_row["test_name"] = test_name
         current_row["test_status"] = test_status
+        if test_result.raw_logs:
+            # Protect from too big blobs that contain garbage
+            current_row["test_context_raw"] = test_result.raw_logs[: 32 * 1024]
+        else:
+            current_row["test_context_raw"] = ""
         result.append(current_row)
 
     return result

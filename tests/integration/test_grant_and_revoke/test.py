@@ -3,7 +3,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+instance = cluster.add_instance(
+    "instance",
+    user_configs=[
+        "configs/users.d/users.xml",
+    ],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -179,7 +184,7 @@ def test_grant_all_on_table():
     assert (
         instance.query("SHOW GRANTS FOR B")
         == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, "
-        "DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, "
+        "DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, "
         "SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, "
         "SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
     )
@@ -396,6 +401,9 @@ def test_introspection():
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
+    )
+    assert instance.query("SHOW GRANTS FOR default") == TSV(
+        ["GRANT ALL ON *.* TO default WITH GRANT OPTION"]
     )
     assert instance.query("SHOW GRANTS FOR A,B") == TSV(
         [

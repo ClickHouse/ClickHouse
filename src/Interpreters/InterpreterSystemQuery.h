@@ -56,7 +56,7 @@ private:
 
     void restartReplica(const StorageID & replica, ContextMutablePtr system_context);
     void restartReplicas(ContextMutablePtr system_context);
-    void syncReplica();
+    void syncReplica(ASTSystemQuery & query);
     void waitLoadingParts();
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
@@ -73,8 +73,6 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
-
-    void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, ContextPtr) const override;
 };
 
 

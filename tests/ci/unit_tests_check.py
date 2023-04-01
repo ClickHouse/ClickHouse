@@ -108,13 +108,10 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    reports_path = REPORTS_PATH
-
     check_name = sys.argv[1]
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    if not os.path.exists(TEMP_PATH):
+        os.makedirs(TEMP_PATH)
 
     pr_info = PRInfo()
 
@@ -127,14 +124,14 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = get_image_with_version(REPORTS_PATH, IMAGE_NAME)
 
-    download_unit_tests(check_name, reports_path, temp_path)
+    download_unit_tests(check_name, REPORTS_PATH, TEMP_PATH)
 
-    tests_binary_path = os.path.join(temp_path, "unit_tests_dbms")
+    tests_binary_path = os.path.join(TEMP_PATH, "unit_tests_dbms")
     os.chmod(tests_binary_path, 0o777)
 
-    test_output = os.path.join(temp_path, "test_output")
+    test_output = os.path.join(TEMP_PATH, "test_output")
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
@@ -151,7 +148,7 @@ def main():
         else:
             logging.info("Run failed")
 
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
     s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(test_output)

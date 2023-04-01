@@ -68,7 +68,7 @@ public:
     bool ackMessages();
     void updateAckTracker(AckTracker record = AckTracker());
 
-    bool queueEmpty() { return received.empty(); }
+    bool hasPendingMessages() { return received.empty(); }
 
     auto getChannelID() const { return current.track.channel_id; }
     auto getDeliveryTag() const { return current.track.delivery_tag; }
