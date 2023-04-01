@@ -21,6 +21,13 @@ namespace ErrorCodes
 
 IMPLEMENT_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "quota_key", "db",
+    "database", "table", "schema", "replica",
+    "update_field", "update_lag", "invalidate_query", "query",
+    "where", "name", "secure", "uri", "collection"};
+
+
 template<typename T>
 SettingsChanges getSettingsChangesFromConfig(
     const BaseSettings<T> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -72,53 +79,6 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     addresses_expr = conf.addresses_expr;
 }
 
-namespace
-{
-void initExternalDataSourceConfiguration(ExternalDataSourceConfiguration & configuration)
-{
-    configuration = ExternalDataSourceConfiguration();
-    configuration.username = "";
-}
-
-void readNamedCollection(const Poco::Util::AbstractConfiguration & config,
-    std::string_view collection_prefix,
-    ExternalDataSourceConfiguration & configuration)
-{
-    auto get_path = [collection_prefix](std::string_view fname)
-    {
-        return fmt::format("{}.{}", collection_prefix, fname);
-    };
-
-    configuration.host = config.getString(get_path("host"), configuration.host);
-    configuration.port = config.getInt(get_path("port"), configuration.port);
-    configuration.username = config.getString(get_path("user"), configuration.username);
-    configuration.password = config.getString(get_path("password"), configuration.password);
-    configuration.quota_key = config.getString(get_path("quota_key"), configuration.quota_key);
-    configuration.database = config.getString(get_path("db"), config.getString(get_path("database"), configuration.database));
-    configuration.table = config.getString(get_path("table"), config.getString(get_path("collection"), configuration.table));
-    configuration.schema = config.getString(get_path("schema"), configuration.schema);
-    configuration.addresses_expr = config.getString(get_path("addresses_expr"), configuration.addresses_expr);
-}
-
-using ConfigWithPrefix = std::pair<const Poco::Util::AbstractConfiguration &, /* const String & */   std::string_view  /* prefix */>;
-
-/// Logical priority is from left to right.
-///   If first element of config_with_prefix_vect does not have a particular field,
-///   second element is used, etc.
-///   Technically values are overwritten from right to left.
-/// If no luck, default values come into play.
-void readNamedCollection(const std::vector<ConfigWithPrefix> & config_with_prefix_vect,
-    ExternalDataSourceConfiguration & configuration)
-{
-    initExternalDataSourceConfiguration(configuration);
-
-    for (auto it = std::crbegin(config_with_prefix_vect); it != std::crend(config_with_prefix_vect); ++it)
-    {
-        readNamedCollection((*it).first, (*it).second, configuration);
-    }
-}
-}
-
 
 static void validateConfigKeys(
     const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, HasConfigKeyFunc has_config_key_func)
@@ -139,7 +99,6 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
 {
     validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration configuration;
-    StorageSpecificArgs non_common_args;
 
     auto collection_name = dict_config.getString(dict_config_prefix + ".name", "");
     if (!collection_name.empty())
@@ -155,16 +114,15 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         if (!config.has(collection_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
 
-        readNamedCollection({{dict_config, dict_config_prefix}, {config, collection_prefix}}, configuration);
-
-
-        if (dict_config.has(dict_config_prefix + ".secure") ||  config.has(collection_prefix + ".secure"))
-        {
-            uint64_t secure = dict_config.getBool(dict_config_prefix + ".secure", config.getBool(collection_prefix + ".secure", false));
-
-            non_common_args.emplace_back(std::make_pair("secure", std::make_shared<ASTLiteral>(secure)));
-        }
-
+        configuration.host = dict_config.getString(dict_config_prefix + ".host", config.getString(collection_prefix + ".host", ""));
+        configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(collection_prefix + ".port", 0));
+        configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
+        configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
+        configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", config.getString(collection_prefix + ".quota_key", ""));
+        configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(dict_config_prefix + ".database",
+            config.getString(collection_prefix + ".db", config.getString(collection_prefix + ".database", ""))));
+        configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));
+        configuration.schema = dict_config.getString(dict_config_prefix + ".schema", config.getString(collection_prefix + ".schema", ""));
 
         if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
@@ -172,7 +130,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
                             "Named collection of connection parameters is missing some "
                             "of the parameters and dictionary parameters are not added");
         }
-        return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = non_common_args, .settings_changes = config_settings };
+        return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = {}, .settings_changes = config_settings };
     }
     return std::nullopt;
 }
@@ -251,7 +209,14 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
     }
     else
     {
-        readNamedCollection({{dict_config, dict_config_prefix}}, common_configuration);
+        common_configuration.host = dict_config.getString(dict_config_prefix + ".host", "");
+        common_configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
+        common_configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
+        common_configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
+        common_configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", "");
+        common_configuration.database = dict_config.getString(dict_config_prefix + ".db", dict_config.getString(dict_config_prefix + ".database", ""));
+        common_configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
+        common_configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
     }
 
     ExternalDataSourcesByPriority configuration
@@ -276,10 +241,11 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
                 validateConfigKeys(dict_config, replica_name, has_config_key);
 
                 size_t priority = dict_config.getInt(replica_name + ".priority", 0);
-
-                readNamedCollection({{dict_config, replica_name},
-                                     {dict_config, dict_config_prefix}}, replica_configuration);
-
+                replica_configuration.host = dict_config.getString(replica_name + ".host", common_configuration.host);
+                replica_configuration.port = dict_config.getUInt(replica_name + ".port", common_configuration.port);
+                replica_configuration.username = dict_config.getString(replica_name + ".user", common_configuration.username);
+                replica_configuration.password = dict_config.getString(replica_name + ".password", common_configuration.password);
+                replica_configuration.quota_key = dict_config.getString(replica_name + ".quota_key", common_configuration.quota_key);
 
                 if (replica_configuration.host.empty() || replica_configuration.port == 0
                     || replica_configuration.username.empty() || replica_configuration.password.empty())
@@ -287,13 +253,6 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Named collection of connection parameters is missing some "
                                     "of the parameters and no other dictionary parameters are added");
-                }
-                if (replica_configuration.database != common_configuration.database
-                    || replica_configuration.table != common_configuration.table
-                    || replica_configuration.schema != common_configuration.schema)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Named collection of connection parameters is not consistent");
                 }
 
                 configuration.replicas_configurations[priority].emplace_back(replica_configuration);
