@@ -16,17 +16,9 @@ namespace ErrorCodes
 }
 
 FileSegmentMetadata::FileSegmentMetadata(
-    FileSegmentPtr file_segment_,
-    LockedKeyMetadata & locked_key,
-    LockedCachePriority * locked_queue)
+    FileSegmentPtr file_segment_, LockedKeyMetadata & locked_key, LockedCachePriority * locked_queue)
     : file_segment(file_segment_)
 {
-    /**
-     * File segment can be created with either DOWNLOADED or EMPTY file segment's state.
-     * File segment acquires DOWNLOADING state and creates LRUQueue iterator on first
-     * successful getOrSetDownaloder call.
-     */
-
     switch (file_segment->state())
     {
         case FileSegment::State::DOWNLOADED:
@@ -37,7 +29,7 @@ FileSegmentMetadata::FileSegmentMetadata(
                     ErrorCodes::LOGICAL_ERROR,
                     "Adding file segment with state DOWNLOADED requires locked queue lock");
             }
-            queue_iterator = locked_queue->add(
+            file_segment->getQueueIterator() = locked_queue->add(
                 file_segment->key(), file_segment->offset(), file_segment->range().size(), locked_key.getKeyMetadata());
 
             break;
@@ -60,60 +52,9 @@ size_t FileSegmentMetadata::size() const
     return file_segment->getReservedSize();
 }
 
-const FileSegmentMetadata * KeyMetadata::getByOffset(size_t offset) const
+IFileCachePriority::Iterator & FileSegmentMetadata::getQueueIterator() const
 {
-    auto it = find(offset);
-    if (it == end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
-    return &(it->second);
-}
-
-FileSegmentMetadata * KeyMetadata::getByOffset(size_t offset)
-{
-    auto it = find(offset);
-    if (it == end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
-    return &(it->second);
-}
-
-const FileSegmentMetadata * KeyMetadata::tryGetByOffset(size_t offset) const
-{
-    auto it = find(offset);
-    if (it == end())
-        return nullptr;
-    return &(it->second);
-}
-
-FileSegmentMetadata * KeyMetadata::tryGetByOffset(size_t offset)
-{
-    auto it = find(offset);
-    if (it == end())
-        return nullptr;
-    return &(it->second);
-}
-
-std::string KeyMetadata::toString() const
-{
-    std::string result;
-    for (auto it = begin(); it != end(); ++it)
-    {
-        if (it != begin())
-            result += ", ";
-        result += std::to_string(it->first);
-    }
-    return result;
-}
-
-void KeyMetadata::addToCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &)
-{
-    cleanup_queue.add(key);
-    cleanup_state = CleanupState::SUBMITTED_TO_CLEANUP_QUEUE;
-}
-
-void KeyMetadata::removeFromCleanupQueue(const FileCacheKey &, const KeyGuard::Lock &)
-{
-    /// Just mark cleanup_state as "not to be removed", the cleanup thread will check it and skip the key.
-    cleanup_state = CleanupState::NOT_SUBMITTED;
+    return file_segment->getQueueIterator();
 }
 
 String CacheMetadata::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
@@ -132,16 +73,13 @@ String CacheMetadata::getPathInLocalCache(const Key & key, size_t offset, FileSe
             break;
     }
 
-    auto key_str = key.toString();
-    return fs::path(base_directory)
-        / key_str.substr(0, 3)
-        / key_str
-        / (std::to_string(offset) + file_suffix);
+    const auto key_str = key.toString();
+    return fs::path(base_directory) / key_str.substr(0, 3) / key_str / (std::to_string(offset) + file_suffix);
 }
 
 String CacheMetadata::getPathInLocalCache(const Key & key) const
 {
-    auto key_str = key.toString();
+    const auto key_str = key.toString();
     return fs::path(base_directory) / key_str.substr(0, 3) / key_str;
 }
 
@@ -168,53 +106,49 @@ LockedKeyMetadataPtr CacheMetadata::lockKeyMetadata(const FileCacheKey & key, Ke
     }
 
     {
-        auto key_lock = key_metadata->lock();
+        auto locked_metadata = std::make_unique<LockedKeyMetadata>(key, key_metadata, getPathInLocalCache(key));
+        const auto key_state = locked_metadata->getKeyState();
 
-        const auto cleanup_state = key_metadata->getCleanupState(key_lock);
-
-        if (cleanup_state == KeyMetadata::CleanupState::NOT_SUBMITTED)
-        {
-            return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
-        }
+        if (key_state == KeyMetadata::KeyState::ACTIVE)
+            return locked_metadata;
 
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
-        else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+
+        if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
             return nullptr;
 
-        if (cleanup_state == KeyMetadata::CleanupState::SUBMITTED_TO_CLEANUP_QUEUE)
+        if (key_state == KeyMetadata::KeyState::REMOVING)
         {
-            key_metadata->removeFromCleanupQueue(key, key_lock);
-            return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
+            locked_metadata->removeFromCleanupQueue();
+            return locked_metadata;
         }
 
-        chassert(cleanup_state == KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD);
+        chassert(key_state == KeyMetadata::KeyState::REMOVED);
         chassert(key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY);
     }
 
     /// Not we are at a case:
-    /// cleanup_state == KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD
+    /// key_state == KeyMetadata::KeyState::REMOVED
     /// and KeyNotFoundPolicy == CREATE_EMPTY
     /// Retry.
     return lockKeyMetadata(key, key_not_found_policy);
 }
 
 LockedKeyMetadataPtr CacheMetadata::lockKeyMetadata(
-    const FileCacheKey & key, KeyMetadataPtr key_metadata, bool return_null_if_in_cleanup_queue) const
+    const FileCacheKey & key, KeyMetadataPtr key_metadata, bool skip_if_in_cleanup_queue) const
 {
-    auto key_lock = key_metadata->lock();
+    auto locked_metadata = std::make_unique<LockedKeyMetadata>(key, key_metadata, getPathInLocalCache(key));
+    const auto key_state = locked_metadata->getKeyState();
 
-    auto cleanup_state = key_metadata->getCleanupState(key_lock);
-    if (cleanup_state != KeyMetadata::CleanupState::NOT_SUBMITTED)
-    {
-        if (return_null_if_in_cleanup_queue
-            && cleanup_state == KeyMetadata::CleanupState::SUBMITTED_TO_CLEANUP_QUEUE)
-            return nullptr;
+    if (key_state == KeyMetadata::KeyState::ACTIVE)
+        return locked_metadata;
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key: it was removed from cache");
-    }
+    if (skip_if_in_cleanup_queue
+        && key_state == KeyMetadata::KeyState::REMOVING)
+        return nullptr;
 
-    return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key {}: it was removed from cache", key.toString());
 }
 
 void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
@@ -222,7 +156,7 @@ void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
     auto lock = guard.lock();
     for (const auto & [key, key_metadata] : *this)
     {
-        auto locked_key = lockKeyMetadata(key, key_metadata, /* return_null_if_in_cleanup_queue */true);
+        auto locked_key = lockKeyMetadata(key, key_metadata, /* skip_if_in_cleanup_queue */true);
         if (!locked_key)
             continue;
 
@@ -248,18 +182,16 @@ void CacheMetadata::doCleanup()
         if (it == end())
             continue;
 
-        auto key_metadata = it->second;
-        auto key_lock = key_metadata->lock();
+        auto locked_metadata = std::make_unique<LockedKeyMetadata>(it->first, it->second, getPathInLocalCache(it->first));
+        const auto key_state = locked_metadata->getKeyState();
 
-        /// As in lockKeyMetadata we extract key metadata from cache metadata under
-        /// CacheMetadataGuard::Lock, but take KeyGuard::Lock only after we released
-        /// cache CacheMetadataGuard::Lock (because CacheMetadataGuard::Lock must be lightweight).
-        /// So it is possible that a key which was submitted to cleanup queue was afterwards added
-        /// to cache, so here we need to check this case.
-        if (key_metadata->getCleanupState(key_lock) == KeyMetadata::CleanupState::NOT_SUBMITTED)
+        if (key_state == KeyMetadata::KeyState::ACTIVE)
+        {
+            /// Key was added back to cache after we submitted it to removal queue.
             continue;
+        }
 
-        key_metadata->cleanup_state = KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD;
+        locked_metadata->markAsRemoved();
         erase(it);
 
         try
@@ -283,12 +215,11 @@ void CacheMetadata::doCleanup()
 LockedKeyMetadata::LockedKeyMetadata(
     const FileCacheKey & key_,
     std::shared_ptr<KeyMetadata> key_metadata_,
-    KeyGuard::Lock && lock_,
     const std::string & key_path_)
     : key(key_)
     , key_path(key_path_)
     , key_metadata(key_metadata_)
-    , lock(std::move(lock_))
+    , lock(key_metadata->lock())
     , log(&Poco::Logger::get("LockedKeyMetadata"))
 {
 }
@@ -298,21 +229,33 @@ LockedKeyMetadata::~LockedKeyMetadata()
     if (!key_metadata->empty())
         return;
 
-    key_metadata->addToCleanupQueue(key, lock);
+    key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
+    key_metadata->cleanup_queue.add(key);
 }
 
-void LockedKeyMetadata::createKeyDirectoryIfNot()
+void LockedKeyMetadata::removeFromCleanupQueue()
 {
-    if (key_metadata->createdBaseDirectory(lock))
-        return;
+    if (key_metadata->key_state != KeyMetadata::KeyState::REMOVING)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove non-removing");
 
-    fs::create_directories(key_path);
-    key_metadata->created_base_directory = true;
+    /// Just mark key_state as "not to be removed", the cleanup thread will check it and skip the key.
+    key_metadata->key_state = KeyMetadata::KeyState::ACTIVE;
+}
+
+bool LockedKeyMetadata::markAsRemoved()
+{
+    chassert(key_metadata->key_state != KeyMetadata::KeyState::REMOVED);
+
+    if (key_metadata->key_state == KeyMetadata::KeyState::ACTIVE)
+        return false;
+
+    key_metadata->key_state = KeyMetadata::KeyState::REMOVED;
+    return true;
 }
 
 bool LockedKeyMetadata::isLastOwnerOfFileSegment(size_t offset) const
 {
-    const auto * file_segment_metadata = key_metadata->getByOffset(offset);
+    const auto * file_segment_metadata = getByOffset(offset);
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
@@ -325,10 +268,10 @@ void LockedKeyMetadata::removeFileSegment(
         log, "Remove from cache. Key: {}, offset: {}",
         key.toString(), offset);
 
-    auto * file_segment_metadata = key_metadata->getByOffset(offset);
+    auto * file_segment_metadata = getByOffset(offset);
 
-    if (file_segment_metadata->queue_iterator)
-        LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator).remove();
+    if (file_segment_metadata->getQueueIterator())
+        LockedCachePriorityIterator(cache_lock, file_segment_metadata->getQueueIterator()).remove();
 
     const auto cache_file_path = file_segment_metadata->file_segment->getPathInLocalCache();
     file_segment_metadata->file_segment->detach(segment_lock, *this);
@@ -349,7 +292,7 @@ void LockedKeyMetadata::shrinkFileSegmentToDownloadedSize(
      * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
      */
 
-    auto * file_segment_metadata = key_metadata->getByOffset(offset);
+    auto * file_segment_metadata = getByOffset(offset);
     const auto & file_segment = file_segment_metadata->file_segment;
 
     size_t downloaded_size = file_segment->downloaded_size;
@@ -363,14 +306,15 @@ void LockedKeyMetadata::shrinkFileSegmentToDownloadedSize(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    auto & entry = LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator).getEntry();
+    auto & entry = LockedCachePriorityIterator(cache_lock, file_segment_metadata->getQueueIterator()).getEntry();
     assert(file_segment->downloaded_size <= file_segment->reserved_size);
     assert(entry.size == file_segment->reserved_size);
     assert(entry.size >= file_segment->downloaded_size);
 
     CreateFileSegmentSettings create_settings(file_segment->getKind());
     file_segment_metadata->file_segment = std::make_shared<FileSegment>(
-        offset, downloaded_size, key, key_metadata, file_segment->cache, FileSegment::State::DOWNLOADED, create_settings);
+        key, offset, downloaded_size, key_metadata, file_segment->getQueueIterator(),
+        file_segment->cache, FileSegment::State::DOWNLOADED, create_settings);
 
     if (file_segment->reserved_size > file_segment->downloaded_size)
         entry.size = downloaded_size;
@@ -384,8 +328,51 @@ void LockedKeyMetadata::assertFileSegmentCorrectness(const FileSegment & file_se
     if (file_segment.key() != key)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} = {}", file_segment.key().toString(), key.toString());
 
-    const auto & file_segment_metadata = *key_metadata->getByOffset(file_segment.offset());
-    file_segment.assertCorrectnessUnlocked(file_segment_metadata, lock);
+    file_segment.assertCorrectness();
+}
+
+const FileSegmentMetadata * LockedKeyMetadata::getByOffset(size_t offset) const
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
+    return &(it->second);
+}
+
+FileSegmentMetadata * LockedKeyMetadata::getByOffset(size_t offset)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
+    return &(it->second);
+}
+
+const FileSegmentMetadata * LockedKeyMetadata::tryGetByOffset(size_t offset) const
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        return nullptr;
+    return &(it->second);
+}
+
+FileSegmentMetadata * LockedKeyMetadata::tryGetByOffset(size_t offset)
+{
+    auto it = key_metadata->find(offset);
+    if (it == key_metadata->end())
+        return nullptr;
+    return &(it->second);
+}
+
+std::string LockedKeyMetadata::toString() const
+{
+    std::string result;
+    for (auto it = key_metadata->begin(); it != key_metadata->end(); ++it)
+    {
+        if (it != key_metadata->begin())
+            result += ", ";
+        result += std::to_string(it->first);
+    }
+    return result;
 }
 
 void CleanupQueue::add(const FileCacheKey & key)
