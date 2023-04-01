@@ -36,7 +36,6 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    UInt64 empty_queue_sleep_before_flush_timeout_ms_,
     bool ack_in_suffix_)
     : RabbitMQSource(
         storage_,
@@ -46,7 +45,6 @@ RabbitMQSource::RabbitMQSource(
         columns,
         max_block_size_,
         max_execution_time_,
-        empty_queue_sleep_before_flush_timeout_ms_,
         ack_in_suffix_)
 {
 }
@@ -59,7 +57,6 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    UInt64 empty_queue_sleep_before_flush_timeout_ms_,
     bool ack_in_suffix_)
     : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
@@ -72,7 +69,6 @@ RabbitMQSource::RabbitMQSource(
     , virtual_header(std::move(headers.second))
     , log(&Poco::Logger::get("RabbitMQSource"))
     , max_execution_time_ms(max_execution_time_)
-    , empty_queue_sleep_before_flush_timeout_ms(empty_queue_sleep_before_flush_timeout_ms_)
 {
     storage.incrementReader();
 }
@@ -116,32 +112,6 @@ Chunk RabbitMQSource::generate()
         sendAck();
 
     return chunk;
-}
-
-bool RabbitMQSource::isTimeLimitExceeded() const
-{
-    if (max_execution_time_ms != 0)
-    {
-        uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
-        return max_execution_time_ms <= elapsed_time_ms;
-    }
-
-    return false;
-}
-
-UInt64 RabbitMQSource::getSingleIterationWaitOnEmptyQueue() const
-{
-    if (max_execution_time_ms != 0)
-    {
-        uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
-        if (elapsed_time_ms >= max_execution_time_ms)
-            return 0;
-
-        return std::min(
-            empty_queue_sleep_before_flush_timeout_ms,
-            max_execution_time_ms - elapsed_time_ms);
-    }
-    return empty_queue_sleep_before_flush_timeout_ms;
 }
 
 Chunk RabbitMQSource::generateImpl()
@@ -205,15 +175,26 @@ Chunk RabbitMQSource::generateImpl()
             break;
         }
 
-        if (total_rows >= max_block_size || consumer->isConsumerStopped() || isTimeLimitExceeded())
+        bool is_time_limit_exceeded = false;
+        UInt64 remaining_execution_time = 0;
+        if (max_execution_time_ms != 0)
+        {
+            uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
+            is_time_limit_exceeded = max_execution_time_ms <= elapsed_time_ms;
+            if (!is_time_limit_exceeded)
+                remaining_execution_time = max_execution_time_ms - elapsed_time_ms;
+        }
+
+        if (total_rows >= max_block_size || consumer->isConsumerStopped() || is_time_limit_exceeded)
         {
             break;
         }
         else if (new_rows == 0)
         {
-            const auto sleep = getSingleIterationWaitOnEmptyQueue();
-            if (sleep)
-                sleepForMilliseconds(sleep);
+            if (remaining_execution_time)
+                consumer->waitForMessages(remaining_execution_time);
+            else
+                consumer->waitForMessages();
         }
     }
 

@@ -65,6 +65,9 @@ void RabbitMQConsumer::subscribe()
                         message.hasTimestamp() ? message.timestamp() : 0,
                         redelivered, AckTracker(delivery_tag, channel_id)}))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
+
+                std::unique_lock lock(mutex);
+                cv.notify_one();
             }
         })
         .onError([&](const char * message)
