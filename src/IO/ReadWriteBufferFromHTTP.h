@@ -1,4 +1,7 @@
 #pragma once
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-identifier"
+#pragma GCC diagnostic ignored "-Wpacked"
 
 #include <functional>
 #include <Common/RangeGenerator.h>
@@ -1011,3 +1014,4 @@ public:
 };
 
 }
+#pragma GCC diagnostic pop

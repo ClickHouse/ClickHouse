@@ -79,7 +79,10 @@ add_contrib (re2-cmake re2)
 add_contrib (xz-cmake xz)
 add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
+
+set (ENET_STATIC "1")
 add_contrib (enet)
+
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
 add_contrib (zlib-ng-cmake zlib-ng)
