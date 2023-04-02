@@ -39,6 +39,7 @@ RabbitMQConsumer::RabbitMQConsumer(
 
 void RabbitMQConsumer::closeChannel()
 {
+    cv.notify_one();
     if (consumer_channel)
         consumer_channel->close();
 }

@@ -833,13 +833,11 @@ void StorageRabbitMQ::shutdown()
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        if (drop_table)
-        {
-            for (auto & consumer : consumers)
-                consumer->closeChannel();
+        for (auto & consumer : consumers)
+            consumer->closeChannel();
 
+        if (drop_table)
             cleanupRabbitMQ();
-        }
 
         /// It is important to close connection here - before removing consumers, because
         /// it will finish and clean callbacks, which might use those consumers data.

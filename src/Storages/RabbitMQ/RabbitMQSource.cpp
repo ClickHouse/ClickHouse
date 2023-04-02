@@ -177,7 +177,7 @@ Chunk RabbitMQSource::generateImpl()
 
         bool is_time_limit_exceeded = false;
         UInt64 remaining_execution_time = 0;
-        if (max_execution_time_ms != 0)
+        if (max_execution_time_ms)
         {
             uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
             is_time_limit_exceeded = max_execution_time_ms <= elapsed_time_ms;
