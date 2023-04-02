@@ -50,7 +50,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         const Float64 n1_d = 1. / n1;
         const Float64 n2_d = 1. / n2;
         const Float64 tol = 1e-7;
-        
+
         while (pos_x < x.size() && pos_y < y.size())
         {
             if (y[pos_y] - x[pos_x] >= -tol)
@@ -66,7 +66,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
             else
             {
                 now_s -= n2_d;
-                if (fabs(x[pos_x] - y[pos_y]) >= tol)
+                if (likely(fabs(x[pos_x] - y[pos_y]) >= tol))
                 {
                     max_s = std::max(max_s, now_s);
                     min_s = std::min(min_s, now_s);
@@ -89,17 +89,17 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         UInt64 g = std::__gcd(n1, n2);
         UInt64 nx_g = n1 / g;
         UInt64 ny_g = n2 / g;
-         
+
         if (method == "auto")
             method = std::max(n1, n2) <= 10000 ? "exact" : "asymp";
         else if (method == "exact" && nx_g >= std::numeric_limits<Int32>::max() / ny_g)
             method = "asymp";
-            
+
         Float64 p_value = std::numeric_limits<Float64>::infinity();
 
         if (method == "exact")
         {
-            if(n2 > n1)
+            if (n2 > n1)
                 std::swap(n1, n2);
 
             const Float64 f_n2 = static_cast<Float64>(n2);
@@ -112,18 +112,18 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                        : [](const Float64 & q, const Float64 & r, const Float64 & s) { return r - s >= q; };
 
             u[0] = 0;
-            for(UInt64 j = 1; j <= n1; j++)
+            for (UInt64 j = 1; j <= n1; j++)
                 if (check(k_q, 0., j / f_n1))
                     u[j] = 1.;
                 else
                     u[j] = u[j - 1];
 
-            for(UInt64 i = 1; i <= n2; i++)
+            for (UInt64 i = 1; i <= n2; i++)
             {
-                if(check(k_q, i / f_n2, 0.))
+                if (check(k_q, i / f_n2, 0.))
                     u[0] = 1.;
-                for(UInt64 j = 1; j <= n1; j++) 
-                    if(check(k_q, i / f_n2, j / f_n1))
+                for (UInt64 j = 1; j <= n1; j++) 
+                    if (check(k_q, i / f_n2, j / f_n1))
                         u[j] = 1.;
                     else
                     {
@@ -145,13 +145,13 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                 Float64 new_val, old_val, s, w, z;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
-                if(p < 1)
+                if (p < 1)
                 {
                     z = - (M_PI_2 * M_PI_4) / (p * p);
                     w = log(p);
                     s = 0;
-                    for(UInt64 k = 1; k < k_max; k += 2)
-                        s += exp(k * k * z - w); 
+                    for (UInt64 k = 1; k < k_max; k += 2)
+                        s += exp(k * k * z - w);
                     p = s / 0.398942280401432677939946059934;
                 }
                 else
@@ -161,7 +161,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                     UInt64 k = 1;
                     old_val = 0;
                     new_val = 1;
-                    while(fabs(old_val - new_val) > tol)
+                    while (fabs(old_val - new_val) > tol)
                     {
                         old_val = new_val;
                         new_val += 2 * s * exp(z * k * k);
@@ -246,7 +246,7 @@ public:
 
         Strings names
         {
-            "statistic",
+            "d_statistic",
             "p_value"
         };
 
@@ -286,7 +286,7 @@ public:
         if (!this->data(place).size_x || !this->data(place).size_y)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
-        auto [statistic, p_value] = this->data(place).getResult(alternative, method);
+        auto [d_statistic, p_value] = this->data(place).getResult(alternative, method);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
@@ -295,7 +295,7 @@ public:
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
         auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
 
-        column_stat.getData().push_back(statistic);
+        column_stat.getData().push_back(d_statistic);
         column_value.getData().push_back(p_value);
     }
 
