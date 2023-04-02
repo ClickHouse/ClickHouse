@@ -242,6 +242,10 @@ namespace detail
 
                     ENetPeer * peer = enet_host_connect(client, &address, 2, 0);  
 
+                    ENetEvent event;
+
+                    enet_host_service(client, &event, 3000);
+
                     enet_peer_send(peer, 0, packet);
 
                     enet_host_flush(client);
@@ -250,6 +254,20 @@ namespace detail
 
                     if (out_stream_callback)
                         out_stream_callback(stream_out);
+                    
+                    while (enet_host_service(client, &event, 3000) > 0) {
+                        switch (event.type) {
+                            case ENET_EVENT_TYPE_RECEIVE:
+                                // Receive packet from Service
+                                {
+                                    // auto data = event.packet->data;
+                                    enet_packet_destroy(event.packet);
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+                    }
 
                     istr = receiveResponse(*sess, request, response, true);
                     response.getCookies(cookies);
