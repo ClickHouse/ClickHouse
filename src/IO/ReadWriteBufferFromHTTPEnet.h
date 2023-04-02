@@ -149,7 +149,9 @@ namespace detail
         std::istream * callImpl(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
-            enet_initialize();
+            if (enet_initialize() != 0) {
+                LOG_ERROR(log, "Cannot initialize enet.");
+            }
 
             if (uri_.getPath().empty())
                 uri_.setPath("/");
@@ -183,6 +185,39 @@ namespace detail
 
             try
             {
+                
+                ENetHost * client;
+                client = enet_host_create (nullptr /* create a client host */,
+                            1 /* only allow 1 outgoing connection */,
+                            2 /* allow up 2 channels to be used, 0 and 1 */,
+                            0 /* assume any amount of incoming bandwidth */,
+                            0 /* assume any amount of outgoing bandwidth */);
+                if (client == nullptr)
+                {
+                    fprintf (stderr, 
+                            "An error occurred while trying to create an ENet client host.\n");
+                }
+
+                std::ostringstream stream;
+
+                request.write(stream);
+
+                std::string request_string =  stream.str();
+                const char* request_cstr = request_string.c_str();
+
+                ENetPacket * packet = enet_packet_create (request_cstr, 
+                                          sizeof(request_cstr) + 1, 
+                                          ENET_PACKET_FLAG_RELIABLE);
+
+                ENetAddress address;
+
+                enet_address_set_host (& address, uri_.getHost().c_str());
+                address.port = uri_.getPort();
+
+                ENetPeer * peer = enet_host_connect(client, &address, 2, 0);  
+
+                enet_peer_send(peer, 0, packet);
+
                 auto & stream_out = sess->sendRequest(request);
 
                 if (out_stream_callback)
@@ -630,11 +665,11 @@ namespace detail
         off_t seek(off_t offset_, int whence) override
         {
             if (whence != SEEK_SET)
-                throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
             if (offset_ < 0)
-                throw Exception(
-                    "Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}",
+                    offset_);
 
             off_t current_offset = getOffset();
             if (!working_buffer.empty() && size_t(offset_) >= current_offset - working_buffer.size() && offset_ < current_offset)

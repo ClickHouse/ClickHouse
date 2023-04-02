@@ -27,6 +27,8 @@
 #include "config.h"
 #include "config_version.h"
 
+#include <enet.h>
+
 #include <filesystem>
 
 namespace ProfileEvents
@@ -99,6 +101,11 @@ namespace detail
             std::optional<size_t> begin;
             std::optional<size_t> end;
         };
+        std::string protocol = "tcp";
+
+        void setProtocol(std::string protocol_) {
+            protocol = protocol_;
+        }
 
     protected:
         Poco::URI uri;
@@ -196,20 +203,72 @@ namespace detail
             auto sess = current_session->getSession();
             try
             {
-                auto & stream_out = sess->sendRequest(request);
+                if (protocol == "enet") {
+                    if (enet_initialize() != 0) {
+                        LOG_ERROR(log, "Cannot initialize enet.");
+                    }
 
-                if (out_stream_callback)
-                    out_stream_callback(stream_out);
+                    ENetHost * client;
+                    client = enet_host_create (nullptr /* create a client host */,
+                                1 /* only allow 1 outgoing connection */,
+                                2 /* allow up 2 channels to be used, 0 and 1 */,
+                                0 /* assume any amount of incoming bandwidth */,
+                                0 /* assume any amount of outgoing bandwidth */);
+                    if (client == nullptr)
+                    {
+                        fprintf (stderr, 
+                                "An error occurred while trying to create an ENet client host.\n");
+                    }
 
-                auto result_istr = receiveResponse(*sess, request, response, true);
-                response.getCookies(cookies);
+                    std::ostringstream stream;
 
-                /// we can fetch object info while the request is being processed
-                /// and we don't want to override any context used by it
-                if constexpr (!for_object_info)
+                    request.write(stream);
+
+                    std::string request_string =  stream.str();
+                    const char* request_cstr = request_string.c_str();
+
+                    ENetPacket * packet = enet_packet_create (request_cstr, 
+                                            sizeof(request_cstr) + 1, 
+                                            ENET_PACKET_FLAG_RELIABLE);
+
+                    ENetAddress address;
+
+                
+                    enet_address_set_host (& address, uri_.getHost().c_str());
+                    address.port = uri_.getPort();
+
+                    ENetPeer * peer = enet_host_connect(client, &address, 2, 0);  
+
+                    enet_peer_send(peer, 0, packet);
+
+                    enet_host_flush(client);
+
+                    auto & stream_out = sess->sendRequest(request);
+
+                    if (out_stream_callback)
+                        out_stream_callback(stream_out);
+
+                    istr = receiveResponse(*sess, request, response, true);
+                    response.getCookies(cookies);
+
                     content_encoding = response.get("Content-Encoding", "");
+                    return istr;
+                } else {
+                    auto & stream_out = sess->sendRequest(request);
 
-                return result_istr;
+                    if (out_stream_callback)
+                        out_stream_callback(stream_out);
+
+                    auto result_istr = receiveResponse(*sess, request, response, true);
+                    response.getCookies(cookies);
+
+                    /// we can fetch object info while the request is being processed
+                    /// and we don't want to override any context used by it
+                    if constexpr (!for_object_info)
+                        content_encoding = response.get("Content-Encoding", "");
+
+                    return result_istr;
+                }
             }
             catch (const Poco::Exception & e)
             {

@@ -7,6 +7,7 @@
 #include <Disks/createVolume.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3Common.h>
+#include <IO/ReadWriteBufferFromHTTPEnet.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
@@ -17,7 +18,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <IO/ReadWriteBufferFromHTTPEnet.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
@@ -476,6 +476,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         DBMS_DEFAULT_BUFFER_SIZE,
         0, /* no redirects */
         static_cast<uint64_t>(data_settings->replicated_max_parallel_fetches_for_host));
+
+    //in->setProtocol("enet");
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
 
