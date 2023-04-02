@@ -40,6 +40,7 @@ def test_and_check(name, a, b, t_stat, p_value, precision=1e-2):
     ), "clickhouse_p_value {}, scipy_p_value {}".format(real_p_value, p_value)
     client.query("DROP TABLE IF EXISTS ks_test;")
 
+
 def test_ks_all_alternatives(rvs1, rvs2):
     s, p = stats.ks_2samp(rvs1, rvs2)
     test_and_check("kolmogorovSmirnovTest", rvs1, rvs2, s, p)
@@ -72,6 +73,7 @@ def test_ks_all_alternatives(rvs1, rvs2):
         test_and_check("kolmogorovSmirnovTest('less', 'asymp')", rvs1, rvs2, s, p)
         s, p = stats.ks_2samp(rvs1, rvs2, alternative="greater", method="asymp")
         test_and_check("kolmogorovSmirnovTest('greater', 'asymp')", rvs1, rvs2, s, p)
+
 
 def test_kolmogorov_smirnov():
     rvs1 = np.round(stats.norm.rvs(loc=1, scale=5, size=10), 2)
