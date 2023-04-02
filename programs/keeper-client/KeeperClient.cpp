@@ -85,8 +85,18 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
     Poco::Util::Application::defineOptions(options);
 
     options.addOption(
-        Poco::Util::Option("help", "h", "show help and exit")
+        Poco::Util::Option("help", "", "show help and exit")
             .binding("help"));
+
+    options.addOption(
+        Poco::Util::Option("host", "h", "server hostname. default `localhost`")
+            .argument("host")
+            .binding("host"));
+
+    options.addOption(
+        Poco::Util::Option("port", "p", "server port. default `2181`")
+            .argument("port")
+            .binding("port"));
 
     options.addOption(
         Poco::Util::Option("query", "q", "will execute given query, then exit.")
@@ -284,13 +294,12 @@ void KeeperClient::runInteractive()
     }
 }
 
-int KeeperClient::main(const std::vector<String> & args)
+int KeeperClient::main(const std::vector<String> & /* args */)
 {
-    if (args.empty())
-        zk_args.hosts = {"localhost:2181"};
-    else
-        zk_args.hosts = {args[0]};
 
+    auto host = config().getString("host", "localhost");
+    auto port = config().getString("port", "2181");
+    zk_args.hosts = {host + ":" + port};
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
