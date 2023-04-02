@@ -82,7 +82,7 @@ public:
         std::unique_lock lock(mutex);
         if (!timeout_ms)
             timeout_ms = SANITY_TIMEOUT;
-        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty(); });
+        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty() || isConsumerStopped(); });
     }
 
 private:
