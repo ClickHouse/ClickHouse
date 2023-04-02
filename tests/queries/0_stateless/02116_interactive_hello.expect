@@ -1,5 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: long
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]

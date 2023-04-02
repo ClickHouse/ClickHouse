@@ -114,7 +114,11 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 {
     if (!uri.empty())
     {
-        Poco::URI poco_uri(uri);
+        // Connect with URI.
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
+        connection->connect(uri, socket_factory);
+
+        Poco::URI poco_uri(connection->uri());
 
         // Parse database from URI. This is required for correctness -- the
         // cursor is created using database name and collection name, so we have
@@ -134,10 +138,6 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         {
             user.resize(separator);
         }
-
-        // Connect with URI.
-        Poco::MongoDB::Connection::SocketFactory socket_factory;
-        connection->connect(uri, socket_factory);
     }
     else
     {

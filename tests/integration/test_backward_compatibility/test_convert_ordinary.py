@@ -188,7 +188,18 @@ def check_convert_all_dbs_to_atomic():
     node.exec_in_container(
         ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
     )
-    node.restart_clickhouse()
+    node.stop_clickhouse()
+    cannot_start = False
+    try:
+        node.start_clickhouse()
+    except:
+        cannot_start = True
+    assert cannot_start
+
+    node.exec_in_container(
+        ["bash", "-c", f"rm /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+    )
+    node.start_clickhouse()
 
     assert "Ordinary\n" == node.query(
         "SELECT engine FROM system.databases where name='ordinary'"

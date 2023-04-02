@@ -9,7 +9,7 @@ sidebar_label: Settings Profiles
 A settings profile is a collection of settings grouped under the same name.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing settings profiles. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing settings profiles. We recommend using it.
 :::
 
 The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is `readonly=1`, which ensures read-only access.

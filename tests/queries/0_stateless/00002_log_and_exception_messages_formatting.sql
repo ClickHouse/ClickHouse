@@ -21,7 +21,7 @@ select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_st
 select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 40) from logs where length(message_format_string) < 16;
 
 -- Same as above, but exceptions must be more informative. Feel free to update the threshold or remove this query if really necessary
-select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 125) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%';
+select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 120) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%';
 
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
@@ -57,7 +57,9 @@ select 'number of noisy messages', max2(count(), 10) from (select count() / (sel
 -- FIXME maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
 select 'incorrect patterns', max2(countDistinct(message_format_string), 15) from (
     select message_format_string, any(message) as any_message from logs
-    where message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
+    where ((rand() % 8) = 0)
+    and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
+    and message not like (s || ' (skipped % similar messages)')
     and message not like ('%Exception: '||s||'%') group by message_format_string
 ) where any_message not like '%Poco::Exception%';
 

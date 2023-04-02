@@ -36,7 +36,6 @@ def get_run_command(
         "docker run --cap-add=SYS_PTRACE "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
-        f"-e DISABLE_BC_CHECK={os.environ.get('DISABLE_BC_CHECK', '0')} "
         # For dmesg and sysctl
         "--privileged "
         f"--volume={build_path}:/package_folder "
@@ -109,7 +108,7 @@ def process_results(
     return state, description, test_results, additional_files
 
 
-def main():
+def run_stress_test(docker_image_name):
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -132,7 +131,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/stress-test")
+    docker_image = get_image_with_version(reports_path, docker_image_name)
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
@@ -199,4 +198,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_stress_test("clickhouse/stress-test")
