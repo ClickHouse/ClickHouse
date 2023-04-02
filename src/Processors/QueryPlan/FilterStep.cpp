@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
 
 namespace DB
 {
@@ -26,6 +27,7 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression, con
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = preserves_sorting,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,
@@ -50,6 +52,15 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    output_stream->hints = input_stream_.hints;
+    for (const auto & output_node_ptr : actions_dag->getOutputs())
+    {
+        const auto & output_node = *output_node_ptr;
+        if (output_node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            updateDataHintsWithFilterActionsDAG(output_stream->hints, output_node);
+        }
+    }
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)

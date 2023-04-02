@@ -1,3 +1,6 @@
+#include <unordered_map>
+#include <string>
+
 #include <type_traits>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -54,6 +57,16 @@ void UnionStep::updateOutputStream()
             output_stream->sort_scope = DataStream::SortScope::Stream;
         else
             output_stream->sort_scope = sort_scope;
+    }
+
+    updateOutputDataHints();
+}
+
+void UnionStep::updateOutputDataHints()
+{
+    for (const auto & input_stream : input_streams)
+    {
+        unionDataHints(output_stream->hints, input_stream.hints);
     }
 }
 

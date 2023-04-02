@@ -6,6 +6,8 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
 
 namespace DB
 {
@@ -104,6 +106,8 @@ void JoinStep::updateOutputStream()
     {
         .header = JoiningTransform::transformHeader(input_streams[0].header, join),
     };
+    output_stream->hints = input_streams[0].hints;
+    unionJoinDataHints(output_stream->hints, input_streams[1].hints, join->getTableJoin());
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
@@ -114,6 +118,7 @@ static ITransformingStep::Traits getStorageJoinTraits()
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = false,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,

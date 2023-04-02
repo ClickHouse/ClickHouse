@@ -21,6 +21,8 @@ public:
 
     bool canUpdateInputStream() const override { return true; }
 
+    void updateOutputDataHints();
+
 private:
     void updateOutputStream() override;
 

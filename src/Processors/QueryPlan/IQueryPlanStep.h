@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
 
 namespace DB
 {
@@ -30,6 +31,8 @@ public:
 
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
+
+    DataHints hints = {};
 
     /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
     enum class SortScope
