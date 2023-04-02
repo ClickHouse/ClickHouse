@@ -19,17 +19,19 @@ function run_with_settings()
         , optimize_substitute_columns = 1\
         , optimize_append_index = 1"
 
+    if [[ $query =~ "EXPLAIN QUERY TREE" ]]; then query="${query}, allow_experimental_analyzer = 1"; fi
+
     $CLICKHOUSE_CLIENT --query="$query"
 
 }
 
 run_with_settings "EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE a = 0"
-run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a = 0 SETTINGS allow_experimental_analyzer = 1" | grep -Fac "indexHint"
+run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a = 0" | grep -Fac "indexHint"
 run_with_settings "EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE a < 0"
-run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a < 0 SETTINGS allow_experimental_analyzer = 1" | grep -Fac "indexHint"
+run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a < 0" | grep -Fac "indexHint"
 run_with_settings "EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE a >= 0"
-run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a >= 0 SETTINGS allow_experimental_analyzer = 1" | grep -Fac "indexHint"
+run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a >= 0" | grep -Fac "indexHint"
 run_with_settings "EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE 2 * b < 100"
-run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE 2 * b < 100 SETTINGS allow_experimental_analyzer = 1" | grep -Fac "indexHint"
+run_with_settings "EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE 2 * b < 100" | grep -Fac "indexHint"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE index_append_test_test;"
