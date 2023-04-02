@@ -29,6 +29,11 @@ DataStream ITransformingStep::createOutputStream(
         output_stream.sort_scope = input_stream.sort_scope;
     }
 
+    if (stream_traits.preserves_data_hints)
+    {
+        output_stream.hints = input_stream.hints;
+    }
+
     return output_stream;
 }
 

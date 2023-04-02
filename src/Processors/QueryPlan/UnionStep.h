@@ -21,6 +21,8 @@ public:
 
     void updateOutputSortDescription();
 
+    void updateOutputDataHints();
+
 private:
     Block header;
     size_t max_threads;

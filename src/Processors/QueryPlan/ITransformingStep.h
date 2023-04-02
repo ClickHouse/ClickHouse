@@ -29,6 +29,10 @@ public:
         /// Doesn't change row order.
         /// Examples: true for FilterStep, false for PartialSortingStep
         bool preserves_sorting;
+
+        /// Doesn't change column hints.
+        /// Examples: true for SortingStep, false for ExpressionStep
+        bool preserves_data_hints;
     };
 
     /// This flags are used by QueryPlan optimizers.

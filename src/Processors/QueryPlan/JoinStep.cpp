@@ -3,6 +3,8 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
 
 namespace DB
 {
@@ -25,7 +27,9 @@ JoinStep::JoinStep(
     output_stream = DataStream
     {
         .header = JoiningTransform::transformHeader(left_stream_.header, join),
+        .hints = left_stream_.hints,
     };
+    unionJoinDataHints(output_stream->hints, right_stream_.hints, join->getTableJoin());
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -76,6 +80,8 @@ void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t id
     {
         input_streams = {input_streams.at(0), new_input_stream_};
     }
+    output_stream->hints = input_streams[0].hints;
+    unionJoinDataHints(output_stream->hints, input_streams[1].hints, join->getTableJoin());
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
@@ -86,6 +92,7 @@ static ITransformingStep::Traits getStorageJoinTraits()
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = false,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,
