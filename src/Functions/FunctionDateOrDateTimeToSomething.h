@@ -61,6 +61,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (arguments.size() == 0) // assert: Transform == ToYearImpl
+            return DataTypeUInt16().createColumnConst(input_rows_count, UInt16(DateLUT::instance().toYear(time(nullptr))));
+
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 

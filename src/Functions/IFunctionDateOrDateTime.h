@@ -82,7 +82,14 @@ public:
 protected:
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
     {
-        if (arguments.size() == 1)
+        if (arguments.size() == 0)
+        {
+            if (!std::is_same_v<Transform, ToYearImpl>)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                    getName(), arguments.size());
+        }
+        else if (arguments.size() == 1)
         {
             if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

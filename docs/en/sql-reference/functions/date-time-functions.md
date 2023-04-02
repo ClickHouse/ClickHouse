@@ -180,6 +180,7 @@ Result:
 ## toYear
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
+Also accepts zero arguments and returns the current year at one of the moments of query analysis. The same as ‘toYear(now())’ or ‘toYear(today())’.
 
 Alias: `YEAR`.
 
