@@ -299,7 +299,7 @@ public:
 
 protected:
     static StorageS3::Configuration copyAndUpdateConfiguration(ContextPtr local_context, const Configuration & configuration);
-    static void updateConfiguration(ContextPtr local_context, Configuration & configuration);
+    static void updateConfiguration(ContextPtr ctx, StorageS3::Configuration & upd);
 
 private:
     friend class StorageS3Cluster;
