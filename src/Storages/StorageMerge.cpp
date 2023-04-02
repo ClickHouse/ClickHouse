@@ -649,14 +649,13 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryProcessingStage::Complete,
         storage_snapshot,
         modified_query_info);
+
     if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
-        /// Steps for reading from child tables should have the same lifetime as the current step
-        /// because `builder` can have references to them (mainly for EXPLAIN PIPELINE).
         QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
@@ -709,12 +708,15 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
+        QueryPlan & plan = child_plans.emplace_back();
+
         if (allow_experimental_analyzer)
         {
             InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections());
             builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
+            plan = std::move(interpreter.getPlanner()).extractQueryPlan();
         }
         else
         {
@@ -723,7 +725,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections()};
-            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
+            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline(plan));
         }
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
