@@ -122,7 +122,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
             {
                 if (check(k_q, i / f_n2, 0.))
                     u[0] = 1.;
-                for (UInt64 j = 1; j <= n1; j++) 
+                for (UInt64 j = 1; j <= n1; j++)
                     if (check(k_q, i / f_n2, j / f_n1))
                         u[j] = 1.;
                     else
