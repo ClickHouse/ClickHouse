@@ -409,7 +409,7 @@ void FillingTransform::initColumns(
 template<typename Predicate>
 size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
 {
-    assert(begin < end);
+    chassert(begin < end);
 
     const size_t linear_probe_threadhold = 16;
     size_t linear_probe_end = begin + linear_probe_threadhold;
@@ -452,7 +452,8 @@ void FillingTransform::transform(Chunk & chunk)
     MutableColumns result_columns;
 
     Block interpolate_block;
-
+    const size_t num_rows = chunk.getNumRows();
+    auto old_columns = chunk.detachColumns();
     if (generate_suffix)
     {
         const auto & empty_columns = input.getHeader().getColumns();
@@ -465,39 +466,19 @@ void FillingTransform::transform(Chunk & chunk)
             res_fill_columns,
             res_interpolate_columns,
             res_other_columns);
-
-        if (first)
-            filling_row.initFromDefaults();
-
-        if (should_insert_first && filling_row < next_row)
-        {
-            interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-        }
-
-        interpolate(result_columns, interpolate_block);
-        while (filling_row.next(next_row))
-        {
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-            interpolate(result_columns, interpolate_block);
-        }
-
-        size_t num_output_rows = result_columns[0]->size();
-        chunk.setColumns(std::move(result_columns), num_output_rows);
-        return;
     }
-
-    const size_t num_rows = chunk.getNumRows();
-    auto old_columns = chunk.detachColumns();
-    initColumns(
-        old_columns,
-        old_fill_columns,
-        old_interpolate_columns,
-        old_other_columns,
-        result_columns,
-        res_fill_columns,
-        res_interpolate_columns,
-        res_other_columns);
+    else
+    {
+        initColumns(
+            old_columns,
+            old_fill_columns,
+            old_interpolate_columns,
+            old_other_columns,
+            result_columns,
+            res_fill_columns,
+            res_interpolate_columns,
+            res_other_columns);
+    }
 
     if (sort_prefix.empty())
     {
@@ -516,36 +497,46 @@ void FillingTransform::transform(Chunk & chunk)
         return;
     }
 
-    transformImpl(
-        old_fill_columns,
-        old_interpolate_columns,
-        old_other_columns,
-        result_columns,
-        res_fill_columns,
-        res_interpolate_columns,
-        res_other_columns,
-        {0, num_rows});
+    /// init sort prefix columns
+    ColumnRawPtrs sort_prefix_columns;
+    sort_prefix_columns.reserve(sort_prefix.size());
+    for (size_t pos : sort_prefix_positions)
+        sort_prefix_columns.push_back(old_columns[pos].get());
+
+    /// TODO: use sort prefix row from previous chunk
+
+    for (size_t row_ind = 0; row_ind < num_rows;)
+    {
+        auto current_sort_prefix_end_pos = getRangeEnd(
+            row_ind,
+            num_rows,
+            [&](size_t pos_with_current_sort_prefix, size_t row_pos)
+            {
+                for (size_t i = 0; i < sort_prefix_columns.size(); ++i)
+                {
+                    const int res
+                        = sort_prefix_columns[i]->compareAt(pos_with_current_sort_prefix, row_pos, *sort_prefix_columns[i], sort_prefix[i].nulls_direction);
+                    if (res != 0)
+                        return false;
+                }
+                return true;
+            });
+
+        transformImpl(
+            old_fill_columns,
+            old_interpolate_columns,
+            old_other_columns,
+            result_columns,
+            res_fill_columns,
+            res_interpolate_columns,
+            res_other_columns,
+            {0, current_sort_prefix_end_pos});
+
+        row_ind = current_sort_prefix_end_pos;
+    }
 
     size_t num_output_rows = result_columns[0]->size();
     chunk.setColumns(std::move(result_columns), num_output_rows);
-
-    // /// find next range
-    // MutableColumns current_sort_prefix;
-    // for (size_t i = 0, size = sort_prefix_positions.size(); i < size; ++i)
-    //     current_sort_prefix.push_back(old_fill_columns[sort_prefix_positions[i]]->cloneEmpty()->assumeMutable());
-
-    // for (size_t row_ind = 0; row_ind < num_rows;)
-    // {
-
-    //     for (size_t i = 0, size = sort_prefix_positions.size(); i < size; ++i)
-    //     {
-    //         current_sort_prefix.push_back(old_fill_columns[sort_prefix_positions[i]]->cloneEmpty()->assumeMutable());
-    //         current_sort_prefix.back().get()->insertRangeFrom(*old_fill_columns[sort_prefix_positions[i]], 0, num_rows);
-    //     }
-
-    // }
-
-
 }
 
 void FillingTransform::transformImpl(
@@ -561,6 +552,29 @@ void FillingTransform::transformImpl(
     const size_t range_begin = range.first;
     const size_t range_end = range.second;
     Block interpolate_block;
+
+    if (generate_suffix)
+    {
+        chassert(range_begin == range_end);
+
+        if (first)
+            filling_row.initFromDefaults();
+
+        if (should_insert_first && filling_row < next_row)
+        {
+            interpolate(result_columns, interpolate_block);
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+        }
+
+        interpolate(result_columns, interpolate_block);
+        while (filling_row.next(next_row))
+        {
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            interpolate(result_columns, interpolate_block);
+        }
+
+        return;
+    }
 
     if (first)
     {
