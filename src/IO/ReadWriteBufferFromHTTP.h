@@ -106,7 +106,8 @@ namespace detail
         };
         std::string protocol = "tcp";
 
-        void setProtocol(std::string protocol_) {
+        void setProtocol(std::string protocol_)
+        {
             protocol = protocol_;
         }
 
@@ -206,8 +207,10 @@ namespace detail
             auto sess = current_session->getSession();
             try
             {
-                if (protocol == "enet") {
-                    if (enet_initialize() != 0) {
+                if (protocol == "enet")
+                {
+                    if (enet_initialize() != 0)
+                    {
                         LOG_ERROR(log, "Cannot initialize enet.");
                     }
 
@@ -219,7 +222,7 @@ namespace detail
                                 0 /* assume any amount of outgoing bandwidth */);
                     if (client == nullptr)
                     {
-                        fprintf (stderr, 
+                        fprintf (stderr,
                                 "An error occurred while trying to create an ENet client host.\n");
                     }
 
@@ -230,17 +233,16 @@ namespace detail
                     std::string request_string =  stream.str();
                     const char* request_cstr = request_string.c_str();
 
-                    ENetPacket * packet = enet_packet_create (request_cstr, 
-                                            sizeof(request_cstr) + 1, 
+                    ENetPacket * packet = enet_packet_create (request_cstr,
+                                            sizeof(request_cstr) + 1,
                                             ENET_PACKET_FLAG_RELIABLE);
 
                     ENetAddress address;
 
-                
                     enet_address_set_host (& address, uri_.getHost().c_str());
                     address.port = uri_.getPort();
 
-                    ENetPeer * peer = enet_host_connect(client, &address, 2, 0);  
+                    ENetPeer * peer = enet_host_connect(client, &address, 2, 0);
 
                     ENetEvent event;
 
@@ -255,8 +257,10 @@ namespace detail
                     if (out_stream_callback)
                         out_stream_callback(stream_out);
                     
-                    while (enet_host_service(client, &event, 3000) > 0) {
-                        switch (event.type) {
+                    while (enet_host_service(client, &event, 3000) > 0)
+                    {
+                        switch (event.type)
+                        {
                             case ENET_EVENT_TYPE_RECEIVE:
                                 // Receive packet from Service
                                 {
@@ -274,7 +278,9 @@ namespace detail
 
                     content_encoding = response.get("Content-Encoding", "");
                     return istr;
-                } else {
+                }
+                else
+                {
                     auto & stream_out = sess->sendRequest(request);
 
                     if (out_stream_callback)
