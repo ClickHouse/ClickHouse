@@ -132,7 +132,7 @@ TEST(FindSymbols, RunTimeNeedle)
         } \
         while (false)
 
-        // findable symbol is at beginnig of the needle
+        // findable symbol is at beginning of the needle
         // Can find at first pos of haystack
         TEST_WITH_MODIFIED_NEEDLE(haystack, unfindable_needle, needle.front() = haystack.front());
         // Can find at first pos of haystack
@@ -168,7 +168,7 @@ TEST(FindSymbols, RunTimeNeedle)
     const std::string long_haystack = "Hello, world! Goodbye...?";
     const std::string short_haystack = "Hello, world!";
 
-    // In sync with find_first_symbols_dispatch code: long needles receve special treatment.
+    // In sync with find_first_symbols_dispatch code: long needles receive special treatment.
     // as of now "long" means >= 5
     const std::string unfindable_long_needle = "0123456789ABCDEF";
     const std::string unfindable_short_needle = "0123";
