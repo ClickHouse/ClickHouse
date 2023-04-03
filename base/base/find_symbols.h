@@ -180,9 +180,9 @@ template <bool positive, ReturnMode return_mode>
 inline const char * find_first_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
 {
     const char * pos = begin;
-    const auto needles = mm_is_in_prepare(symbols, num_chars);
 
 #if defined(__SSE2__)
+    const auto needles = mm_is_in_prepare(symbols, num_chars);
     for (; pos + 15 < end; pos += 16)
     {
         __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
