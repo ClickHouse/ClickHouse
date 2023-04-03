@@ -1623,7 +1623,6 @@ class ClickHouseCluster:
         config_root_name: str = "clickhouse",
         extra_configs: tp.Optional[tp.List[str]] = None,
     ) -> "ClickHouseInstance":
-
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.

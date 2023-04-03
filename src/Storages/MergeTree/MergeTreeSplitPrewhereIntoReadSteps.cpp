@@ -93,7 +93,13 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         return new_node;
     }
 
-    /// TODO: Do we need to handle ALIAS nodes in cloning?
+    if (original_dag_node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        const auto & alias_child = addClonedDAGToDAG(original_dag_node->children[0], new_dag, node_remap);
+        const auto & new_node = new_dag->addAlias(alias_child, original_dag_node->result_name);
+        node_remap[node_name] = {new_dag, &new_node};
+        return new_node;
+    }
 
     /// If the node is a function, add it as a function and add its children
     if (original_dag_node->type == ActionsDAG::ActionType::FUNCTION)

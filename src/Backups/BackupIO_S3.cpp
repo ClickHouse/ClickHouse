@@ -11,6 +11,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/Credentials.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -65,10 +66,17 @@ namespace
             credentials.GetAWSSecretKey(),
             settings.auth_settings.server_side_encryption_customer_key_base64,
             std::move(headers),
-            settings.auth_settings.use_environment_credentials.value_or(
-                context->getConfigRef().getBool("s3.use_environment_credentials", false)),
-            settings.auth_settings.use_insecure_imds_request.value_or(
-                context->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+            S3::CredentialsConfiguration
+            {
+                settings.auth_settings.use_environment_credentials.value_or(
+                    context->getConfigRef().getBool("s3.use_environment_credentials", false)),
+                settings.auth_settings.use_insecure_imds_request.value_or(
+                    context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
+                settings.auth_settings.expiration_window_seconds.value_or(
+                    context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
+                settings.auth_settings.no_sign_request.value_or(
+                    context->getConfigRef().getBool("s3.no_sign_request", false)),
+            });
     }
 
     Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)

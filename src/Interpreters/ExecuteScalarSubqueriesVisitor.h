@@ -36,6 +36,7 @@ public:
         Scalars & scalars;
         Scalars & local_scalars;
         bool only_analyze;
+        bool is_create_parameterized_view;
     };
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr &);
