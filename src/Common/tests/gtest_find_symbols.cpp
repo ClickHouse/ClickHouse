@@ -17,7 +17,7 @@ void test_find_first_not(const std::string & haystack, const std::string & symbo
 {
     const char * begin = haystack.data();
 
-    ASSERT_EQ(begin + expected_pos, find_first_not_symbols(haystack, symbols));
+    ASSERT_EQ(begin + expected_pos, find_first_not_symbols(haystack, SearchSymbols(symbols)));
 }
 
 
@@ -114,7 +114,7 @@ TEST(FindSymbols, RunTimeNeedle)
             const auto & n = needle_; \
             EXPECT_EQ( \
                     std::find_first_of(h.data(), h.data() + h.size(), n.data(), n.data() + n.size()), \
-                    find_first_symbols(h, n) \
+                    find_first_symbols(h, SearchSymbols(n)) \
             ) << "haystack: \"" << h << "\" (" << static_cast<const void*>(h.data()) << ")" \
               << ", needle: \"" << n << "\""; \
         } \
@@ -186,10 +186,10 @@ TEST(FindSymbols, RunTimeNeedle)
     }
 
     // Check that nothing matches on big haystack,
-    EXPECT_EQ(find_first_symbols(long_haystack, "ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz"), long_haystack.data() + long_haystack.size());
+    EXPECT_EQ(find_first_symbols(long_haystack, SearchSymbols("ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz")), long_haystack.data() + long_haystack.size());
 
     // only 16 bytes of haystack are checked, so nothing is found
-    EXPECT_EQ(find_first_symbols(long_haystack, "ABCDEFIJKLMNOPQR0helloworld"), long_haystack.data() + long_haystack.size());
+    EXPECT_EQ(find_first_symbols(long_haystack, SearchSymbols("ABCDEFIJKLMNOPQR0helloworld")), long_haystack.data() + long_haystack.size());
 }
 
 TEST(FindNotSymbols, AllSymbolsPresent)
@@ -224,14 +224,14 @@ TEST(FindNotSymbols, NoSymbolsMatch)
 
     // begin should be returned since the first character of the string does not match any of the below symbols
     test_find_first_not<'h', 'i', 'j'>(s, 0u);
-    test_find_first_not(s, "hij",0u);
+    test_find_first_not(s, "hij", 0u);
 }
 
 TEST(FindNotSymbols, ExtraSymbols)
 {
     std::string s = "hello_world_hello";
     test_find_first_not<'h', 'e', 'l', 'o', ' '>(s, 5u);
-    test_find_first_not(s, "helo ",5u);
+    test_find_first_not(s, "helo ", 5u);
 }
 
 TEST(FindNotSymbols, EmptyString)
