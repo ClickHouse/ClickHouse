@@ -14,6 +14,7 @@ node_old = cluster.add_instance(
 )
 node_new = cluster.add_instance(
     "node2",
+    main_configs=["configs/no_compress_marks.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -41,9 +42,7 @@ def test_vertical_merges_from_comapact_parts(start_cluster):
                 vertical_merge_algorithm_min_rows_to_activate = 1,
                 vertical_merge_algorithm_min_columns_to_activate = 1,
                 min_bytes_for_wide_part = 0,
-                min_rows_for_wide_part = 100,
-                compress_marks = 0,
-                compress_primary_key = 0;
+                min_rows_for_wide_part = 100;
         """.format(
                 i
             )
