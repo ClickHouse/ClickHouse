@@ -7,3 +7,7 @@
     Sorting (Stream): a ASC, b ASC, c ASC
       ReadFromMergeTree (default.tab)
       Sorting (Stream): a ASC, b ASC, c ASC
+  Aggregating
+  Order: default.tab.a_0 ASC, default.tab.c_2 ASC
+    Sorting (Stream): a ASC, b ASC, c ASC
+        ReadFromMergeTree (default.tab)
