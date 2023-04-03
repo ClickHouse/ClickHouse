@@ -1,6 +1,7 @@
 import base64
 
 import docker
+import docker.models.containers
 import errno
 import http.client
 import logging
@@ -33,6 +34,7 @@ try:
     import pymongo
     import pymysql
     import nats
+    import nats.aio.client
     import ssl
     import meilisearch
     from confluent_kafka.avro.cached_schema_registry_client import (
@@ -48,7 +50,7 @@ from minio import Minio
 from urllib3.util.retry import Retry
 
 from helpers import pytest_xdist_logging_to_separate_files, config_cluster
-from helpers.client import QueryRuntimeException, Client
+from helpers.client import QueryRuntimeException, Client, CommandRequest
 from helpers.hdfs_api import HDFSApi
 from helpers.test_tools import exec_query_with_retry
 
@@ -64,7 +66,7 @@ SANITIZER_SIGN = "=================="
 
 
 # to create docker-compose env file
-def _create_env_file(path: str, variables: tp.Dict[str, str]):
+def _create_env_file(path: str, variables: tp.Dict[str, str]) -> str:
     logging.debug(f"Env {variables} stored in {path}")
 
     with open(path, "w") as f:
@@ -122,7 +124,7 @@ def run_and_check(
 
 
 # Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
-def get_free_port():
+def get_free_port() -> int:
     with socket.socket() as s:
         s.bind(("", 0))
         return s.getsockname()[1]
@@ -135,7 +137,7 @@ def retry_exception(
     exception: tp.Type[Exception] = Exception,
     *args,
     **kwargs,
-):
+) -> None:
     i = 0
 
     while i <= num:
@@ -150,13 +152,13 @@ def retry_exception(
     raise StopIteration("Function did not finished successfully")
 
 
-def subprocess_check_call(args, detach=False, nothrow=False):
+def subprocess_check_call(args, detach=False, nothrow=False) -> tp.Optional[str]:
     # Uncomment for debugging
     # logging.info('run:' + ' '.join(args))
     return run_and_check(args, detach=detach, nothrow=nothrow)
 
 
-def get_odbc_bridge_path():
+def get_odbc_bridge_path() -> str:
     path = os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH")
     if path is None:
         server_path = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
@@ -167,7 +169,7 @@ def get_odbc_bridge_path():
     return path
 
 
-def get_library_bridge_path():
+def get_library_bridge_path() -> str:
     path = os.environ.get("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH")
     if path is None:
         server_path = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
@@ -180,7 +182,7 @@ def get_library_bridge_path():
     return path
 
 
-def get_docker_compose_path():
+def get_docker_compose_path() -> str:
     compose_path = os.environ.get("DOCKER_COMPOSE_DIR")
     if compose_path is not None:
         return os.path.dirname(compose_path)
@@ -194,7 +196,7 @@ def get_docker_compose_path():
             return LOCAL_DOCKER_COMPOSE_DIR
 
 
-def check_kafka_is_available(kafka_id: str, kafka_port: int):
+def check_kafka_is_available(kafka_id: str, kafka_port: int) -> bool:
     process = subprocess.Popen(
         (
             "docker",
@@ -212,7 +214,7 @@ def check_kafka_is_available(kafka_id: str, kafka_port: int):
     return process.returncode == 0
 
 
-def check_kerberos_kdc_is_available(kerberos_kdc_id: str):
+def check_kerberos_kdc_is_available(kerberos_kdc_id: str) -> bool:
     process = subprocess.Popen(
         (
             "docker",
@@ -229,7 +231,7 @@ def check_kerberos_kdc_is_available(kerberos_kdc_id: str):
     return process.returncode == 0
 
 
-def check_postgresql_java_client_is_available(postgresql_java_client_id: str):
+def check_postgresql_java_client_is_available(postgresql_java_client_id: str) -> bool:
     process = subprocess.Popen(
         ("docker", "exec", "-i", postgresql_java_client_id, "java", "-version"),
         stdout=subprocess.PIPE,
@@ -238,7 +240,7 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id: str):
     return process.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id: str):
+def check_rabbitmq_is_available(rabbitmq_id: str) -> bool:
     process = subprocess.Popen(
         ("docker", "exec", "-i", rabbitmq_id, "rabbitmqctl", "await_startup"),
         stdout=subprocess.PIPE,
@@ -247,7 +249,7 @@ def check_rabbitmq_is_available(rabbitmq_id: str):
     return process.returncode == 0
 
 
-async def check_nats_is_available(nats_port, ssl_ctx=None):
+async def check_nats_is_available(nats_port, ssl_ctx=None) -> bool:
     nc = await nats_connect_ssl(
         nats_port, user="click", password="house", ssl_ctx=ssl_ctx
     )
@@ -256,7 +258,7 @@ async def check_nats_is_available(nats_port, ssl_ctx=None):
     return available
 
 
-async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None) -> "nats.aio.client.Client":
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -270,7 +272,7 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
     return nc
 
 
-def enable_consistent_hash_plugin(rabbitmq_id: str):
+def enable_consistent_hash_plugin(rabbitmq_id: str) -> bool:
     process = subprocess.Popen(
         (
             "docker",
@@ -287,7 +289,7 @@ def enable_consistent_hash_plugin(rabbitmq_id: str):
     return process.returncode == 0
 
 
-def get_instances_dir(name: str):
+def get_instances_dir(name: str) -> str:
     instances_dir_name = "_instances"
 
     run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
@@ -301,7 +303,7 @@ def get_instances_dir(name: str):
     return instances_dir_name
 
 
-def extract_test_name(base_path: str):
+def extract_test_name(base_path: str) -> str:
     """Extracts the name of the test based to a path to its test*.py file
     Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
     """
@@ -641,7 +643,7 @@ class ClickHouseCluster:
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
 
-    def print_all_docker_pieces(self):
+    def print_all_docker_pieces(self) -> None:
         res_networks = subprocess.check_output(
             f"docker network ls --filter name='{self.project_name}*'",
             shell=True,
@@ -667,7 +669,7 @@ class ClickHouseCluster:
             f"Docker volumes for project {self.project_name} are {res_volumes}"
         )
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         logging.debug("Cleanup called")
         self.print_all_docker_pieces()
 
@@ -740,7 +742,7 @@ class ClickHouseCluster:
         except:
             pass
 
-    def get_docker_handle(self, docker_id: str):
+    def get_docker_handle(self, docker_id: str) -> docker.models.containers.Container:
         exception = None
         for i in range(5):
             try:
@@ -751,14 +753,14 @@ class ClickHouseCluster:
                 exception = ex
         raise exception
 
-    def get_client_cmd(self):
+    def get_client_cmd(self) -> str:
         cmd = self.client_bin_path
         if p.basename(cmd) == "clickhouse":
             cmd += " client"
         return cmd
 
     # Returns the list of currently running docker containers corresponding to this ClickHouseCluster.
-    def get_running_containers(self):
+    def get_running_containers(self) -> tp.Dict[str, str]:
         # docker-compose names containers using the following formula:
         # container_name = project_name + '_' + instance_name + '_1'
         # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
@@ -779,7 +781,7 @@ class ClickHouseCluster:
         src_path: str,
         dst_node: "ClickHouseInstance",
         dst_path: str,
-    ):
+    ) -> None:
         fname = os.path.basename(src_path)
         run_and_check(
             [f"docker cp {src_node.docker_id}:{src_path} {self.instances_dir}"],
@@ -795,7 +797,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         logging.debug("Setup ZooKeeper Secure")
         zookeeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_zookeeper_secure.yml"
@@ -833,7 +835,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         logging.debug("Setup ZooKeeper")
         zookeeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_zookeeper.yml"
@@ -870,7 +872,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         logging.debug("Setup Keeper")
         keeper_docker_compose_path = p.join(
             docker_compose_yml_dir, "docker_compose_keeper.yml"
@@ -923,7 +925,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         _,
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_mysql_client = True
         self.base_cmd.extend(
             [
@@ -948,7 +950,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_mysql = True
         env_variables["MYSQL_HOST"] = self.mysql_host
         env_variables["MYSQL_PORT"] = str(self.mysql_port)
@@ -975,7 +977,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_mysql8 = True
         env_variables["MYSQL8_HOST"] = self.mysql8_host
         env_variables["MYSQL8_PORT"] = str(self.mysql8_port)
@@ -1002,7 +1004,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_mysql_cluster = True
         env_variables["MYSQL_CLUSTER_PORT"] = str(self.mysql_port)
         env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
@@ -1032,7 +1034,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres.yml")]
         )
@@ -1057,7 +1059,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_postgres_cluster = True
         env_variables["POSTGRES_PORT"] = str(self.postgres_port)
         env_variables["POSTGRES2_DIR"] = self.postgres2_logs_dir
@@ -1080,12 +1082,14 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
         ]
 
+        return self.base_postgres_cluster_cmd
+
     def setup_postgresql_java_client_cmd(
         self,
         instance: "ClickHouseInstance",
         _,
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_postgresql_java_client = True
         self.base_cmd.extend(
             [
@@ -1104,13 +1108,14 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         ]
+        return self.base_postgresql_java_client_cmd
 
     def setup_hdfs_cmd(
         self,
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_hdfs = True
         env_variables["HDFS_HOST"] = self.hdfs_host
         env_variables["HDFS_NAME_PORT"] = str(self.hdfs_name_port)
@@ -1137,7 +1142,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_kerberized_hdfs = True
         env_variables["KERBERIZED_HDFS_HOST"] = self.hdfs_kerberized_host
         env_variables["KERBERIZED_HDFS_NAME_PORT"] = str(self.hdfs_kerberized_name_port)
@@ -1167,7 +1172,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
         env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
@@ -1192,7 +1197,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_kerberized_kafka = True
         env_variables["KERBERIZED_KAFKA_DIR"] = instance.path + "/"
         env_variables["KERBERIZED_KAFKA_HOST"] = self.kerberized_kafka_host
@@ -1221,7 +1226,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_kerberos_kdc = True
         env_variables["KERBEROS_KDC_DIR"] = self.instances_dir + "/"
         env_variables["KERBEROS_KDC_HOST"] = self.kerberos_kdc_host
@@ -1247,7 +1252,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_redis = True
         env_variables["REDIS_HOST"] = self.redis_host
         env_variables["REDIS_EXTERNAL_PORT"] = str(self.redis_port)
@@ -1272,7 +1277,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
@@ -1298,7 +1303,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_nats = True
         env_variables["NATS_HOST"] = self.nats_host
         env_variables["NATS_INTERNAL_PORT"] = "4444"
@@ -1324,7 +1329,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_mongo = self.with_mongo_secure = True
         env_variables["MONGO_HOST"] = self.mongo_host
         env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
@@ -1352,7 +1357,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
         env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
@@ -1378,7 +1383,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_coredns = True
         env_variables["COREDNS_CONFIG_DIR"] = instance.path + "/" + "coredns_config"
         self.base_cmd.extend(
@@ -1402,7 +1407,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_meili = True
         env_variables["MEILI_HOST"] = self.meili_host
         env_variables["MEILI_EXTERNAL_PORT"] = str(self.meili_port)
@@ -1431,7 +1436,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
         env_variables["MINIO_CERTS_DIR"] = cert_d
@@ -1458,7 +1463,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         _,
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_azurite = True
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
@@ -1479,7 +1484,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_cassandra = True
         env_variables["CASSANDRA_PORT"] = str(self.cassandra_port)
         self.base_cmd.extend(
@@ -1501,7 +1506,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         env_variables: tp.Dict[str, str],
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_jdbc_bridge = True
         env_variables["JDBC_DRIVER_LOGS"] = self.jdbc_driver_logs_dir
         env_variables["JDBC_DRIVER_FS"] = "bind"
@@ -1524,7 +1529,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         _,
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_nginx = True
 
         self.base_cmd.extend(
@@ -1546,7 +1551,7 @@ class ClickHouseCluster:
         instance: "ClickHouseInstance",
         _,
         docker_compose_yml_dir: str,
-    ):
+    ) -> tp.List[str]:
         self.with_hive = True
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_hive.yml")]
@@ -1851,19 +1856,19 @@ class ClickHouseCluster:
 
         return instance
 
-    def get_instance_docker_id(self, instance_name: str):
+    def get_instance_docker_id(self, instance_name: str) -> str:
         # According to how docker-compose names containers.
         return self.project_name + "_" + instance_name + "_1"
 
     @staticmethod
-    def _replace(path: str, what: str, to: str):
+    def _replace(path: str, what: str, to: str) -> None:
         with open(path, "r") as fd:
             data = fd.read()
         data = data.replace(what, to)
         with open(path, "w") as fd:
             fd.write(data)
 
-    def restart_instance_with_ip_change(self, node: "ClickHouseInstance", new_ip: str):
+    def restart_instance_with_ip_change(self, node: "ClickHouseInstance", new_ip: str) -> "ClickHouseInstance":
         if "::" in new_ip:
             if node.ipv6_address is None:
                 raise Exception("You should specify ipv6_address in add_node method")
@@ -1892,10 +1897,10 @@ class ClickHouseCluster:
 
         return node
 
-    def restart_service(self, service_name: str):
+    def restart_service(self, service_name: str) -> None:
         run_and_check(self.base_cmd + ["restart", service_name])
 
-    def get_instance_ip(self, instance_name: str):
+    def get_instance_ip(self, instance_name: str) -> str:
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
         # for cont in self.docker_client.containers.list():
@@ -1905,7 +1910,7 @@ class ClickHouseCluster:
             "IPAddress"
         ]
 
-    def get_instance_global_ipv6(self, instance_name: str):
+    def get_instance_global_ipv6(self, instance_name: str) -> str:
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
         # for cont in self.docker_client.containers.list():
@@ -1915,10 +1920,10 @@ class ClickHouseCluster:
             "GlobalIPv6Address"
         ]
 
-    def get_container_id(self, instance_name: str):
+    def get_container_id(self, instance_name: str) -> str:
         return self.get_instance_docker_id(instance_name)
 
-    def get_container_logs(self, instance_name: str):
+    def get_container_logs(self, instance_name: str) -> str:
         container_id = self.get_container_id(instance_name)
         return self.docker_client.api.logs(container_id).decode()
 
@@ -1930,7 +1935,7 @@ class ClickHouseCluster:
         nothrow: bool = False,
         use_cli: bool = True,
         **kwargs,
-    ):
+    ) -> tp.Optional[str]:
         if use_cli:
             logging.debug(
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
@@ -1974,7 +1979,7 @@ class ClickHouseCluster:
 
     def copy_file_to_container(
         self, container_id: str, local_path: str, dest_path: str
-    ):
+    ) -> None:
         with open(local_path, "r") as fdata:
             data = fdata.read()
             encoded_str = base64.b64encode(data.encode()).decode()
@@ -1994,7 +1999,7 @@ class ClickHouseCluster:
         conn_timeout: int = 2,
         interval: int = 2,
         timeout: int = 60,
-    ):
+    ) -> None:
         if not url.startswith("http"):
             url = "http://" + url
         if interval <= 0:
@@ -2026,7 +2031,7 @@ class ClickHouseCluster:
             f"Cannot wait URL {url}(interval={interval}, timeout={timeout}, attempts={attempts})"
         )
 
-    def wait_mysql_client_to_start(self, timeout: float = 180):
+    def wait_mysql_client_to_start(self, timeout: float = 180) -> None:
         start = time.time()
         errors = []
         self.mysql_client_container = self.get_docker_handle(
@@ -2050,7 +2055,7 @@ class ClickHouseCluster:
         logging.error(f"Can't connect to MySQL Client:{errors}")
         raise Exception("Cannot wait MySQL Client container")
 
-    def wait_mysql_to_start(self, timeout: float = 180):
+    def wait_mysql_to_start(self, timeout: float = 180) -> None:
         self.mysql_ip = self.get_instance_ip("mysql57")
         start = time.time()
         errors = []
@@ -2073,7 +2078,7 @@ class ClickHouseCluster:
         logging.error(f"Can't connect to MySQL:{errors}")
         raise Exception("Cannot wait MySQL container")
 
-    def wait_mysql8_to_start(self, timeout: float = 180):
+    def wait_mysql8_to_start(self, timeout: float = 180) -> None:
         self.mysql8_ip = self.get_instance_ip("mysql80")
         start = time.time()
         while time.time() - start < timeout:
@@ -2094,7 +2099,7 @@ class ClickHouseCluster:
         run_and_check(["docker", "ps", "--all"])
         raise Exception("Cannot wait MySQL 8 container")
 
-    def wait_mysql_cluster_to_start(self, timeout: float = 180):
+    def wait_mysql_cluster_to_start(self, timeout: float = 180) -> None:
         self.mysql2_ip = self.get_instance_ip(self.mysql2_host)
         self.mysql3_ip = self.get_instance_ip(self.mysql3_host)
         self.mysql4_ip = self.get_instance_ip(self.mysql4_host)
@@ -2120,7 +2125,7 @@ class ClickHouseCluster:
         logging.error(f"Can't connect to MySQL:{errors}")
         raise Exception("Cannot wait MySQL container")
 
-    def wait_postgres_to_start(self, timeout: float = 260):
+    def wait_postgres_to_start(self, timeout: float = 260) -> None:
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
         start = time.time()
         while time.time() - start < timeout:
@@ -2142,7 +2147,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_postgres_cluster_to_start(self, timeout: float = 180):
+    def wait_postgres_cluster_to_start(self, timeout: float = 180) -> None:
         self.postgres2_ip = self.get_instance_ip(self.postgres2_host)
         self.postgres3_ip = self.get_instance_ip(self.postgres3_host)
         self.postgres4_ip = self.get_instance_ip(self.postgres4_host)
@@ -2201,7 +2206,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_postgresql_java_client(self, timeout: float = 180):
+    def wait_postgresql_java_client(self, timeout: float = 180) -> bool:
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -2216,7 +2221,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout: float = 180, throw: bool = True):
+    def wait_rabbitmq_to_start(self, timeout: float = 180, throw: bool = True) -> bool:
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
@@ -2236,7 +2241,7 @@ class ClickHouseCluster:
             raise Exception("Cannot wait RabbitMQ container")
         return False
 
-    def wait_nats_is_available(self, max_retries: int = 5):
+    def wait_nats_is_available(self, max_retries: int = 5) -> None:
         retries = 0
         while True:
             if asyncio.run(
@@ -2250,7 +2255,7 @@ class ClickHouseCluster:
                 logging.debug("Waiting for NATS to start up")
                 time.sleep(1)
 
-    def wait_zookeeper_secure_to_start(self, timeout: float = 20):
+    def wait_zookeeper_secure_to_start(self, timeout: float = 20) -> None:
         logging.debug("Wait ZooKeeper Secure to start")
         start = time.time()
         while time.time() - start < timeout:
@@ -2267,7 +2272,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper secure container")
 
-    def wait_zookeeper_to_start(self, timeout: float = 180):
+    def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
         logging.debug("Wait ZooKeeper to start")
         start = time.time()
         while time.time() - start < timeout:
@@ -2287,7 +2292,7 @@ class ClickHouseCluster:
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         )
 
-    def make_hdfs_api(self, timeout: float = 180, kerberized: bool = False):
+    def make_hdfs_api(self, timeout: float = 180, kerberized: bool = False) -> None:
         if kerberized:
             keytab = p.abspath(
                 p.join(self.instances["node1"].path, "secrets/clickhouse.keytab")
@@ -2324,7 +2329,7 @@ class ClickHouseCluster:
 
     def wait_kafka_is_available(
         self, kafka_docker_id: str, kafka_port: int, max_retries: int = 50
-    ):
+    ) -> None:
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
@@ -2349,7 +2354,7 @@ class ClickHouseCluster:
     @staticmethod
     def wait_kerberos_kdc_is_available(
         kerberos_kdc_docker_id: str, max_retries: int = 50
-    ):
+    ) -> None:
         retries = 0
         while True:
             if check_kerberos_kdc_is_available(kerberos_kdc_docker_id):
@@ -2361,7 +2366,7 @@ class ClickHouseCluster:
                 logging.debug("Waiting for Kerberos KDC to start up")
                 time.sleep(1)
 
-    def wait_hdfs_to_start(self, timeout: float = 300, check_marker: bool = False):
+    def wait_hdfs_to_start(self, timeout: float = 300, check_marker: bool = False) -> None:
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -2379,7 +2384,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait HDFS to start")
 
-    def wait_mongo_to_start(self, timeout: float = 30, secure: bool = False):
+    def wait_mongo_to_start(self, timeout: float = 30, secure: bool = False) -> None:
         connection_str = f"mongodb://{config_cluster.mongo_user}:{config_cluster.mongo_pass}@localhost:{self.mongo_port}"
 
         if secure:
@@ -2395,7 +2400,7 @@ class ClickHouseCluster:
                 logging.debug(f"Can't connect to Mongo {str(ex)}")
                 time.sleep(1)
 
-    def wait_meili_to_start(self, timeout: float = 30):
+    def wait_meili_to_start(self, timeout: float = 30) -> None:
         connection_str = f"http://localhost:{self.meili_port}"
         client = meilisearch.Client(connection_str)
 
@@ -2415,7 +2420,7 @@ class ClickHouseCluster:
                 logging.debug(f"Can't connect to MeiliSearch {str(ex)}")
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout: float = 180, secure: bool = False):
+    def wait_minio_to_start(self, timeout: float = 180, secure: bool = False) -> None:
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
 
@@ -2467,7 +2472,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
-    def wait_azurite_to_start(self, timeout: float = 180):
+    def wait_azurite_to_start(self, timeout: float = 180) -> None:
         from azure.storage.blob import BlobServiceClient
 
         connection_string = (
@@ -2493,7 +2498,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Azurite to start")
 
-    def wait_schema_registry_to_start(self, timeout: float = 180):
+    def wait_schema_registry_to_start(self, timeout: float = 180) -> "CachedSchemaRegistryClient":
         sr_client = CachedSchemaRegistryClient(
             {"url": f"http://localhost:{self.schema_registry_port}"}
         )
@@ -2509,7 +2514,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Schema Registry to start")
 
-    def wait_cassandra_to_start(self, timeout: float = 180):
+    def wait_cassandra_to_start(self, timeout: float = 180) -> None:
         self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
         cass_client = cassandra.cluster.Cluster(
             [self.cassandra_ip],
@@ -2541,7 +2546,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Cassandra to start")
 
-    def start(self):
+    def start(self) -> None:
         pytest_xdist_logging_to_separate_files.setup()
         logging.info(f"Running tests in {self.base_path}")
         if not os.path.exists(self.instances_dir):
@@ -2915,7 +2920,7 @@ class ClickHouseCluster:
             self.shutdown()
             raise
 
-    def shutdown(self, kill: bool = True, ignore_fatal: bool = True):
+    def shutdown(self, kill: bool = True, ignore_fatal: bool = True) -> None:
         sanitizer_assert_instance = None
         fatal_log = None
 
@@ -2995,16 +3000,16 @@ class ClickHouseCluster:
         if fatal_log is not None:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
-    def pause_container(self, instance_name: str):
+    def pause_container(self, instance_name: str) -> None:
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
-    def unpause_container(self, instance_name: str):
+    def unpause_container(self, instance_name: str) -> None:
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
 
-    def open_bash_shell(self, instance_name: str):
+    def open_bash_shell(self, instance_name: str) -> None:
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name: str):
+    def get_kazoo_client(self, zoo_instance_name: str) -> "KazooClient":
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
@@ -3034,7 +3039,7 @@ class ClickHouseCluster:
         zoo_instance_name: str = "zoo1",
         repeats: int = 1,
         sleep_for: int = 1,
-    ):
+    ) -> None:
         zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(
             f"run_kazoo_commands_with_retries: {zoo_instance_name}, {kazoo_callback}"
@@ -3049,15 +3054,15 @@ class ClickHouseCluster:
         kazoo_callback(zk)
         zk.stop()
 
-    def add_zookeeper_startup_command(self, command: str):
+    def add_zookeeper_startup_command(self, command: str) -> None:
         self.pre_zookeeper_commands.append(command)
 
-    def stop_zookeeper_nodes(self, zk_nodes: tp.List[str]):
+    def stop_zookeeper_nodes(self, zk_nodes: tp.List[str]) -> None:
         for n in zk_nodes:
             logging.info("Stopping zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
 
-    def start_zookeeper_nodes(self, zk_nodes: tp.List[str]):
+    def start_zookeeper_nodes(self, zk_nodes: tp.List[str]) -> None:
         for n in zk_nodes:
             logging.info("Starting zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
@@ -3290,25 +3295,25 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
 
-    def is_built_with_sanitizer(self, sanitizer_name: str = ""):
+    def is_built_with_sanitizer(self, sanitizer_name: str = "") -> bool:
         build_opts = self.query(
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return f"-fsanitize={sanitizer_name}" in build_opts
 
-    def is_debug_build(self):
+    def is_debug_build(self) -> bool:
         build_opts = self.query(
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
         return "NDEBUG" not in build_opts
 
-    def is_built_with_thread_sanitizer(self):
+    def is_built_with_thread_sanitizer(self) -> bool:
         return self.is_built_with_sanitizer("thread")
 
-    def is_built_with_address_sanitizer(self):
+    def is_built_with_address_sanitizer(self) -> bool:
         return self.is_built_with_sanitizer("address")
 
-    def is_built_with_memory_sanitizer(self):
+    def is_built_with_memory_sanitizer(self) -> bool:
         return self.is_built_with_sanitizer("memory")
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
@@ -3324,7 +3329,7 @@ class ClickHouseInstance:
         host: tp.Optional[str] = None,
         ignore_error: bool = False,
         query_id: tp.Optional[str] = None,
-    ):
+    ) -> str:
         if len(sql) > 1000:
             sql_for_log = sql[:1000]
         else:
@@ -3358,7 +3363,7 @@ class ClickHouseInstance:
         retry_count: int = 20,
         sleep_time: float = 0.5,
         check_callback: tp.Callable[[str], bool] = lambda x: True,
-    ):
+    ) -> str:
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
@@ -3386,7 +3391,7 @@ class ClickHouseInstance:
         raise Exception("Can't execute query {}".format(sql))
 
     # As query() but doesn't wait response and returns response handler
-    def get_query_request(self, sql: str, *args, **kwargs):
+    def get_query_request(self, sql: str, *args, **kwargs) -> CommandRequest:
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.get_query_request(sql, *args, **kwargs)
 
@@ -3400,7 +3405,7 @@ class ClickHouseInstance:
         user: tp.Optional[str] = None,
         password: tp.Optional[str] = None,
         database: tp.Optional[str] = None,
-    ):
+    ) -> str:
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_error(
             sql,
@@ -3423,7 +3428,7 @@ class ClickHouseInstance:
         database: tp.Optional[str] = None,
         retry_count: int = 20,
         sleep_time: float = 0.5,
-    ):
+    ) -> str:
         logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
@@ -3456,7 +3461,7 @@ class ClickHouseInstance:
         user: tp.Optional[str] = None,
         password: tp.Optional[str] = None,
         database: tp.Optional[str] = None,
-    ):
+    ) -> tp.Tuple[str, str]:
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_answer_with_error(
             sql,
@@ -3481,7 +3486,7 @@ class ClickHouseInstance:
         timeout: tp.Optional[float] = None,
         retry_strategy: tp.Optional[Retry] = None,
         content: bool = False,
-    ):
+    ) -> str:
         output, error = self.http_query_and_get_answer_with_error(
             sql,
             data=data,
@@ -3512,7 +3517,7 @@ class ClickHouseInstance:
         port: int = 8123,
         timeout: tp.Optional[float] = None,
         retry_strategy: tp.Optional[Retry] = None,
-    ):
+    ) -> str:
         output, error = self.http_query_and_get_answer_with_error(
             sql,
             data=data,
@@ -3546,7 +3551,7 @@ class ClickHouseInstance:
         timeout: tp.Optional[float] = None,
         retry_strategy: tp.Optional[Retry] = None,
         content: bool = False,
-    ):
+    ) -> tp.Tuple[tp.Optional[str], tp.Optional[str]]:
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
             params = {}
@@ -3590,14 +3595,14 @@ class ClickHouseInstance:
         params: tp.Optional[tp.Dict] = None,
         data: tp.Optional[tp.Union[tp.Dict, bytes]] = None,
         headers: tp.Optional[tp.Dict] = None,
-    ):
+    ) -> requests.Response:
         logging.debug(f"Sending HTTP request {url} to {self.name}")
         url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(
             method=method, url=url, params=params, data=data, headers=headers
         )
 
-    def stop_clickhouse(self, stop_wait_sec: float = 30, kill: bool = False):
+    def stop_clickhouse(self, stop_wait_sec: float = 30, kill: bool = False) -> None:
         if not self.stay_alive:
             raise Exception(
                 "clickhouse can be stopped only with stay_alive=True instance"
@@ -3651,7 +3656,7 @@ class ClickHouseInstance:
         except Exception as ex:
             logging.warning(f"Stop ClickHouse raised an error {ex}")
 
-    def start_clickhouse(self, start_wait_sec: float = 60, retry_start: bool = True):
+    def start_clickhouse(self, start_wait_sec: float = 60, retry_start: bool = True) -> None:
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3689,7 +3694,7 @@ class ClickHouseInstance:
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 
-    def wait_start(self, start_wait_sec: float):
+    def wait_start(self, start_wait_sec: float) -> None:
         start_time = time.time()
         while True:
             try:
@@ -3726,18 +3731,18 @@ class ClickHouseInstance:
         if last_err is not None:
             raise last_err
 
-    def restart_clickhouse(self, stop_start_wait_sec: float = 60, kill: bool = False):
+    def restart_clickhouse(self, stop_start_wait_sec: float = 60, kill: bool = False) -> None:
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
     def exec_in_container(
         self, cmd: tp.List[str], detach: bool = False, nothrow: bool = False, **kwargs
-    ):
+    ) -> str:
         return self.cluster.exec_in_container(
             self.docker_id, cmd, detach, nothrow, **kwargs
         )
 
-    def rotate_logs(self):
+    def rotate_logs(self) -> None:
         self.exec_in_container(
             ["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"],
             user="root",
@@ -3748,7 +3753,7 @@ class ClickHouseInstance:
         substring: str,
         from_host: bool = False,
         filename: str = "clickhouse-server.log",
-    ):
+    ) -> bool:
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
@@ -3774,7 +3779,7 @@ class ClickHouseInstance:
         from_host: bool = False,
         filename: str = "clickhouse-server.log",
         after: tp.Optional[str] = None,
-    ):
+    ) -> str:
         logging.debug(f"grep in log called %s", substring)
         if after is not None:
             after_opt = f"-A{after}"
@@ -3802,7 +3807,7 @@ class ClickHouseInstance:
         logging.debug("grep result %s", result)
         return result
 
-    def count_in_log(self, substring: str):
+    def count_in_log(self, substring: str) -> str:
         result = self.exec_in_container(
             [
                 "bash",
@@ -3821,7 +3826,7 @@ class ClickHouseInstance:
         timeout: float = 30,
         repetitions: int = 1,
         look_behind_lines: int = 100,
-    ):
+    ) -> float:
         start_time = time.time()
         result = self.exec_in_container(
             [
@@ -3848,7 +3853,7 @@ class ClickHouseInstance:
         )
         return wait_duration
 
-    def path_exists(self, path: str):
+    def path_exists(self, path: str) -> bool:
         return (
             self.exec_in_container(
                 [
@@ -3860,12 +3865,12 @@ class ClickHouseInstance:
             == "yes\n"
         )
 
-    def copy_file_to_container(self, local_path: str, dest_path: str):
+    def copy_file_to_container(self, local_path: str, dest_path: str) -> None:
         return self.cluster.copy_file_to_container(
             self.docker_id, local_path, dest_path
         )
 
-    def get_process_pid(self, process_name: str):
+    def get_process_pid(self, process_name: str) -> tp.Optional[int]:
         output = self.exec_in_container(
             [
                 "bash",
@@ -3886,7 +3891,7 @@ class ClickHouseInstance:
         stop_start_wait_sec: float = 300,
         callback_onstop: tp.Optional[OnStopCallback] = None,
         signal: int = 15,
-    ):
+    ) -> None:
         begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
@@ -3946,7 +3951,7 @@ class ClickHouseInstance:
         callback_onstop: tp.Optional[OnStopCallback] = None,
         signal: int = 15,
         fix_metadata: bool = False,
-    ):
+    ) -> None:
         begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
@@ -4021,20 +4026,20 @@ class ClickHouseInstance:
         else:
             self.wait_start(time_left)
 
-    def get_docker_handle(self):
+    def get_docker_handle(self) -> docker.models.containers.Container:
         return self.cluster.get_docker_handle(self.docker_id)
 
-    def stop(self):
+    def stop(self) -> None:
         self.get_docker_handle().stop()
 
-    def start(self):
+    def start(self) -> None:
         self.get_docker_handle().start()
 
     def wait_for_start(
         self,
         start_timeout: tp.Optional[float] = None,
         connection_timeout: tp.Optional[float] = None,
-    ):
+    ) -> None:
         handle = self.get_docker_handle()
 
         if start_timeout is None or start_timeout <= 0:
@@ -4107,14 +4112,14 @@ class ClickHouseInstance:
                     else:
                         raise
 
-    def dict_to_xml(self, dictionary: tp.Dict):
+    def dict_to_xml(self, dictionary: tp.Dict) -> str:
         xml_str = dict2xml(
             dictionary, wrap=self.config_root_name, indent="  ", newlines=True
         )
         return xml_str
 
     @property
-    def odbc_drivers(self):
+    def odbc_drivers(self) -> tp.Dict[str, tp.Dict[str, str]]:
         if self.odbc_ini_path:
             return {
                 "SQLite3": {
@@ -4150,7 +4155,7 @@ class ClickHouseInstance:
         else:
             return {}
 
-    def _create_odbc_config_file(self):
+    def _create_odbc_config_file(self) -> None:
         with open(self.odbc_ini_path.split(":")[0], "w") as f:
             for driver_setup in self.odbc_drivers.values():
                 f.write(f"[{driver_setup['DNS']}]\n")
@@ -4158,17 +4163,17 @@ class ClickHouseInstance:
                     if key != "DSN":
                         f.write(f"{key}={value}\n")
 
-    def replace_config(self, path_to_config: str, replacement: str):
+    def replace_config(self, path_to_config: str, replacement: str) -> None:
         self.exec_in_container(
             ["bash", "-c", f"echo '{replacement}' > {path_to_config}"]
         )
 
-    def replace_in_config(self, path_to_config, replace, replacement):
+    def replace_in_config(self, path_to_config, replace, replacement) -> None:
         self.exec_in_container(
             ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
 
-    def create_dir(self):
+    def create_dir(self) -> None:
         """Create the instance directory and all the needed files there."""
 
         os.makedirs(self.path)
@@ -4447,19 +4452,19 @@ class ClickHouseInstance:
                 )
             )
 
-    def wait_for_path_exists(self, path, seconds):
+    def wait_for_path_exists(self, path: str, seconds: int) -> None:
         while seconds > 0:
             seconds -= 1
             if self.path_exists(path):
                 return
             time.sleep(1)
 
-    def get_backuped_s3_objects(self, disk, backup_name):
+    def get_backuped_s3_objects(self, disk: str, backup_name: str) -> tp.List[str]:
         path = f"/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store"
         self.wait_for_path_exists(path, 10)
         return self.get_s3_objects(path)
 
-    def get_s3_objects(self, path):
+    def get_s3_objects(self, path: str) -> tp.List[str]:
         command = [
             "find",
             path,
@@ -4475,7 +4480,7 @@ class ClickHouseInstance:
 
         return self.exec_in_container(command).split("\n")
 
-    def get_s3_data_objects(self, path):
+    def get_s3_data_objects(self, path: str) -> tp.List[str]:
         command = [
             "find",
             path,
@@ -4492,7 +4497,7 @@ class ClickHouseInstance:
         ]
         return self.exec_in_container(command).split("\n")
 
-    def get_table_objects(self, table, database=None):
+    def get_table_objects(self, table: str, database: tp.Optional[str] = None) -> tp.List[str]:
         objects = []
         database_query = ""
         if database:
@@ -4511,7 +4516,7 @@ class ClickHouseInstance:
                 objects = objects + self.get_s3_data_objects(path)
         return objects
 
-    def create_format_schema(self, file_name, content):
+    def create_format_schema(self, file_name: str, content: str) -> None:
         self.exec_in_container(
             [
                 "bash",

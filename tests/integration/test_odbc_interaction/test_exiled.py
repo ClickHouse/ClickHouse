@@ -2,7 +2,8 @@ import time
 import logging
 import pytest
 
-from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 from test_odbc_interaction.test import (
     create_mysql_db,
     create_mysql_table,
