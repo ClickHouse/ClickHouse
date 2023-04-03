@@ -1,5 +1,4 @@
 #include <Functions/keyvaluepair/impl/StateHandlerImpl.h>
-#include <Functions/keyvaluepair/impl/StringWriter.h>
 #include <Functions/keyvaluepair/impl/Configuration.h>
 
 #include <Columns/ColumnString.h>
@@ -29,7 +28,7 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
     NextState next_state;
 
     auto col = ColumnString::create();
-    StringWriter element(*col);
+    NoEscapingStateHandler::StringWriter element(*col);
 
     if constexpr (quoted)
     {
@@ -65,7 +64,7 @@ TEST(extractKVPair_NoEscapingKeyStateHandler, Wait)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    StateHandlerImpl<false> handler(configuration);
+    NoEscapingStateHandler handler(configuration);
 
     test_wait(handler, "name", 0u, State::READING_KEY);
     test_wait(handler, "\\:name", 0u, State::READING_KEY);
@@ -84,7 +83,7 @@ TEST(extractKVPair_NoEscapingKeyStateHandler, Read)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    StateHandlerImpl<false> handler(configuration);
+    NoEscapingStateHandler handler(configuration);
 
     std::string key_str = "name";
     std::string key_with_delimiter_str = key_str + ':';
