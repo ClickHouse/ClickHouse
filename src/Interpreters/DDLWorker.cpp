@@ -1022,10 +1022,10 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     {
         String str_buf = node_path.substr(query_path_prefix.length());
         DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Metric id;
-        readText(id, in);
-        id = std::max(*max_pushed_entry_metric, id);
-        CurrentMetrics::set(*max_pushed_entry_metric, id);
+        CurrentMetrics::Value pushed_entry;
+        readText(pushed_entry, in);
+        pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
+        CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);
     }
 
     /// We cannot create status dirs in a single transaction with previous request,
