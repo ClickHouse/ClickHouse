@@ -41,7 +41,7 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
-
+#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 
 namespace DB
 {
@@ -148,8 +148,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support setting convert_query_to_cnf.
-  * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
@@ -234,6 +232,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
+
+    manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
 
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());

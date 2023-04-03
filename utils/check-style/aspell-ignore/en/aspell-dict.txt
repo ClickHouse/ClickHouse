@@ -374,6 +374,7 @@ llvm
 localhost
 macOS
 mariadb
+mdadm
 miniselect
 msgpack
 msgpk
