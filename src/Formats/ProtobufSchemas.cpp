@@ -86,7 +86,7 @@ private:
     void AddError(const String & filename, int line, int column, const String & message) override
     {
         /// Protobuf library code is not exception safe, we should
-        /// remember error and throw in later from our side.
+        /// remember the error and throw it later from our side.
         error = ErrorInfo{filename, line, column, message};
     }
 
