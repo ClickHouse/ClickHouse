@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IAST.h>
+#include <Parsers/IAST.h>
 
 namespace HiliteComparator {
 
