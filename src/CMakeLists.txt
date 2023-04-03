@@ -353,8 +353,11 @@ target_link_libraries(clickhouse_common_io
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
-            enet_static
 )
+
+if (TARGET enet_static)
+    target_link_libraries(clickhouse_common_io PUBLIC enet_static)
+endif()
 
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)

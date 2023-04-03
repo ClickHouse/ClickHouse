@@ -1,7 +1,4 @@
 #pragma once
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreserved-identifier"
-#pragma GCC diagnostic ignored "-Wpacked"
 
 #include <functional>
 #include <Common/RangeGenerator.h>
@@ -30,7 +27,13 @@
 #include "config.h"
 #include "config_version.h"
 
-#include <enet.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-identifier"
+#pragma GCC diagnostic ignored "-Wpacked"
+
+#if USE_ENET
+#   include <enet.h>
+#endif
 
 #include <filesystem>
 
@@ -52,6 +55,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
 }
 
 template <typename TSessionFactory>
@@ -209,6 +213,7 @@ namespace detail
             {
                 if (protocol == "enet")
                 {
+                    #if USE_ENET
                     if (enet_initialize() != 0)
                     {
                         LOG_ERROR(log, "Cannot initialize enet.");
@@ -256,7 +261,7 @@ namespace detail
 
                     if (out_stream_callback)
                         out_stream_callback(stream_out);
-                    
+
                     while (enet_host_service(client, &event, 3000) > 0)
                     {
                         switch (event.type)
@@ -278,6 +283,9 @@ namespace detail
 
                     content_encoding = response.get("Content-Encoding", "");
                     return istr;
+                    #else
+                    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Enet protocol was not enabled during build time");
+                    #endif
                 }
                 else
                 {
