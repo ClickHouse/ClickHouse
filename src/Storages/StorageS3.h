@@ -51,7 +51,7 @@ public:
     };
 
     using KeysWithInfo = std::vector<KeyWithInfo>;
-    using ObjectInfos = std::unordered_map<String, S3::ObjectInfo>;
+
     class IIterator
     {
     public:
@@ -71,8 +71,7 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
-            ObjectInfos * object_infos = nullptr,
-            Strings * read_keys_ = nullptr,
+            KeysWithInfo * read_keys_ = nullptr,
             const S3Settings::RequestSettings & request_settings_ = {});
 
         KeyWithInfo next() override;
@@ -96,8 +95,7 @@ public:
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
-            ObjectInfos * object_infos = nullptr,
-            Strings * read_keys = nullptr);
+            KeysWithInfo * read_keys = nullptr);
 
         KeyWithInfo next() override;
         size_t getTotalSize() const override;
@@ -288,8 +286,6 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    using ObjectInfos = StorageS3Source::ObjectInfos;
-
     static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
@@ -297,14 +293,13 @@ public:
     static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
-        StorageS3::Configuration & configuration,
+        const StorageS3::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx,
-        ObjectInfos * object_infos = nullptr);
+        ContextPtr ctx);
 
 protected:
-    static StorageS3::Configuration updateConfiguration(ContextPtr local_context, const Configuration & configuration);
-    static void updateConfiguration(ContextPtr, Configuration &);
+    static StorageS3::Configuration copyAndUpdateConfiguration(ContextPtr local_context, const Configuration & configuration);
+    static void updateConfiguration(ContextPtr ctx, StorageS3::Configuration & upd);
 
 private:
     friend class StorageS3Cluster;
@@ -323,7 +318,7 @@ private:
     ASTPtr partition_by;
     bool is_key_with_globs = false;
 
-    ObjectInfos object_infos;
+    using KeysWithInfo = StorageS3Source::KeysWithInfo;
 
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const Configuration & s3_configuration,
@@ -333,8 +328,7 @@ private:
         ContextPtr local_context,
         ASTPtr query,
         const Block & virtual_block,
-        ObjectInfos * object_infos = nullptr,
-        Strings * read_keys = nullptr);
+        KeysWithInfo * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
@@ -342,24 +336,22 @@ private:
         const String & compression_method,
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx,
-        ObjectInfos * object_infos = nullptr);
+        ContextPtr ctx);
 
     bool supportsSubcolumns() const override;
 
     bool supportsSubsetOfColumns() const override;
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const Strings::const_iterator & begin,
-        const Strings::const_iterator & end,
+        const KeysWithInfo::const_iterator & begin,
+        const KeysWithInfo::const_iterator & end,
         const Configuration & s3_configuration,
-        ObjectInfos * object_infos,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
     static void addColumnsToCache(
-        const Strings & keys,
+        const KeysWithInfo & keys,
         const Configuration & s3_configuration,
         const ColumnsDescription & columns,
         const String & format_name,
