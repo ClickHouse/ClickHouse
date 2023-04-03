@@ -1,3 +1,4 @@
+-- insert with enabled squashing
 abc
 abc
 abc
@@ -66,7 +67,7 @@ jkl
 jkl
 jkl
 jkl
--
+-- read from cache
 abc
 abc
 abc
@@ -135,7 +136,7 @@ jkl
 jkl
 jkl
 jkl
---------------------
+-- insert with disabled squashing
 abc
 abc
 abc
@@ -204,7 +205,7 @@ jkl
 jkl
 jkl
 jkl
--
+-- read from cache
 abc
 abc
 abc
