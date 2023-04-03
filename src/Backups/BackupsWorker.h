@@ -105,8 +105,11 @@ private:
         ContextMutablePtr mutable_context,
         bool called_async);
 
+    /// Builds file infos for specified backup entries.
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, std::shared_ptr<IBackupCoordination> backup_coordination);
+
     /// Write backup entries to an opened backup.
-    void writeBackupEntries(const OperationID & backup_id, BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool, bool internal);
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const OperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal);
 
     OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 

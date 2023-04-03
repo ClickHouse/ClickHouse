@@ -1107,7 +1107,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
+        if (likely(need_ddl_guard))
+            ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
 
         bool if_not_exists = create.if_not_exists;
 
@@ -1201,7 +1202,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
     /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id)
+    if (create.select && create.is_materialized_view && create.to_table_id && !create.attach)
     {
         if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
             {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
@@ -1312,7 +1313,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         return true;
     }
 
-    if (!ddl_guard)
+    if (!ddl_guard && likely(need_ddl_guard))
         ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
 
     String data_path;

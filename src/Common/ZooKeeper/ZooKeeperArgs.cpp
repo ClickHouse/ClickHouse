@@ -152,6 +152,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             connection_timeout_ms = config.getInt(config_name + "." + key);
         }
+        else if (key == "enable_fault_injections_during_startup")
+        {
+            enable_fault_injections_during_startup = config.getBool(config_name + "." + key);
+        }
         else if (key == "send_fault_probability")
         {
             send_fault_probability = config.getDouble(config_name + "." + key);
@@ -159,6 +163,22 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "recv_fault_probability")
         {
             recv_fault_probability = config.getDouble(config_name + "." + key);
+        }
+        else if (key == "send_sleep_probability")
+        {
+            send_sleep_probability = config.getDouble(config_name + "." + key);
+        }
+        else if (key == "recv_sleep_probability")
+        {
+            recv_sleep_probability = config.getDouble(config_name + "." + key);
+        }
+        else if (key == "send_sleep_ms")
+        {
+            send_sleep_ms = config.getUInt64(config_name + "." + key);
+        }
+        else if (key == "recv_sleep_ms")
+        {
+            recv_sleep_ms = config.getUInt64(config_name + "." + key);
         }
         else if (key == "identity")
         {

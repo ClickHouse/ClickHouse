@@ -520,6 +520,8 @@ public:
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
+    void setServerCompletelyStarted();
+
 private:
     friend class EphemeralNodeHolder;
 
