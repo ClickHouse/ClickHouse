@@ -575,10 +575,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
         readUUIDText(part_uuid, *in);
 
-    size_t projections = 0;
-    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
-        readBinary(projections, *in);
-
     if (!remote_fs_metadata.empty())
     {
         if (!try_zero_copy)
@@ -628,6 +624,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         replica_path, uri, to_detached, sum_files_size);
 
     in->setNextCallback(ReplicatedFetchReadCallback(*entry));
+
+    size_t projections = 0;
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
+        readBinary(projections, *in);
 
     MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"

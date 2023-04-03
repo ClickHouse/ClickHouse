@@ -189,6 +189,21 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
             ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
+static std::optional<size_t> calculatePartSizeSafe(
+    const DataPartStoragePtr & data_part_storage, const String & part_name, Poco::Logger * log)
+{
+    try
+    {
+        return data_part_storage->calculateTotalSizeOnDisk();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("while calculating part size {} on path {}",
+                                                part_name, data_part_storage->getRelativePath()));
+        return {};
+    }
+}
+
 inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
@@ -1021,15 +1036,19 @@ void MergeTreeData::loadDataPartsFromDisk(
         if (part_disk_ptr->exists(marker_path))
         {
             /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
-            size_t size_of_part = data_part_storage->calculateTotalSizeOnDisk();
+            auto size_of_part = calculatePartSizeSafe(data_part_storage, part_name, log);
+            auto part_size_str = size_of_part ? formatReadableSizeWithBinarySuffix(*size_of_part) : "failed to calculate size";
+
             LOG_WARNING(log,
                 "Detaching stale part {}{} (size: {}), which should have been deleted after a move. "
                 "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
-                getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
+                getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+
             std::lock_guard loading_lock(mutex);
             broken_parts_to_detach.push_back(part);
             ++suspicious_broken_parts;
-            suspicious_broken_parts_bytes += size_of_part;
+            if (size_of_part)
+                suspicious_broken_parts_bytes += *size_of_part;
             return;
         }
 
@@ -1058,17 +1077,20 @@ void MergeTreeData::loadDataPartsFromDisk(
         if (broken)
         {
             /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
-            size_t size_of_part = data_part_storage->calculateTotalSizeOnDisk();
+            auto size_of_part = calculatePartSizeSafe(data_part_storage, part_name, log);
+            auto part_size_str = size_of_part ? formatReadableSizeWithBinarySuffix(*size_of_part) : "failed to calculate size";
 
             LOG_ERROR(log,
-                "Detaching broken part {}{} (size: {}). "
-                "If it happened after update, it is likely because of backward incompability. "
-                "You need to resolve this manually",
-                getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
+                      "Detaching broken part {}{} (size: {}). "
+                      "If it happened after update, it is likely because of backward incompatibility. "
+                      "You need to resolve this manually",
+                      getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+
             std::lock_guard loading_lock(mutex);
             broken_parts_to_detach.push_back(part);
             ++suspicious_broken_parts;
-            suspicious_broken_parts_bytes += size_of_part;
+            if (size_of_part)
+                suspicious_broken_parts_bytes += *size_of_part;
             return;
         }
         if (!part->index_granularity_info.is_adaptive)
