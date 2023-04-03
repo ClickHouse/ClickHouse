@@ -194,10 +194,12 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
             if (existing_restore_uuid == toString(restore_uuid))
                 continue;
 
-
-            const auto status = zk->get(root_zookeeper_path + "/" + existing_restore_path + "/stage");
-            if (status != Stage::COMPLETED)
-                return true;
+            String status;
+            if (zk->tryGet(root_zookeeper_path + "/" + existing_restore_path + "/stage", status))
+            {
+                if (status != Stage::COMPLETED)
+                    return true;
+            }
         }
 
         zk->createIfNotExists(path, "");
