@@ -1051,7 +1051,7 @@ ActionsDAGPtr ActionsDAG::clone() const
 void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
-    removeUnusedActions();
+    removeUnusedActions(/*allow_remove_inputs = */ false);
 }
 #endif
 
