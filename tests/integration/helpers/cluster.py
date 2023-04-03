@@ -258,7 +258,9 @@ async def check_nats_is_available(nats_port, ssl_ctx=None) -> bool:
     return available
 
 
-async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None) -> "nats.aio.client.Client":
+async def nats_connect_ssl(
+    nats_port, user, password, ssl_ctx=None
+) -> "nats.aio.client.Client":
     if not ssl_ctx:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
@@ -1867,7 +1869,9 @@ class ClickHouseCluster:
         with open(path, "w") as fd:
             fd.write(data)
 
-    def restart_instance_with_ip_change(self, node: "ClickHouseInstance", new_ip: str) -> "ClickHouseInstance":
+    def restart_instance_with_ip_change(
+        self, node: "ClickHouseInstance", new_ip: str
+    ) -> "ClickHouseInstance":
         if "::" in new_ip:
             if node.ipv6_address is None:
                 raise Exception("You should specify ipv6_address in add_node method")
@@ -2365,7 +2369,9 @@ class ClickHouseCluster:
                 logging.debug("Waiting for Kerberos KDC to start up")
                 time.sleep(1)
 
-    def wait_hdfs_to_start(self, timeout: float = 300, check_marker: bool = False) -> None:
+    def wait_hdfs_to_start(
+        self, timeout: float = 300, check_marker: bool = False
+    ) -> None:
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -2497,7 +2503,9 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Azurite to start")
 
-    def wait_schema_registry_to_start(self, timeout: float = 180) -> "CachedSchemaRegistryClient":
+    def wait_schema_registry_to_start(
+        self, timeout: float = 180
+    ) -> "CachedSchemaRegistryClient":
         sr_client = CachedSchemaRegistryClient(
             {"url": f"http://localhost:{self.schema_registry_port}"}
         )
@@ -3655,7 +3663,9 @@ class ClickHouseInstance:
         except Exception as ex:
             logging.warning(f"Stop ClickHouse raised an error {ex}")
 
-    def start_clickhouse(self, start_wait_sec: float = 60, retry_start: bool = True) -> None:
+    def start_clickhouse(
+        self, start_wait_sec: float = 60, retry_start: bool = True
+    ) -> None:
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3730,7 +3740,9 @@ class ClickHouseInstance:
         if last_err is not None:
             raise last_err
 
-    def restart_clickhouse(self, stop_start_wait_sec: float = 60, kill: bool = False) -> None:
+    def restart_clickhouse(
+        self, stop_start_wait_sec: float = 60, kill: bool = False
+    ) -> None:
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
@@ -4496,7 +4508,9 @@ class ClickHouseInstance:
         ]
         return self.exec_in_container(command).split("\n")
 
-    def get_table_objects(self, table: str, database: tp.Optional[str] = None) -> tp.List[str]:
+    def get_table_objects(
+        self, table: str, database: tp.Optional[str] = None
+    ) -> tp.List[str]:
         objects = []
         database_query = ""
         if database:
