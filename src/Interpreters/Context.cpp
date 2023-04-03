@@ -2333,10 +2333,9 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
     ThrottlerPtr throttler;
 
     const auto & query_settings = getSettingsRef();
-    UInt64 bandwidth_for_server = std::max(
-        query_settings.max_remote_read_network_bandwidth_for_server,
-        /// compatibility
-        shared->server_settings.max_remote_read_network_bandwidth_for_server);
+    UInt64 bandwidth_for_server = query_settings.max_remote_read_network_bandwidth_for_server;
+    if (shared->server_settings.max_remote_read_network_bandwidth_for_server.changed)
+        bandwidth_for_server = shared->server_settings.max_remote_read_network_bandwidth_for_server.changed;
     if (bandwidth_for_server)
     {
         auto lock = getLock();
@@ -2361,10 +2360,9 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
     ThrottlerPtr throttler;
 
     const auto & query_settings = getSettingsRef();
-    UInt64 bandwidth_for_server = std::max(
-        query_settings.max_remote_write_network_bandwidth_for_server,
-        /// compatibility
-        shared->server_settings.max_remote_write_network_bandwidth_for_server);
+    UInt64 bandwidth_for_server = query_settings.max_remote_write_network_bandwidth_for_server;
+    if (shared->server_settings.max_remote_write_network_bandwidth_for_server.changed)
+        bandwidth_for_server = shared->server_settings.max_remote_write_network_bandwidth_for_server.changed;
     if (bandwidth_for_server)
     {
         auto lock = getLock();
