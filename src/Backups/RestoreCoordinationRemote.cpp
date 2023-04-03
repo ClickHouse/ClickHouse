@@ -41,7 +41,10 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
             {
                 String alive_node_path = zookeeper_path + "/stage/alive|" + current_host;
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+
+                if (code == Coordination::Error::ZNODEEXISTS)
+                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
+                else if (code != Coordination::Error::ZOK)
                     throw zkutil::KeeperException(code, alive_node_path);
             }
         })
@@ -183,7 +186,7 @@ bool RestoreCoordinationRemote::acquireReplicatedAccessStorage(const String & ac
             }
 
             /// We need to check who created that node
-            result =  zk->get(path) == toString(current_host_index);
+            result = zk->get(path) == toString(current_host_index);
         });
     return result;
 }

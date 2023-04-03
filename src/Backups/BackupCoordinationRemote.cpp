@@ -181,7 +181,10 @@ BackupCoordinationRemote::BackupCoordinationRemote(
             {
                 String alive_node_path = zookeeper_path + "/stage/alive|" + current_host;
                 auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+
+                if (code == Coordination::Error::ZNODEEXISTS)
+                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
+                else if (code != Coordination::Error::ZOK)
                     throw zkutil::KeeperException(code, alive_node_path);
             }
         })

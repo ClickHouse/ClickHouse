@@ -245,41 +245,11 @@ public:
 
     std::string create(const std::string & path, const std::string & data, int32_t mode)
     {
-        auto path_created = access(
-            "create",
-            path,
-            [&]() { return keeper->create(path, data, mode); },
-            [&](std::string const & result_path)
-            {
-                try
-                {
-                    if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
-                    {
-                        keeper->remove(result_path);
-                        if (unlikely(logger))
-                            LOG_TRACE(logger, "ZooKeeperWithFaultInjection cleanup: seed={} func={} path={}", seed, "create", result_path);
-                    }
-                }
-                catch (const zkutil::KeeperException & e)
-                {
-                    if (unlikely(logger))
-                        LOG_TRACE(
-                            logger,
-                            "ZooKeeperWithFaultInjection cleanup FAILED: seed={} func={} path={} code={} message={} ",
-                            seed,
-                            "create",
-                            result_path,
-                            e.code,
-                            e.message());
-                }
-            });
+        std::string path_created;
+        auto code = tryCreate(path, data, mode, path_created);
 
-        /// collect ephemeral nodes when no fault was injected (to clean up later)
-        if (unlikely(fault_policy))
-        {
-            if (mode == zkutil::CreateMode::EphemeralSequential || mode == zkutil::CreateMode::Ephemeral)
-                ephemeral_nodes.push_back(path_created);
-        }
+        if (code != Coordination::Error::ZOK)
+            throw zkutil::KeeperException(code, path);
 
         return path_created;
     }
@@ -333,10 +303,13 @@ public:
 
     void createIfNotExists(const std::string & path, const std::string & data)
     {
-        access(
-            "tryCreate",
-            path,
-            [&]() { return keeper->createIfNotExists(path, data); });
+        std::string path_created;
+        auto code = tryCreate(path, data, zkutil::CreateMode::Persistent, path_created);
+
+        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
+            return;
+
+        throw zkutil::KeeperException(code, path);
     }
 
     Coordination::Responses multi(const Coordination::Requests & requests)
@@ -380,6 +353,12 @@ public:
     Coordination::Error trySet(const std::string & path, const std::string & data, int32_t version = -1, Coordination::Stat * stat = nullptr)
     {
         return access("trySet", path, [&]() { return keeper->trySet(path, data, version, stat); });
+    }
+
+
+    void handleEphemeralNodeExistenceNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)
+    {
+        return access<false, false, false>("handleEphemeralNodeExistence", path, [&]() { return keeper->handleEphemeralNodeExistence(path, fast_delete_if_equal_value); });
     }
 
     void cleanupEphemeralNodes()
