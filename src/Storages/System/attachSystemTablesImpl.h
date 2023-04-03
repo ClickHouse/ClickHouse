@@ -2,12 +2,13 @@
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 
 template<typename StorageT, typename... StorageArgs>
-void attach(ContextPtr context, IDatabase & system_database, const String & table_name, StorageArgs && ... args)
+void attach(ContextPtr context, IDatabase & system_database, const String & table_name, const String & comment, StorageArgs && ... args)
 {
     assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
     if (system_database.getUUID() == UUIDHelpers::Nil)
@@ -25,6 +26,13 @@ void attach(ContextPtr context, IDatabase & system_database, const String & tabl
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
         String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
         system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), path);
+
+        /// Set the comment
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
+        assert(table);
+        auto metadata = table->getInMemoryMetadata();
+        metadata.comment = comment;
+        table->setInMemoryMetadata(metadata);
     }
 }
 

@@ -96,58 +96,58 @@ namespace DB
 
 void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 {
-    attach<StorageSystemOne>(context, system_database, "one");
-    attach<StorageSystemNumbers>(context, system_database, "numbers", false);
-    attach<StorageSystemNumbers>(context, system_database, "numbers_mt", true);
-    attach<StorageSystemZeros>(context, system_database, "zeros", false);
-    attach<StorageSystemZeros>(context, system_database, "zeros_mt", true);
-    attach<StorageSystemDatabases>(context, system_database, "databases");
-    attach<StorageSystemTables>(context, system_database, "tables");
-    attach<StorageSystemColumns>(context, system_database, "columns");
-    attach<StorageSystemFunctions>(context, system_database, "functions");
-    attach<StorageSystemEvents>(context, system_database, "events");
-    attach<StorageSystemSettings>(context, system_database, "settings");
-    attach<StorageSystemServerSettings>(context, system_database, "server_settings");
-    attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes");
-    attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings");
-    attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings");
-    attach<StorageSystemBuildOptions>(context, system_database, "build_options");
-    attach<StorageSystemFormats>(context, system_database, "formats");
-    attach<StorageSystemTableFunctions>(context, system_database, "table_functions");
-    attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators");
-    attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families");
-    attach<StorageSystemCollations>(context, system_database, "collations");
-    attach<StorageSystemTableEngines>(context, system_database, "table_engines");
-    attach<StorageSystemContributors>(context, system_database, "contributors");
-    attach<StorageSystemUsers>(context, system_database, "users");
-    attach<StorageSystemRoles>(context, system_database, "roles");
-    attach<StorageSystemGrants>(context, system_database, "grants");
-    attach<StorageSystemRoleGrants>(context, system_database, "role_grants");
-    attach<StorageSystemCurrentRoles>(context, system_database, "current_roles");
-    attach<StorageSystemEnabledRoles>(context, system_database, "enabled_roles");
-    attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles");
-    attach<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements");
-    attach<StorageSystemRowPolicies>(context, system_database, "row_policies");
-    attach<StorageSystemQuotas>(context, system_database, "quotas");
-    attach<StorageSystemQuotaLimits>(context, system_database, "quota_limits");
-    attach<StorageSystemQuotaUsage>(context, system_database, "quota_usage");
-    attach<StorageSystemQuotasUsage>(context, system_database, "quotas_usage");
-    attach<StorageSystemUserDirectories>(context, system_database, "user_directories");
-    attach<StorageSystemPrivileges>(context, system_database, "privileges");
-    attach<StorageSystemErrors>(context, system_database, "errors");
-    attach<StorageSystemWarnings>(context, system_database, "warnings");
-    attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
-    attach<StorageSystemLicenses>(context, system_database, "licenses");
-    attach<StorageSystemTimeZones>(context, system_database, "time_zones");
-    attach<StorageSystemBackups>(context, system_database, "backups");
-    attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
-    attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
+    attach<StorageSystemOne>(context, system_database, "one", "Used when the table is not specified explicitly, for example in queries like `SELECT 1`. Analog of the DUAL table in Oracle and MySQL.");
+    attach<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false);
+    attach<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. The result could be out of order.", true);
+    attach<StorageSystemZeros>(context, system_database, "zeros", "Generated unlimited amount of non-materialized zeros.", false);
+    attach<StorageSystemZeros>(context, system_database, "zeros_mt", "Multithreaded version of system.zeros.", true);
+    attach<StorageSystemDatabases>(context, system_database, "databases", "Contains all the information about all the databases within the current server.");
+    attach<StorageSystemTables>(context, system_database, "tables", "Contains all the information about all the tables within the current server.");
+    attach<StorageSystemColumns>(context, system_database, "columns", "Contains all the information about all the columns from all the table within the current server.");
+    attach<StorageSystemFunctions>(context, system_database, "functions", "Contains a list of all available normal and aggregate functions with their descriptions.");
+    attach<StorageSystemEvents>(context, system_database, "events", "Contains a list of useful for profiling events with their descriptions and values at a moment of execution.");
+    attach<StorageSystemSettings>(context, system_database, "settings", "Contains a list of all user-level settings (which can be modified in a scope of query or connection), their current and default values along with descriptions.");
+    attach<StorageSystemServerSettings>(context, system_database, "server_settings", "Contains a list of all server-wide settings (which are effective only on server startup and usually cannot be modified at runtime), their current and default values alog with descriptions.");
+    attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes", "Contains the information about the settings changes through different ClickHouse versions. You may make ClickHouse behave like particular previous version by changing the `compatibility` user-level settings.");
+    attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings", "Contains a list of all MergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.");
+    attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", "Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. ");
+    attach<StorageSystemBuildOptions>(context, system_database, "build_options", "Contains a list of all build flags, compiler options and commit hash from which this particular server was built.");
+    attach<StorageSystemFormats>(context, system_database, "formats", "Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.");
+    attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
+    attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinator, which could be added to the end of aggregate function and change the way how this aggregate function works.");
+    attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases which a useful for compatibility with other databases.");
+    attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
+    attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with several flags whether a particular table engine supports some feature (e.g. settings, skipping indices, projections, replication, ttl, deduplication, parallel insert etc.)");
+    attach<StorageSystemContributors>(context, system_database, "contributors", "Contains a list of all ClickHouse contributors <3");
+    attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users accounts either configured at the server through configuration file or created via SQL.");
+    attach<StorageSystemRoles>(context, system_database, "roles", "Contains a list of all roles created at the server.");
+    attach<StorageSystemGrants>(context, system_database, "grants", "Contains the information about privileges granted to ClickHouse user accounts.");
+    attach<StorageSystemRoleGrants>(context, system_database, "role_grants", "Contains the role grants for users and roles. To add entries to this table, use `GRANT role TO user`. Using this table you may find out which roles are assigned to which users or which roles does user has.");
+    attach<StorageSystemCurrentRoles>(context, system_database, "current_roles", "Contains active roles of a current user. SET ROLE changes the contents of this table.");
+    attach<StorageSystemEnabledRoles>(context, system_database, "enabled_roles", "Contains all active roles at the moment, including current role of the current user and granted roles for current role.");
+    attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles", "Contains properties of configured setting profiles.");
+    attach<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements", "Describes the content of each settings profile configured on the server. Including settings contraints, roles and users that the setting applies to and parent settings profiles.");
+    attach<StorageSystemRowPolicies>(context, system_database, "row_policies", "Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.");
+    attach<StorageSystemQuotas>(context, system_database, "quotas", "Contains information about quotas - a way how to limit resource usage over a period of time or track the use of resources.");
+    attach<StorageSystemQuotaLimits>(context, system_database, "quota_limits", "Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to one quota.");
+    attach<StorageSystemQuotaUsage>(context, system_database, "quota_usage", "Contains quota usage by the current user: how much is used and how much is left.");
+    attach<StorageSystemQuotasUsage>(context, system_database, "quotas_usage", "Contains quota usage by all users.");
+    attach<StorageSystemUserDirectories>(context, system_database, "user_directories", "Contains the information about configured user directories - directories on the file system from which ClickHouse server is allowed to read user provided data.");
+    attach<StorageSystemPrivileges>(context, system_database, "privileges", "Contains a list of all available privileges that could be granted to a user or role.");
+    attach<StorageSystemErrors>(context, system_database, "errors", "Contains a list of all error which have ever happened including the error code, last time and message with unsymbolized stacktrace.");
+    attach<StorageSystemWarnings>(context, system_database, "warnings", "Contains warnings about server configuration to be displayed in clickhouse-client one any is connected.");
+    attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
+    attach<StorageSystemLicenses>(context, system_database, "licenses", "Сontains licenses of third-party libraries that are located in the contrib directory of ClickHouse sources.");
+    attach<StorageSystemTimeZones>(context, system_database, "time_zones", "Contains a list of time zones that are supported by the ClickHouse server. This list of timezones might vary depending on the version of ClickHouse.");
+    attach<StorageSystemBackups>(context, system_database, "backups", "Contains a list of all BACKUP or RESTORE operations with their current states and other propertis. Note, that table is not persistent and it shows only operations executed after the last server restart.");
+    attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache", "Contains information about all cached file schemas.");
+    attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables", "Contains a list of tables which were dropped from Atomic databases but not completely removed yet.");
 #ifdef OS_LINUX
-    attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
+    attach<StorageSystemStackTrace>(context, system_database, "stack_trace", "Allows to obtain an unsymbolized stacktrace from all the threads of the server process.");
 #endif
 #if USE_ROCKSDB
-    attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
-    attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache");
+    attach<StorageSystemRocksDB>(context, system_database, "rocksdb", "Contains a list of metrics exposed from embedded RocksDB.");
+    attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache", "Allows to look inside metadata cache stored in RocksDB to check its consistency.");
 #endif
 }
 
@@ -155,46 +155,46 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 {
     attachSystemTablesLocal(context, system_database);
 
-    attach<StorageSystemParts>(context, system_database, "parts");
-    attach<StorageSystemProjectionParts>(context, system_database, "projection_parts");
-    attach<StorageSystemDetachedParts>(context, system_database, "detached_parts");
-    attach<StorageSystemPartsColumns>(context, system_database, "parts_columns");
-    attach<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns");
-    attach<StorageSystemDisks>(context, system_database, "disks");
-    attach<StorageSystemStoragePolicies>(context, system_database, "storage_policies");
-    attach<StorageSystemProcesses>(context, system_database, "processes");
-    attach<StorageSystemMetrics>(context, system_database, "metrics");
-    attach<StorageSystemMerges>(context, system_database, "merges");
-    attach<StorageSystemMoves>(context, system_database, "moves");
-    attach<StorageSystemMutations>(context, system_database, "mutations");
-    attach<StorageSystemReplicas>(context, system_database, "replicas");
-    attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue");
-    attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue");
-    attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue");
-    attach<StorageSystemDictionaries>(context, system_database, "dictionaries");
-    attach<StorageSystemModels>(context, system_database, "models");
-    attach<StorageSystemClusters>(context, system_database, "clusters");
-    attach<StorageSystemGraphite>(context, system_database, "graphite_retentions");
-    attach<StorageSystemMacros>(context, system_database, "macros");
-    attach<StorageSystemReplicatedFetches>(context, system_database, "replicated_fetches");
-    attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards");
-    attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts");
-    attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache");
-    attach<StorageSystemQueryCache>(context, system_database, "query_cache");
-    attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
-    attach<StorageSystemCertificates>(context, system_database, "certificates");
-    attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
+    attach<StorageSystemParts>(context, system_database, "parts", "Contains a list of currently existing (both active and inactive) parts of all *-MergeTree tables.");
+    attach<StorageSystemProjectionParts>(context, system_database, "projection_parts", "Contains a list of currently existing projection parts (a copy of some part containing aggregated data or just sorted in different order) created for all the projections for all tables within a cluster.");
+    attach<StorageSystemDetachedParts>(context, system_database, "detached_parts", "Contains a list of all parts which are being found in /detached directory along with a reason why it was detached. ClickHouse server doesn't use such parts anyhow.");
+    attach<StorageSystemPartsColumns>(context, system_database, "parts_columns", "");
+    attach<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "");
+    attach<StorageSystemDisks>(context, system_database, "disks", "");
+    attach<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "");
+    attach<StorageSystemProcesses>(context, system_database, "processes", "");
+    attach<StorageSystemMetrics>(context, system_database, "metrics", "");
+    attach<StorageSystemMerges>(context, system_database, "merges", "");
+    attach<StorageSystemMoves>(context, system_database, "moves", "");
+    attach<StorageSystemMutations>(context, system_database, "mutations", "");
+    attach<StorageSystemReplicas>(context, system_database, "replicas", "");
+    attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue", "");
+    attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue", "");
+    attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue", "");
+    attach<StorageSystemDictionaries>(context, system_database, "dictionaries", "");
+    attach<StorageSystemModels>(context, system_database, "models", "");
+    attach<StorageSystemClusters>(context, system_database, "clusters", "");
+    attach<StorageSystemGraphite>(context, system_database, "graphite_retentions", "");
+    attach<StorageSystemMacros>(context, system_database, "macros", "");
+    attach<StorageSystemReplicatedFetches>(context, system_database, "replicated_fetches", "");
+    attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards", "");
+    attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts", "");
+    attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "");
+    attach<StorageSystemQueryCache>(context, system_database, "query_cache", "");
+    attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "");
+    attach<StorageSystemCertificates>(context, system_database, "certificates", "");
+    attach<StorageSystemNamedCollections>(context, system_database, "named_collections", "");
 
     if (has_zookeeper)
-        attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");
+        attach<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
-        attach<StorageSystemTransactions>(context, system_database, "transactions");
+        attach<StorageSystemTransactions>(context, system_database, "transactions", "");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)
 {
-    attach<StorageSystemAsynchronousMetrics>(context, system_database, "asynchronous_metrics", async_metrics);
+    attach<StorageSystemAsynchronousMetrics>(context, system_database, "asynchronous_metrics", "", async_metrics);
 }
 
 }
