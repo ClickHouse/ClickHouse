@@ -801,22 +801,13 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                                                     const InterpreterCreateQuery::TableProperties & properties) const
 {
     /// Check for duplicates
-    std::set<String> all_columns;
+    std::unordered_set<std::string_view> all_columns;
+    all_columns.reserve(all_columns.size());
+
     for (const auto & column : properties.columns)
     {
         if (!all_columns.emplace(column.name).second)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
-    }
-
-    /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
-    if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
-    {
-        auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
-        if (search != all_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Cannot create table with column '{}' for *MergeTree engines because it "
-                            "is reserved for lightweight delete feature",
-                            LightweightDeleteDescription::FILTER_COLUMN.name);
     }
 
     const auto & settings = getContext()->getSettingsRef();
@@ -1406,6 +1397,23 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
+    }
+
+    std::unordered_set<std::string_view> all_columns;
+    all_columns.reserve(all_columns.size());
+
+    for (const auto & column : properties.columns)
+        all_columns.emplace(column.name);
+
+    auto reserved_columns = res->getVirtuals().getNames();
+    for (const auto & column : reserved_columns)
+    {
+        auto search = all_columns.find(column);
+        if (search != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for engine {} because it "
+                            "is reserved for internal usage",
+                            column, res->getName());
     }
 
     if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
