@@ -356,7 +356,7 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
     : StateHandlerImpl<false>(std::forward<Args>(args)...) {}
 };
 
-struct InlineEscapingStateHandler: public StateHandlerImpl<true>
+struct InlineEscapingStateHandler : public StateHandlerImpl<true>
 {
     class StringWriter
     {
