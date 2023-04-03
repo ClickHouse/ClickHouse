@@ -240,7 +240,7 @@ public:
     ///            \      /
     ///            c * d - e
     static ActionsDAGPtr foldActionsByProjection(
-        const std::unordered_map<const Node *, std::string> & new_inputs,
+        const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
     /// Reorder the output nodes using given position mapping.
