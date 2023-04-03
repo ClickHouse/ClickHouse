@@ -22,7 +22,6 @@ namespace extractKV
 template <bool WITH_ESCAPING>
 class StateHandlerImpl : public StateHandler
 {
-    static constexpr char ESCAPE_CHARACTER = '\\';
 public:
     explicit StateHandlerImpl(Configuration configuration_)
         : configuration(std::move(configuration_))
@@ -36,12 +35,10 @@ public:
 
     [[nodiscard]] NextState waitKey(std::string_view file) const
     {
-        const auto quoting_character = configuration.quoting_character;
-
         if (const auto * p = find_first_not_symbols_or_null(file, wait_needles))
         {
             const size_t character_position = p - file.begin();
-            if (*p == quoting_character)
+            if (isQuotingCharacter(*p))
             {
                 // +1 to skip quoting character
                 return {character_position + 1u, State::READING_QUOTED_KEY};
@@ -57,8 +54,6 @@ public:
 
     [[nodiscard]] NextState readKey(std::string_view file, auto & key) const
     {
-        const auto & [key_value_delimiter, _, pair_delimiters] = configuration;
-
         key.reset();
 
         size_t pos = 0;
@@ -68,7 +63,7 @@ public:
             auto character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
+            if (WITH_ESCAPING && isEscapeCharacter(*p))
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -81,13 +76,13 @@ public:
                     }
                 }
             }
-            else if (*p == key_value_delimiter)
+            else if (isKeyValueDelimiter(*p))
             {
                 key.append(file.begin() + pos, file.begin() + character_position);
 
                 return {next_pos, State::WAITING_VALUE};
             }
-            else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), *p) != pair_delimiters.end())
+            else if (isPairDelimiter(*p))
             {
                 return {next_pos, State::WAITING_KEY};
             }
@@ -100,8 +95,6 @@ public:
 
     [[nodiscard]] NextState readQuotedKey(std::string_view file, auto & key) const
     {
-        const auto quoting_character = configuration.quoting_character;
-
         key.reset();
 
         size_t pos = 0;
@@ -111,7 +104,7 @@ public:
             size_t character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
+            if (WITH_ESCAPING && isEscapeCharacter(*p))
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -124,7 +117,7 @@ public:
                     }
                 }
             }
-            else if (*p == quoting_character)
+            else if (isQuotingCharacter(*p))
             {
                 key.append(file.begin() + pos, file.begin() + character_position);
 
@@ -148,7 +141,7 @@ public:
         {
             const auto current_character = file[0];
 
-            if (current_character == configuration.key_value_delimiter)
+            if (isKeyValueDelimiter(current_character))
             {
                 return {1, WAITING_VALUE};
             }
@@ -159,19 +152,17 @@ public:
 
     [[nodiscard]] NextState waitValue(std::string_view file) const
     {
-        const auto & [key_value_delimiter, quoting_character, _] = configuration;
-
         size_t pos = 0;
 
         if (!file.empty())
         {
             const auto current_character = file[pos];
 
-            if (current_character == quoting_character)
+            if (isQuotingCharacter(current_character))
             {
                 return {pos + 1u, State::READING_QUOTED_VALUE};
             }
-            else if (current_character == key_value_delimiter)
+            else if (isKeyValueDelimiter(current_character))
             {
                 return {pos, State::WAITING_KEY};
             }
@@ -182,8 +173,6 @@ public:
 
     [[nodiscard]] NextState readValue(std::string_view file, auto & value) const
     {
-        const auto & [key_value_delimiter, _, pair_delimiters] = configuration;
-
         value.reset();
 
         size_t pos = 0;
@@ -193,7 +182,7 @@ public:
             const size_t character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
+            if (WITH_ESCAPING && isEscapeCharacter(*p))
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -206,11 +195,11 @@ public:
                     }
                 }
             }
-            else if (*p == key_value_delimiter)
+            else if (isKeyValueDelimiter(*p))
             {
                 return {next_pos, State::WAITING_KEY};
             }
-            else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), *p) != pair_delimiters.end())
+            else if (isPairDelimiter(*p))
             {
                 value.append(file.begin() + pos, file.begin() + character_position);
 
@@ -227,8 +216,6 @@ public:
 
     [[nodiscard]] NextState readQuotedValue(std::string_view file, auto & value) const
     {
-        const auto quoting_character = configuration.quoting_character;
-
         size_t pos = 0;
 
         value.reset();
@@ -238,7 +225,7 @@ public:
             const size_t character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
+            if (WITH_ESCAPING && isEscapeCharacter(*p))
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -251,7 +238,7 @@ public:
                     }
                 }
             }
-            else if (*p == quoting_character)
+            else if (isQuotingCharacter(*p))
             {
                 value.append(file.begin() + pos, file.begin() + character_position);
 
@@ -285,6 +272,27 @@ private:
         }
 
         return {false, buf.getPosition()};
+    }
+
+    bool isKeyValueDelimiter(char character) const
+    {
+        return configuration.key_value_delimiter == character;
+    }
+
+    bool isPairDelimiter(char character) const
+    {
+        const auto & pair_delimiters = configuration.pair_delimiters;
+        return std::find(pair_delimiters.begin(), pair_delimiters.end(), character) != pair_delimiters.end();
+    }
+
+    bool isQuotingCharacter(char character) const
+    {
+        return configuration.quoting_character == character;
+    }
+
+    bool isEscapeCharacter(char character) const
+    {
+        return character == '\\';
     }
 };
 
