@@ -19,6 +19,8 @@ function run_with_settings()
         , optimize_substitute_columns = 1\
         , optimize_append_index = 1"
 
+    if [[ $query =~ "EXPLAIN QUERY TREE" ]]; then query="${query}, allow_experimental_analyzer = 1"; fi
+
     $CLICKHOUSE_CLIENT --query="$query"
 
 }
