@@ -778,6 +778,8 @@ try
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
+    global_context->getProcessList().startCancelerThread();
+
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {

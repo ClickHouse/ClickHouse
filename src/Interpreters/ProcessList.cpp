@@ -567,6 +567,11 @@ CancellationCode ProcessList::sendCancelToQuery(const QueryStatusPtr & elem, int
     return elem->cancelQuery(code, msg);
 }
 
+void ProcessList::startCancelerThread()
+{
+    canceler.emplace(this);
+}
+
 void ProcessList::killAllQueries()
 {
     std::vector<QueryStatusPtr> cancelled_processes;
@@ -722,9 +727,8 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
 
 Canceler::Canceler(ProcessList * process_list_)
     : process_list(process_list_)
-{
-    thread = ThreadFromGlobalPool([this] { threadFunc(); });
-}
+    , thread([this] { threadFunc(); })
+{}
 
 Canceler::~Canceler()
 {
@@ -755,8 +759,7 @@ void Canceler::threadFunc()
         if (stop_flag.load())
             break;
         if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            process_list->sendCancelToQuery(query_to_cancel,
-                code,
+            process_list->sendCancelToQuery(query_to_cancel, code,
                 fmt::format(
                     "Memory limit{}{} exceeded: "
                     "current: {}, maximum: {}. "

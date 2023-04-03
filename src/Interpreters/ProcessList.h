@@ -415,7 +415,7 @@ protected:
     mutable std::condition_variable cancelled_cv;
 
     /// Thread for async query cancellation from OvercommitTracker to avoid allocations
-    Canceler canceler{this};
+    std::optional<Canceler> canceler;
 
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
@@ -484,7 +484,8 @@ public:
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, int code, const String & msg);
     CancellationCode sendCancelToQuery(const QueryStatusPtr & elem, int code, const String & msg);
-    Canceler & getCanceler() { return canceler; }
+    void startCancelerThread();
+    Canceler & getCanceler() { return *canceler; }
 
     void killAllQueries();
 };
