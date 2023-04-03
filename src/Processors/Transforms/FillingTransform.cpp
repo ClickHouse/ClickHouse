@@ -45,7 +45,7 @@ void logDebug(String key, const T & value, const char * separator = " : ")
         else
             ss << value;
 
-        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "\n{}{}{}", key, separator, ss.str());
+        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
     }
 }
 
@@ -339,6 +339,8 @@ using MutableColumnRawPtrs = std::vector<IColumn*>;
 static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, const MutableColumnRawPtrs & interpolate_columns, const MutableColumnRawPtrs & other_columns,
     const FillingRow & filling_row, const Block & interpolate_block)
 {
+    logDebug("insertFromFillingRow", filling_row.dump());
+
     for (size_t i = 0, size = filling_columns.size(); i < size; ++i)
     {
         if (filling_row[i].isNull())
@@ -359,12 +361,14 @@ static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, c
 
     for (auto * other_column : other_columns)
         other_column->insertDefault();
+
+    logDebug("insertFromFillingRow output column size", filling_columns[0]->size());
 }
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
 {
     for (size_t i = 0, size = source.size(); i < size; ++i)
-        dest[i]->insertFrom(*source[i], row_num);
+        dest[i]->insertRangeFrom(*source[i], row_num, 1);
 }
 
 static void initColumnsByPositions(
@@ -440,6 +444,8 @@ size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
 
 void FillingTransform::transform(Chunk & chunk)
 {
+    logDebug("chunk size", chunk.getNumRows());
+
     if (!chunk.hasRows() && !generate_suffix)
         return;
 
@@ -505,6 +511,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     /// TODO: use sort prefix row from previous chunk
 
+
     for (size_t row_ind = 0; row_ind < num_rows;)
     {
         auto current_sort_prefix_end_pos = getRangeEnd(
@@ -530,8 +537,9 @@ void FillingTransform::transform(Chunk & chunk)
             res_fill_columns,
             res_interpolate_columns,
             res_other_columns,
-            {0, current_sort_prefix_end_pos});
+            {row_ind, current_sort_prefix_end_pos});
 
+        logDebug("range end", current_sort_prefix_end_pos);
         row_ind = current_sort_prefix_end_pos;
     }
 
@@ -553,6 +561,7 @@ void FillingTransform::transformImpl(
     const size_t range_end = range.second;
     Block interpolate_block;
 
+    logDebug("generate suffix", generate_suffix);
     if (generate_suffix)
     {
         chassert(range_begin == range_end);
@@ -576,6 +585,7 @@ void FillingTransform::transformImpl(
         return;
     }
 
+    logDebug("first", first);
     if (first)
     {
 
@@ -603,9 +613,12 @@ void FillingTransform::transformImpl(
     }
 
     Row sort_prefix_row; sort_prefix_row.reserve(sort_prefix.size());
+    logDebug("res_fill_columns size before filling loop", res_fill_columns[0]->size());
 
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
+        logDebug("row_ind", row_ind);
+
         should_insert_first = next_row < filling_row;
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -618,6 +631,7 @@ void FillingTransform::transformImpl(
             else
                 next_row[i] = fill_to;
         }
+        logDebug("next_row", next_row.dump());
 
         /// A case, when at previous step row was initialized from defaults 'fill_from' values
         ///  and probably we need to insert it to block.
@@ -637,6 +651,8 @@ void FillingTransform::transformImpl(
         copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
         copyRowFromColumns(res_interpolate_columns, old_interpolate_columns, row_ind);
         copyRowFromColumns(res_other_columns, old_other_columns, row_ind);
+
+        logDebug("res_fill_columns size", res_fill_columns[0]->size());
     }
 
     saveLastRow(result_columns);
