@@ -240,17 +240,6 @@ public:
     {
         Configuration() = default;
 
-        S3::URI url;
-        std::shared_ptr<const S3::Client> client;
-        std::vector<String> keys;
-        S3::AuthSettings auth_settings;
-        S3Settings::RequestSettings request_settings;
-        /// If s3 configuration was passed from ast, then it is static.
-        /// If from config - it can be changed with config reload.
-        bool static_configuration = true;
-        /// Headers from ast is a part of static configuration.
-        HTTPHeaderEntries headers_from_ast;
-
         String getPath() const { return url.key; }
 
         void appendToPath(const String & suffix)
@@ -270,6 +259,18 @@ public:
             return url.bucket.find(PARTITION_ID_WILDCARD) != String::npos
                 || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
         }
+
+        S3::URI url;
+        S3::AuthSettings auth_settings;
+        S3Settings::RequestSettings request_settings;
+        /// If s3 configuration was passed from ast, then it is static.
+        /// If from config - it can be changed with config reload.
+        bool static_configuration = true;
+        /// Headers from ast is a part of static configuration.
+        HTTPHeaderEntries headers_from_ast;
+
+        std::shared_ptr<const S3::Client> client;
+        std::vector<String> keys;
     };
 
     StorageS3(
@@ -317,17 +318,20 @@ public:
         ContextPtr ctx);
 
 protected:
-    virtual void updateConfigurationIfChanged(ContextPtr local_context);
+    virtual Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
+
+    virtual void updateConfiguration(ContextPtr local_context);
 
     void useConfiguration(const Configuration & new_configuration);
 
-    const Configuration & getConfiguration() { return configuration; }
+    const Configuration & getConfiguration();
 
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
     Configuration configuration;
+    std::mutex configuration_update_mutex;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
 

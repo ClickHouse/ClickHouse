@@ -43,15 +43,17 @@ public:
         return Storage::getConfiguration(engine_args, local_context, /* get_format_from_file */false);
     }
 
-    void updateConfigurationIfChanged(ContextPtr local_context) override
+    Configuration updateConfigurationAndGetCopy(ContextPtr local_context) override
     {
-        const bool updated = base_configuration.update(local_context);
-        auto new_keys = getDataFiles(base_configuration, local_context);
+        std::lock_guard lock(configuration_update_mutex);
+        updateConfigurationImpl(local_context);
+        return Storage::getConfiguration();
+    }
 
-        if (!updated && new_keys == Storage::getConfiguration().keys)
-            return;
-
-        Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));
+    void updateConfiguration(ContextPtr local_context) override
+    {
+        std::lock_guard lock(configuration_update_mutex);
+        updateConfigurationImpl(local_context);
     }
 
 private:
@@ -84,7 +86,19 @@ private:
         return files;
     }
 
+    void updateConfigurationImpl(ContextPtr local_context)
+    {
+        const bool updated = base_configuration.update(local_context);
+        auto new_keys = getDataFiles(base_configuration, local_context);
+
+        if (!updated && new_keys == Storage::getConfiguration().keys)
+            return;
+
+        Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));
+    }
+
     Configuration base_configuration;
+    std::mutex configuration_update_mutex;
     Poco::Logger * log;
 };
 
