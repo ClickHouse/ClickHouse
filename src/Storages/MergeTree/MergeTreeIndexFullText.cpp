@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ExpressionActions.h>
@@ -429,7 +430,7 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
     auto column_name = key_node.getColumnName();
     size_t key_column_num = 0;
     bool key_exists = getKey(column_name, key_column_num);
-    bool map_key_exists = getKey(fmt::format("mapKeys({})", column_name), key_column_num);
+    bool map_key_exists = getKey(fmt::format("mapKeys({})", Nested::splitName(column_name).first), key_column_num);
 
     if (key_node.isFunction())
     {
@@ -449,7 +450,7 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
                 return false;
 
             auto first_argument = key_function_node.getArgumentAt(0);
-            const auto map_column_name = first_argument.getColumnName();
+            const auto map_column_name = Nested::splitName(first_argument.getColumnName()).first;
 
             size_t map_keys_key_column_num = 0;
             auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);

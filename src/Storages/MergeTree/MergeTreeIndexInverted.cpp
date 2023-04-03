@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
@@ -462,7 +463,7 @@ bool MergeTreeConditionInverted::traverseASTEquals(
     Field const_value = value_field;
     size_t key_column_num = 0;
     bool key_exists = header.has(key_ast.getColumnName());
-    bool map_key_exists = header.has(fmt::format("mapKeys({})", key_ast.getColumnName()));
+    bool map_key_exists = header.has(fmt::format("mapKeys({})", Nested::splitName(key_ast.getColumnName()).first));
 
     if (key_ast.isFunction())
     {
@@ -480,7 +481,7 @@ bool MergeTreeConditionInverted::traverseASTEquals(
                 return false;
 
             auto first_argument = function.getArgumentAt(0);
-            const auto map_column_name = first_argument.getColumnName();
+            const auto map_column_name = Nested::splitName(first_argument.getColumnName()).first;
             auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
             auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
 

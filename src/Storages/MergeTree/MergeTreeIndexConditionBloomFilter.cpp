@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -421,7 +422,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
                 return false;
 
             auto first_argument = key_node_function.getArgumentAt(0);
-            const auto column_name = first_argument.getColumnName();
+            const auto column_name = Nested::splitName(first_argument.getColumnName()).first;
             auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
             auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
 
@@ -644,6 +645,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
     if (function_name == "mapContains" || function_name == "has")
     {
+        key_column_name = Nested::splitName(key_column_name).first;
         auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
         if (!header.has(map_keys_index_column_name))
             return false;
@@ -703,7 +705,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
 
             auto first_argument = key_node_function.getArgumentAt(0);
-            const auto column_name = first_argument.getColumnName();
+            const auto column_name = Nested::splitName(first_argument.getColumnName()).first;
 
             auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
             auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
