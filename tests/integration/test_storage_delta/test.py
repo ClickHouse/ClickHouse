@@ -74,10 +74,15 @@ def write_delta_from_file(spark, path, result_path, mode="overwrite"):
     ).option("delta.columnMapping.mode", "name").save(result_path)
 
 
-def write_delta_from_df(spark, df, result_path, mode="overwrite"):
-    df.write.mode(mode).option("compression", "none").format("delta").option(
-        "delta.columnMapping.mode", "name"
-    ).save(result_path)
+def write_delta_from_df(spark, df, result_path, mode="overwrite", partition_by=None):
+    if partition_by is None:
+        df.write.mode(mode).option("compression", "none").format("delta").option(
+            "delta.columnMapping.mode", "name"
+        ).save(result_path)
+    else:
+        df.write.mode(mode).option("compression", "none").format("delta").option(
+            "delta.columnMapping.mode", "name"
+        ).partitionBy("a").save(result_path)
 
 
 def generate_data(spark, start, end):
@@ -147,6 +152,28 @@ def test_single_log_file(started_cluster):
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+def test_partition_by(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+    TABLE_NAME = "test_partition_by"
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 10),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+        partition_by="a",
+    )
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 11 # 10 partitions and 1 metadata file
+
+    create_delta_table(instance, TABLE_NAME)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
 def test_multiple_log_files(started_cluster):

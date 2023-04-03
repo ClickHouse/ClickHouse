@@ -79,7 +79,7 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
      * {
      *     "format-version" : 1,
      *     "table-uuid" : "ca2965ad-aae2-4813-8cf7-2c394e0c10f5",
-     *     "location" : "/iceberg_data/default/test_single_iceberg_file",
+     *     "location" : "/iceberg_data/db/table_name",
      *     "last-updated-ms" : 1680206743150,
      *     "last-column-id" : 2,
      *     "schema" : { "type" : "struct", "schema-id" : 0, "fields" : [ {<field1_info>}, {<field2_info>}, ... ] },
@@ -98,7 +98,7 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
      *         "total-records" : "100", "total-files-size" : "1070", "total-data-files" : "1", "total-delete-files" : "0",
      *         "total-position-deletes" : "0", "total-equality-deletes" : "0"
      *       },
-     *       "manifest-list" : "/iceberg_data/default/test_single_iceberg_file/metadata/snap-2819310504515118887-1-c87bfec7-d36c-4075-ad04-600b6b0f2020.avro",
+     *       "manifest-list" : "/iceberg_data/db/table_name/metadata/snap-2819310504515118887-1-c87bfec7-d36c-4075-ad04-600b6b0f2020.avro",
      *       "schema-id" : 0
      *     } ],
      *     "statistics" : [ ],
@@ -148,7 +148,7 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
      *
      * `manifest list` has the following contents:
      * ┌─manifest_path────────────────────────────────────────────────────────────────────────────────────────┬─manifest_length─┬─partition_spec_id─┬───added_snapshot_id─┬─added_data_files_count─┬─existing_data_files_count─┬─deleted_data_files_count─┬─partitions─┬─added_rows_count─┬─existing_rows_count─┬─deleted_rows_count─┐
-     * │ /iceberg_data/default/test_single_iceberg_file/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro │            5813 │                 0 │ 2819310504515118887 │                      1 │                         0 │                        0 │ []         │              100 │                   0 │                  0 │
+     * │ /iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro │            5813 │                 0 │ 2819310504515118887 │                      1 │                         0 │                        0 │ []         │              100 │                   0 │                  0 │
      * └──────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┴───────────────────┴─────────────────────┴────────────────────────┴───────────────────────────┴──────────────────────────┴────────────┴──────────────────┴─────────────────────┴────────────────────┘
      */
     void processManifestList(Metadata & metadata, const Configuration & configuration, ContextPtr context)
@@ -180,17 +180,23 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
     }
 
     /**
-     * Manifest file has the following format: '/iceberg_data/default/test_single_iceberg_file/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
+     * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
      *
      * `manifest file` is different in format version V1 and V2 and has the following contents:
      * Format version V1:
      * ┌─status─┬─────────snapshot_id─┬─data_file───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-     * │      1 │ 2819310504515118887 │ ('/iceberg_data/default/test_single_iceberg_file/data/00000-1-3edca534-15a0-4f74-8a28-4733e0bf1270-00001.parquet','PARQUET',(),100,1070,67108864,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],0) │
+     * │      1 │ 2819310504515118887 │ ('/iceberg_data/db/table_name/data/00000-1-3edca534-15a0-4f74-8a28-4733e0bf1270-00001.parquet','PARQUET',(),100,1070,67108864,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],0) │
      * └────────┴─────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
      * Format version V2:
      * ┌─status─┬─────────snapshot_id─┬─sequence_number─┬─file_sequence_number─┬─data_file───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-     * │      1 │ 5887006101709926452 │            ᴺᵁᴸᴸ │                 ᴺᵁᴸᴸ │ (0,'/iceberg_data/default/test_single_iceberg_file/data/00000-1-c8045c90-8799-4eac-b957-79a0484e223c-00001.parquet','PARQUET',(),100,1070,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],[],0) │
+     * │      1 │ 5887006101709926452 │            ᴺᵁᴸᴸ │                 ᴺᵁᴸᴸ │ (0,'/iceberg_data/db/table_name/data/00000-1-c8045c90-8799-4eac-b957-79a0484e223c-00001.parquet','PARQUET',(),100,1070,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],[],0) │
      * └────────┴─────────────────────┴─────────────────┴──────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     * In case of partitioned data we'll have extra directory partition=value:
+     * ─status─┬─────────snapshot_id─┬─data_file──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+     * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=0/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00001.parquet','PARQUET',(0),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0\0'),(2,'1')],[(1,'\0\0\0\0\0\0\0\0'),(2,'1')],NULL,[4],0) │
+     * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=1/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00002.parquet','PARQUET',(1),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'2')],[(1,'\0\0\0\0\0\0\0'),(2,'2')],NULL,[4],0) │
+     * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=2/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00003.parquet','PARQUET',(2),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'3')],[(1,'\0\0\0\0\0\0\0'),(2,'3')],NULL,[4],0) │
+     * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
      */
     Strings getFilesForRead(const Metadata & metadata, const Configuration & configuration, ContextPtr context)
     {
@@ -236,12 +242,8 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
             }
 
             const auto * str_col = assert_cast<const ColumnString *>(col_str.get());
-            size_t col_size = str_col->size();
-            for (size_t i = 0; i < col_size; ++i)
-            {
-                std::filesystem::path path(str_col->getDataAt(i).toView());
-                keys.emplace_back(path.parent_path().filename() / path.filename()); /// partition/file name
-            }
+            for (size_t i = 0; i < str_col->size(); ++i)
+                keys.emplace_back(str_col->getDataAt(i).toView());
         }
 
         return keys;
