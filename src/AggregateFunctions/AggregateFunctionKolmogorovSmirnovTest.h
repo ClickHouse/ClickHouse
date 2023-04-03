@@ -51,12 +51,13 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         const Float64 n2_d = 1. / n2;
         const Float64 tol = 1e-7;
 
+        // reference: https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
         while (pos_x < x.size() && pos_y < y.size())
         {
             if (y[pos_y] - x[pos_x] >= -tol)
             {
                 now_s += n1_d;
-                if (fabs(x[pos_x] - y[pos_y]) >= tol)
+                if (likely(fabs(x[pos_x] - y[pos_y]) >= tol))
                 {
                     max_s = std::max(max_s, now_s);
                     min_s = std::min(min_s, now_s);
@@ -99,11 +100,20 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 
         if (method == "exact")
         {
+            /* reference:
+             * Gunar Schröer and Dietrich Trenkler
+             * Exact and Randomization Distributions of Kolmogorov-Smirnov, Tests for Two or Three Samples
+             *
+             * and
+             *
+             * Thomas Viehmann
+             * Numerically more stable computation of the p-values for the two-sample Kolmogorov-Smirnov test
+             */
             if (n2 > n1)
                 std::swap(n1, n2);
 
-            const Float64 f_n2 = static_cast<Float64>(n2);
             const Float64 f_n1 = static_cast<Float64>(n1);
+            const Float64 f_n2 = static_cast<Float64>(n2);
             const Float64 k_q = (0.5 + floor(d * f_n2 * f_n1 - tol)) / (f_n2 * f_n1);
             PaddedPODArray<Float64> u(n1 + 1);
 
@@ -142,6 +152,10 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 
             if (alternative == Alternative::TwoSided)
             {
+                /* reference:
+                 * J.DURBIN
+                 * Distribution theory for tests based on the sample distribution function
+                 */
                 Float64 new_val, old_val, s, w, z;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
@@ -174,6 +188,11 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
             }
             else
             {
+                /* reference:
+                 * J. L. HODGES, Jr
+                 * The significance probability of the Smirnov two-sample test
+                 */
+
                 // Use Hodges' suggested approximation Eqn 5.3
                 // Requires m to be the larger of (n1, n2)
                 Float64 expt = -2 * p * p - 2 * p * (m + 2 * n) / sqrt(m * n * (m + n)) / 3.0;
