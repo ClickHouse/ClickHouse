@@ -1,6 +1,4 @@
-#pragma once
-
-#include <Parsers/IAST.h>
+#include "HiliteComparator.h"
 
 namespace HiliteComparator {
 
@@ -36,6 +34,11 @@ std::vector<const char *> HILITES =
     return last_hilite;
 }
 
+bool are_equal_with_hilites_removed(std::string_view left, std::string_view right)
+{
+    return remove_hilites(left) == remove_hilites(right);
+}
+
 String remove_hilites(std::string_view string)
 {
     const char * ptr = string.begin();
@@ -47,11 +50,6 @@ String remove_hilites(std::string_view string)
             return string_without_hilites;
         string_without_hilites += *(ptr++);
     }
-}
-
-bool are_equal_with_hilites_removed(std::string_view left, std::string_view right)
-{
-    return remove_hilites(left) == remove_hilites(right);
 }
 
 /*
@@ -103,5 +101,6 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right)
         right_it++;
     }
 }
+
 
 }
