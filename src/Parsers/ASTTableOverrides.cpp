@@ -24,7 +24,7 @@ ASTPtr ASTTableOverride::clone() const
 
 void ASTTableOverride::formatImpl(FormattingBuffer out_) const
 {
-    const FormatSettings settings(out_.copySettings(), true);
+    const FormatSettings settings(out_.getSettings(), true);
     FormattingBuffer out = out_.copyWithNewSettings(settings);
 
     if (is_standalone)

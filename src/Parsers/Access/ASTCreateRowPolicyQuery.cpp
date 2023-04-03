@@ -70,9 +70,8 @@ namespace
         WriteBufferFromOwnString temp_buf;
         for (const auto & [filter_type, filter] : filters)
         {
-            IAST::FormatSettings settings = out.copySettings();
             IAST::FormatState state;
-            IAST::FormattingBuffer temp_out(temp_buf, settings, state);
+            IAST::FormattingBuffer temp_out(temp_buf, out.getSettings(), state);
             formatFilterExpression(filter, temp_out);
             filters_as_strings.emplace_back(filter_type, temp_buf.str());
             temp_buf.restart();

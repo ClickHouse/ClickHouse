@@ -214,7 +214,7 @@ IAST::FormattingBuffer IAST::FormattingBuffer::copy() const
     return *this;
 }
 
-IAST::FormatSettings IAST::FormattingBuffer::copySettings() const
+const IAST::FormatSettings & IAST::FormattingBuffer::getSettings() const
 {
     return settings;
 }

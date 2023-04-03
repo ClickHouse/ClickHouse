@@ -276,7 +276,7 @@ public:
 
         FormattingBuffer copy() const;
 
-        FormatSettings copySettings() const;
+        const FormatSettings & getSettings() const;
 
         FormattingBuffer copyWithNewSettings(const FormatSettings & settings_) const;
 
