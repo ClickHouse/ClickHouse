@@ -6,6 +6,7 @@ exec &> >(ts)
 ccache_status () {
     ccache --show-config ||:
     ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
 [ -O /build ] || git config --global --add safe.directory /build
