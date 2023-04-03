@@ -1242,7 +1242,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
     for (unsigned i = 0; i < _impl::item_count; ++i)
     {
         long double t = res;
-        res *= std::numeric_limits<base_type>::max();
+        res *= static_cast<long double>(std::numeric_limits<base_type>::max());
         res += t;
         res += tmp.items[_impl::big(i)];
     }

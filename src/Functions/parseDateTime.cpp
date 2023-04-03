@@ -1,3 +1,5 @@
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -18,9 +20,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
@@ -452,8 +452,15 @@ namespace
         Joda
     };
 
+    enum class ErrorHandling
+    {
+        Exception,
+        Zero,
+        Null
+    };
+
     /// _FUNC_(str[, format, timezone])
-    template <typename Name, ParseSyntax parse_syntax>
+    template <typename Name, ParseSyntax parse_syntax, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
@@ -471,40 +478,25 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
-                    getName(),
-                    arguments.size());
+            FunctionArgumentDescriptors args{
+                {"time", &isString<IDataType>, nullptr, "String"},
+                {"format", &isString<IDataType>, nullptr, "String"},
+            };
 
-            if (!isString(arguments[0].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            if (arguments.size() == 3)
+                args.emplace_back(FunctionArgumentDescriptor{"timezone", &isString<IDataType>, nullptr, "String"});
 
-            if (arguments.size() > 1 && !isString(arguments[1].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
-
-            if (arguments.size() > 2 && !isString(arguments[2].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            validateFunctionArgumentTypes(*this, arguments, args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
-            return std::make_shared<DataTypeDateTime>(time_zone_name);
+            DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            if (error_handling == ErrorHandling::Null)
+                return std::make_shared<DataTypeNullable>(date_type);
+            else
+                return date_type;
         }
 
-        ColumnPtr
-        executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
             if (!col_str)
@@ -518,8 +510,12 @@ namespace
             const auto & time_zone = getTimeZone(arguments);
             std::vector<Instruction> instructions = parseFormat(format);
 
-            auto col_res = ColumnDateTime::create();
-            col_res->reserve(input_rows_count);
+            auto col_res = ColumnDateTime::create(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map;
+            if constexpr (error_handling == ErrorHandling::Null)
+                col_null_map = ColumnUInt8::create(input_rows_count, 0);
+
             auto & res_data = col_res->getData();
 
             /// Make datetime fit in a cache line.
@@ -527,29 +523,77 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
-
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
+                bool error = false;
+
                 for (const auto & instruction : instructions)
                 {
-                    cur = instruction.perform(cur, end, datetime);
+                    try
+                    {
+                        cur = instruction.perform(cur, end, datetime);
+                    }
+                    catch (...)
+                    {
+                        if constexpr (error_handling == ErrorHandling::Zero)
+                        {
+                            res_data[i] = 0;
+                            error = true;
+                            break;
+                        }
+                        else if constexpr (error_handling == ErrorHandling::Null)
+                        {
+                            res_data[i] = 0;
+                            col_null_map->getData()[i] = 1;
+                            error = true;
+                            break;
+                        }
+                        else
+                        {
+                            static_assert(error_handling == ErrorHandling::Exception);
+                            throw;
+                        }
+                    }
                 }
 
-                // Ensure all input was consumed.
-                if (cur < end)
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Invalid format input {} is malformed at {}",
-                        str_ref.toView(),
-                        std::string_view(cur, end - cur));
+                if (error)
+                    continue;
 
-                Int64 time = datetime.buildDateTime(time_zone);
-                res_data.push_back(static_cast<UInt32>(time));
+                try
+                {
+                    /// Ensure all input was consumed
+                    if (cur < end)
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Invalid format input {} is malformed at {}",
+                            str_ref.toView(),
+                            std::string_view(cur, end - cur));
+                    Int64 time = datetime.buildDateTime(time_zone);
+                    res_data[i] = static_cast<UInt32>(time);
+                }
+                catch (...)
+                {
+                    if constexpr (error_handling == ErrorHandling::Zero)
+                        res_data[i] = 0;
+                    else if constexpr (error_handling == ErrorHandling::Null)
+                    {
+                        res_data[i] = 0;
+                        col_null_map->getData()[i] = 1;
+                    }
+                    else
+                    {
+                        static_assert(error_handling == ErrorHandling::Exception);
+                        throw;
+                    }
+                }
             }
 
-            return col_res;
-        }
+            if constexpr (error_handling == ErrorHandling::Null)
+                return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
+            else
+                return col_res;
+            }
 
 
     private:
@@ -1712,14 +1756,6 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            if (arguments.size() < 2)
-            {
-                if constexpr (parse_syntax == ParseSyntax::Joda)
-                    return "yyyy-MM-dd HH:mm:ss";
-                else
-                    return "%Y-%m-%d %H:%M:%S";
-            }
-
             const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!format_column)
                 throw Exception(
@@ -1753,23 +1789,50 @@ namespace
         static constexpr auto name = "parseDateTime";
     };
 
+    struct NameParseDateTimeOrZero
+    {
+        static constexpr auto name = "parseDateTimeOrZero";
+    };
+
+    struct NameParseDateTimeOrNull
+    {
+        static constexpr auto name = "parseDateTimeOrNull";
+    };
+
     struct NameParseDateTimeInJodaSyntax
     {
         static constexpr auto name = "parseDateTimeInJodaSyntax";
     };
 
+    struct NameParseDateTimeInJodaSyntaxOrZero
+    {
+        static constexpr auto name = "parseDateTimeInJodaSyntaxOrZero";
+    };
 
-    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL>;
-    using FunctionParseDateTimeInJodaSyntax
-        = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda>;
+    struct NameParseDateTimeInJodaSyntaxOrNull
+    {
+        static constexpr auto name = "parseDateTimeInJodaSyntaxOrNull";
+    };
+
+    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL, ErrorHandling::Exception>;
+    using FunctionParseDateTimeOrZero = FunctionParseDateTimeImpl<NameParseDateTimeOrZero, ParseSyntax::MySQL, ErrorHandling::Zero>;
+    using FunctionParseDateTimeOrNull = FunctionParseDateTimeImpl<NameParseDateTimeOrNull, ParseSyntax::MySQL, ErrorHandling::Null>;
+    using FunctionParseDateTimeInJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda, ErrorHandling::Exception>;
+    using FunctionParseDateTimeInJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrZero, ParseSyntax::Joda, ErrorHandling::Zero>;
+    using FunctionParseDateTimeInJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrNull, ParseSyntax::Joda, ErrorHandling::Null>;
 }
 
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name);
+    factory.registerFunction<FunctionParseDateTimeOrZero>();
+    factory.registerFunction<FunctionParseDateTimeOrNull>();
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>();
 }
 
 
