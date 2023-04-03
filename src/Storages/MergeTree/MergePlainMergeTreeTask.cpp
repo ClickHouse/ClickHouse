@@ -84,11 +84,11 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    fake_query_context = createFakeQueryContext();
+    task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        fake_query_context);
+        task_context);
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
@@ -134,7 +134,7 @@ void MergePlainMergeTreeTask::finish()
     storage.incrementMergedPartsProfileEvent(new_part->getType());
 }
 
-ContextMutablePtr MergePlainMergeTreeTask::createFakeQueryContext() const
+ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
     context->makeQueryContext();
