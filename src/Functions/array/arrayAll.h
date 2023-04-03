@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include "FunctionArrayMapped.h"
