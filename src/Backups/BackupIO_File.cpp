@@ -139,9 +139,9 @@ DataSourceDescription BackupReaderFile::getDataSourceDescription() const
 }
 
 
-bool BackupWriterFile::supportNativeCopy(DataSourceDescription data_source_description) const
+bool BackupWriterFile::supportNativeCopy(DataSourceDescription data_source_description, bool has_throttling) const
 {
-    return data_source_description == getDataSourceDescription();
+    return !has_throttling && data_source_description == getDataSourceDescription();
 }
 
 void BackupWriterFile::copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
