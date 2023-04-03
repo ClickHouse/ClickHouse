@@ -1,11 +1,9 @@
 #pragma once
 
-#include <unordered_map>
-#include <Parsers/IParserBase.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
+#include <Parsers/IParser.h>
+
 namespace DB
 {
-
 class KQLOperators
 {
 public:
@@ -106,6 +104,7 @@ protected:
         WildcardsPos space_pos = WildcardsPos::none);
     static String genInOpExpr(IParser::Pos & token_pos, String kql_op, String ch_op);
     static String genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op);
+    static bool convert(std::vector<String> & tokens, IParser::Pos & pos);
 };
-
 }
+

@@ -41,4 +41,25 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     ASTPtr parent_select_node;
 };
+
+class BracketCount
+{
+public:
+    void count(IParser::Pos & pos)
+    {
+        if (pos->type == TokenType::OpeningRoundBracket)
+            ++round_bracket_count;
+        if (pos->type == TokenType::ClosingRoundBracket)
+            --round_bracket_count;
+        if (pos->type == TokenType::OpeningSquareBracket)
+            ++square_bracket_count;
+        if (pos->type == TokenType::ClosingSquareBracket)
+            --square_bracket_count;
+    }
+    bool isZero() const { return round_bracket_count == 0 && square_bracket_count == 0; }
+
+private:
+    int16_t round_bracket_count = 0;
+    int16_t square_bracket_count = 0;
+};
 }

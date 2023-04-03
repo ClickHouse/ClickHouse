@@ -1,28 +1,13 @@
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
-#include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
-#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
+#include "KQLFunctionFactory.h"
 #include <Parsers/Kusto/ParserKQLOperators.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/ParserSetQuery.h>
+#include <Parsers/Kusto/Utilities.h>
+#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <boost/lexical_cast.hpp>
-
-
+#include <magic_enum.hpp>
 #include <pcg_random.hpp>
-
+#include <Poco/String.h>
 #include <format>
+#include <numeric>
 #include <stack>
 
 namespace DB::ErrorCodes
@@ -122,8 +107,11 @@ bool IParserKQLFunction::directMapping(
 
 String IParserKQLFunction::generateUniqueIdentifier()
 {
-    static pcg32_unique unique_random_generator;
-    return std::to_string(unique_random_generator());
+    // This particular random generator hits each number exactly once before looping over.
+    // Because of this, it's sufficient for queries consisting of up to 2^16 (= 65536) distinct function calls.
+    // Reference: https://www.pcg-random.org/using-pcg-cpp.html#insecure-generators
+    static pcg16_once_insecure random_generator;
+    return std::to_string(random_generator());
 }
 
 String IParserKQLFunction::getArgument(const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state)
@@ -131,25 +119,52 @@ String IParserKQLFunction::getArgument(const String & function_name, DB::IParser
     if (auto optional_argument = getOptionalArgument(function_name, pos, argument_state))
         return std::move(*optional_argument);
 
-    throw Exception(std::format("Required argument was not provided in {}", function_name), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Required argument was not provided in {}", function_name);
+}
+
+std::vector<std::string> IParserKQLFunction::getArguments(
+    const String & function_name, DB::IParser::Pos & pos, const ArgumentState argument_state, const Interval & argument_count_interval)
+{
+    std::vector<std::string> arguments;
+    while (auto argument = getOptionalArgument(function_name, pos, argument_state))
+    {
+        arguments.push_back(std::move(*argument));
+    }
+    if (!argument_count_interval.IsWithinBounds(static_cast<int>(arguments.size())))
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "{}: between {} and {} arguments are expected, but {} were provided",
+            function_name,
+            argument_count_interval.Min(),
+            argument_count_interval.Max(),
+            arguments.size());
+
+    return arguments;
 }
 
 String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
-    String converted_arg;
-    std::vector<String> tokens;
-    std::unique_ptr<IParserKQLFunction> fun;
-
+    int32_t round_bracket_count = 0, square_bracket_count = 0;
     if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
-        return converted_arg;
+        return {};
 
     if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
-        throw Exception("Need more argument(s) in function: " + fn_name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Need more argument(s) in function: {}", fn_name);
 
+    std::vector<String> tokens;
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
-        String new_token;
-        if (!KQLOperators().convert(tokens, pos))
+        if (pos->type == TokenType::OpeningRoundBracket)
+            ++round_bracket_count;
+        if (pos->type == TokenType::ClosingRoundBracket)
+            --round_bracket_count;
+
+        if (pos->type == TokenType::OpeningSquareBracket)
+            ++square_bracket_count;
+        if (pos->type == TokenType::ClosingSquareBracket)
+            --square_bracket_count;
+
+        if (!KQLOperators::convert(tokens, pos))
         {
             if (pos->type == TokenType::BareWord)
             {
@@ -159,13 +174,19 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                 pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket
                 || pos->type == TokenType::ClosingSquareBracket)
             {
-                break;
+                if (pos->type == TokenType::Comma)
+                    break;
+                if (pos->type == TokenType::ClosingRoundBracket && round_bracket_count == -1)
+                    break;
+                if (pos->type == TokenType::ClosingSquareBracket && square_bracket_count == 0)
+                    break;
+                tokens.push_back(String(pos->begin, pos->end));
             }
             else
             {
                 String token;
                 if (pos->type == TokenType::QuotedIdentifier)
-                    token = "'" + String(pos->begin + 1, pos->end - 1) + "'";
+                    token = "'" + escapeSingleQuotes(String(pos->begin + 1, pos->end - 1)) + "'";
                 else if (pos->type == TokenType::OpeningSquareBracket)
                 {
                     ++pos;
@@ -183,12 +204,22 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                 tokens.push_back(token);
             }
         }
+
         ++pos;
         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
-            break;
+        {
+            if (pos->type == TokenType::Comma)
+                break;
+            if (pos->type == TokenType::ClosingRoundBracket && round_bracket_count == -1)
+                break;
+            if (pos->type == TokenType::ClosingSquareBracket && square_bracket_count == 0)
+                break;
+        }
     }
-    for (auto const & token : tokens)
-        converted_arg = converted_arg.empty() ? token : converted_arg + " " + token;
+
+    String converted_arg;
+    for (const auto & token : tokens)
+        converted_arg.append((converted_arg.empty() ? "" : " ") + token);
 
     return converted_arg;
 }
@@ -213,7 +244,7 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
             magic_enum::enum_type_name<ArgumentState>(),
             magic_enum::enum_name(argument_state));
 
-    String expression;
+    const auto * begin = pos->begin;
     std::stack<DB::TokenType> scopes;
     while (!pos->isEnd() && (!scopes.empty() || (pos->type != DB::TokenType::Comma && pos->type != DB::TokenType::ClosingRoundBracket)))
     {
@@ -229,24 +260,15 @@ IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParse
             scopes.pop();
         }
 
-        if (token_type == DB::TokenType::QuotedIdentifier)
-        {
-            expression.push_back('\'');
-            expression.append(pos->begin + 1, pos->end - 1);
-            expression.push_back('\'');
-        }
-        else
-            expression.append(pos->begin, pos->end);
-
         ++pos;
     }
 
-    return expression;
+    return std::string(begin, pos->begin);
 }
 
 String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 {
-    String fn_name = String(pos->begin, pos->end);
+    String fn_name(pos->begin, pos->end);
     ++pos;
     if (pos->type != TokenType::OpeningRoundBracket)
     {
@@ -287,20 +309,29 @@ String IParserKQLFunction::kqlCallToExpression(
 void IParserKQLFunction::validateEndOfFunction(const String & fn_name, IParser::Pos & pos)
 {
     if (pos->type != TokenType::ClosingRoundBracket)
-        throw Exception("Too many arguments in function: " + fn_name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many arguments in function: {}", fn_name);
 }
 
 String IParserKQLFunction::getExpression(IParser::Pos & pos)
 {
-    String arg = String(pos->begin, pos->end);
+    String arg(pos->begin, pos->end);
+    auto parseConstTimespan = [&]()
+    {
+        ParserKQLDateTypeTimespan time_span;
+        ASTPtr node;
+        Expected expected;
+
+        if (time_span.parse(pos, node, expected))
+            arg = boost::lexical_cast<std::string>(time_span.toSeconds());
+    };
+
     if (pos->type == TokenType::BareWord)
     {
-        String new_arg;
-        auto fun = KQLFunctionFactory::get(arg);
-        if (fun && fun->convert(new_arg, pos))
+        const auto fun = KQLFunctionFactory::get(arg);
+        if (String new_arg; fun && fun->convert(new_arg, pos))
         {
             validateEndOfFunction(arg, pos);
-            arg = new_arg;
+            arg = std::move(new_arg);
         }
         else
         {
@@ -310,20 +341,18 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
                 if (pos->type == TokenType::OpeningRoundBracket)
                 {
                     if (Poco::toLower(arg) != "and" && Poco::toLower(arg) != "or")
-                        throw Exception(arg + " is not a supported kusto function", ErrorCodes::UNKNOWN_FUNCTION);
+                        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "{} is not a supported kusto function", arg);
                 }
                 --pos;
             }
-            ParserKQLDateTypeTimespan time_span;
-            ASTPtr node;
-            Expected expected;
 
-            if (time_span.parse(pos, node, expected))
-                arg = boost::lexical_cast<std::string>(time_span.toSeconds());
+            parseConstTimespan();
         }
     }
+    else if (pos->type == TokenType::ErrorWrongNumber)
+        parseConstTimespan();
     else if (pos->type == TokenType::QuotedIdentifier)
-        arg = "'" + String(pos->begin + 1, pos->end - 1) + "'";
+        arg = "'" + escapeSingleQuotes(String(pos->begin + 1, pos->end - 1)) + "'";
     else if (pos->type == TokenType::OpeningSquareBracket)
     {
         ++pos;
@@ -339,122 +368,15 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
     return arg;
 }
 
-int IParserKQLFunction::getNullCounts(String arg)
+String IParserKQLFunction::escapeSingleQuotes(const String & input)
 {
-    size_t index = 0;
-    int null_counts = 0;
-    for (char & i : arg)
+    String output;
+    for (const auto & ch : input)
     {
-        if (i == 'n')
-            i = 'N';
-        if (i == 'u')
-            i = 'U';
-        if (i == 'l')
-            i = 'L';
+        if (ch == '\'')
+            output += ch;
+        output += ch;
     }
-    while ((index = arg.find("NULL", index)) != std::string::npos)
-    {
-        index += 4;
-        null_counts += 1;
-    }
-    return null_counts;
+    return output;
 }
-
-int IParserKQLFunction::IParserKQLFunction::getArrayLength(String arg)
-{
-    int array_length = 0;
-    bool comma_found = false;
-    for (char i : arg)
-    {
-        if (i == ',')
-        {
-            comma_found = true;
-            array_length += 1;
-        }
-    }
-    return comma_found ? array_length + 1 : 0;
-}
-
-String IParserKQLFunction::ArraySortHelper(String & out, IParser::Pos & pos, bool ascending)
-{
-    String fn_name = getKQLFunctionName(pos);
-    if (fn_name.empty())
-        return "false";
-
-    String reverse;
-    String second_arg;
-    String expr;
-
-    if (!ascending)
-        reverse = "Reverse";
-    ++pos;
-    String first_arg = getConvertedArgument(fn_name, pos);
-    int null_count = getNullCounts(first_arg);
-    if (pos->type == TokenType::Comma)
-        ++pos;
-    out = "array(";
-    if (pos->type != TokenType::ClosingRoundBracket && String(pos->begin, pos->end) != "dynamic")
-    {
-        second_arg = getConvertedArgument(fn_name, pos);
-        out += "if (" + second_arg + ", array" + reverse + "Sort(" + first_arg + "), concat(arraySlice(array" + reverse + "Sort("
-            + first_arg + ") as as1, indexOf(as1, NULL) as len1), arraySlice(as1, 1, len1-1)))";
-        out += " )";
-        return out;
-    }
-    --pos;
-    std::vector<String> argument_list;
-    if (pos->type != TokenType::ClosingRoundBracket)
-    {
-        while (pos->type != TokenType::ClosingRoundBracket)
-        {
-            ++pos;
-            if (String(pos->begin, pos->end) != "dynamic")
-            {
-                expr = getConvertedArgument(fn_name, pos);
-                break;
-            }
-            second_arg = getConvertedArgument(fn_name, pos);
-            argument_list.push_back(second_arg);
-        }
-    }
-    else
-    {
-        ++pos;
-        out += "array" + reverse + "Sort(" + first_arg + ")";
-    }
-
-    if (!argument_list.empty())
-    {
-        String temp_first_arg = first_arg;
-        int first_arg_length = getArrayLength(temp_first_arg);
-
-        if (null_count > 0 && expr.empty())
-            expr = "true";
-        if (null_count > 0)
-            first_arg = "if (" + expr + ", array" + reverse + "Sort(" + first_arg + "), concat(arraySlice(array" + reverse + "Sort("
-                + first_arg + ") as as1, indexOf(as1, NULL) as len1 ), arraySlice( as1, 1, len1-1) ) )";
-        else
-            first_arg = "array" + reverse + "Sort(" + first_arg + ")";
-
-        out += first_arg;
-
-        for (auto & i : argument_list)
-        {
-            out += " , ";
-            if (first_arg_length != getArrayLength(i))
-                out += "array(NULL)";
-            else if (null_count > 0)
-                out += "If (" + expr + "," + "array" + reverse + "Sort((x, y) -> y, " + i + "," + temp_first_arg
-                    + "), arrayConcat(arraySlice(" + "array" + reverse + "Sort((x, y) -> y, " + i + "," + temp_first_arg
-                    + ") , length(" + temp_first_arg + ") - " + std::to_string(null_count) + " + 1) , arraySlice(" + "array" + reverse
-                    + "Sort((x, y) -> y, " + i + "," + temp_first_arg + ") , 1, length(" + temp_first_arg + ") - "
-                    + std::to_string(null_count) + ") ) )";
-            else
-                out += "array" + reverse + "Sort((x, y) -> y, " + i + "," + temp_first_arg + ")";
-        }
-    }
-    out += " )";
-    return out;
-}
-
 }

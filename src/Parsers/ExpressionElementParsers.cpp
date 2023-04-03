@@ -42,7 +42,6 @@
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 
 namespace DB
 {
@@ -105,35 +104,28 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserSelectWithUnionQuery select;
     ParserExplainQuery explain;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
     ASTPtr result_node = nullptr;
-    ParserKeyword s_kql("KQL");
 
-    if (s_kql.ignore(pos, expected))
+    if (ASTPtr select_node; select.parse(pos, select_node, expected))
     {
-        if (!ParserKQLTaleFunction().parse(pos, result_node, expected))
-            return false;
+        result_node = std::move(select_node);
     }
-    else
+    else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
     {
-        if (pos->type != TokenType::OpeningRoundBracket)
-            return false;
-        ++pos;
-
-        if (ASTPtr select_node; select.parse(pos, select_node, expected))
-        {
-            result_node = std::move(select_node);
-        }
-        else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
-        {
-            const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
+        const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
 
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
-            /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
-            /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
+        /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
+        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
 
-            String kind_str = ASTExplainQuery::toString(explain_query.getKind());
+        String kind_str = ASTExplainQuery::toString(explain_query.getKind());
 
         String settings_str;
         if (ASTPtr settings_ast = explain_query.getSettings())
@@ -143,32 +135,31 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             settings_str = queryToString(settings_ast);
         }
 
-            const ASTPtr & explained_ast = explain_query.getExplainedQuery();
-            if (explained_ast)
-            {
-                auto view_explain = makeASTFunction("viewExplain",
-                    std::make_shared<ASTLiteral>(kind_str),
-                    std::make_shared<ASTLiteral>(settings_str),
-                    explained_ast);
-                result_node = buildSelectFromTableFunction(view_explain);
-            }
-            else
-            {
-                auto view_explain = makeASTFunction("viewExplain",
-                    std::make_shared<ASTLiteral>(kind_str),
-                    std::make_shared<ASTLiteral>(settings_str));
-                result_node = buildSelectFromTableFunction(view_explain);
-            }
+        const ASTPtr & explained_ast = explain_query.getExplainedQuery();
+        if (explained_ast)
+        {
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str),
+                explained_ast);
+            result_node = buildSelectFromTableFunction(view_explain);
         }
         else
         {
-            return false;
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str));
+            result_node = buildSelectFromTableFunction(view_explain);
         }
-
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
     }
+    else
+    {
+        return false;
+    }
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
 
     node = std::make_shared<ASTSubquery>();
     node->children.push_back(result_node);
@@ -178,16 +169,6 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// 'kql(' is used for subuquery in Kusto, should not be treated as an identifier if kql followed by (
-    ParserKeyword s_kql("KQL");
-    if (s_kql.ignore(pos, expected))
-    {
-        if (pos->type == TokenType::OpeningRoundBracket)
-        {   --pos;
-            return false;
-        }
-        --pos;
-    }
     /// Identifier in backquotes or in double quotes
     if (pos->type == TokenType::QuotedIdentifier)
     {

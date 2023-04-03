@@ -140,7 +140,7 @@ bool DatatypeInt::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception("String is not parsed as int literal.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as int literal.");
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
@@ -162,7 +162,7 @@ bool DatatypeReal::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception("String is not parsed as double literal.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "String is not parsed as double literal.");
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
@@ -203,7 +203,7 @@ bool DatatypeTimespan::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
     }
     else
-        throw Exception("Not a correct timespan expression: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a correct timespan expression: {}", fn_name);
     return true;
 }
 
@@ -219,7 +219,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     int precision = 34;
 
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse String as decimal Literal: {}", fn_name);
 
     --pos;
     arg = getArgument(fn_name, pos);
@@ -228,7 +228,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
     bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(std::regex_match(arg, expr));
     if (is_string)
-        throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse String as decimal Literal: {}", fn_name);
 
     if (std::regex_match(arg, expr))
     {
@@ -248,7 +248,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
         scale = std::max(precision - length, 0);
     }
     if (is_string)
-        throw Exception("Failed to parse String as decimal Literal: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse String as decimal Literal: {}", fn_name);
 
     if (scale < 0 || Poco::toUpper(arg) == "NULL")
         out = "NULL";

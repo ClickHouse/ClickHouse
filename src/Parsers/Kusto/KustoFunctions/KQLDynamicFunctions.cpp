@@ -168,18 +168,12 @@ bool ArraySlice::convertImpl(String & out, IParser::Pos & pos)
 
 bool ArraySortAsc::convertImpl(String & out, IParser::Pos & pos)
 {
-    out = ArraySortHelper(out, pos, true);
-    if (out == "false")
-        return false;
-    return true;
+    return directMapping(out, pos, "kql_array_sort_asc");
 }
 
 bool ArraySortDesc::convertImpl(String & out, IParser::Pos & pos)
 {
-    out = ArraySortHelper(out, pos, false);
-    if (out == "false")
-        return false;
-    return true;
+    return directMapping(out, pos, "kql_array_sort_desc");
 }
 
 bool ArraySplit::convertImpl(String & out, IParser::Pos & pos)
@@ -277,7 +271,7 @@ bool Repeat::convertImpl(String & out, IParser::Pos & pos)
     count.erase(remove(count.begin(), count.end(), ' '), count.end());
 
     if (count.empty())
-        throw Exception("number of arguments do not match in function: " + function_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "number of arguments do not match in function: {}", function_name);
     else
         out = "if(" + count + " < 0, [NULL], " + std::format("arrayWithConstant(abs({1}), {0}))", value, count);
 

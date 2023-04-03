@@ -117,7 +117,7 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
     else if (part == "SECOND")
         format = "%S";
     else
-        throw Exception("Unexpected argument " + part + " for " + fn_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected argument {} for {}", part, fn_name);
 
     out = std::format("formatDateTime({}, '{}')", date, format);
     return true;
@@ -178,7 +178,7 @@ bool EndOfMonth::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
         if (offset.empty())
-            throw Exception("Number of arguments do not match in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Number of arguments do not match in function: {}", fn_name);
     }
     out = std::format(
         "toDateTime(toLastDayOfMonth(toDateTime({}, 9, 'UTC') + toIntervalMonth({})), 9, 'UTC') + toIntervalHour(23) + "
@@ -241,7 +241,7 @@ bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
     const String datetime_str = getConvertedArgument(fn_name, pos);
 
     if (datetime_str.empty())
-        throw Exception("Number of arguments do not match in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Number of arguments do not match in function: {}", fn_name);
 
     String offset = "0";
     if (pos->type == TokenType::Comma)
@@ -249,7 +249,7 @@ bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         offset = getConvertedArgument(fn_name, pos);
         if (offset.empty())
-            throw Exception("Number of arguments do not match in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Number of arguments do not match in function: {}", fn_name);
         offset.erase(remove(offset.begin(), offset.end(), ' '), offset.end());
     }
 
@@ -295,7 +295,7 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
             if (c == ' ' || c == '-' || c == '_' || c == '[' || c == ']' || c == '/' || c == ',' || c == '.' || c == ':')
                 formatspecifier = formatspecifier + c;
             else
-                throw Exception("Invalid format delimiter in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid format delimiter in function: {}", fn_name);
             ++i;
         }
         else
@@ -326,7 +326,7 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
             else if (arg.starts_with('f') || arg.starts_with('F'))
                 decimal = arg.size();
             else
-                throw Exception("Format specifier " + arg + " in function:" + fn_name + "is not supported", ErrorCodes::SYNTAX_ERROR);
+                throw Exception( ErrorCodes::SYNTAX_ERROR, "Format specifier {} in function: {} is not supported",arg, fn_name);
             res.pop_back();
             i = i + arg.size();
         }
@@ -385,7 +385,7 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
             if (c == ' ' || c == '-' || c == '_' || c == '[' || c == ']' || c == '/' || c == ',' || c == '.' || c == ':')
                 formatspecifier = formatspecifier + c;
             else
-                throw Exception("Invalid format delimiter in function:" + fn_name, ErrorCodes::SYNTAX_ERROR);
+                throw Exception( ErrorCodes::SYNTAX_ERROR, "Invalid format delimiter in function: {}", fn_name);
             ++i;
         }
         else
@@ -414,7 +414,7 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
             else if (arg.starts_with('f') || arg.starts_with('F'))
                 decimal = arg.size();
             else
-                throw Exception("Format specifier " + arg + " in function:" + fn_name + "is not supported", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Format specifier {} in function:{} is not supported", arg, fn_name);
             res.pop_back();
             i = i + arg.size();
         }
@@ -532,7 +532,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     }
 
     if (arg_count < 2 || arg_count > 4)
-        throw Exception("argument count out of bound in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "argument count out of bound in function: {}", fn_name);
 
     if (arg_count == 2)
     {
@@ -568,7 +568,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         day = day + ".";
     }
     else
-        throw Exception("argument count out of bound in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "argument count out of bound in function: {}", fn_name);
 
     //Add dummy yyyy-mm-dd to parse datetime in CH
     datetime_str = "0000-00-00 " + datetime_str;
@@ -599,7 +599,7 @@ bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
     }
 
     if (arg_count < 1 || arg_count > 7)
-        throw Exception("argument count out of bound in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "argument count out of bound in function: {}", fn_name);
 
     if (arg_count < 7)
     {
@@ -757,7 +757,7 @@ bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
-        throw Exception(fn_name + " accepts only long, int and double type of arguments ", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} accepts only long, int and double type of arguments", fn_name);
 
     String expression = getConvertedArgument(fn_name, pos);
     out = std::format(
