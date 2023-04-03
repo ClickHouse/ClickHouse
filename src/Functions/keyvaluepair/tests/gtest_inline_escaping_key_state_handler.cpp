@@ -1,5 +1,5 @@
-#include <Functions/keyvaluepair/impl/InlineEscapingStateHandler.h>
 #include <Columns/ColumnString.h>
+#include <Functions/keyvaluepair/impl/StateHandlerImpl.h>
 
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
@@ -14,7 +14,7 @@ using namespace DB::extractKV;
 using State = extractKV::StateHandler::State;
 using NextState = extractKV::StateHandler::NextState;
 
-void test_wait(const InlineEscapingStateHandler & handler, std::string_view input, std::size_t expected_pos, State expected_state)
+void test_wait(const StateHandlerImpl & handler, std::string_view input, std::size_t expected_pos, State expected_state)
 {
     auto next_state = handler.waitKey(input);
 
@@ -23,7 +23,7 @@ void test_wait(const InlineEscapingStateHandler & handler, std::string_view inpu
 }
 
 template <bool quoted>
-void test_read(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,
+void test_read(const StateHandlerImpl & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     auto str = ColumnString::create();
@@ -44,13 +44,13 @@ void test_read(const InlineEscapingStateHandler & handler, std::string_view inpu
     ASSERT_EQ(element.uncommittedChunk(), expected_element);
 }
 
-void test_read(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,
+void test_read(const StateHandlerImpl & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     test_read<false>(handler, input, expected_element, expected_pos, expected_state);
 }
 
-void test_read_quoted(const InlineEscapingStateHandler & handler, std::string_view input, std::string_view expected_element,
+void test_read_quoted(const StateHandlerImpl & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     test_read<true>(handler, input, expected_element, expected_pos, expected_state);
@@ -64,7 +64,7 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, Wait)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    InlineEscapingStateHandler handler(configuration);
+    StateHandlerImpl handler(configuration);
 
     test_wait(handler, "name", 0u, State::READING_KEY);
     test_wait(handler, "\\:name", 2u, State::READING_KEY);
@@ -80,7 +80,7 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, Read)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    InlineEscapingStateHandler handler(configuration);
+    StateHandlerImpl handler(configuration);
 
     std::string key_str = "name";
     std::string key_with_delimiter_str = key_str + ':';
@@ -105,7 +105,7 @@ TEST(extractKVPair_InlineEscapingKeyStateHandler, ReadEnclosed)
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
-    InlineEscapingStateHandler handler(configuration);
+    StateHandlerImpl handler(configuration);
 
     std::string regular_key = "name";
     std::string regular_key_with_end_quote = regular_key + "\"";

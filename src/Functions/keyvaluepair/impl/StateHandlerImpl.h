@@ -19,49 +19,19 @@ namespace DB
 namespace extractKV
 {
 
-namespace
-{
-    std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, DB::extractKV::StringWriter & output)
-    {
-        std::string escaped_sequence;
-        DB::ReadBufferFromMemory buf(file.begin() + character_pos, file.size() - character_pos);
-
-        if (DB::parseComplexEscapeSequence(escaped_sequence, buf))
-        {
-            output.append(file.begin() + start_pos, file.begin() + character_pos);
-            output.append(escaped_sequence);
-
-            return {true, buf.getPosition()};
-        }
-
-
-        return {false, buf.getPosition()};
-    }
-
-    using NextState = DB::extractKV::StateHandler::NextState;
-
-}
-
 template <bool WITH_ESCAPING>
-class InlineEscapingStateHandler : public StateHandler
+class StateHandlerImpl : public StateHandler
 {
+    static constexpr char ESCAPE_CHARACTER = '\\';
 public:
-    explicit InlineEscapingStateHandler(Configuration configuration_)
+    explicit StateHandlerImpl(Configuration configuration_)
         : configuration(std::move(configuration_))
     {
-        // improve below, possibly propagating with_Escaping to needle factory as well
-        if constexpr (WITH_ESCAPING)
-        {
-            wait_needles = EscapingNeedleFactory::getWaitNeedles(configuration);
-            read_needles = EscapingNeedleFactory::getReadNeedles(configuration);
-            read_quoted_needles = EscapingNeedleFactory::getReadQuotedNeedles(configuration);
-        }
-        else
-        {
-            wait_needles = NeedleFactory::getWaitNeedles(configuration);
-            read_needles = NeedleFactory::getReadNeedles(configuration);
-            read_quoted_needles = NeedleFactory::getReadQuotedNeedles(configuration);
-        }
+        NeedleFactory<WITH_ESCAPING> needle_factory;
+
+        wait_needles = needle_factory.getWaitNeedles(configuration);
+        read_needles = needle_factory.getReadNeedles(configuration);
+        read_quoted_needles = needle_factory.getReadQuotedNeedles(configuration);
     }
 
     [[nodiscard]] NextState waitKey(std::string_view file) const
@@ -98,7 +68,7 @@ public:
             auto character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == '\\')
+            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -125,8 +95,6 @@ public:
             pos = next_pos;
         }
 
-        // might be problematic in case string reaches the end and I haven't copied anything over to key
-
         return {file.size(), State::END};
     }
 
@@ -143,7 +111,7 @@ public:
             size_t character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == '\\')
+            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -225,7 +193,7 @@ public:
             const size_t character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == '\\')
+            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -270,7 +238,7 @@ public:
             const size_t character_position = p - file.begin();
             size_t next_pos = character_position + 1u;
 
-            if (WITH_ESCAPING && *p == '\\')
+            if (WITH_ESCAPING && *p == ESCAPE_CHARACTER)
             {
                 if constexpr (WITH_ESCAPING)
                 {
@@ -299,9 +267,25 @@ public:
     const Configuration configuration;
 
 private:
-    std::vector<char> wait_needles;
-    std::vector<char> read_needles;
-    std::vector<char> read_quoted_needles;
+    SearchSymbols wait_needles;
+    SearchSymbols read_needles;
+    SearchSymbols read_quoted_needles;
+
+    std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, DB::extractKV::StringWriter & output) const
+    {
+        std::string escaped_sequence;
+        DB::ReadBufferFromMemory buf(file.begin() + character_pos, file.size() - character_pos);
+
+        if (DB::parseComplexEscapeSequence(escaped_sequence, buf))
+        {
+            output.append(file.begin() + start_pos, file.begin() + character_pos);
+            output.append(escaped_sequence);
+
+            return {true, buf.getPosition()};
+        }
+
+        return {false, buf.getPosition()};
+    }
 };
 
 }

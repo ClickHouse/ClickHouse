@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/keyvaluepair/impl/Configuration.h>
+#include <base/find_symbols.h>
 
 #include <vector>
 
@@ -10,27 +11,63 @@ namespace DB
 namespace extractKV
 {
 
-/*
- * Did not spend much time here, running against the clock :)
- *
- * Takes in the Configuration and outputs the characters of interest for each state.
- * Those characters will be later used in string look-ups like `find_first` and `find_first_not`
- * */
+template <bool WITH_ESCAPING>
 class NeedleFactory
 {
-    static constexpr auto NEEDLE_SIZE = 16u;
 public:
-    static std::vector<char> getWaitNeedles(const Configuration & extractor_configuration);
-    static std::vector<char> getReadNeedles(const Configuration & extractor_configuration);
-    static std::vector<char> getReadQuotedNeedles(const Configuration & extractor_configuration);
-};
+    SearchSymbols getWaitNeedles(const Configuration & extractor_configuration)
+    {
+        const auto & [key_value_delimiter, quoting_character, pair_delimiters]
+            = extractor_configuration;
 
-class EscapingNeedleFactory
-{
-public:
-    static std::vector<char> getWaitNeedles(const Configuration & extractor_configuration);
-    static std::vector<char> getReadNeedles(const Configuration & extractor_configuration);
-    static std::vector<char> getReadQuotedNeedles(const Configuration & extractor_configuration);
+        std::vector<char> needles;
+
+        needles.push_back(key_value_delimiter);
+
+        std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
+
+        if constexpr (WITH_ESCAPING)
+        {
+            needles.push_back('\\');
+        }
+
+        return SearchSymbols {std::string{needles.data(), needles.size()}};
+    }
+
+    SearchSymbols getReadNeedles(const Configuration & extractor_configuration)
+    {
+        const auto & [key_value_delimiter, quoting_character, pair_delimiters]
+            = extractor_configuration;
+
+        std::vector<char> needles;
+
+        needles.push_back(key_value_delimiter);
+        needles.push_back(quoting_character);
+
+        std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
+
+        if constexpr (WITH_ESCAPING)
+        {
+            needles.push_back('\\');
+        }
+
+        return SearchSymbols {std::string{needles.data(), needles.size()}};
+    }
+    SearchSymbols getReadQuotedNeedles(const Configuration & extractor_configuration)
+    {
+        const auto quoting_character = extractor_configuration.quoting_character;
+
+        std::vector<char> needles;
+
+        needles.push_back(quoting_character);
+
+        if constexpr (WITH_ESCAPING)
+        {
+            needles.push_back('\\');
+        }
+
+        return SearchSymbols {std::string{needles.data(), needles.size()}};
+    }
 };
 
 }

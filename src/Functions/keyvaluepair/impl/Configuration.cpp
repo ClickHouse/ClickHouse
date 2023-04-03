@@ -27,7 +27,8 @@ Configuration ConfigurationFactory::createWithoutEscaping(char key_value_delimit
 
 Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
 {
-    constexpr char ESCAPE_CHARACTER = '\\';
+    static constexpr char ESCAPE_CHARACTER = '\\';
+
     if (key_value_delimiter == ESCAPE_CHARACTER
         || quoting_character == ESCAPE_CHARACTER
         || std::find(pair_delimiters.begin(), pair_delimiters.end(), ESCAPE_CHARACTER) != pair_delimiters.end())
