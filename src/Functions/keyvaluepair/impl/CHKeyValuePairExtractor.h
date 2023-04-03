@@ -8,10 +8,6 @@
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/impl/StringWriter.h>
 
-// TODO: debug stuff, remove it before merging
-#include <fmt/core.h>
-#include <magic_enum.hpp>
-
 namespace DB
 {
 
@@ -35,14 +31,14 @@ public:
     {
         auto state =  State::WAITING_KEY;
 
-        extractKV::StringWriter key(*keys);
-        extractKV::StringWriter value(*values);
+        auto key_writer = typename StateHandler::SW(*keys);
+        auto value_writer = typename StateHandler::SW(*values);
 
         uint64_t row_offset = 0;
 
         while (state != State::END)
         {
-            auto next_state = processState(data, state, key, value, row_offset);
+            auto next_state = processState(data, state, key_writer, value_writer, row_offset);
 
             if (next_state.position_in_string > data.size() && next_state.state != State::END)
             {
@@ -57,15 +53,14 @@ public:
         }
 
         // below reset discards invalid keys and values
-        reset(key, value);
+        reset(key_writer, value_writer);
 
         return row_offset;
     }
 
 private:
 
-    NextState processState(std::string_view file, State state, extractKV::StringWriter & key,
-                           extractKV::StringWriter & value, uint64_t & row_offset)
+    NextState processState(std::string_view file, State state, auto & key, auto & value, uint64_t & row_offset)
     {
         switch (state)
         {
@@ -108,8 +103,8 @@ private:
         }
     }
 
-    NextState flushPair(const std::string_view & file, extractKV::StringWriter & key,
-                        extractKV::StringWriter & value, uint64_t & row_offset)
+    NextState flushPair(const std::string_view & file, auto & key,
+                        auto & value, uint64_t & row_offset)
     {
         key.commit();
         value.commit();
@@ -119,7 +114,7 @@ private:
         return {0, file.empty() ? State::END : State::WAITING_KEY};
     }
 
-    void reset(extractKV::StringWriter & key, extractKV::StringWriter & value)
+    void reset(auto & key, auto & value)
     {
         key.reset();
         value.reset();

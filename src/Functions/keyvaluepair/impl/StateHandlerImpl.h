@@ -4,6 +4,7 @@
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 #include <Functions/keyvaluepair/impl/StringWriter.h>
 #include <Functions/keyvaluepair/impl/NeedleFactory.h>
+#include <Functions/keyvaluepair/impl/StringWriter.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -55,7 +56,7 @@ public:
         return {file.size(), State::END};
     }
 
-    [[nodiscard]] NextState readKey(std::string_view file, StringWriter & key) const
+    [[nodiscard]] NextState readKey(std::string_view file, auto & key) const
     {
         const auto & [key_value_delimiter, _, pair_delimiters] = configuration;
 
@@ -98,7 +99,7 @@ public:
         return {file.size(), State::END};
     }
 
-    [[nodiscard]] NextState readQuotedKey(std::string_view file, StringWriter & key) const
+    [[nodiscard]] NextState readQuotedKey(std::string_view file, auto & key) const
     {
         const auto quoting_character = configuration.quoting_character;
 
@@ -180,7 +181,7 @@ public:
         return {pos, State::READING_VALUE};
     }
 
-    [[nodiscard]] NextState readValue(std::string_view file, StringWriter & value) const
+    [[nodiscard]] NextState readValue(std::string_view file, auto & value) const
     {
         const auto & [key_value_delimiter, _, pair_delimiters] = configuration;
 
@@ -225,7 +226,7 @@ public:
         return {file.size(), State::FLUSH_PAIR};
     }
 
-    [[nodiscard]] NextState readQuotedValue(std::string_view file, StringWriter & value) const
+    [[nodiscard]] NextState readQuotedValue(std::string_view file, auto & value) const
     {
         const auto quoting_character = configuration.quoting_character;
 
@@ -271,7 +272,7 @@ private:
     SearchSymbols read_needles;
     SearchSymbols read_quoted_needles;
 
-    std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, DB::extractKV::StringWriter & output) const
+    std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, auto & output) const
     {
         std::string escaped_sequence;
         DB::ReadBufferFromMemory buf(file.begin() + character_pos, file.size() - character_pos);
@@ -286,6 +287,24 @@ private:
 
         return {false, buf.getPosition()};
     }
+};
+
+struct NoEscapingStateHandler : public StateHandlerImpl<false>
+{
+    using SW = StringWriter2;
+
+    template <typename ... Args>
+    NoEscapingStateHandler(Args && ... args)
+    : StateHandlerImpl<false>(std::forward<Args>(args)...) {}
+};
+
+struct InlineEscapingStateHandler: public StateHandlerImpl<true>
+{
+    using SW = StringWriter;
+
+    template <typename ... Args>
+    InlineEscapingStateHandler(Args && ... args)
+        : StateHandlerImpl<true>(std::forward<Args>(args)...) {}
 };
 
 }
