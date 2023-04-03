@@ -63,7 +63,6 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
         for (const auto & key : keys)
         {
             auto key_file = std::filesystem::path(key);
-
             Strings file_parts;
             splitInto<'_'>(file_parts, key_file.stem());
             if (file_parts.size() != 3)

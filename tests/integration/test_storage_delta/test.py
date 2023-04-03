@@ -170,10 +170,45 @@ def test_partition_by(started_cluster):
     )
 
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) == 11 # 10 partitions and 1 metadata file
+    assert len(files) == 11  # 10 partitions and 1 metadata file
 
     create_delta_table(instance, TABLE_NAME)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+
+
+def test_checkpoint(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+    TABLE_NAME = "test_checkpoint"
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+    for i in range(1, 25):
+        write_delta_from_df(
+            spark,
+            generate_data(spark, i, i + 1),
+            f"/{TABLE_NAME}",
+            mode="append",
+        )
+
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    #data = get_file_contents(
+    #    minio_client,
+    #    bucket,
+    #    f"/{TABLE_NAME}/_delta_log/00000000000000000010.checkpoint.parquet",
+    #)
+    #delta_metadata = get_delta_metadata(data)
+    #print(delta_metadata)
+
+    create_delta_table(instance, TABLE_NAME)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 16
 
 
 def test_multiple_log_files(started_cluster):
