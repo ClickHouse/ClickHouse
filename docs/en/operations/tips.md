@@ -51,9 +51,13 @@ But for storing archives with rare queries, shelves will work.
 ## RAID {#raid}
 
 When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`). We do not recommend using LVM.
+For Linux, software RAID is better (with `mdadm`). 
 When creating RAID-10, select the `far` layout.
 If your budget allows, choose RAID-10.
+
+LVM by itself (without RAID or `mdadm`) is ok, but making RAID with it or combining it with `mdadm` is a less explored option, and there will be more chances for mistakes
+(selecting wrong chunk size; misalignment of chunks; choosing a wrong raid type; forgetting to cleanup disks). If you are confident
+in using LVM, there is nothing against using it.
 
 If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
 When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
