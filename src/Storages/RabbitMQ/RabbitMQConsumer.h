@@ -32,8 +32,7 @@ public:
             size_t channel_id_base_,
             const String & channel_base_,
             Poco::Logger * log_,
-            uint32_t queue_size_,
-            const std::atomic<bool> & stopped_);
+            uint32_t queue_size_);
 
     struct AckTracker
     {
@@ -60,12 +59,12 @@ public:
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();
     bool needChannelUpdate();
-    void closeChannel();
+    void shutdown();
 
     void updateQueues(std::vector<String> & queues_) { queues = queues_; }
     size_t queuesCount() { return queues.size(); }
 
-    bool isConsumerStopped() { return stopped; }
+    bool isConsumerStopped() const { return stopped; }
     bool ackMessages();
     void updateAckTracker(AckTracker record = AckTracker());
 
@@ -95,7 +94,7 @@ private:
     const String channel_base;
     const size_t channel_id_base;
     Poco::Logger * log;
-    const std::atomic<bool> & stopped;
+    bool stopped;
 
     String channel_id;
     std::atomic<bool> channel_error = true, wait_subscription = false;

@@ -24,22 +24,24 @@ RabbitMQConsumer::RabbitMQConsumer(
         size_t channel_id_base_,
         const String & channel_base_,
         Poco::Logger * log_,
-        uint32_t queue_size_,
-        const std::atomic<bool> & stopped_)
+        uint32_t queue_size_)
         : event_handler(event_handler_)
         , queues(queues_)
         , channel_base(channel_base_)
         , channel_id_base(channel_id_base_)
         , log(log_)
-        , stopped(stopped_)
         , received(queue_size_)
 {
 }
 
-
-void RabbitMQConsumer::closeChannel()
+void RabbitMQConsumer::shutdown()
 {
+    {
+        std::lock_guard lock(mutex);
+        stopped = true;
+    }
     cv.notify_one();
+
     if (consumer_channel)
         consumer_channel->close();
 }
