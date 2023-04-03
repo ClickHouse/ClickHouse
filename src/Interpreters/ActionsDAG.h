@@ -221,9 +221,11 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
-    /// Get an ActionsDAG where:
-    /// * Subtrees from new_inputs are converted to inputs with specified names.
-    /// * Outputs are taken from required_outputs.
+    /// Get an ActionsDAG in a following way:
+    /// * Traverse a tree starting from required_outputs
+    /// * If there is a node from new_inputs keys, replace it to INPUT
+    /// * INPUT name should be taken from new_inputs mapped node name
+    /// * Mapped nodes may be the same nodes, and in this case there would be a single INPUT
     /// Here want to substitute some expressions to columns from projection.
     /// This function expects that all required_outputs can be calculated from nodes in new_inputs.
     /// If not, exception will happen.

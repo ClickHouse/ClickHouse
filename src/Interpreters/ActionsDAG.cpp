@@ -795,6 +795,9 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
 
                     if (!node)
                     {
+                        /// It is possible to have a few aliases on the same column.
+                        /// We may want to replace all the aliases,
+                        /// in this case they should have a single input as a child.
                         auto & mapped_input = inputs_mapping[rename];
 
                         if (!mapped_input)
@@ -843,6 +846,8 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
 
     for (const auto * output : required_outputs)
     {
+        /// Keep the names for outputs.
+        /// Add an alias if the mapped node has a different result name.
         const auto * mapped_output = mapping[output];
         if (output->result_name != mapped_output->result_name)
             mapped_output = &dag->addAlias(*mapped_output, output->result_name);
