@@ -2,12 +2,11 @@
 
 #include <Functions/keyvaluepair/impl/Configuration.h>
 #include <Functions/keyvaluepair/impl/StateHandler.h>
-#include <Functions/keyvaluepair/impl/StringWriter.h>
 #include <Functions/keyvaluepair/impl/NeedleFactory.h>
-#include <Functions/keyvaluepair/impl/StringWriter.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Columns/ColumnString.h>
 #include <base/find_symbols.h>
 
 #include <string_view>
@@ -291,7 +290,58 @@ private:
 
 struct NoEscapingStateHandler : public StateHandlerImpl<false>
 {
-    using SW = StringWriter2;
+    class StringWriter
+    {
+        ColumnString & col;
+
+        std::string_view element;
+
+    public:
+        explicit StringWriter(ColumnString & col_)
+            : col(col_)
+        {}
+
+        ~StringWriter()
+        {
+            // Make sure that ColumnString invariants are not broken.
+            if (!isEmpty())
+            {
+                reset();
+            }
+        }
+
+        void append(std::string_view new_data)
+        {
+            element = new_data;
+        }
+
+        template <typename T>
+        void append(const T * begin, const T * end)
+        {
+            append({begin, end});
+        }
+
+        void reset()
+        {
+            element = {};
+        }
+
+        bool isEmpty() const
+        {
+            return element.empty();
+        }
+
+        void commit()
+        {
+            col.insertData(element.begin(), element.size());
+            reset();
+        }
+
+        std::string_view uncommittedChunk() const
+        {
+            return element;
+        }
+    };
 
     template <typename ... Args>
     NoEscapingStateHandler(Args && ... args)
@@ -300,7 +350,60 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
 
 struct InlineEscapingStateHandler: public StateHandlerImpl<true>
 {
-    using SW = StringWriter;
+    class StringWriter
+    {
+        ColumnString & col;
+        ColumnString::Chars & chars;
+        UInt64 prev_commit_pos;
+
+    public:
+        explicit StringWriter(ColumnString & col_)
+            : col(col_),
+            chars(col.getChars()),
+            prev_commit_pos(chars.size())
+        {}
+
+        ~StringWriter()
+        {
+            // Make sure that ColumnString invariants are not broken.
+            if (!isEmpty())
+            {
+                reset();
+            }
+        }
+
+        void append(std::string_view new_data)
+        {
+            chars.insert(new_data.begin(), new_data.end());
+        }
+
+        template <typename T>
+        void append(const T * begin, const T * end)
+        {
+            chars.insert(begin, end);
+        }
+
+        void reset()
+        {
+            chars.resize_assume_reserved(prev_commit_pos);
+        }
+
+        bool isEmpty() const
+        {
+            return chars.size() == prev_commit_pos;
+        }
+
+        void commit()
+        {
+            col.insertData(nullptr, 0);
+            prev_commit_pos = chars.size();
+        }
+
+        std::string_view uncommittedChunk() const
+        {
+            return std::string_view(chars.raw_data() + prev_commit_pos, chars.raw_data() + chars.size());
+        }
+    };
 
     template <typename ... Args>
     InlineEscapingStateHandler(Args && ... args)

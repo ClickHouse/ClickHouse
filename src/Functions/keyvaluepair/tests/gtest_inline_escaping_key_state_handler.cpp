@@ -28,7 +28,7 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 {
     auto str = ColumnString::create();
     NextState next_state;
-    StringWriter element(*str);
+    InlineEscapingStateHandler::StringWriter element(*str);
 
     if constexpr (quoted)
     {

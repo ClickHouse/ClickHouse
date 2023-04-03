@@ -6,7 +6,6 @@
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
-#include <Functions/keyvaluepair/impl/StringWriter.h>
 
 namespace DB
 {
@@ -31,14 +30,14 @@ public:
     {
         auto state =  State::WAITING_KEY;
 
-        auto key_writer = typename StateHandler::SW(*keys);
-        auto value_writer = typename StateHandler::SW(*values);
+        auto key = typename StateHandler::StringWriter(*keys);
+        auto value = typename StateHandler::StringWriter(*values);
 
         uint64_t row_offset = 0;
 
         while (state != State::END)
         {
-            auto next_state = processState(data, state, key_writer, value_writer, row_offset);
+            auto next_state = processState(data, state, key, value, row_offset);
 
             if (next_state.position_in_string > data.size() && next_state.state != State::END)
             {
@@ -53,7 +52,7 @@ public:
         }
 
         // below reset discards invalid keys and values
-        reset(key_writer, value_writer);
+        reset(key, value);
 
         return row_offset;
     }
