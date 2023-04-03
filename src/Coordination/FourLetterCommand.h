@@ -364,4 +364,41 @@ struct LogInfoCommand : public IFourLetterCommand
     ~LogInfoCommand() override = default;
 };
 
+/// Request to be leader.
+struct RequestLeaderCommand : public IFourLetterCommand
+{
+    explicit RequestLeaderCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rqld"; }
+    String run() override;
+    ~RequestLeaderCommand() override = default;
+};
+
+struct RecalculateCommand : public IFourLetterCommand
+{
+    explicit RecalculateCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rclc"; }
+    String run() override;
+    ~RecalculateCommand() override = default;
+};
+
+struct CleanResourcesCommand : public IFourLetterCommand
+{
+    explicit CleanResourcesCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "clrs"; }
+    String run() override;
+    ~CleanResourcesCommand() override = default;
+};
+
 }

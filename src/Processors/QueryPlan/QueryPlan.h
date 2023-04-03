@@ -3,7 +3,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
-#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <list>
 #include <memory>

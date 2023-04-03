@@ -1,3 +1,7 @@
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+endif ()
+
 # wget https://raw.githubusercontent.com/openssh/openssh-portable/master/openbsd-compat/readpassphrase.c
 # wget https://raw.githubusercontent.com/openssh/openssh-portable/master/openbsd-compat/readpassphrase.h
 

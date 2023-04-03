@@ -28,7 +28,7 @@ struct ColumnMapping
     void setupByHeader(const Block & header);
 
     void addColumns(
-        const Names & column_names, const std::unordered_map<String, size_t> & column_indexes_by_names, const FormatSettings & settings);
+        const Names & column_names, const Block::NameMap & column_indexes_by_names, const FormatSettings & settings);
 
     void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::vector<UInt8> & read_columns);
 };

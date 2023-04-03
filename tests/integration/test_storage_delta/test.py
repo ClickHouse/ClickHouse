@@ -1,7 +1,6 @@
 import logging
 import os
 import json
-
 import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -126,7 +125,42 @@ def test_select_query(started_cluster):
     run_query(instance, create_query)
 
     select_query = "SELECT {} FROM deltalake FORMAT TSV"
+    select_table_function_query = "SELECT {col} FROM deltaLake('http://{ip}:{port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV"
 
     for column_name in columns:
         result = run_query(instance, select_query.format(column_name)).splitlines()
         assert len(result) > 0
+
+    for column_name in columns:
+        result = run_query(
+            instance,
+            select_table_function_query.format(
+                col=column_name,
+                ip=started_cluster.minio_ip,
+                port=started_cluster.minio_port,
+                bucket=bucket,
+            ),
+        ).splitlines()
+        assert len(result) > 0
+
+
+def test_describe_query(started_cluster):
+    instance = started_cluster.instances["main_server"]
+    bucket = started_cluster.minio_bucket
+    result = instance.query(
+        f"DESCRIBE deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV",
+    )
+
+    assert result == TSV(
+        [
+            ["begin_lat", "Nullable(Float64)"],
+            ["begin_lon", "Nullable(Float64)"],
+            ["driver", "Nullable(String)"],
+            ["end_lat", "Nullable(Float64)"],
+            ["end_lon", "Nullable(Float64)"],
+            ["fare", "Nullable(Float64)"],
+            ["rider", "Nullable(String)"],
+            ["ts", "Nullable(Int64)"],
+            ["uuid", "Nullable(String)"],
+        ]
+    )

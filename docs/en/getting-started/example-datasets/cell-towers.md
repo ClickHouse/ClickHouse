@@ -1,9 +1,10 @@
 ---
 slug: /en/getting-started/example-datasets/cell-towers
-sidebar_label: Cell Towers
+sidebar_label: Geo Data
 sidebar_position: 3
-title: "Cell Towers"
+title: "Geo Data using the Cell Tower Dataset"
 ---
+
 import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_http.mdx';
 
 import Tabs from '@theme/Tabs';
@@ -16,7 +17,7 @@ import SupersetDocker from '@site/docs/en/_snippets/_add_superset_detail.md';
 ## Goal
 
 In this guide you will learn how to:
-- Load the OpenCelliD data in Clickhouse
+- Load the OpenCelliD data in ClickHouse
 - Connect Apache Superset to ClickHouse
 - Build a dashboard based on data available in the dataset
 
@@ -163,7 +164,7 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 Based on the above query and the [MCC list](https://en.wikipedia.org/wiki/Mobile_country_code), the countries with the most cell towers are: the USA, Germany, and Russia.
 
-You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
+You may want to create a [Dictionary](../../sql-reference/dictionaries/index.md) in ClickHouse to decode these values.
 
 ## Use case: Incorporate geo data {#use-case}
 
@@ -275,7 +276,7 @@ Here is a description of the columns taken from the OpenCelliD forum:
 To find your MCC check [Mobile network codes](https://en.wikipedia.org/wiki/Mobile_country_code), and use the three digits in the **Mobile country code** column.
 :::
 
-The schema for this table was designed for compact storage on disk and query speed.  
+The schema for this table was designed for compact storage on disk and query speed.
 - The `radio` data is stored as an `Enum8` (`UInt8`) rather than a string.
 - `mcc` or Mobile country code, is stored as a `UInt16` as we know the range is 1 - 999.
 - `lon` and `lat` are `Float64`.

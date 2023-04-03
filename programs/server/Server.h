@@ -3,6 +3,7 @@
 #include <Server/IServer.h>
 
 #include <Daemon/BaseDaemon.h>
+#include "Server/HTTP/HTTPContext.h"
 #include <Server/TCPProtocolStackFactory.h>
 #include <Poco/Net/HTTPServerParams.h>
 
@@ -71,6 +72,8 @@ private:
     ContextMutablePtr global_context;
     /// Updated/recent config, to compare http_handlers
     ConfigurationPtr latest_config;
+
+    HTTPContextPtr httpContext() const;
 
     Poco::Net::SocketAddress socketBindListen(
         const Poco::Util::AbstractConfiguration & config,

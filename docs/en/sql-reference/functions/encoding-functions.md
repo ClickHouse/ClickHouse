@@ -185,7 +185,7 @@ unhex(arg)
 
 **Arguments**
 
--   `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md).
+-   `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 

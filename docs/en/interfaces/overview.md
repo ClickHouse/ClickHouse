@@ -6,7 +6,7 @@ keywords: [clickhouse, network, interfaces, http, tcp, grpc, command-line, clien
 description: ClickHouse provides three network interfaces
 ---
 
-# Interfaces
+# Drivers and Interfaces
 
 ClickHouse provides three network interfaces (they can be optionally wrapped in TLS for additional security):
 
@@ -26,4 +26,3 @@ There are also a wide range of third-party libraries for working with ClickHouse
 -   [Client libraries](../interfaces/third-party/client-libraries.md)
 -   [Integrations](../interfaces/third-party/integrations.md)
 -   [Visual interfaces](../interfaces/third-party/gui.md)
-

@@ -22,17 +22,29 @@ struct StringKey24
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
 {
     assert(n != 0);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
+#else
     return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
+#endif
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
 {
     assert(n.items[1] != 0);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
+#else
     return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
+#endif
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
 {
     assert(n.c != 0);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
+#else
     return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
+#endif
 }
 
 struct StringHashTableHash
@@ -80,7 +92,7 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty //-V730
+struct StringHashTableEmpty
 {
     using Self = StringHashTableEmpty;
 
@@ -238,7 +250,6 @@ public:
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
     //
-    // NOTE: It relies on Little Endianness
     //
     // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
     // std::string here, but you can pass i.e. ColumnString::getDataAt()),
@@ -280,13 +291,19 @@ public:
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
                     memcpy(&n[0], p, 8);
-                    n[0] &= -1ULL >> s;
+                    if constexpr (std::endian::native == std::endian::little)
+                        n[0] &= -1ULL >> s;
+                    else
+                        n[0] &= -1ULL << s;
                 }
                 else
                 {
                     const char * lp = x.data + x.size - 8;
                     memcpy(&n[0], lp, 8);
-                    n[0] >>= s;
+                    if constexpr (std::endian::native == std::endian::little)
+                        n[0] >>= s;
+                    else
+                        n[0] <<= s;
                 }
                 keyHolderDiscardKey(key_holder);
                 return func(self.m1, k8, hash(k8));
@@ -296,7 +313,10 @@ public:
                 memcpy(&n[0], p, 8);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[1], lp, 8);
-                n[1] >>= s;
+                if constexpr (std::endian::native == std::endian::little)
+                    n[1] >>= s;
+                else
+                    n[1] <<= s;
                 keyHolderDiscardKey(key_holder);
                 return func(self.m2, k16, hash(k16));
             }
@@ -305,7 +325,10 @@ public:
                 memcpy(&n[0], p, 16);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[2], lp, 8);
-                n[2] >>= s;
+                if constexpr (std::endian::native == std::endian::little)
+                    n[2] >>= s;
+                else
+                    n[2] <<= s;
                 keyHolderDiscardKey(key_holder);
                 return func(self.m3, k24, hash(k24));
             }

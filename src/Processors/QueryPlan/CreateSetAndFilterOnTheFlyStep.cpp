@@ -40,7 +40,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -62,7 +61,7 @@ public:
     {
         assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
-        std::lock_guard<std::mutex> lock(mux);
+        std::lock_guard lock(mux);
         if (input_port || output_port)
         {
             assert(input_port && output_port);
@@ -198,7 +197,7 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
 
     own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 
-    output_stream = input_streams[0];
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
 

@@ -45,8 +45,6 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    const String & getName() const override { return name; }
-
     const String & getPath() const override { return metadata_storage->getPath(); }
 
     StoredObjects getStorageObjects(const String & local_path) const override;
@@ -138,7 +136,7 @@ public:
 
     void shutdown() override;
 
-    void startup(ContextPtr context) override;
+    void startupImpl(ContextPtr context) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -153,6 +151,12 @@ public:
         size_t buf_size,
         WriteMode mode,
         const WriteSettings & settings) override;
+
+    void writeFileUsingCustomWriteObject(
+        const String & path,
+        WriteMode mode,
+        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+            custom_write_object_function) override;
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
@@ -177,11 +181,18 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
+    /// Is object write-once?
+    /// For example: S3PlainObjectStorage is write once, this means that it
+    /// does support BACKUP to this disk, but does not support INSERT into
+    /// MergeTree table on this disk.
+    bool isWriteOnce() const override;
+
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
     void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+    FileCachePtr getCache() const;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
@@ -206,7 +217,6 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
-    const String name;
     const String object_storage_root_path;
     Poco::Logger * log;
 

@@ -54,8 +54,11 @@ void DiskLocalCheckThread::run()
     else
     {
         retry = 0;
+        if (!disk->broken)
+            LOG_ERROR(log, "Disk {} marked as broken", disk->getName());
+        else
+            LOG_INFO(log, "Disk {} is still broken", disk->getName());
         disk->broken = true;
-        LOG_INFO(log, "Disk {} is broken", disk->getName());
         task->scheduleAfter(check_period_ms);
     }
 }

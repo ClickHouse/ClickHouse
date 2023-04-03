@@ -164,7 +164,7 @@ public:
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(ColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(idx.getPositionsPtr());
 
@@ -173,15 +173,15 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
-    void forEachSubcolumnRecursively(ColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
     {
-        callback(idx.getPositionsPtr());
+        callback(*idx.getPositionsPtr());
         idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
         {
-            callback(dictionary.getColumnUniquePtr());
+            callback(*dictionary.getColumnUniquePtr());
             dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
         }
     }
@@ -197,6 +197,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return getIndexes().getRatioOfDefaultRows(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getIndexes().getNumberOfDefaultRows();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
@@ -219,6 +224,9 @@ public:
     bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
+    MutableColumnPtr cloneNullable() const;
+
+    ColumnPtr cloneWithDefaultOnNull() const;
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
@@ -242,7 +250,7 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
     }
 
@@ -278,6 +286,7 @@ public:
 
         const ColumnPtr & getPositions() const { return positions; }
         WrappedPtr & getPositionsPtr() { return positions; }
+        const WrappedPtr & getPositionsPtr() const { return positions; }
         size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
         void insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit);
@@ -358,6 +367,8 @@ private:
 
     void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
 };
+
+bool isColumnLowCardinalityNullable(const IColumn & column);
 
 
 }

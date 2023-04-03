@@ -21,7 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -70,37 +70,39 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
     ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
 
     if (arguments.size() < 3)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-            + toString(arguments.size()) + ", should be at least 3.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Number of arguments for function {} doesn't match: passed {}, should be at least 3.",
+            getName(), arguments.size());
 
     const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!aggregate_function_name_column)
-        throw Exception("First argument for function " + getName() + " must be constant string: name of aggregate function.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
+            "name of aggregate function.", getName());
 
     const DataTypeArray * ranges_type_array = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
     if (!ranges_type_array)
-        throw Exception("Second argument for function " + getName() + " must be an array of ranges.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array of ranges.",
+            getName());
     const DataTypeTuple * ranges_type_tuple = checkAndGetDataType<DataTypeTuple>(ranges_type_array->getNestedType().get());
     if (!ranges_type_tuple || ranges_type_tuple->getElements().size() != 2)
-        throw Exception("Each array element in the second argument for function " + getName() + " must be a tuple (index, length).",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Each array element in the second argument for function {} must be a tuple (index, length).",
+                        getName());
     if (!isNativeInteger(ranges_type_tuple->getElements()[0]))
-        throw Exception("First tuple member in the second argument for function " + getName() + " must be ints or uints.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "First tuple member in the second argument for function {} must be ints or uints.", getName());
     if (!WhichDataType(ranges_type_tuple->getElements()[1]).isNativeUInt())
-        throw Exception("Second tuple member in the second argument for function " + getName() + " must be uints.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Second tuple member in the second argument for function {} must be uints.", getName());
 
     DataTypes argument_types(arguments.size() - 2);
     for (size_t i = 2, size = arguments.size(); i < size; ++i)
     {
         const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
         if (!arg)
-            throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
-                + arguments[i].type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument {} for function {} must be an array but it has type {}.",
+                            i, getName(), arguments[i].type->getName());
 
         argument_types[i - 2] = arg->getNestedType();
     }
@@ -110,8 +112,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
         String aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
 
         if (aggregate_function_name_with_params.empty())
-            throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument for function {} (name of aggregate function) cannot be empty.", getName());
 
         String aggregate_function_name;
         Array params_row;
@@ -122,7 +123,7 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
     }
 
-    return std::make_shared<DataTypeArray>(aggregate_function->getReturnType());
+    return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
 }
 
 
@@ -153,7 +154,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
         ranges_offsets = &materialized_arr.getOffsets();
     }
     else
-        throw Exception("Illegal column " + ranges_col_array->getName() + " as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function {}", ranges_col_array->getName(), getName());
 
     const IColumn & indices_col = static_cast<const ColumnTuple *>(ranges_col_tuple)->getColumn(0);
     const IColumn & lengths_col = static_cast<const ColumnTuple *>(ranges_col_tuple)->getColumn(1);
@@ -184,13 +185,13 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
             offsets_i = &materialized_arr.getOffsets();
         }
         else
-            throw Exception("Illegal column " + col->getName() + " as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function {}", col->getName(), getName());
 
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
-                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to {} must be equal.",
+                getName());
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
 

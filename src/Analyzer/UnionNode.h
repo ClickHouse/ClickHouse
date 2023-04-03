@@ -3,20 +3,17 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 
+#include <Parsers/SelectUnionMode.h>
+
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
-#include <Parsers/SelectUnionMode.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
 
 /** Union node represents union of queries in query tree.
   * Union node must be initialized with normalized union mode.
@@ -42,8 +39,26 @@ using UnionNodePtr = std::shared_ptr<UnionNode>;
 class UnionNode final : public IQueryTreeNode
 {
 public:
-    /// Construct union node with normalized union mode
-    explicit UnionNode(SelectUnionMode union_mode_);
+    /// Construct union node with context and normalized union mode
+    explicit UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_);
+
+    /// Get context
+    ContextPtr getContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    const ContextMutablePtr & getMutableContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    ContextMutablePtr & getMutableContext()
+    {
+        return context;
+    }
 
     /// Returns true if union node is subquery, false otherwise
     bool isSubquery() const
@@ -119,25 +134,6 @@ public:
         return QueryTreeNodeType::UNION;
     }
 
-    DataTypePtr getResultType() const override
-    {
-        if (constant_value)
-            return constant_value->getType();
-
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for non scalar union node");
-    }
-
-    /// Perform constant folding for scalar union node
-    void performConstantFolding(ConstantValuePtr constant_folded_value)
-    {
-        constant_value = std::move(constant_folded_value);
-    }
-
-    ConstantValuePtr getConstantValueOrNull() const override
-    {
-        return constant_value;
-    }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -147,14 +143,14 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;
     bool is_cte = false;
     std::string cte_name;
+    ContextMutablePtr context;
     SelectUnionMode union_mode;
-    ConstantValuePtr constant_value;
 
     static constexpr size_t queries_child_index = 0;
     static constexpr size_t children_size = queries_child_index + 1;

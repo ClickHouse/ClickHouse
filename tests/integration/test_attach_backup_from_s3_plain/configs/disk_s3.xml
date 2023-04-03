@@ -7,26 +7,8 @@
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </backup_disk_s3_plain>
-            <attach_disk_s3_plain>
-                <type>s3_plain</type>
-                <!-- NOTE: /backup/ is a name of BACKUP -->
-                <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/backup/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
-            </attach_disk_s3_plain>
         </disks>
-        <policies>
-            <attach_policy_s3_plain>
-                <volumes>
-                    <main>
-                        <disk>attach_disk_s3_plain</disk>
-                    </main>
-                </volumes>
-            </attach_policy_s3_plain>
-        </policies>
     </storage_configuration>
     <backups>
         <allowed_disk>backup_disk_s3_plain</allowed_disk>

@@ -137,4 +137,3 @@ ClickHouse может слить куски данных таким образо
 При запросе данных используйте функцию [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) для агрегации `Map`.
 
 Для вложенной структуры данных не нужно указывать её столбцы в кортеже столбцов для суммирования.
-

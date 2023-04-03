@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &) const
+void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, int) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
 }

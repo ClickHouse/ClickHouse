@@ -21,20 +21,51 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_attach_backup():
+@pytest.mark.parametrize(
+    "table_name,backup_name,storage_policy,min_bytes_for_wide_part",
+    [
+        pytest.param(
+            "compact", "backup_compact", "s3_backup_compact", int(1e9), id="compact"
+        ),
+        pytest.param("wide", "backup_wide", "s3_backup_wide", int(0), id="wide"),
+    ],
+)
+def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide_part):
     node.query(
         f"""
+    -- Catch any errors (NOTE: warnings are ok)
+    set send_logs_level='error';
+
     -- BACKUP writes Ordinary like structure
-    set allow_deprecated_database_ordinary=1;
-    create database ordinary engine=Ordinary;
+    -- but what is more important that you cannot ATTACH directly from Atomic
+    -- so Memory engine will work (to avoid using allow_deprecated_database_ordinary).
+    create database ordinary_db engine=Memory;
 
-    create table ordinary.test_backup_attach engine=MergeTree() order by tuple() as select * from numbers(100);
-    -- NOTE: name of backup ("backup") is significant.
-    backup table ordinary.test_backup_attach TO Disk('backup_disk_s3_plain', 'backup');
+    create table ordinary_db.{table_name} engine=MergeTree() order by key partition by part
+    settings min_bytes_for_wide_part={min_bytes_for_wide_part}
+    as select number%5 part, number key from numbers(100);
 
-    drop table ordinary.test_backup_attach;
-    attach table ordinary.test_backup_attach (number UInt64) engine=MergeTree() order by tuple() settings storage_policy='attach_policy_s3_plain';
+    backup table ordinary_db.{table_name} TO Disk('backup_disk_s3_plain', '{backup_name}') settings deduplicate_files=0;
+
+    drop table ordinary_db.{table_name};
+    attach table ordinary_db.{table_name} (part UInt8, key UInt64)
+    engine=MergeTree()
+    order by key partition by part
+    settings
+        max_suspicious_broken_parts=0,
+        disk=disk(type=s3_plain,
+            endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{backup_name}/',
+            access_key_id='minio',
+            secret_access_key='minio123');
     """
     )
 
-    assert int(node.query("select count() from ordinary.test_backup_attach")) == 100
+    assert int(node.query(f"select count() from ordinary_db.{table_name}")) == 100
+
+    node.query(
+        f"""
+    -- NOTE: DROP DATABASE cannot be done w/o this due to metadata leftovers
+    set force_remove_data_recursively_on_drop=1;
+    drop database ordinary_db sync;
+    """
+    )

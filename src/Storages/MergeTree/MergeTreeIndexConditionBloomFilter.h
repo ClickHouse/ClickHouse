@@ -53,7 +53,7 @@ public:
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
             return mayBeTrueOnGranule(bf_granule);
 
-        throw Exception("LOGICAL ERROR: require bloom filter index granule.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: require bloom filter index granule.");
     }
 
 private:

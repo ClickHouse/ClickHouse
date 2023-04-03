@@ -981,4 +981,11 @@ Field FieldVisitorFoldDimension::operator()(const Array & x) const
     return res;
 }
 
+void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)
+{
+    for (auto & column : columns)
+        if (column.type->hasDynamicSubcolumns())
+            column.type = createConcreteEmptyDynamicColumn(column.type);
+}
+
 }

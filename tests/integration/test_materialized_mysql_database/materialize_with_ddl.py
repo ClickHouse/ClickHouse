@@ -2063,7 +2063,7 @@ def materialized_database_support_all_kinds_of_mysql_datatype(
     # increment synchronization check
     check_query(
         clickhouse_node,
-        "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
+        "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 ORDER BY v1 FORMAT TSV",
         "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786"
         + "\t2021\t3020399000000\t3020399000000\t00000000010100000000000000000000000000000000000000\t10\t1\t11\tvarbinary\tRED\n"
         + "2\t2\t22\t9223372036854775807\t-2\t2\t22\t18446744073709551615\t-2.2\t2.2\t-2.22\t2.222\t2.2222\t2021-10-07\ttext\tvarchar\tBLOB\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786"
@@ -2184,3 +2184,44 @@ def savepoint(clickhouse_node, mysql_node, mysql_host):
     mysql_node.query(f"INSERT INTO {db}.t1 VALUES (2)")
     mysql_node.query("ROLLBACK TO savepoint_1")
     mysql_node.query("COMMIT")
+
+
+def dropddl(clickhouse_node, mysql_node, mysql_host):
+    db = "dropddl"
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(f"CREATE TABLE {db}.t1 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE TABLE {db}.t2 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE TABLE {db}.t3 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE TABLE {db}.t4 (a INT PRIMARY KEY, b INT)")
+    mysql_node.query(f"CREATE VIEW {db}.v1 AS SELECT * FROM {db}.t1")
+    mysql_node.query(f"INSERT INTO {db}.t1(a, b) VALUES(1, 1)")
+
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{mysql_host}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT count() FROM system.tables where database = '{db}' FORMAT TSV",
+        "4\n",
+    )
+    check_query(clickhouse_node, f"SELECT * FROM {db}.t1 FORMAT TSV", "1\t1\n")
+    mysql_node.query(f"DROP EVENT IF EXISTS {db}.event_name")
+    mysql_node.query(f"DROP VIEW IF EXISTS {db}.view_name")
+    mysql_node.query(f"DROP FUNCTION IF EXISTS {db}.function_name")
+    mysql_node.query(f"DROP TRIGGER IF EXISTS {db}.trigger_name")
+    mysql_node.query(f"DROP INDEX `PRIMARY` ON {db}.t2")
+    mysql_node.query(f"DROP TABLE {db}.t3")
+    mysql_node.query(f"DROP TABLE if EXISTS {db}.t3,{db}.t4")
+    mysql_node.query(f"TRUNCATE TABLE {db}.t1")
+    mysql_node.query(f"INSERT INTO {db}.t2(a, b) VALUES(1, 1)")
+    check_query(clickhouse_node, f"SELECT * FROM {db}.t2 FORMAT TSV", "1\t1\n")
+    check_query(clickhouse_node, f"SELECT count() FROM {db}.t1 FORMAT TSV", "0\n")
+    check_query(
+        clickhouse_node,
+        f"SELECT name FROM system.tables where database = '{db}' FORMAT TSV",
+        "t1\nt2\n",
+    )
+    mysql_node.query(f"DROP DATABASE {db}")
+    clickhouse_node.query(f"DROP DATABASE {db}")

@@ -85,8 +85,16 @@ def process_test_log(log_path):
             if DATABASE_SIGN in line:
                 test_end = True
 
+    # Python does not support TSV, so we have to escape '\t' and '\n' manually
+    # and hope that complex escape sequences will not break anything
     test_results = [
-        (test[0], test[1], test[2], "".join(test[3])[:4096]) for test in test_results
+        (
+            test[0],
+            test[1],
+            test[2],
+            "".join(test[3])[:4096].replace("\t", "\\t").replace("\n", "\\n"),
+        )
+        for test in test_results
     ]
 
     return (

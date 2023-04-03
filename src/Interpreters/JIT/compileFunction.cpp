@@ -41,7 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnData getColumnData(const IColumn * column)
+ColumnData getColumnData(const IColumn * column, size_t skip_rows)
 {
     const bool is_const = isColumnConst(*column);
 
@@ -52,11 +52,11 @@ ColumnData getColumnData(const IColumn * column)
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
     {
-        result.null_data = nullable->getNullMapColumn().getRawData().data();
+        result.null_data = nullable->getNullMapColumn().getDataAt(skip_rows).data;
         column = &nullable->getNestedColumn();
     }
-
-    result.data = column->getRawData().data();
+    /// skip null key data for one nullable key optimization
+    result.data = column->getDataAt(skip_rows).data;
 
     return result;
 }
@@ -403,7 +403,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     std::vector<ColumnDataPlaceholder> columns(functions.size());
     for (size_t i = 0; i < functions.size(); ++i)
     {
-        auto return_type = functions[i].function->getReturnType();
+        auto return_type = functions[i].function->getResultType();
         auto * data = b.CreateLoad(column_type, b.CreateConstInBoundsGEP1_64(column_type, columns_arg, i));
 
         auto * column_data_type = toNativeType(b, removeNullable(return_type));

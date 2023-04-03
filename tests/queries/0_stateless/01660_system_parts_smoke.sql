@@ -31,9 +31,11 @@ OPTIMIZE TABLE data_01660 FINAL;
 SELECT count(), _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660' GROUP BY _state ORDER BY _state;
 
 -- TRUNCATE does not remove parts instantly
+-- Empty active parts are clearing by async process
+-- Inactive parts are clearing by async process also
 SELECT '# truncate';
 TRUNCATE data_01660;
-SELECT _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660';
+SELECT if (count() > 0, 'HAVE PARTS', 'NO PARTS'), _state FROM system.parts WHERE database = currentDatabase() AND table = 'data_01660' GROUP BY _state;
 
 -- But DROP does
 SELECT '# drop';

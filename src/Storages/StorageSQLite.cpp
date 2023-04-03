@@ -66,6 +66,7 @@ Pipe StorageSQLite::read(
 
     String query = transformQueryForExternalDatabase(
         query_info,
+        column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
         "",
@@ -161,8 +162,7 @@ void registerStorageSQLite(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
-            throw Exception("SQLite database requires 2 arguments: database path, table name",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name");
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());

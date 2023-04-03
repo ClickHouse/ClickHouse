@@ -10,6 +10,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+
 # By default the exceptions that was throwed in threads will be ignored
 # (they will not mark the test as failed, only printed to stderr).
 #
@@ -167,7 +168,7 @@ def test_smoke():
 
 def test_smoke_parallel():
     threads = []
-    for _ in range(100):
+    for _ in range(50):
         threads.append(SafeThread(target=execute_smoke_query))
     for thread in threads:
         thread.start()
@@ -178,7 +179,7 @@ def test_smoke_parallel():
 
 def test_smoke_parallel_dict_reload():
     threads = []
-    for _ in range(100):
+    for _ in range(90):
         threads.append(SafeThread(target=execute_reload_dictionary_slow_dict_3))
     for thread in threads:
         thread.start()

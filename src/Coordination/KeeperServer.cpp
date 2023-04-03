@@ -50,10 +50,10 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     String root_ca_file_property = "openSSL.server.caConfig";
 
     if (!config.has(certificate_file_property))
-        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
 
     if (!config.has(private_key_file_property))
-        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
     asio_opts.enable_ssl_ = true;
     asio_opts.server_cert_file_ = config.getString(certificate_file_property);
@@ -107,7 +107,8 @@ KeeperServer::KeeperServer(
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    KeeperSnapshotManagerS3 & snapshot_manager_s3)
+    KeeperSnapshotManagerS3 & snapshot_manager_s3,
+    KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
@@ -128,6 +129,7 @@ KeeperServer::KeeperServer(
         coordination_settings,
         keeper_context,
         config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+        commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
@@ -266,12 +268,26 @@ void KeeperServer::forceRecovery()
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     nuraft::raft_params params;
+    params.parallel_log_appending_ = true;
     params.heart_beat_interval_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
     params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+
+    if (params.election_timeout_lower_bound_ || params.election_timeout_upper_bound_)
+    {
+        if (params.election_timeout_lower_bound_ >= params.election_timeout_upper_bound_)
+        {
+            LOG_FATAL(
+                log,
+                "election_timeout_lower_bound_ms is greater than election_timeout_upper_bound_ms, this would disable leader election "
+                "completely.");
+            std::terminate();
+        }
+    }
+
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
@@ -300,8 +316,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 #if USE_SSL
         setSSLParams(asio_opts);
 #else
-        throw Exception(
-            "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
     }
 
@@ -324,7 +339,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-            return;
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
@@ -351,6 +366,8 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+
+    state_manager->getLogStore()->setRaftServer(raft_instance);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
@@ -446,8 +463,8 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_manager->flushAndShutDownLogStore();
     state_machine->shutdownStorage();
 }
 
@@ -921,15 +938,33 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 {
     KeeperLogInfo log_info;
     auto log_store = state_manager->load_log_store();
-    log_info.first_log_idx = log_store->start_index();
-    log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
-    log_info.last_log_idx = raft_instance->get_last_log_idx();
-    log_info.last_log_term = raft_instance->get_last_log_term();
-    log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
-    log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
-    log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
-    log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
+    if (log_store)
+    {
+        log_info.first_log_idx = log_store->start_index();
+        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
+    }
+
+    if (raft_instance)
+    {
+        log_info.last_log_idx = raft_instance->get_last_log_idx();
+        log_info.last_log_term = raft_instance->get_last_log_term();
+        log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
+        log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
+        log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
+        log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
+    }
+
     return log_info;
+}
+
+bool KeeperServer::requestLeader()
+{
+    return isLeader() || raft_instance->request_leadership();
+}
+
+void KeeperServer::recalculateStorageStats()
+{
+    state_machine->recalculateStorageStats();
 }
 
 }

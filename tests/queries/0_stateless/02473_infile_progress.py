@@ -14,7 +14,12 @@ log = None
 # uncomment the line below for debugging
 # log=sys.stdout
 
-with client(name="client>", log=log) as client1:
+with client(
+    name="client>",
+    log=log,
+    command=os.environ.get("CLICKHOUSE_BINARY", "clickhouse")
+    + " client --storage_file_read_method=pread",
+) as client1:
     filename = os.environ["CLICKHOUSE_TMP"] + "/infile_progress.tsv"
 
     client1.expect(prompt)
@@ -27,7 +32,7 @@ with client(name="client>", log=log) as client1:
     )
     client1.expect(prompt)
     client1.send(f"INSERT INTO test.infile_progress FROM INFILE '{filename}'")
-    client1.expect("Progress: 0.00 rows, 10.00 B.*\)")
+    client1.expect("Progress: 5.00 rows, 30.00 B.*\)")
     client1.expect(prompt)
 
     # send Ctrl-C

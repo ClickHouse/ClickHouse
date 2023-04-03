@@ -4,7 +4,7 @@ sidebar_position: 48
 sidebar_label: DateTime
 ---
 
-# Datetime
+# DateTime
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
 
@@ -145,5 +145,3 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 -   [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 -   [The `Date` data type](../../sql-reference/data-types/date.md)
-
-[Original article](https://clickhouse.com/docs/en/data_types/datetime/) <!--hide-->

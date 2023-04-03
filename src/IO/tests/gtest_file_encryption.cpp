@@ -251,7 +251,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     rb.seek(0, SEEK_SET);
     ASSERT_EQ(rb.getPosition(), 0);
     res.resize(5);
-    rb.read(res.data(), res.size());
+    ASSERT_EQ(rb.read(res.data(), res.size()), 5);
     ASSERT_EQ(res, data.substr(0, 5));
     res.clear();
 

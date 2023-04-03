@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-backward-compatibility-check
+# Tags: no-upgrade-check
 
 set -eu
 
@@ -24,11 +24,11 @@ done
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
 ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/', 'CSV');"
 
-${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset settings stream_like_engine_allow_direct_select=1;"
 
 cp ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt
 
-${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset settings stream_like_engine_allow_direct_select=1;"
 
 for i in {100..120}
 do
@@ -44,18 +44,18 @@ cp ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt ${user_files_path}/${
 
 rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/d.txt
 
-${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset settings stream_like_engine_allow_direct_select=1;"
 
 ${CLICKHOUSE_CLIENT} --query "detach table file_log;"
 ${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 
 # should no records return
-${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset;"
+${CLICKHOUSE_CLIENT} --query "select *, _filename, _offset from file_log order by  _filename, _offset settings stream_like_engine_allow_direct_select=1;"
 
 truncate ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt --size 0
 
 # exception happend
-${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;" 2>&1 | grep -q "Code: 33" && echo 'OK' || echo 'FAIL'
+${CLICKHOUSE_CLIENT} --query "select * from file_log order by k settings stream_like_engine_allow_direct_select=1;" 2>&1 | grep -q "Code: 33" && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 

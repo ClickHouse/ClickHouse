@@ -20,17 +20,19 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 
-#include <DataTypes/Serializations/SerializationDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -81,12 +83,13 @@ public:
             to->reserve(input_rows_count);
 
             if (arguments.empty())
-                throw Exception{"Function " + String(Name::name) + " requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", String(Name::name));
 
             const auto & first_column = arguments[0];
             if (!isString(first_column.type))
-                throw Exception{"The first argument of function " + String(Name::name) + " should be a string containing JSON, illegal type: " + first_column.type->getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The first argument of function {} should be a string containing JSON, illegal type: "
+                                "{}", String(Name::name), first_column.type->getName());
 
             const ColumnPtr & arg_json = first_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
@@ -94,7 +97,7 @@ public:
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
 
             if (!col_json_string)
-                throw Exception{"Illegal column " + arg_json->getName(), ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}", arg_json->getName());
 
             const ColumnString::Chars & chars = col_json_string->getChars();
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
@@ -192,9 +195,10 @@ private:
         {
             const auto & column = columns[i];
             if (!isString(column.type) && !isNativeInteger(column.type))
-                throw Exception{"The argument " + std::to_string(i + 1) + " of function " + String(function_name)
-                                    + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The argument {} of function {} should be a string specifying key "
+                                "or an integer specifying index, illegal type: {}",
+                                std::to_string(i + 1), String(function_name), column.type->getName());
 
             if (column.column && isColumnConst(*column.column))
             {
@@ -524,8 +528,8 @@ public:
         if (arguments.size() != 1)
         {
             /// IsValidJSON() shouldn't get parameters other than JSON.
-            throw Exception{"Function " + String(function_name) + " needs exactly one argument",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument",
+                            String(function_name));
         }
         return std::make_shared<DataTypeUInt8>();
     }
@@ -643,11 +647,12 @@ public:
             case ElementType::OBJECT:
                 type = '{';
                 break;
+            case ElementType::BOOL:
+                type = 'b';
+                break;
             case ElementType::NULL_VALUE:
                 type = 0;
                 break;
-            default:
-                return false;
         }
 
         ColumnVector<Int8> & col_vec = assert_cast<ColumnVector<Int8> &>(dest);
@@ -702,7 +707,8 @@ public:
                     break;
                 }
                 return false;
-            case ElementType::STRING: {
+            case ElementType::STRING:
+            {
                 auto rb = ReadBufferFromMemory{element.getString()};
                 if constexpr (std::is_floating_point_v<NumberType>)
                 {
@@ -711,7 +717,16 @@ public:
                 }
                 else
                 {
-                    if (!tryReadIntText(value, rb) || !rb.eof())
+                    if (tryReadIntText(value, rb) && rb.eof())
+                        break;
+
+                    /// Try to parse float and convert it to integer.
+                    Float64 tmp_float;
+                    rb.position() = rb.buffer().begin();
+                    if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
+                        return false;
+
+                    if (!accurate::convertNumeric<Float64, NumberType, false>(tmp_float, value))
                         return false;
                 }
                 break;
@@ -720,49 +735,27 @@ public:
                 return false;
         }
 
-        auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
-        col_vec.insertValue(value);
+        if (dest.getDataType() == TypeIndex::LowCardinality)
+        {
+            ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
+            col_low.insertData(reinterpret_cast<const char *>(&value), sizeof(value));
+        }
+        else
+        {
+            auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
+            col_vec.insertValue(value);
+        }
         return true;
     }
 };
 
 
 template <typename JSONParser>
-using JSONExtractInt8Impl = JSONExtractNumericImpl<JSONParser, Int8>;
-template <typename JSONParser>
-using JSONExtractUInt8Impl = JSONExtractNumericImpl<JSONParser, UInt8>;
-template <typename JSONParser>
-using JSONExtractInt16Impl = JSONExtractNumericImpl<JSONParser, Int16>;
-template <typename JSONParser>
-using JSONExtractUInt16Impl = JSONExtractNumericImpl<JSONParser, UInt16>;
-template <typename JSONParser>
-using JSONExtractInt32Impl = JSONExtractNumericImpl<JSONParser, Int32>;
-template <typename JSONParser>
-using JSONExtractUInt32Impl = JSONExtractNumericImpl<JSONParser, UInt32>;
-template <typename JSONParser>
 using JSONExtractInt64Impl = JSONExtractNumericImpl<JSONParser, Int64>;
 template <typename JSONParser>
 using JSONExtractUInt64Impl = JSONExtractNumericImpl<JSONParser, UInt64>;
 template <typename JSONParser>
-using JSONExtractInt128Impl = JSONExtractNumericImpl<JSONParser, Int128>;
-template <typename JSONParser>
-using JSONExtractUInt128Impl = JSONExtractNumericImpl<JSONParser, UInt128>;
-template <typename JSONParser>
-using JSONExtractInt256Impl = JSONExtractNumericImpl<JSONParser, Int256>;
-template <typename JSONParser>
-using JSONExtractUInt256Impl = JSONExtractNumericImpl<JSONParser, UInt256>;
-template <typename JSONParser>
-using JSONExtractFloat32Impl = JSONExtractNumericImpl<JSONParser, Float32>;
-template <typename JSONParser>
 using JSONExtractFloat64Impl = JSONExtractNumericImpl<JSONParser, Float64>;
-template <typename JSONParser>
-using JSONExtractDecimal32Impl = JSONExtractNumericImpl<JSONParser, Decimal32>;
-template <typename JSONParser>
-using JSONExtractDecimal64Impl = JSONExtractNumericImpl<JSONParser, Decimal64>;
-template <typename JSONParser>
-using JSONExtractDecimal128Impl = JSONExtractNumericImpl<JSONParser, Decimal128>;
-template <typename JSONParser>
-using JSONExtractDecimal256Impl = JSONExtractNumericImpl<JSONParser, Decimal256>;
 
 
 template <typename JSONParser>
@@ -787,6 +780,8 @@ public:
                 value = element.getBool();
                 break;
             case ElementType::INT64:
+                value = element.getInt64() != 0;
+                break;
             case ElementType::UINT64:
                 value = element.getUInt64() != 0;
                 break;
@@ -825,8 +820,17 @@ public:
             return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
 
         auto str = element.getString();
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(str.data(), str.size());
+
+        if (dest.getDataType() == TypeIndex::LowCardinality)
+        {
+            ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
+            col_low.insertData(str.data(), str.size());
+        }
+        else
+        {
+            ColumnString & col_str = assert_cast<ColumnString &>(dest);
+            col_str.insertData(str.data(), str.size());
+        }
         return true;
     }
 };
@@ -855,25 +859,41 @@ struct JSONExtractTree
         }
     };
 
-    class LowCardinalityNode : public Node
+    class LowCardinalityFixedStringNode : public Node
     {
     public:
-        LowCardinalityNode(DataTypePtr dictionary_type_, std::unique_ptr<Node> impl_)
-            : dictionary_type(dictionary_type_), impl(std::move(impl_)) {}
+        explicit LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) { }
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            auto from_col = dictionary_type->createColumn();
-            if (impl->insertResultToColumn(*from_col, element))
+            // If element is an object we delegate the insertion to JSONExtractRawImpl
+            if (element.isObject())
+                return JSONExtractRawImpl<JSONParser>::insertResultToLowCardinalityFixedStringColumn(dest, element, fixed_length);
+            else if (!element.isString())
+                return false;
+
+            auto str = element.getString();
+            if (str.size() > fixed_length)
+                return false;
+
+            // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
+            // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
+            // the data is padded here and written directly to the Low Cardinality Column
+            if (str.size() == fixed_length)
             {
-                std::string_view value = from_col->getDataAt(0).toView();
-                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data(), value.size());
-                return true;
+                assert_cast<ColumnLowCardinality &>(dest).insertData(str.data(), str.size());
             }
-            return false;
+            else
+            {
+                String padded_str(str);
+                padded_str.resize(fixed_length, '\0');
+
+                assert_cast<ColumnLowCardinality &>(dest).insertData(padded_str.data(), padded_str.size());
+            }
+            return true;
         }
+
     private:
-        DataTypePtr dictionary_type;
-        std::unique_ptr<Node> impl;
+        const size_t fixed_length;
     };
 
     class UUIDNode : public Node
@@ -885,7 +905,15 @@ struct JSONExtractTree
                 return false;
 
             auto uuid = parseFromString<UUID>(element.getString());
-            assert_cast<ColumnUUID &>(dest).insert(uuid);
+            if (dest.getDataType() == TypeIndex::LowCardinality)
+            {
+                ColumnLowCardinality & col_low = assert_cast<ColumnLowCardinality &>(dest);
+                col_low.insertData(reinterpret_cast<const char *>(&uuid), sizeof(uuid));
+            }
+            else
+            {
+                assert_cast<ColumnUUID &>(dest).insert(uuid);
+            }
             return true;
         }
     };
@@ -925,9 +953,10 @@ struct JSONExtractTree
                     return false;
             }
 
-            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(value);
+            assert_cast<ColumnDecimal<DecimalType> &>(dest).insertValue(value);
             return true;
         }
+
     private:
         DataTypePtr data_type;
     };
@@ -946,13 +975,18 @@ struct JSONExtractTree
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            if (!element.isString())
+            if (element.isNull())
                 return false;
-            auto & col_str = assert_cast<ColumnFixedString &>(dest);
+
+            if (!element.isString())
+                return JSONExtractRawImpl<JSONParser>::insertResultToFixedStringColumn(dest, element, {});
+
             auto str = element.getString();
+            auto & col_str = assert_cast<ColumnFixedString &>(dest);
             if (str.size() > col_str.getN())
                 return false;
             col_str.insertData(str.data(), str.size());
+
             return true;
         }
     };
@@ -1178,9 +1212,18 @@ struct JSONExtractTree
             case TypeIndex::UUID: return std::make_unique<UUIDNode>();
             case TypeIndex::LowCardinality:
             {
+                // The low cardinality case is treated in two different ways:
+                // For FixedString type, an especial class is implemented for inserting the data in the destination column,
+                // as the string length must be passed in order to check and pad the incoming data.
+                // For the rest of low cardinality types, the insertion is done in their corresponding class, adapting the data
+                // as needed for the insertData function of the ColumnLowCardinality.
                 auto dictionary_type = typeid_cast<const DataTypeLowCardinality *>(type.get())->getDictionaryType();
-                auto impl = build(function_name, dictionary_type);
-                return std::make_unique<LowCardinalityNode>(dictionary_type, std::move(impl));
+                if ((*dictionary_type).getTypeId() == TypeIndex::FixedString)
+                {
+                    auto fixed_length = typeid_cast<const DataTypeFixedString *>(dictionary_type.get())->getN();
+                    return std::make_unique<LowCardinalityFixedStringNode>(fixed_length);
+                }
+                return build(function_name, dictionary_type);
             }
             case TypeIndex::Decimal256: return std::make_unique<DecimalNode<Decimal256>>(type);
             case TypeIndex::Decimal128: return std::make_unique<DecimalNode<Decimal128>>(type);
@@ -1209,7 +1252,9 @@ struct JSONExtractTree
                 return std::make_unique<TupleNode>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
             }
             default:
-                throw Exception{"Function " + String(function_name) + " doesn't support the return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Function {} doesn't support the return type schema: {}",
+                                String(function_name), type->getName());
         }
     }
 };
@@ -1224,14 +1269,15 @@ public:
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 2)
-            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least two arguments", String(function_name));
 
         const auto & col = arguments.back();
         const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
-            throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the return data type, illegal value: " + col.name,
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "The last argument of function {} should "
+                            "be a constant string specifying the return data type, illegal value: {}",
+                            String(function_name), col.name);
 
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
@@ -1262,14 +1308,15 @@ public:
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 2)
-            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least two arguments", String(function_name));
 
         const auto & col = arguments.back();
         const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
-            throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the values' data type, illegal value: " + col.name,
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "The last argument of function {} should "
+                            "be a constant string specifying the values' data type, illegal value: {}",
+                            String(function_name), col.name);
 
         DataTypePtr key_type = std::make_unique<DataTypeString>();
         DataTypePtr value_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
@@ -1332,13 +1379,63 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
     {
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        auto & chars = col_str.getChars();
-        WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+        if (dest.getDataType() == TypeIndex::LowCardinality)
+        {
+            ColumnString::Chars chars;
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            traverse(element, buf);
+            buf.finalize();
+            assert_cast<ColumnLowCardinality &>(dest).insertData(reinterpret_cast<const char *>(chars.data()), chars.size());
+        }
+        else
+        {
+            ColumnString & col_str = assert_cast<ColumnString &>(dest);
+            auto & chars = col_str.getChars();
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            traverse(element, buf);
+            buf.finalize();
+            chars.push_back(0);
+            col_str.getOffsets().push_back(chars.size());
+        }
+        return true;
+    }
+
+    // We use insertResultToFixedStringColumn in case we are inserting raw data in a FixedString column
+    static bool insertResultToFixedStringColumn(IColumn & dest, const Element & element, std::string_view)
+    {
+        ColumnFixedString::Chars chars;
+        WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);
         buf.finalize();
-        chars.push_back(0);
-        col_str.getOffsets().push_back(chars.size());
+
+        auto & col_str = assert_cast<ColumnFixedString &>(dest);
+
+        if (chars.size() > col_str.getN())
+            return false;
+
+        chars.resize_fill(col_str.getN());
+        col_str.insertData(reinterpret_cast<const char *>(chars.data()), chars.size());
+
+
+        return true;
+    }
+
+    // We use insertResultToLowCardinalityFixedStringColumn in case we are inserting raw data in a Low Cardinality FixedString column
+    static bool insertResultToLowCardinalityFixedStringColumn(IColumn & dest, const Element & element, size_t fixed_length)
+    {
+        if (element.getObject().size() > fixed_length)
+            return false;
+
+        ColumnFixedString::Chars chars;
+        WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
+        traverse(element, buf);
+        buf.finalize();
+
+        if (chars.size() > fixed_length)
+            return false;
+        chars.resize_fill(fixed_length);
+        assert_cast<ColumnLowCardinality &>(dest).insertData(reinterpret_cast<const char *>(chars.data()), chars.size());
+
         return true;
     }
 

@@ -42,7 +42,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
     if (!writer_on_disk)
-        throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergedColumnOnlyOutputStream supports only parts stored on disk");
 
     writer_on_disk->setWrittenOffsetColumns(offset_columns_);
 }
@@ -86,7 +86,6 @@ MergedColumnOnlyOutputStream::fillChecksums(
     }
 
     new_part->setColumns(columns, serialization_infos);
-
     return checksums;
 }
 

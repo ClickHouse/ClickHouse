@@ -89,11 +89,6 @@ public:
         return getExpression()->getResultType();
     }
 
-    ConstantValuePtr getConstantValueOrNull() const override
-    {
-        return getExpression()->getConstantValueOrNull();
-    }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -103,7 +98,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     Names argument_names;

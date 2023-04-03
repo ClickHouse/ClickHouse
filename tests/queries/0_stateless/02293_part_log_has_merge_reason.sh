@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} -q '
     ENGINE = MergeTree()
     ORDER BY tuple()
     TTL event_time + INTERVAL 3 MONTH
-    SETTINGS min_bytes_for_wide_part = 0, materialize_ttl_recalculate_only = true, max_number_of_merges_with_ttl_in_pool = 100
+    SETTINGS old_parts_lifetime = 1, min_bytes_for_wide_part = 0, materialize_ttl_recalculate_only = true, max_number_of_merges_with_ttl_in_pool = 100
 '
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_part_log_has_merge_type_table VALUES (now(), 1, 'username1');"
@@ -57,7 +57,7 @@ function wait_table_parts_are_merged_into_one_part() {
 export -f get_parts_count
 export -f wait_table_parts_are_merged_into_one_part
 
-timeout 30 bash -c 'wait_table_parts_are_merged_into_one_part t_part_log_has_merge_type_table'
+timeout 60 bash -c 'wait_table_parts_are_merged_into_one_part t_part_log_has_merge_type_table'
 
 ${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS'
 

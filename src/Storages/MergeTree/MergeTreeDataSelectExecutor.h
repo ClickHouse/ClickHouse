@@ -39,7 +39,7 @@ public:
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
-    QueryPlanPtr readFromParts(
+    QueryPlanStepPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -66,6 +66,13 @@ public:
         size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
+    static MarkRanges markRangesFromPKRange(
+        const MergeTreeData::DataPartPtr & part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const Settings & settings,
+        Poco::Logger * log);
+
 private:
     const MergeTreeData & data;
     Poco::Logger * log;
@@ -73,13 +80,6 @@ private:
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const Settings & settings,
-        Poco::Logger * log);
-
-    static MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings,

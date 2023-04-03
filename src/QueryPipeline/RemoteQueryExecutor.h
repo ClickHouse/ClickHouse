@@ -10,6 +10,7 @@
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <sys/types.h>
 
 
 namespace DB
@@ -45,13 +46,12 @@ public:
     /// decide whether to deny or to accept that request.
     struct Extension
     {
-      std::shared_ptr<TaskIterator> task_iterator{nullptr};
-      std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
-      std::optional<IConnections::ReplicaInfo> replica_info;
+        std::shared_ptr<TaskIterator> task_iterator;
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
+        std::optional<IConnections::ReplicaInfo> replica_info;
     };
 
     /// Takes already set connection.
-    /// We don't own connection, thus we have to drain it synchronously.
     RemoteQueryExecutor(
         Connection & connection,
         const String & query_, const Block & header_, ContextPtr context_,
@@ -67,7 +67,6 @@ public:
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
-        const ConnectionPoolWithFailoverPtr & pool,
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
@@ -94,12 +93,60 @@ public:
     /// Query is resent to a replica, the query itself can be modified.
     std::atomic<bool> resent_query { false };
 
+    struct ReadResult
+    {
+        enum class Type : uint8_t
+        {
+            Data,
+            ParallelReplicasToken,
+            FileDescriptor,
+            Finished,
+            Nothing
+        };
+
+        explicit ReadResult(Block block_)
+            : type(Type::Data)
+            , block(std::move(block_))
+        {}
+
+        explicit ReadResult(int fd_)
+            : type(Type::FileDescriptor)
+            , fd(fd_)
+        {}
+
+        explicit ReadResult(Type type_)
+            : type(type_)
+        {
+            assert(type != Type::Data && type != Type::FileDescriptor);
+        }
+
+        Type getType() const { return type; }
+
+        Block getBlock()
+        {
+            chassert(type == Type::Data);
+            return std::move(block);
+        }
+
+        int getFileDescriptor() const
+        {
+            chassert(type == Type::FileDescriptor);
+            return fd;
+        }
+
+        Type type;
+        Block block;
+        int fd{-1};
+    };
+
     /// Read next block of data. Returns empty block if query is finished.
-    Block read();
+    Block readBlock();
+
+    ReadResult read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
     /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
-    std::variant<Block, int> read(std::unique_ptr<ReadContext> & read_context);
+    ReadResult read(std::unique_ptr<ReadContext> & read_context);
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
@@ -142,6 +189,9 @@ private:
     Block totals;
     Block extremes;
 
+    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::unique_ptr<IConnections> connections;
+
     const String query;
     String query_id;
     ContextPtr context;
@@ -163,12 +213,6 @@ private:
     /// we create a RemoteQueryExecutor per replica and have to store additional info
     /// about the number of the current replica or the count of replicas at all.
     IConnections::ReplicaInfo replica_info;
-
-    std::function<std::shared_ptr<IConnections>()> create_connections;
-    /// Hold a shared reference to the connection pool so that asynchronous connection draining will
-    /// work safely. Make sure it's the first member so that we don't destruct it too early.
-    const ConnectionPoolWithFailoverPtr pool;
-    std::shared_ptr<IConnections> connections;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -231,11 +275,12 @@ private:
 
     void processReadTaskRequest();
 
-    void processMergeTreeReadTaskRequest(PartitionReadRequest request);
+    void processMergeTreeReadTaskRequest(ParallelReadRequest request);
+    void processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement);
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
-    std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
+    ReadResult restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
@@ -247,11 +292,10 @@ private:
     bool hasThrownException() const;
 
     /// Process packet for read and return data block if possible.
-    std::optional<Block> processPacket(Packet packet);
+    ReadResult processPacket(Packet packet);
 
     /// Reads packet by packet
     Block readPackets();
-
 };
 
 }

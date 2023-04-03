@@ -2,6 +2,8 @@
     <profiles>
         <default>
             <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
+            <!-- One test is expecting the interruption after blocking ZooKeeper -->
+            <insert_keeper_max_retries>0</insert_keeper_max_retries>
         </default>
     </profiles>
 </clickhouse>

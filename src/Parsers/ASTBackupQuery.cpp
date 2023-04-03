@@ -1,4 +1,5 @@
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
@@ -141,7 +142,7 @@ namespace
         }
     }
 
-    void formatSettings(const ASTPtr & settings, const ASTPtr & base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormatSettings & format)
+    void formatSettings(const ASTPtr & settings, const ASTFunction * base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormatSettings & format)
     {
         if (!settings && !base_backup_name && !cluster_host_ids)
             return;
@@ -246,12 +247,13 @@ String ASTBackupQuery::getID(char) const
 ASTPtr ASTBackupQuery::clone() const
 {
     auto res = std::make_shared<ASTBackupQuery>(*this);
+    res->children.clear();
 
     if (backup_name)
-        res->backup_name = backup_name->clone();
+        res->set(res->backup_name, backup_name->clone());
 
     if (base_backup_name)
-        res->base_backup_name = base_backup_name->clone();
+        res->set(res->base_backup_name, base_backup_name->clone());
 
     if (cluster_host_ids)
         res->cluster_host_ids = cluster_host_ids->clone();
@@ -285,6 +287,11 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
     new_query->setCurrentDatabase(new_query->elements, params.default_database);
     return new_query;
+}
+
+IAST::QueryKind ASTBackupQuery::getQueryKind() const
+{
+    return kind == Kind::BACKUP ? QueryKind::Backup : QueryKind::Restore;
 }
 
 }

@@ -162,7 +162,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [W
 
 This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
 
-:::note    
+:::note
 The entire backup process is performed without stopping the server.
 :::
 
@@ -172,9 +172,9 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 
 -   `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 -   `N` is the incremental number of the backup.
--   if the `WITH NAME` parameter is specified, then the value of the `'backup_name'` parameter is used instead of the incremental number. 
+-   if the `WITH NAME` parameter is specified, then the value of the `'backup_name'` parameter is used instead of the incremental number.
 
-:::note    
+:::note
 If you use [a set of disks for data storage in a table](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
 :::
 
@@ -194,7 +194,7 @@ To restore data from a backup, do the following:
 
 Restoring from a backup does not require stopping the server.
 
-For more information about backups and restoring data, see the [Data Backup](/docs/en/manage/backups.mdx) section.
+For more information about backups and restoring data, see the [Data Backup](/docs/en/operations/backup.md) section.
 
 ## UNFREEZE PARTITION
 
@@ -270,7 +270,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 
 ## UPDATE IN PARTITION
 
-Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md/#mutations).
+Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 Syntax:
 
@@ -290,7 +290,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 
 ## DELETE IN PARTITION
 
-Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md/#mutations).
+Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 Syntax:
 

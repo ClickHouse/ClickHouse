@@ -25,6 +25,10 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"keep_free_space", std::make_shared<DataTypeUInt64>()},
         {"type", std::make_shared<DataTypeString>()},
         {"is_encrypted", std::make_shared<DataTypeUInt8>()},
+        {"is_read_only", std::make_shared<DataTypeUInt8>()},
+        {"is_write_once", std::make_shared<DataTypeUInt8>()},
+        {"is_remote", std::make_shared<DataTypeUInt8>()},
+        {"is_broken", std::make_shared<DataTypeUInt8>()},
         {"cache_path", std::make_shared<DataTypeString>()},
     }));
     setInMemoryMetadata(storage_metadata);
@@ -49,6 +53,10 @@ Pipe StorageSystemDisks::read(
     MutableColumnPtr col_keep = ColumnUInt64::create();
     MutableColumnPtr col_type = ColumnString::create();
     MutableColumnPtr col_is_encrypted = ColumnUInt8::create();
+    MutableColumnPtr col_is_read_only = ColumnUInt8::create();
+    MutableColumnPtr col_is_write_once = ColumnUInt8::create();
+    MutableColumnPtr col_is_remote = ColumnUInt8::create();
+    MutableColumnPtr col_is_broken = ColumnUInt8::create();
     MutableColumnPtr col_cache_path = ColumnString::create();
 
     for (const auto & [disk_name, disk_ptr] : context->getDisksMap())
@@ -62,6 +70,10 @@ Pipe StorageSystemDisks::read(
         auto data_source_description = disk_ptr->getDataSourceDescription();
         col_type->insert(toString(data_source_description.type));
         col_is_encrypted->insert(data_source_description.is_encrypted);
+        col_is_read_only->insert(disk_ptr->isReadOnly());
+        col_is_write_once->insert(disk_ptr->isWriteOnce());
+        col_is_remote->insert(disk_ptr->isRemote());
+        col_is_broken->insert(disk_ptr->isBroken());
 
         String cache_path;
         if (disk_ptr->supportsCache())
@@ -79,6 +91,10 @@ Pipe StorageSystemDisks::read(
     res_columns.emplace_back(std::move(col_keep));
     res_columns.emplace_back(std::move(col_type));
     res_columns.emplace_back(std::move(col_is_encrypted));
+    res_columns.emplace_back(std::move(col_is_read_only));
+    res_columns.emplace_back(std::move(col_is_write_once));
+    res_columns.emplace_back(std::move(col_is_remote));
+    res_columns.emplace_back(std::move(col_is_broken));
     res_columns.emplace_back(std::move(col_cache_path));
 
     UInt64 num_rows = res_columns.at(0)->size();

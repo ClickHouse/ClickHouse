@@ -49,11 +49,7 @@ namespace
 {
     void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
-#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-#else
-        session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
-#endif
         session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
     }
 
@@ -64,7 +60,7 @@ namespace
         else if (uri.getScheme() == "http")
             return false;
         else
-            throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
+            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
     }
 
     HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
@@ -81,7 +77,7 @@ namespace
 
             session = std::move(https_session);
 #else
-            throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+            throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without HTTPS support");
 #endif
         }
         else
@@ -93,12 +89,7 @@ namespace
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
         /// doesn't work properly without patch
-#if defined(POCO_CLICKHOUSE_PATCH)
         session->setKeepAlive(keep_alive);
-#else
-        (void)keep_alive; // Avoid warning: unused parameter
-#endif
-
         return session;
     }
 
@@ -122,12 +113,10 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
                 session->setProxyTunnel(!proxy_https && https);
-#endif
             }
             return session;
         }
@@ -323,15 +312,30 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
-        std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        error_message.exceptions(std::ios::failbit);
-        error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
-                      << response.getReason() << ", body: " << istr.rdbuf();
+        int code = status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS
+            ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+            : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        throw Exception(error_message.str(),
-            status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-                                             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+        std::stringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        body.exceptions(std::ios::failbit);
+        body << istr.rdbuf();
+
+        throw HTTPException(code, request.getURI(), status, response.getReason(), body.str());
     }
+}
+
+Exception HTTPException::makeExceptionMessage(
+    int code,
+    const std::string & uri,
+    Poco::Net::HTTPResponse::HTTPStatus http_status,
+    const std::string & reason,
+    const std::string & body)
+{
+    return Exception(code,
+        "Received error from remote server {}. "
+        "HTTP status code: {} {}, "
+        "body: {}",
+        uri, static_cast<int>(http_status), reason, body);
 }
 
 }

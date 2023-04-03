@@ -2,10 +2,10 @@
 name: Debug
 
 'on':
-  [push, pull_request, release, workflow_dispatch, workflow_call]
+  [push, pull_request, pull_request_review, release, workflow_dispatch, workflow_call]
 
 jobs:
   DebugInfo:
     runs-on: ubuntu-latest
     steps:
-    - uses: hmarr/debug-action@1201a20fc9d278ddddd5f0f46922d06513892491
+    - uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
