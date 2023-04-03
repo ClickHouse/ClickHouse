@@ -1049,7 +1049,7 @@ Pipe StorageS3::read(
 
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
         configuration,
-        false,
+        distributed_processing,
         local_context,
         query_info.query,
         virtual_block,
