@@ -1223,17 +1223,36 @@ void executeQuery(
         end = begin + parse_buf.size();
     }
 
-    ASTPtr ast;
-    BlockIO streams;
-
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
-    auto & pipeline = streams.pipeline;
-
     QueryResultDetails result_details
     {
         .query_id = context->getClientInfo().current_query_id,
         .timezone = DateLUT::instance().getTimeZone(),
     };
+
+    /// Set the result details in case of any exception raised during query execution
+    SCOPE_EXIT({
+        if (set_result_details == nullptr)
+            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+            return;
+
+        try
+        {
+            set_result_details(result_details);
+        }
+        catch (...)
+        {
+            /// This exception can be ignored.
+            /// because if the code goes here, it means there's already an exception raised during query execution,
+            /// and that exception will be propagated to outer caller,
+            /// there's no need to report the exception thrown here.
+        }
+    });
+
+    ASTPtr ast;
+    BlockIO streams;
+
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1304,7 +1323,15 @@ void executeQuery(
         }
 
         if (set_result_details)
-            set_result_details(result_details);
+        {
+            /// The call of set_result_details itself might throw exception,
+            /// in such case there's no need to call this function again in the SCOPE_EXIT defined above.
+            /// So the callback is cleared before its execution.
+            auto set_result_details_copy = set_result_details;
+            set_result_details = nullptr;
+
+            set_result_details_copy(result_details);
+        }
 
         if (pipeline.initialized())
         {

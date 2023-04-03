@@ -1073,13 +1073,26 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         }
     },
     [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
+
     if (!conflict_block_ids.empty())
         return conflict_block_ids;
+
     if (isQuorumEnabled())
     {
         ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info, context->getProcessListElement());
         quorum_retries_ctl.retryLoop([&]()
         {
+            if (storage.is_readonly)
+            {
+                /// stop retries if in shutdown
+                if (storage.shutdown_called)
+                    throw Exception(
+                        ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+
+                quorum_retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
+                return;
+            }
+
             zookeeper->setKeeper(storage.getZooKeeper());
 
             if (is_already_existing_part)
