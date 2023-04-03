@@ -18,7 +18,7 @@ empty([x])
 
 An array is considered empty if it does not contain any elements.
 
-:::note    
+:::note
 Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
@@ -62,7 +62,7 @@ notEmpty([x])
 
 An array is considered non-empty if it contains at least one element.
 
-:::note    
+:::note
 Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
@@ -642,7 +642,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …)
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -739,11 +739,11 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 └─────────┘
 ```
 
-:::note    
+:::note
 To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 :::
 
-## arrayReverseSort(\[func,\] arr, …)
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
