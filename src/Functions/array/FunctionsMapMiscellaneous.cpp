@@ -35,7 +35,7 @@ namespace ErrorCodes
 /** An adapter that allows to execute array* functions over Map types arguments.
   * E.g. transform mapConcat to arrayConcat.
   *
-  * Impl - the implementaion of function that is applied
+  * Impl - the implementation of function that is applied
   * to internal column of Map arguments (e.g. 'arrayConcat').
   *
   * Adapter - a struct that determines the way how  to extract the internal array columns
@@ -238,7 +238,7 @@ private:
 /// It extracts nested Array(Tuple(key, value)) from Map columns
 /// and prepares ColumnFunction as first argument which works
 /// like lambda (k, v) -> k LIKE pattern to pass it to the nested
-/// fucntion derived from FunctionArrayMapped.
+/// function derived from FunctionArrayMapped.
 template <typename Name, bool returns_map>
 struct MapKeyLikeAdapter
 {
