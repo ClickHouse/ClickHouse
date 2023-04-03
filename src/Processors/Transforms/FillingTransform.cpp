@@ -239,24 +239,6 @@ FillingTransform::FillingTransform(
         if (!unique_positions.insert(pos).second)
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
 
-    size_t idx = 0;
-    for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())
-    {
-        if (interpolate_description)
-            if (const auto & p = interpolate_description->required_columns_map.find(column.name);
-                p != interpolate_description->required_columns_map.end())
-                    input_positions.emplace_back(idx, p->second);
-
-        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name)))
-            other_column_positions.push_back(idx);
-
-        ++idx;
-    }
-
-    if (interpolate_description)
-        for (const auto & name : interpolate_description->result_columns_order)
-            interpolate_column_positions.push_back(header_.getPositionByName(name));
-
     /// build sorting prefix for first fill column
     for (const auto & desc : sort_description)
     {
@@ -269,6 +251,28 @@ FillingTransform::FillingTransform(
         sort_prefix.push_back(desc);
     }
     logDebug("sort prefix", dumpSortDescription(sort_prefix));
+
+    /// TODO: check conflict in positions between interpolate and sorting prefix columns
+
+    size_t idx = 0;
+    for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())
+    {
+        if (interpolate_description)
+            if (const auto & p = interpolate_description->required_columns_map.find(column.name);
+                p != interpolate_description->required_columns_map.end())
+                    input_positions.emplace_back(idx, p->second);
+
+        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name))
+            && sort_prefix_positions.end() == std::find(sort_prefix_positions.begin(), sort_prefix_positions.end(), idx))
+            other_column_positions.push_back(idx);
+
+        ++idx;
+    }
+
+    if (interpolate_description)
+        for (const auto & name : interpolate_description->result_columns_order)
+            interpolate_column_positions.push_back(header_.getPositionByName(name));
+
 }
 
 IProcessor::Status FillingTransform::prepare()
@@ -389,10 +393,12 @@ void FillingTransform::initColumns(
     const Columns & input_columns,
     Columns & input_fill_columns,
     Columns & input_interpolate_columns,
+    Columns & input_sort_prefix_columns,
     Columns & input_other_columns,
     MutableColumns & output_columns,
     MutableColumnRawPtrs & output_fill_columns,
     MutableColumnRawPtrs & output_interpolate_columns,
+    MutableColumnRawPtrs & output_sort_prefix_columns,
     MutableColumnRawPtrs & output_other_columns)
 {
     Columns non_const_columns;
@@ -407,6 +413,7 @@ void FillingTransform::initColumns(
     initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
     initColumnsByPositions(
         non_const_columns, input_interpolate_columns, output_columns, output_interpolate_columns, interpolate_column_positions);
+    initColumnsByPositions(non_const_columns, input_sort_prefix_columns, output_columns, output_sort_prefix_columns, sort_prefix_positions);
     initColumnsByPositions(non_const_columns, input_other_columns, output_columns, output_other_columns, other_column_positions);
 }
 
@@ -451,9 +458,11 @@ void FillingTransform::transform(Chunk & chunk)
 
     Columns old_fill_columns;
     Columns old_interpolate_columns;
+    Columns old_sort_prefix_columns;
     Columns old_other_columns;
     MutableColumnRawPtrs res_fill_columns;
     MutableColumnRawPtrs res_interpolate_columns;
+    MutableColumnRawPtrs res_sort_prefix_columns;
     MutableColumnRawPtrs res_other_columns;
     MutableColumns result_columns;
 
@@ -467,10 +476,12 @@ void FillingTransform::transform(Chunk & chunk)
             empty_columns,
             old_fill_columns,
             old_interpolate_columns,
+            old_sort_prefix_columns,
             old_other_columns,
             result_columns,
             res_fill_columns,
             res_interpolate_columns,
+            res_sort_prefix_columns,
             res_other_columns);
     }
     else
@@ -479,10 +490,12 @@ void FillingTransform::transform(Chunk & chunk)
             old_columns,
             old_fill_columns,
             old_interpolate_columns,
+            old_sort_prefix_columns,
             old_other_columns,
             result_columns,
             res_fill_columns,
             res_interpolate_columns,
+            res_sort_prefix_columns,
             res_other_columns);
     }
 
@@ -491,10 +504,12 @@ void FillingTransform::transform(Chunk & chunk)
         transformImpl(
             old_fill_columns,
             old_interpolate_columns,
+            old_sort_prefix_columns,
             old_other_columns,
             result_columns,
             res_fill_columns,
             res_interpolate_columns,
+            res_sort_prefix_columns,
             res_other_columns,
             {0, num_rows});
 
@@ -521,8 +536,8 @@ void FillingTransform::transform(Chunk & chunk)
             {
                 for (size_t i = 0; i < sort_prefix_columns.size(); ++i)
                 {
-                    const int res
-                        = sort_prefix_columns[i]->compareAt(pos_with_current_sort_prefix, row_pos, *sort_prefix_columns[i], sort_prefix[i].nulls_direction);
+                    const int res = sort_prefix_columns[i]->compareAt(
+                        pos_with_current_sort_prefix, row_pos, *sort_prefix_columns[i], sort_prefix[i].nulls_direction);
                     if (res != 0)
                         return false;
                 }
@@ -532,10 +547,12 @@ void FillingTransform::transform(Chunk & chunk)
         transformImpl(
             old_fill_columns,
             old_interpolate_columns,
+            old_sort_prefix_columns,
             old_other_columns,
             result_columns,
             res_fill_columns,
             res_interpolate_columns,
+            res_sort_prefix_columns,
             res_other_columns,
             {row_ind, current_sort_prefix_end_pos});
 
@@ -550,10 +567,12 @@ void FillingTransform::transform(Chunk & chunk)
 void FillingTransform::transformImpl(
     const Columns & old_fill_columns,
     const Columns & old_interpolate_columns,
+    const Columns & old_sort_prefix_columns,
     const Columns & old_other_columns,
     const MutableColumns & result_columns,
     const MutableColumnRawPtrs & res_fill_columns,
     const MutableColumnRawPtrs & res_interpolate_columns,
+    const MutableColumnRawPtrs & res_sort_prefix_columns,
     const MutableColumnRawPtrs & res_other_columns,
     std::pair<size_t, size_t> range)
 {
@@ -639,6 +658,7 @@ void FillingTransform::transformImpl(
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            copyRowFromColumns(res_sort_prefix_columns, old_sort_prefix_columns, row_ind);
         }
 
         interpolate(result_columns, interpolate_block);
@@ -646,10 +666,12 @@ void FillingTransform::transformImpl(
         {
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
             interpolate(result_columns, interpolate_block);
+            copyRowFromColumns(res_sort_prefix_columns, old_sort_prefix_columns, row_ind);
         }
 
         copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
         copyRowFromColumns(res_interpolate_columns, old_interpolate_columns, row_ind);
+        copyRowFromColumns(res_sort_prefix_columns, old_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, old_other_columns, row_ind);
 
         logDebug("res_fill_columns size", res_fill_columns[0]->size());

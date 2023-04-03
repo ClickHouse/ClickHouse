@@ -36,10 +36,12 @@ private:
     void transformImpl(
         const Columns & old_fill_columns,
         const Columns & old_interpolate_columns,
+        const Columns & old_sort_prefix_columns,
         const Columns & old_other_columns,
         const MutableColumns & result_columns,
         const MutableColumnRawPtrs & res_fill_columns,
         const MutableColumnRawPtrs & res_interpolate_columns,
+        const MutableColumnRawPtrs & res_sort_prefix_columns,
         const MutableColumnRawPtrs & res_other_columns,
         std::pair<size_t, size_t> range);
 
@@ -50,10 +52,12 @@ private:
         const Columns & input_columns,
         Columns & input_fill_columns,
         Columns & input_interpolate_columns,
+        Columns & input_sort_prefix_columns,
         Columns & input_other_columns,
         MutableColumns & output_columns,
         MutableColumnRawPtrs & output_fill_columns,
         MutableColumnRawPtrs & output_interpolate_columns,
+        MutableColumnRawPtrs & output_sort_prefix_columns,
         MutableColumnRawPtrs & output_other_columns);
 
     const SortDescription sort_description;
