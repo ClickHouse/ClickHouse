@@ -1232,11 +1232,13 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## formatDateTime
+## formatDateTime {#date_time_functions-formatDateTime}
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
 formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+
+The opposite operation of this function is [parseDateTime](/docs/en/sql-reference/functions/type-conversion-functions.md#type_conversion_functions-parseDateTime).
 
 Alias: `DATE_FORMAT`.
 
@@ -1257,7 +1259,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 |----------|---------------------------------------------------------|------------|
 | %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
 | %b       | abbreviated month name (Jan-Dec)                        | Jan        |
-| %c       | month as a decimal number (01-12)                       | 01         |
+| %c       | month as an integer number (01-12)                      | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
@@ -1273,7 +1275,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %j       | day of the year (001-366)                               | 002        |
 | %k       | hour in 24h format (00-23)                              | 22         |
 | %l       | hour in 12h format (01-12)                              | 09         |
-| %m       | month as a decimal number (01-12)                       | 01         |
+| %m       | month as an integer number (01-12)                      | 01         |
 | %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
@@ -1286,7 +1288,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
-| %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
+| %w       | weekday as a integer number with Sunday as 0 (0-6)      | 2          |
 | %W       | full weekday name (Monday-Sunday)                       | Monday     |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
@@ -1328,10 +1330,11 @@ Result:
 -   [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
 
 
-## formatDateTimeInJodaSyntax
+## formatDateTimeInJodaSyntax {#date_time_functions-formatDateTimeInJodaSyntax}
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
+The opposite operation of this function is [parseDateTimeInJodaSyntax](/docs/en/sql-reference/functions/type-conversion-functions.md#type_conversion_functions-parseDateTimeInJodaSyntax).
 
 **Replacement fields**
 
@@ -1460,28 +1463,28 @@ Result:
 └───────────────────────┘
 ```
 
-## FROM\_UNIXTIME
+## fromUnixTimestamp
 
 Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
 
-FROM_UNIXTIME uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+fromUnixTimestamp uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
 
-Alias: `fromUnixTimestamp`.
+Alias: `FROM_UNIXTIME`.
 
 **Example:**
 
 Query:
 
 ```sql
-SELECT FROM_UNIXTIME(423543535);
+SELECT fromUnixTimestamp(423543535);
 ```
 
 Result:
 
 ```text
-┌─FROM_UNIXTIME(423543535)─┐
-│      1983-06-04 10:58:55 │
-└──────────────────────────┘
+┌─fromUnixTimestamp(423543535)─┐
+│          1983-06-04 10:58:55 │
+└──────────────────────────────┘
 ```
 
 When there are two or three arguments, the first an [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second a constant format string and the third an optional constant time zone string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
@@ -1489,7 +1492,7 @@ When there are two or three arguments, the first an [Integer](../../sql-referenc
 For example:
 
 ```sql
-SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
+SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 ```
 
 ```text
@@ -1502,11 +1505,12 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 
 -   [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
 
-
 ## fromUnixTimestampInJodaSyntax
-Similar to FROM_UNIXTIME, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+
+Similar to fromUnixTimestamp, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
 **Example:**
+
 Query:
 ``` sql
 SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
@@ -1514,11 +1518,10 @@ SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
 
 Result:
 ```
-┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')─┐
+┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')────┐
 │ 2022-11-30 10:41:12                                                        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
-
 
 ## toModifiedJulianDay
 

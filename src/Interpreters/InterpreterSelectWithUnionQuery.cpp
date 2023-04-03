@@ -262,12 +262,12 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
 {
     if (!context_->hasQueryContext())
     {
+        SelectQueryOptions options;
         if (is_subquery)
-            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
-        else if (is_create_parameterized_view)
-            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().createParameterizedView().analyze()).getSampleBlock();
-        else
-            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
+            options = options.subquery();
+        if (is_create_parameterized_view)
+            options = options.createParameterizedView();
+        return InterpreterSelectWithUnionQuery(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
     }
 
     auto & cache = context_->getSampleBlockCache();
@@ -278,21 +278,12 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
         return cache[key];
     }
 
+    SelectQueryOptions options;
     if (is_subquery)
-    {
-        return cache[key]
-            = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
-    }
-    else if (is_create_parameterized_view)
-    {
-        return cache[key]
-            = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().createParameterizedView().analyze())
-            .getSampleBlock();
-    }
-    else
-    {
-        return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
-    }
+        options = options.subquery();
+    if (is_create_parameterized_view)
+        options = options.createParameterizedView();
+    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
 }
 
 
