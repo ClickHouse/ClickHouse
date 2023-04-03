@@ -208,7 +208,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-referen
 Query:
 
 ``` sql
-CREATE TABLE tupletest (`col` Tuple(user_ID UInt64, session_ID UInt64) ENGINE = Memory;
+CREATE TABLE tupletest (`col` Tuple(user_ID UInt64, session_ID UInt64)) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES (tuple( 100, 2502)), (tuple(1,100));
 
