@@ -142,7 +142,7 @@ y	Nullable(String)
 z	IPv4
 ```
 
-:::warning
+:::note
 If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
 :::
 
@@ -1128,7 +1128,7 @@ Default value: `2.latest`.
 
 Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
 
-Default value: `snappy`.
+Default value: `lz4`.
 
 ## Hive format settings {#hive-format-settings}
 

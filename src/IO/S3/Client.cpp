@@ -563,9 +563,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
     HTTPHeaderEntries headers,
-    bool use_environment_credentials,
-    bool use_insecure_imds_request,
-    uint64_t expiration_window_seconds)
+    CredentialsConfiguration credentials_configuration)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -592,9 +590,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),
-            use_environment_credentials,
-            use_insecure_imds_request,
-            expiration_window_seconds);
+            credentials_configuration);
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(
