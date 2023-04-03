@@ -17,6 +17,7 @@
 #include <Functions/array/arraySort.h>
 #include <Functions/array/arrayIndex.h>
 #include <Functions/array/arrayExists.h>
+#include <Functions/array/arrayAll.h>
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
 
@@ -31,6 +32,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/** An adapter that allows to execute array* functions over Map types arguments.
+  * E.g. transform mapConcat to arrayConcat.
+  *
+  * Impl - the implementaion of function that is applied
+  * to internal column of Map arguments (e.g. 'arrayConcat').
+  *
+  * Adapter - a struct that determines the way how  to extract the internal array columns
+  * from Map arguments and possibly modify other columns.
+*/
 template <typename Impl, typename Adapter, typename Name>
 class FunctionMapToArrayAdapter : public IFunction
 {
@@ -65,6 +75,8 @@ public:
             impl.getReturnTypeImpl(nested_arguments);
         };
 
+        /// If method is not overloaded in the implementation call default implementation
+        /// from IFunction. Here inheritance cannot be used for template parameterized field.
         if constexpr (impl_has_get_return_type)
             return Adapter::wrapType(impl.getReturnTypeImpl(nested_arguments));
         else
@@ -129,6 +141,7 @@ struct MapAdapterBase
     }
 };
 
+/// Adapter that extracts nested Array(Tuple(key, value)) from Map columns.
 template <typename Name, bool returns_map = true>
 struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, returns_map>, Name>
 {
@@ -167,9 +180,11 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
     }
 };
 
+/// Adapter that extracts array with keys or values from Map columns.
 template <typename Name, size_t position>
 struct MapToSubcolumnAdapter : public MapAdapterBase<MapToSubcolumnAdapter<Name, position>, Name>
 {
+    static_assert(position <= 1);
     using MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypes;
     using MapAdapterBase<MapToSubcolumnAdapter, Name>::extractNestedTypesAndColumns;
 
@@ -192,6 +207,9 @@ struct MapToSubcolumnAdapter : public MapAdapterBase<MapToSubcolumnAdapter<Name,
     static ColumnPtr wrapColumn(ColumnPtr column) { return column; }
 };
 
+/// A special function that works like the following:
+/// mapKeyLike(pattern, key, value) <=> key LIKE pattern
+/// It is used to mimic lambda: (key, value) -> key LIKE pattern.
 class FunctionMapKeyLike : public IFunction
 {
 public:
@@ -216,6 +234,11 @@ private:
     FunctionLike impl;
 };
 
+/// Adapter for map*KeyLike functions.
+/// It extracts nested Array(Tuple(key, value)) from Map columns
+/// and prepares ColumnFunction as first argument which works
+/// like lambda (k, v) -> k LIKE pattern to pass it to the nested
+/// fucntion derived from FunctionArrayMapped.
 template <typename Name, bool returns_map>
 struct MapKeyLikeAdapter
 {
@@ -270,6 +293,8 @@ struct MapKeyLikeAdapter
 
         if (pattern_arg.column)
         {
+            /// Here we create ColumnFunction with already captured pattern column.
+            /// Nested function will append keys and values column and it will work as desired lambda.
             auto function_base = std::make_shared<FunctionToFunctionBaseAdaptor>(function, lambda_argument_types, result_type);
             function_column = ColumnFunction::create(pattern_arg.column->size(), std::move(function_base), ColumnsWithTypeAndName{pattern_arg});
         }
@@ -315,6 +340,9 @@ using FunctionMapApply = FunctionMapToArrayAdapter<FunctionArrayMap, MapToNested
 
 struct NameMapExists { static constexpr auto name = "mapExists"; };
 using FunctionMapExists = FunctionMapToArrayAdapter<FunctionArrayExists, MapToNestedAdapter<NameMapExists, false>, NameMapExists>;
+
+struct NameMapAll { static constexpr auto name = "mapAll"; };
+using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAdapter<NameMapAll, false>, NameMapAll>;
 
 struct NameMapContainsKeyLike { static constexpr auto name = "mapContainsKeyLike"; };
 using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapKeyLikeAdapter<NameMapContainsKeyLike, false>, NameMapContainsKeyLike>;
@@ -380,6 +408,13 @@ REGISTER_FUNCTION(MapMiscellaneous)
     {
         "The same as arrayExists.",
         Documentation::Examples{{"mapExists", "SELECT mapExists((k, v) -> v = 1, map('k1', 1, 'k2', 2))"}},
+        Documentation::Categories{"Map"},
+    });
+
+     factory.registerFunction<FunctionMapAll>(
+    {
+        "The same as arrayAll.",
+        Documentation::Examples{{"mapAll", "SELECT mapAll((k, v) -> v = 1, map('k1', 1, 'k2', 2))"}},
         Documentation::Categories{"Map"},
     });
 
