@@ -483,6 +483,8 @@ void FillingTransform::transform(Chunk & chunk)
             res_interpolate_columns,
             res_sort_prefix_columns,
             res_other_columns);
+
+        old_columns = empty_columns;
     }
     else
     {
@@ -524,8 +526,26 @@ void FillingTransform::transform(Chunk & chunk)
     for (size_t pos : sort_prefix_positions)
         sort_prefix_columns.push_back(old_columns[pos].get());
 
-    /// TODO: use sort prefix row from previous chunk
+    /// check if last row in prev chunk had the same sorting prefix as the first in new one
+    /// if not, we need to reinitialize filling row
+    if (!last_row.empty())
+    {
+        ColumnRawPtrs last_sort_prefix_columns;
+        last_sort_prefix_columns.reserve(sort_prefix.size());
+        for (size_t pos : sort_prefix_positions)
+            last_sort_prefix_columns.push_back(last_row[pos].get());
 
+        first = true;
+        for (size_t i = 0; i < sort_prefix_columns.size(); ++i)
+        {
+            const int res = sort_prefix_columns[i]->compareAt(0, 0, *last_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
+            if (res != 0)
+            {
+                first = false;
+                break;
+            }
+        }
+    }
 
     for (size_t row_ind = 0; row_ind < num_rows;)
     {
@@ -558,6 +578,7 @@ void FillingTransform::transform(Chunk & chunk)
 
         logDebug("range end", current_sort_prefix_end_pos);
         row_ind = current_sort_prefix_end_pos;
+        first = true;
     }
 
     size_t num_output_rows = result_columns[0]->size();
@@ -607,7 +628,6 @@ void FillingTransform::transformImpl(
     logDebug("first", first);
     if (first)
     {
-
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
             auto current_value = (*old_fill_columns[i])[range_begin];
@@ -626,6 +646,7 @@ void FillingTransform::transformImpl(
 
             filling_row[i] = current_value;
         }
+
         first = false;
 
         logDebug("first filling_row", filling_row.dump());
@@ -637,6 +658,8 @@ void FillingTransform::transformImpl(
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
         logDebug("row_ind", row_ind);
+        logDebug("filling_row", filling_row.dump());
+        logDebug("next_row", next_row.dump());
 
         should_insert_first = next_row < filling_row;
 

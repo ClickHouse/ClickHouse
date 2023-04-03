@@ -114,7 +114,7 @@ void FillingRow::initFromDefaults(size_t from_pos)
 String FillingRow::dump() const
 {
     WriteBufferFromOwnString out;
-    for(size_t i = 0; i < row.size(); ++i)
+    for (size_t i = 0; i < row.size(); ++i)
     {
         if (i != 0)
             out << ", ";
