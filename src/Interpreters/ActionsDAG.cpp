@@ -762,11 +762,10 @@ NameSet ActionsDAG::foldActionsByProjection(
 }
 
 
-ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, std::string> & new_inputs, const NodeRawConstPtrs & required_outputs)
+ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
 {
     auto dag = std::make_unique<ActionsDAG>();
-    std::unordered_map<const Node *, size_t> new_input_to_pos;
-
+    std::unordered_map<const Node *, const Node *> inputs_mapping;
     std::unordered_map<const Node *, const Node *> mapping;
     struct Frame
     {
@@ -796,11 +795,18 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
 
                     if (!node)
                     {
-                        bool should_rename = !rename.empty() && new_input->result_name != rename;
-                        const auto & input_name = should_rename ? rename : new_input->result_name;
-                        node = &dag->addInput(input_name, new_input->result_type);
-                        if (should_rename)
-                            node = &dag->addAlias(*node, new_input->result_name);
+                        auto & mapped_input = inputs_mapping[rename];
+
+                        if (!mapped_input)
+                        {
+                            bool should_rename = new_input->result_name != rename->result_name;
+                            const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
+                            mapped_input = &dag->addInput(input_name, new_input->result_type);
+                            if (should_rename)
+                                mapped_input = &dag->addAlias(*mapped_input, new_input->result_name);
+                        }
+
+                        node = mapped_input;
                     }
 
                     stack.pop_back();
@@ -836,7 +842,12 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
     }
 
     for (const auto * output : required_outputs)
-        dag->outputs.push_back(mapping[output]);
+    {
+        const auto * mapped_output = mapping[output];
+        if (output->result_name != mapped_output->result_name)
+            mapped_output = &dag->addAlias(*mapped_output, output->result_name);
+        dag->outputs.push_back(mapped_output);
+    }
 
     return dag;
 }
