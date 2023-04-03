@@ -76,11 +76,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
     query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        if (table->as<StorageKeeperMap>())
+        if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
         DDLQueryOnClusterParams params;
@@ -97,6 +97,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
+
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find table: {}", table_id.table_name);
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
