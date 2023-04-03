@@ -177,6 +177,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
+        configuration.update(context);
         return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
