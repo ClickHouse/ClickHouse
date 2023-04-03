@@ -15,14 +15,13 @@ struct ProcessedPredicate
     std::string column_name;
     Field value;
     bool reversed; // If INPUT is right child
+    bool is_column_unsigned;
 };
 
 std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node)
 {
     if (node.children.size() != 2)
-    {
         return std::nullopt;
-    }
 
     const ActionsDAG::Node * maybe_input_column = nullptr;
     const ActionsDAG::Node * maybe_constant_column = nullptr;
@@ -38,16 +37,16 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
     if (!maybe_constant_column || !maybe_input_column ||
             !maybe_input_column->result_type->isValueRepresentedByInteger() ||
             !maybe_constant_column->result_type->isValueRepresentedByInteger())
-    {
         return std::nullopt;
-    }
-
 
     ProcessedPredicate result;
     result.column_name = maybe_input_column->result_name;
-    // result.value = should_floor ? static_cast<int64_t>(std::floor(maybe_constant_column->column->getFloat64(0))) : static_cast<int64_t>(std::ceil(maybe_constant_column->column->getFloat64(0)));
-    result.value = maybe_constant_column->column->getInt(0);
+    if (maybe_constant_column->result_type->isValueRepresentedByUnsignedInteger())
+        result.value = maybe_constant_column->column->getUInt(0);
+    else
+        result.value = maybe_constant_column->column->getInt(0);
     result.reversed = maybe_input_column == node.children[1];
+    result.is_column_unsigned = maybe_input_column->result_type->isValueRepresentedByUnsignedInteger();
     return result;
 }
 
@@ -137,7 +136,9 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
                 const auto & info = processPredicate(*node);
                 if (info)
                 {
-                    node_to_hints[node] = {{info.value().column_name, {info->value, info->value}}};
+                    node_to_hints[node] = {{info->column_name, {info->is_column_unsigned}}};
+                    node_to_hints[node][info->column_name].setLowerBoundary(info->value);
+                    node_to_hints[node][info->column_name].setUpperBoundary(info->value);
                 }
             }
             else if (name == "greater")
@@ -145,16 +146,11 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
                 const auto & info = processPredicate(*node);
                 if (info)
                 {
+                    node_to_hints[node] = {{info->column_name, {info->is_column_unsigned}}};
                     if (!info->reversed)
-                    {
-                        node_to_hints[node] = {{info.value().column_name, {}}};
-                        node_to_hints[node][info.value().column_name].setStrictLowerBoundary(info->value);
-                    }
+                        node_to_hints[node][info->column_name].setStrictLowerBoundary(info->value);
                     else
-                    {
-                        node_to_hints[node] = {{info.value().column_name, {}}};
-                        node_to_hints[node][info.value().column_name].setStrictUpperBoundary(info->value);
-                    }
+                        node_to_hints[node][info->column_name].setStrictUpperBoundary(info->value);
                 }
             }
             else if (name == "greaterOrEquals")
@@ -162,10 +158,11 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
                 const auto & info = processPredicate(*node);
                 if (info)
                 {
+                    node_to_hints[node] = {{info->column_name, {info->is_column_unsigned}}};
                     if (!info->reversed)
-                        node_to_hints[node] = {{info.value().column_name, {info->value, std::nullopt}}};
+                        node_to_hints[node][info->column_name].setLowerBoundary(info->value);
                     else
-                        node_to_hints[node] = {{info.value().column_name, {std::nullopt, info->value}}};
+                        node_to_hints[node][info->column_name].setUpperBoundary(info->value);
                 }
             }
             else if (name == "less")
@@ -173,16 +170,11 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
                 const auto & info = processPredicate(*node);
                 if (info)
                 {
+                    node_to_hints[node] = {{info->column_name, {info->is_column_unsigned}}};
                     if (!info->reversed)
-                    {
-                        node_to_hints[node] = {{info.value().column_name, {}}};
-                        node_to_hints[node][info.value().column_name].setStrictUpperBoundary(info->value);
-                    }
+                        node_to_hints[node][info->column_name].setStrictUpperBoundary(info->value);
                     else
-                    {
-                        node_to_hints[node] = {{info.value().column_name, {}}};
-                        node_to_hints[node][info.value().column_name].setStrictLowerBoundary(info->value);
-                    }
+                        node_to_hints[node][info->column_name].setStrictLowerBoundary(info->value);
                 }
             }
             else if (name == "lessOrEquals")
@@ -190,10 +182,11 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
                 const auto & info = processPredicate(*node);
                 if (info)
                 {
+                    node_to_hints[node] = {{info->column_name, {info->is_column_unsigned}}};
                     if (!info->reversed)
-                        node_to_hints[node] = {{info.value().column_name, {std::nullopt, info->value}}};
+                        node_to_hints[node][info->column_name].setUpperBoundary(info->value);
                     else
-                        node_to_hints[node] = {{info.value().column_name, {info->value, std::nullopt}}};
+                        node_to_hints[node][info->column_name].setLowerBoundary(info->value);
                 }
             }
         }

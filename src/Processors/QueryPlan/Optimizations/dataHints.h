@@ -14,15 +14,50 @@ struct DataHint
     std::optional<Field> lower_boundary;
     std::optional<Field> upper_boundary;
 
+    bool is_column_unsigned;
+
 public:
 
-    DataHint() : lower_boundary(std::nullopt), upper_boundary(std::nullopt) {}
+    DataHint() : lower_boundary(std::nullopt), upper_boundary(std::nullopt), is_column_unsigned(false) {}
 
-    DataHint(std::optional<Field> lower, std::optional<Field> upper) : lower_boundary(lower), upper_boundary(upper) {}
+    DataHint(bool is_column_unsigned_) :
+            lower_boundary(std::nullopt), upper_boundary(std::nullopt), is_column_unsigned(is_column_unsigned_)
+    {
+    }
+
+    DataHint(std::optional<Field> lower, std::optional<Field> upper, bool is_column_unsigned_) :
+            lower_boundary(lower), upper_boundary(upper), is_column_unsigned(is_column_unsigned_)
+    {
+    }
 
     void setLowerBoundary(const Field & value)
     {
-        lower_boundary = value;
+        if ((value.getTypeName() == "UInt64" && is_column_unsigned) ||
+            (value.getTypeName() == "Int64" && !is_column_unsigned))
+        {
+            lower_boundary = value;
+            return;
+        }
+        if (value.getTypeName() == "Int64")
+        {
+            int64_t signed_value = value.get<int64_t>();
+            if (signed_value < 0)
+            {
+                lower_boundary = static_cast<uint64_t>(0);
+                return;
+            }
+            lower_boundary = value.get<uint64_t>();
+        }
+        else
+        {
+            uint64_t unsigned_value = value.get<uint64_t>();
+            if (unsigned_value > std::numeric_limits<int64_t>::max())
+            {
+                lower_boundary = std::numeric_limits<int64_t>::max();
+                return;
+            }
+            lower_boundary = value.get<int64_t>();
+        }
     }
 
     void setStrictLowerBoundary(const Field & value)
@@ -45,7 +80,32 @@ public:
 
     void setUpperBoundary(const Field & value)
     {
-        upper_boundary = value;
+        if ((value.getTypeName() == "UInt64" && is_column_unsigned) ||
+            (value.getTypeName() == "Int64" && !is_column_unsigned))
+        {
+            upper_boundary = value;
+            return;
+        }
+        if (value.getTypeName() == "Int64")
+        {
+            int64_t signed_value = value.get<int64_t>();
+            if (signed_value < 0)
+            {
+                upper_boundary = static_cast<uint64_t>(0);
+                return;
+            }
+            upper_boundary = value.get<uint64_t>();
+        }
+        else
+        {
+            uint64_t unsigned_value = value.get<uint64_t>();
+            if (unsigned_value > std::numeric_limits<int64_t>::max())
+            {
+                upper_boundary = std::numeric_limits<int64_t>::max();
+                return;
+            }
+            upper_boundary = value.get<int64_t>();
+        }
     }
 
     void setStrictUpperBoundary(const Field & value)
