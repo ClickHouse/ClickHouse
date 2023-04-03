@@ -713,7 +713,7 @@ void StorageRabbitMQ::read(
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
@@ -818,6 +818,9 @@ void StorageRabbitMQ::shutdown()
 {
     shutdown_called = true;
 
+    for (auto & consumer : consumers)
+        consumer->shutdown();
+
     LOG_TRACE(log, "Deactivating background tasks");
 
     /// In case it has not yet been able to setup connection;
@@ -833,9 +836,6 @@ void StorageRabbitMQ::shutdown()
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        for (auto & consumer : consumers)
-            consumer->closeChannel();
-
         if (drop_table)
             cleanupRabbitMQ();
 
@@ -943,8 +943,7 @@ RabbitMQConsumerPtr StorageRabbitMQ::popConsumer(std::chrono::milliseconds timeo
 RabbitMQConsumerPtr StorageRabbitMQ::createConsumer()
 {
     return std::make_shared<RabbitMQConsumer>(
-        connection->getHandler(), queues, ++consumer_id,
-        unique_strbase, log, queue_size, shutdown_called);
+        connection->getHandler(), queues, ++consumer_id, unique_strbase, log, queue_size);
 }
 
 bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
@@ -1081,7 +1080,7 @@ bool StorageRabbitMQ::tryStreamToViews()
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
