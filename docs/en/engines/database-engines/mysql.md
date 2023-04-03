@@ -60,7 +60,7 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-:::warning
+:::note
 By now these variables are stubs and don't correspond to anything.
 :::
 
