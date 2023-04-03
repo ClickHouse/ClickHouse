@@ -64,7 +64,7 @@ public:
     void updateQueues(std::vector<String> & queues_) { queues = queues_; }
     size_t queuesCount() { return queues.size(); }
 
-    bool isConsumerStopped() const { return stopped; }
+    bool isConsumerStopped() const { return stopped.load(); }
     bool ackMessages();
     void updateAckTracker(AckTracker record = AckTracker());
 
@@ -94,7 +94,7 @@ private:
     const String channel_base;
     const size_t channel_id_base;
     Poco::Logger * log;
-    bool stopped;
+    std::atomic<bool> stopped;
 
     String channel_id;
     std::atomic<bool> channel_error = true, wait_subscription = false;

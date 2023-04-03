@@ -36,10 +36,7 @@ RabbitMQConsumer::RabbitMQConsumer(
 
 void RabbitMQConsumer::shutdown()
 {
-    {
-        std::lock_guard lock(mutex);
-        stopped = true;
-    }
+    stopped = true;
     cv.notify_one();
 
     if (consumer_channel)
@@ -63,8 +60,6 @@ void RabbitMQConsumer::subscribe()
             if (message.bodySize())
             {
                 String message_received = std::string(message.body(), message.body() + message.bodySize());
-
-                std::unique_lock lock(mutex);
 
                 if (!received.push({message_received, message.hasMessageID() ? message.messageID() : "",
                         message.hasTimestamp() ? message.timestamp() : 0,
