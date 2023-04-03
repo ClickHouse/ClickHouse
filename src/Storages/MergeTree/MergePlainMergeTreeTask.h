@@ -88,9 +88,9 @@ private:
 
     ProfileEvents::Counters profile_counters;
 
-    ContextMutablePtr fake_query_context;
+    ContextMutablePtr task_context;
 
-    ContextMutablePtr createFakeQueryContext() const;
+    ContextMutablePtr createTaskContext() const;
 };
 
 

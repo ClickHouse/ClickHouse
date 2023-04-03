@@ -29,11 +29,11 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
-    fake_query_context = createFakeQueryContext();
+    task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        fake_query_context);
+        task_context);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -54,7 +54,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
-            time(nullptr), fake_query_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
 
@@ -126,7 +126,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     return false;
 }
 
-ContextMutablePtr MutatePlainMergeTreeTask::createFakeQueryContext() const
+ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
     context->makeQueryContext();
