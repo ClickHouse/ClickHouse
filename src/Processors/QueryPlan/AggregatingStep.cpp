@@ -477,7 +477,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             const auto & added_function = dag->addFunction(minus_function, children, "__hinted_key_uncasted");
             const auto & added_cast = dag->addCast(added_function, std::make_shared<DataTypeUInt8>(), "__hinted_key");
             dag->addOrReplaceInOutputs(added_cast);
-            
+
             auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
             pipeline.addSimpleTransform([&](const Block & header)
             {
@@ -561,7 +561,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         const_column.column = const_column.type->createColumnConst(1, hints.at(key).lower_boundary.value());
         const_column.name = "__plus_value";
         const auto * hint_node = &dag->addColumn(const_column);
-        
+
         ActionsDAG::NodeRawConstPtrs children = {hinted_key_casted_column_node, hint_node};
         auto plus_function = FunctionFactory::instance().get("plus", Context::getGlobalContextInstance());
         dag->addOrReplaceInOutputs(dag->addFunction(plus_function, children, key));
