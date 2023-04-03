@@ -253,7 +253,6 @@ public:
          */
         class Hiliter
         {
-            friend struct FormatSettings;
             DB::WriteBuffer & ostr;
             bool hilite;
         public:
