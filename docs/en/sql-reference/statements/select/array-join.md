@@ -185,7 +185,7 @@ SETTINGS enable_unaligned_array_join = 1;
 
 ## ARRAY JOIN with Nested Data Structure
 
-`ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/nested.md):
+`ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/index.md):
 
 ``` sql
 CREATE TABLE nested_test

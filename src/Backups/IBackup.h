@@ -10,8 +10,9 @@
 namespace DB
 {
 class IBackupEntry;
-class IDisk;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
+struct BackupFileInfo;
+class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
 
@@ -41,6 +42,9 @@ public:
 
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
+
+    /// Returns the base backup (can be null).
+    virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
 
     /// Returns the number of files stored in the backup. Compare with getNumEntries().
     virtual size_t getNumFiles() const = 0;
@@ -111,7 +115,7 @@ public:
                                   WriteMode write_mode = WriteMode::Rewrite, const WriteSettings & write_settings = {}) const = 0;
 
     /// Puts a new entry to the backup.
-    virtual void writeFile(const String & file_name, BackupEntryPtr entry) = 0;
+    virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;

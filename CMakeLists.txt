@@ -178,9 +178,8 @@ endif ()
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # Can be lld or ld-lld or lld-13 or /path/to/lld.
-    if (LINKER_NAME MATCHES "lld" AND OS_LINUX)
+    if (LINKER_NAME MATCHES "lld")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
     endif ()
 endif()
@@ -213,7 +212,7 @@ endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
-if (LINKER_NAME MATCHES "lld" AND OS_LINUX)
+if (LINKER_NAME MATCHES "lld")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
@@ -350,15 +349,7 @@ set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O0 ${DEBUG_I
 if (COMPILER_CLANG)
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-U,_inside_main")
-
-        # The LLVM MachO linker (ld64.lld) generates by default unwind info in 'compact' format which the internal unwinder doesn't support
-        # and the server will not come up ('invalid compact unwind encoding'). Disable it.
-        # You will see warning during the build "ld64.lld: warning: Option `-no_compact_unwind' is undocumented. Should lld implement it?".
-        # Yes, ld64.lld does not document the option, likely for compat with Apple's system ld after which ld64.lld is modeled after and
-        # which also does not document it.
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_compact_unwind")
     endif()
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
@@ -577,7 +568,7 @@ if (NATIVE_BUILD_TARGETS
         COMMAND ${CMAKE_COMMAND}
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DENABLE_CCACHE=${ENABLE_CCACHE}"
+            "-DCOMPILER_CACHE=${COMPILER_CACHE}"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
