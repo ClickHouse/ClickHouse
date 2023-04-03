@@ -425,7 +425,7 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
-    const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", Nested::splitName(column_name).first)));
+    const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", Nested::splitName(column_name).first));
 
     if (key_node.isFunction())
     {
