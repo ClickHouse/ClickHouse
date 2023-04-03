@@ -57,7 +57,7 @@ def get_packager_cmd(
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
     cmd = (
-        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
+        f"cd {packager_path} && ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
