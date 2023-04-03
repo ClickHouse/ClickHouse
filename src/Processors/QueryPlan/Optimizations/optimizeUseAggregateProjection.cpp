@@ -335,7 +335,7 @@ ActionsDAGPtr analyzeAggregateProjection(
                     if (match.node && !match.monotonicity && proj_key_nodes.contains(match.node))
                     {
                         visited.insert(frame.node);
-                        new_inputs[frame.node] = match.node; //->result_name;
+                        new_inputs[frame.node] = match.node;
                         stack.pop();
                         continue;
                     }
