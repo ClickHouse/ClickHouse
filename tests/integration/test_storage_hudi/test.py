@@ -288,7 +288,7 @@ def test_types(started_cluster):
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
     )
 
-    table_function = f"hudi(s3, filename='{TABLE_NAME}/', 'minio', 'minio123')"
+    table_function = f"hudi(s3, filename='{TABLE_NAME}/')"
     assert (
         instance.query(f"SELECT a, b, c, d, e FROM {table_function}").strip()
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"

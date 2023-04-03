@@ -93,6 +93,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
      * A delta file, n.json, contains an atomic set of actions that should be applied to the
      * previous table state (n-1.json) in order to the construct nth snapshot of the table.
      * An action changes one aspect of the table's state, for example, adding or removing a file.
+     * Note: it is not a valid json, but a list of json's, so we read it in a while cycle.
      */
     std::set<String> processMetadataFiles(const Configuration & configuration, ContextPtr context)
     {

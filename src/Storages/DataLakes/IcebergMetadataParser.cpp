@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename Configuration, typename MetadataReadHelper>
@@ -105,32 +106,40 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
      *     "metadata-log" : [ ]
      * }
      */
-    String getManifestListFromMetadata(const Configuration & configuration, ContextPtr context)
+    struct Metadata
+    {
+        int format_version;
+        String manifest_list;
+        Strings manifest_files;
+    };
+    Metadata processMetadataFile(const Configuration & configuration, ContextPtr context)
     {
         const auto metadata_file_path = getMetadataFile(configuration);
         auto buf = MetadataReadHelper::createReadBuffer(metadata_file_path, context, configuration);
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
-        /// Looks like base/base/JSON.h can not parse this json file
-        Poco::JSON::Parser parser;
+        Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
         Poco::Dynamic::Var json = parser.parse(json_str);
         Poco::JSON::Object::Ptr object = json.extract<Poco::JSON::Object::Ptr>();
+
+        Metadata result;
+        result.format_version = object->getValue<int>("format-version");
 
         auto current_snapshot_id = object->getValue<Int64>("current-snapshot-id");
         auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
 
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
-            auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+            const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
             if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
             {
-                auto path = snapshot->getValue<String>("manifest-list");
-                return std::filesystem::path(configuration.url.key) / metadata_directory / std::filesystem::path(path).filename();
+                const auto path = snapshot->getValue<String>("manifest-list");
+                result.manifest_list = std::filesystem::path(configuration.url.key) / metadata_directory / std::filesystem::path(path).filename();
+                break;
             }
         }
-
-        return {};
+        return result;
     }
 
     /**
@@ -142,121 +151,124 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
      * │ /iceberg_data/default/test_single_iceberg_file/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro │            5813 │                 0 │ 2819310504515118887 │                      1 │                         0 │                        0 │ []         │              100 │                   0 │                  0 │
      * └──────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┴───────────────────┴─────────────────────┴────────────────────────┴───────────────────────────┴──────────────────────────┴────────────┴──────────────────┴─────────────────────┴────────────────────┘
      */
-
-    Strings getManifestFiles(const String & manifest_list, const Configuration & configuration, ContextPtr context)
+    void processManifestList(Metadata & metadata, const Configuration & configuration, ContextPtr context)
     {
         static constexpr auto manifest_path = "manifest_path";
 
-        auto buf = MetadataReadHelper::createReadBuffer(manifest_list, context, configuration);
+        auto buf = MetadataReadHelper::createReadBuffer(metadata.manifest_list, context, configuration);
         auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buf));
 
         auto data_type = AvroSchemaReader::avroNodeToDataType(file_reader->dataSchema().root()->leafAt(0));
-        auto columns = parseAvro(file_reader, data_type, manifest_path, getFormatSettings(context));
+        auto columns = parseAvro(*file_reader, data_type, manifest_path, getFormatSettings(context));
         auto & col = columns.at(0);
 
-        std::vector<String> res;
-        if (col->getDataType() == TypeIndex::String)
+        if (col->getDataType() != TypeIndex::String)
         {
-            const auto * col_str = typeid_cast<ColumnString *>(col.get());
-            for (size_t i = 0; i < col_str->size(); ++i)
-            {
-                const auto file_path = col_str->getDataAt(i).toView();
-                const auto filename = std::filesystem::path(file_path).filename();
-                res.emplace_back(std::filesystem::path(configuration.url.key) / metadata_directory / filename);
-            }
-
-            return res;
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "The parsed column from Avro file of `manifest_path` field should be String type, got {}",
+                col->getFamilyName());
         }
 
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `manifest_path` field should be String type, got {}",
-            col->getFamilyName());
-    }
-
-    MutableColumns parseAvro(
-        const std::unique_ptr<avro::DataFileReaderBase> & file_reader,
-        const DataTypePtr & data_type,
-        const String & field_name,
-        const FormatSettings & settings)
-    {
-        auto deserializer = std::make_unique<AvroDeserializer>(
-            Block{{data_type->createColumn(), data_type, field_name}}, file_reader->dataSchema(), true, true, settings);
-        file_reader->init();
-        MutableColumns columns;
-        columns.emplace_back(data_type->createColumn());
-
-        RowReadExtension ext;
-        while (file_reader->hasMore())
+        const auto * col_str = typeid_cast<ColumnString *>(col.get());
+        for (size_t i = 0; i < col_str->size(); ++i)
         {
-            file_reader->decr();
-            deserializer->deserializeRow(columns, file_reader->decoder(), ext);
+            const auto file_path = col_str->getDataAt(i).toView();
+            const auto filename = std::filesystem::path(file_path).filename();
+            metadata.manifest_files.emplace_back(std::filesystem::path(configuration.url.key) / metadata_directory / filename);
         }
-        return columns;
     }
 
     /**
      * Manifest file has the following format: '/iceberg_data/default/test_single_iceberg_file/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
      *
-     * `manifest list` has the following contents:
+     * `manifest file` is different in format version V1 and V2 and has the following contents:
+     * Format version V1:
      * ┌─status─┬─────────snapshot_id─┬─data_file───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
      * │      1 │ 2819310504515118887 │ ('/iceberg_data/default/test_single_iceberg_file/data/00000-1-3edca534-15a0-4f74-8a28-4733e0bf1270-00001.parquet','PARQUET',(),100,1070,67108864,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],0) │
      * └────────┴─────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     * Format version V2:
+     * ┌─status─┬─────────snapshot_id─┬─sequence_number─┬─file_sequence_number─┬─data_file───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+     * │      1 │ 5887006101709926452 │            ᴺᵁᴸᴸ │                 ᴺᵁᴸᴸ │ (0,'/iceberg_data/default/test_single_iceberg_file/data/00000-1-c8045c90-8799-4eac-b957-79a0484e223c-00001.parquet','PARQUET',(),100,1070,[(1,233),(2,210)],[(1,100),(2,100)],[(1,0),(2,0)],[],[(1,'\0'),(2,'0')],[(1,'c'),(2,'99')],NULL,[4],[],0) │
+     * └────────┴─────────────────────┴─────────────────┴──────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
      */
-
-    Strings getFilesForRead(const std::vector<String> & manifest_files, const Configuration & configuration, ContextPtr context)
+    Strings getFilesForRead(const Metadata & metadata, const Configuration & configuration, ContextPtr context)
     {
+        static constexpr auto manifest_path = "data_file";
+
         Strings keys;
-        for (const auto & manifest_file : manifest_files)
+        for (const auto & manifest_file : metadata.manifest_files)
         {
             auto buffer = MetadataReadHelper::createReadBuffer(manifest_file, context, configuration);
-
             auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
-            static constexpr auto manifest_path = "data_file";
-
-            /// The data_file filed at the 3rd position of the manifest file:
-            /// {'status': xx, 'snapshot_id': xx, 'data_file': {'file_path': 'xxx', ...}, ...}
-            /// and it's also a nested record, so its result type is a nested Tuple
-            auto data_type = AvroSchemaReader::avroNodeToDataType(file_reader->dataSchema().root()->leafAt(2));
-            auto columns = parseAvro(file_reader, data_type, manifest_path, getFormatSettings(context));
-            auto & col = columns.at(0);
-
-            if (col->getDataType() == TypeIndex::Tuple)
-            {
-                auto * col_tuple = typeid_cast<ColumnTuple *>(col.get());
-                auto & col_str = col_tuple->getColumnPtr(0);
-                if (col_str->getDataType() == TypeIndex::String)
-                {
-                    const auto * str_col = typeid_cast<const ColumnString *>(col_str.get());
-                    size_t col_size = str_col->size();
-                    for (size_t i = 0; i < col_size; ++i)
-                    {
-                        auto file_path = str_col->getDataAt(i).toView();
-                        /// We just obtain the partition/file name
-                        std::filesystem::path path(file_path);
-                        keys.emplace_back(path.parent_path().filename() / path.filename());
-                    }
-                }
-                else
-                {
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "The parsed column from Avro file of `file_path` field should be String type, got {}",
-                        col_str->getFamilyName());
-                }
-            }
+            avro::NodePtr node;
+            if (metadata.format_version == 1)
+                node = file_reader->dataSchema().root()->leafAt(2);
+            else if (metadata.format_version == 2)
+                node = file_reader->dataSchema().root()->leafAt(4);
             else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected format version: {}", metadata.format_version);
+
+            if (node->type() != avro::Type::AVRO_RECORD)
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "The parsed column from Avro file of `data_file` field should be Tuple type, got {}",
-                    col->getFamilyName());
+                    node->type());
+            }
+            auto data_type = AvroSchemaReader::avroNodeToDataType(node);
+            const auto columns = parseAvro(*file_reader, data_type, manifest_path, getFormatSettings(context));
+            const auto col_tuple = typeid_cast<ColumnTuple *>(columns.at(0).get());
+
+            ColumnPtr col_str;
+            if (metadata.format_version == 1)
+                col_str = col_tuple->getColumnPtr(0);
+            else
+                col_str = col_tuple->getColumnPtr(1);
+
+            if (col_str->getDataType() != TypeIndex::String)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "The parsed column from Avro file of `file_path` field should be String type, got {}",
+                    col_str->getFamilyName());
+            }
+
+            const auto * str_col = assert_cast<const ColumnString *>(col_str.get());
+            size_t col_size = str_col->size();
+            for (size_t i = 0; i < col_size; ++i)
+            {
+                std::filesystem::path path(str_col->getDataAt(i).toView());
+                keys.emplace_back(path.parent_path().filename() / path.filename()); /// partition/file name
             }
         }
 
         return keys;
     }
+
+    MutableColumns parseAvro(
+        avro::DataFileReaderBase & file_reader,
+        const DataTypePtr & data_type,
+        const String & field_name,
+        const FormatSettings & settings)
+    {
+        auto deserializer = std::make_unique<AvroDeserializer>(
+            Block{{data_type->createColumn(), data_type, field_name}}, file_reader.dataSchema(), true, true, settings);
+
+        file_reader.init();
+        MutableColumns columns;
+        columns.emplace_back(data_type->createColumn());
+
+        RowReadExtension ext;
+        while (file_reader.hasMore())
+        {
+            file_reader.decr();
+            deserializer->deserializeRow(columns, file_reader.decoder(), ext);
+        }
+        return columns;
+    }
+
 };
 
 
@@ -268,14 +280,14 @@ IcebergMetadataParser<Configuration, MetadataReadHelper>::IcebergMetadataParser(
 template <typename Configuration, typename MetadataReadHelper>
 Strings IcebergMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr context)
 {
-    auto manifest_list = impl->getManifestListFromMetadata(configuration, context);
+    auto metadata = impl->processMetadataFile(configuration, context);
 
     /// When table first created and does not have any data
-    if (manifest_list.empty())
+    if (metadata.manifest_list.empty())
         return {};
 
-    auto manifest_files = impl->getManifestFiles(manifest_list, configuration, context);
-    return impl->getFilesForRead(manifest_files, configuration, context);
+    impl->processManifestList(metadata, configuration, context);
+    return impl->getFilesForRead(metadata, configuration, context);
 }
 
 
