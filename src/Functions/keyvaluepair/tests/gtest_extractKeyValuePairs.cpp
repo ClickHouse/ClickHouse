@@ -1,6 +1,5 @@
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/impl/CHKeyValuePairExtractor.h>
-#include <Functions/keyvaluepair/impl/StateHandler.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -11,10 +10,8 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <ostream>
-#include <string_view>
 #include <gtest/gtest.h>
 #include <initializer_list>
-#include <string_view>
 #include <Core/iostream_debug_helpers.h>
 
 namespace
@@ -92,7 +89,7 @@ TEST_P(extractKVPair_KeyValuePairExtractorTest, Match)
     size_t i = 0;
     for (const auto & expected_kv : expected)
     {
-        EXPECT_EQ(expected_kv.first,  keys->getDataAt(i));
+        EXPECT_EQ(expected_kv.first, keys->getDataAt(i));
 
         EXPECT_EQ(expected_kv.second, values->getDataAt(i));
 
