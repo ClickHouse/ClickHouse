@@ -1,8 +1,9 @@
-#include "HiliteComparator.h"
+#pragma once
+
+#include <Parsers/IAST.h>
+
 
 namespace HiliteComparator {
-
-std::vector<const char *> HILITES;
 
 [[maybe_unused]] const char * consume_hilites(const char ** ptr_ptr);
 

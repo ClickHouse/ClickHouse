@@ -3,10 +3,10 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/HiliteComparator/HiliteComparator.h>
 #include <gtest/gtest.h>
 #include <Common/StackTrace.h>
 
-#include <utils/hilite_comparator/HiliteComparator.h>
 
 String hilite(const String & s, const char * hilite_type)
 {
@@ -55,8 +55,8 @@ void compare(const String & query, const String & expected)
     settings.hilite = true;
     ast->format(settings);
 
-    ASSERT_PRED2(are_equal_with_hilites_removed, expected, write_buffer.str());
-    ASSERT_PRED2(are_equal_with_hilites, expected, write_buffer.str());
+    ASSERT_PRED2(HiliteComparator::are_equal_with_hilites_removed, expected, write_buffer.str());
+    ASSERT_PRED2(HiliteComparator::are_equal_with_hilites, expected, write_buffer.str());
 }
 
 TEST(FormatHiliting, SimpleSelect)
