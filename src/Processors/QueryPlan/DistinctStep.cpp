@@ -19,6 +19,7 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
             .returns_single_stream = !pre_distinct,
             .preserves_number_of_streams = preserves_number_of_streams,
             .preserves_sorting = preserves_number_of_streams,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,
