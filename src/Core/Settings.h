@@ -738,6 +738,7 @@ class IColumn;
 #define MAKE_OBSOLETE(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
 
+/// NOTE: ServerSettings::loadSettingsFromConfig() should be updated to include this settings
 #define MAKE_DEPRECATED_BY_SERVER_CONFIG(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "User-level setting is deprecated, and it must be defined in the server configuration instead.", BaseSettingsHelpers::Flags::OBSOLETE)
 
@@ -771,6 +772,8 @@ class IColumn;
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_schedule_pool_size, 128) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_message_broker_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_distributed_schedule_pool_size, 16) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_read_network_bandwidth_for_server, 0) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_write_network_bandwidth_for_server, 0) \
     /* ---- */ \
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0)                                                                                 \
@@ -780,8 +783,6 @@ class IColumn;
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
     MAKE_OBSOLETE(M, UInt64, backup_threads, 16) \
     MAKE_OBSOLETE(M, UInt64, restore_threads, 16) \
-    MAKE_OBSOLETE(M, UInt64, max_remote_read_network_bandwidth_for_server, 0) \
-    MAKE_OBSOLETE(M, UInt64, max_remote_write_network_bandwidth_for_server, 0) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
