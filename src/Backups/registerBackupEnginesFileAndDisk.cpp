@@ -41,7 +41,7 @@ namespace
             key = "backups.allowed_disk[" + std::to_string(++counter) + "]";
             if (!config.has(key))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Disk {} is not allowed for backups, see the 'backups.allowed_disk' configuration parameter", quoteString(disk_name));
+                                "Disk '{}' is not allowed for backups, see the 'backups.allowed_disk' configuration parameter", quoteString(disk_name));
         }
     }
 
@@ -54,7 +54,7 @@ namespace
 
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
         if (!path_ok)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} to backup must be inside the specified disk {}",
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' to backup must be inside the specified disk '{}'",
                             quoteString(path.c_str()), quoteString(disk_name));
     }
 
