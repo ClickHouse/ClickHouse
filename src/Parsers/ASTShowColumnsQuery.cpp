@@ -24,15 +24,14 @@ void ASTShowColumnsQuery::formatQueryImpl(const FormatSettings & settings, Forma
                   << "COLUMNS"
                   << (settings.hilite ? hilite_none : "");
 
-    if (from_database.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(from_table);
-    else
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(from_database) << "." << backQuoteIfNeed(from_table);
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(from_table);
+    if (!from_database.empty())
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(from_database);
 
 
     if (!like.empty())
         settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << (not_like ? " NOT " : "")
+                      << (not_like ? " NOT" : "")
                       << (case_insensitive_like ? " ILIKE " : " LIKE")
                       << (settings.hilite ? hilite_none : "")
                       << DB::quote << like;
