@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <cassert>
 
 #if defined(__SSE2__)
     #include <emmintrin.h>
@@ -33,6 +34,32 @@
   * Allow to search for the last matching character in a string.
   * If no such characters, returns nullptr.
   */
+
+struct SearchSymbols
+{
+    static constexpr auto BUFFER_SIZE = 16;
+
+    SearchSymbols() = default;
+
+    explicit SearchSymbols(std::string in)
+        : str(std::move(in))
+    {
+#if defined(__SSE4_2__)
+        assert(str.size() <= BUFFER_SIZE);
+
+        char tmp_safety_buffer[16] = {0};
+
+        memcpy(tmp_safety_buffer, str.data(), str.size());
+
+        simd_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(tmp_safety_buffer));
+#endif
+    }
+
+#if defined(__SSE4_2__)
+    __m128i simd_vector;
+#endif
+    std::string str;
+};
 
 namespace detail
 {
@@ -256,17 +283,15 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 }
 
 template <bool positive, ReturnMode return_mode>
-inline const char * find_first_symbols_sse42(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+inline const char * find_first_symbols_sse42(const char * const begin, const char * const end, const SearchSymbols & symbols)
 {
     const char * pos = begin;
 
 #if defined(__SSE4_2__)
     constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
 
-    // This is to avoid read past end of `symbols` if `num_chars < 16`.
-    char buffer[16] = {'\0'};
-    memcpy(buffer, symbols, num_chars);
-    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(buffer));
+    const __m128i set = symbols.simd_vector;
+    const auto num_chars = symbols.str.size();
 
     for (; pos + 15 < end; pos += 16)
     {
@@ -286,7 +311,7 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 #endif
 
     for (; pos < end; ++pos)
-        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+        if (maybe_negate<positive>(is_in(*pos, symbols.str.data(), num_chars)))
             return pos;
 
     return return_mode == ReturnMode::End ? end : nullptr;
@@ -307,15 +332,14 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 }
 
 template <bool positive, ReturnMode return_mode>
-inline const char * find_first_symbols_dispatch(const std::string_view haystack, const std::string_view symbols)
+inline const char * find_first_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
 {
-    const size_t num_chars = std::min<size_t>(symbols.size(), 16);
 #if defined(__SSE4_2__)
-    if (num_chars >= 5)
-        return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols.begin(), num_chars);
+    if (symbols.str.size() >= 5)
+        return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols);
     else
 #endif
-        return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.begin(), num_chars);
+        return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
 }
 
 }
@@ -335,7 +359,7 @@ inline char * find_first_symbols(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::End, symbols...>(begin, end));
 }
 
-inline const char * find_first_symbols(std::string_view haystack, std::string_view symbols)
+inline const char * find_first_symbols(std::string_view haystack, const SearchSymbols & symbols)
 {
     return detail::find_first_symbols_dispatch<true, detail::ReturnMode::End>(haystack, symbols);
 }
@@ -352,7 +376,7 @@ inline char * find_first_not_symbols(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::End, symbols...>(begin, end));
 }
 
-inline const char * find_first_not_symbols(std::string_view haystack, std::string_view symbols)
+inline const char * find_first_not_symbols(std::string_view haystack, const SearchSymbols & symbols)
 {
     return detail::find_first_symbols_dispatch<false, detail::ReturnMode::End>(haystack, symbols);
 }
@@ -369,7 +393,7 @@ inline char * find_first_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
-inline const char * find_first_symbols_or_null(std::string_view haystack, std::string_view symbols)
+inline const char * find_first_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
 {
     return detail::find_first_symbols_dispatch<true, detail::ReturnMode::Nullptr>(haystack, symbols);
 }
@@ -386,7 +410,7 @@ inline char * find_first_not_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
-inline const char * find_first_not_symbols_or_null(std::string_view haystack, std::string_view symbols)
+inline const char * find_first_not_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
 {
     return detail::find_first_symbols_dispatch<false, detail::ReturnMode::Nullptr>(haystack, symbols);
 }

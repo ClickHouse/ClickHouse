@@ -1,4 +1,4 @@
-#include <Functions/keyvaluepair/impl/InlineEscapingStateHandler.h>
+#include <Functions/keyvaluepair/impl/StateHandlerImpl.h>
 
 #include <Functions/keyvaluepair/impl/StateHandler.h>
 #include <gtest/gtest.h>
@@ -28,7 +28,7 @@ TEST(extractKVPair_InlineEscapingValueStateHandler, Wait)
     auto pair_delimiters = std::vector<char> {','};
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
-    InlineEscapingStateHandler handler(configuration);
+    StateHandlerImpl handler(configuration);
 
     test_wait(handler, " los$ yours3lf", 0u, State::READING_VALUE);
 }
