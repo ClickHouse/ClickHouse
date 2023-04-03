@@ -10,6 +10,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -74,6 +76,15 @@ void PipelineExecutor::cancel()
     graph->cancel();
 }
 
+void PipelineExecutor::cancelReading()
+{
+    if (!cancelled_reading)
+    {
+        cancelled_reading = true;
+        graph->cancel(/*cancel_all_processors*/ false);
+    }
+}
+
 void PipelineExecutor::finish()
 {
     tasks.finish();
@@ -84,6 +95,9 @@ void PipelineExecutor::execute(size_t num_threads)
     checkTimeLimit();
     if (num_threads < 1)
         num_threads = 1;
+
+    OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
+    span.addAttribute("clickhouse.thread_num", num_threads);
 
     try
     {
@@ -99,6 +113,8 @@ void PipelineExecutor::execute(size_t num_threads)
     }
     catch (...)
     {
+        span.addAttribute(ExecutionStatus::fromCurrentException());
+
 #ifndef NDEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
 #endif
@@ -148,6 +164,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
             cancel();
+
         return continuing;
     }
 
