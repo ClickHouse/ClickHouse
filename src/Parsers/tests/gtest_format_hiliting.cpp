@@ -321,10 +321,9 @@ TEST(FormatHiliting, ASTKillQueryQuery)
 
 TEST(FormatHiliting, ASTCreateQuery)
 {
-    // The misplaced space around ( is on purpose, as this bug will fixed in a separate PR.
-    String query = "CREATE TABLE name AS( SELECT *) COMMENT 'hello'";
+    String query = "CREATE TABLE name AS (SELECT *) COMMENT 'hello'";
 
-    String expected = keyword("CREATE TABLE ") + "name " + keyword("AS( SELECT ") + "*" + keyword(") ")
+    String expected = keyword("CREATE TABLE ") + "name " + keyword("AS (SELECT ") + "*" + keyword(") ")
             + keyword("COMMENT ") + "'hello'";
 
     compare(query, expected);
