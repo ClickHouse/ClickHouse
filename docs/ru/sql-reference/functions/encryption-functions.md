@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/encryption-functions
 sidebar_position: 67
 sidebar_label: "Функции для шифрования"
 ---
@@ -357,3 +356,4 @@ SELECT aes_decrypt_mysql('aes-256-ofb', unhex('24E9E4966469'), '1234567891012131
 │ Secret    │
 └───────────┘
 ```
+[Original article](https://clickhouse.com/docs/ru/sql-reference/functions/encryption_functions/) <!--hide-->

@@ -46,17 +46,15 @@ curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
 chown ubuntu: /home/ubuntu/.ssh -R
 
 
-# Create a pre-run script that will provide diagnostics info
+# Create a pre-run script that will restart docker daemon before the job started
 mkdir -p /tmp/actions-hooks
-cat > /tmp/actions-hooks/pre-run.sh << EOF
+cat > /tmp/actions-hooks/pre-run.sh << 'EOF'
 #!/bin/bash
-set -uo pipefail
+set -xuo pipefail
 
 echo "Runner's public DNS: $(ec2metadata --public-hostname)"
-echo "Runner's labels: ${LABELS}"
 EOF
 
-# Create a post-run script that will restart docker daemon before the job started
 cat > /tmp/actions-hooks/post-run.sh << 'EOF'
 #!/bin/bash
 set -xuo pipefail
@@ -66,8 +64,7 @@ terminate-and-exit() {
   INSTANCE_ID=$(ec2metadata --instance-id)
   # We execute it with at to not have it as an orphan process
   # GH Runners kill all remain processes
-  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
-    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space
+  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now
   exit 0
 }
 
@@ -79,13 +76,13 @@ if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
 fi
 
 # shellcheck disable=SC2046
-docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+docker kill $(docker ps -q) ||:
 # shellcheck disable=SC2046
-docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+docker rm -f $(docker ps -a -q) ||:
 
 # If we have hanged containers after the previous commands, than we have a hanged one
 # and should restart the daemon
-if [ "$(docker ps --all --quiet)" ]; then
+if [ "$(docker ps -a -q)" ]; then
   # Systemd service of docker has StartLimitBurst=3 and StartLimitInterval=60s,
   # that's why we try restarting it for long
   for i in {1..25};

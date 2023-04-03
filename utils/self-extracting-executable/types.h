@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -44,6 +43,5 @@ struct FileData
     uint64_t name_length       = 0;
     uint64_t uncompressed_size = 0;
     uint64_t umask             = 0;
-    bool     exec              = false;
 };
 

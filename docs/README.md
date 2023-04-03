@@ -40,8 +40,6 @@ The documentation contains information about all the aspects of the ClickHouse l
 
 At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [Clickhouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
 
-To get the latter launch the `get-clickhouse-docs.sh` script.
-
 Each language lies in the corresponding folder. Files that are not translated from English are symbolic links to the English ones.
 
 <a name="how-to-contribute"/>
@@ -128,6 +126,12 @@ Contribute all new information in English language. Other languages are translat
 
 ### Adding a New File
 
+When you add a new file, it should end with a link like:
+
+`[Original article](https://clickhouse.com/docs/<path-to-the-page>) <!--hide-->`
+
+and there should be **a new empty line** after it.
+
 {## When adding a new file:
 
 - Make symbolic links for all other languages. You can use the following commands:
@@ -208,4 +212,4 @@ Templates:
 
 ## How to Build Documentation
 
-You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contrib-writing-guide.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+You can build your documentation manually by following the instructions in [docs/tools/README.md](../docs/tools/README.md). Also, our CI runs the documentation build after the `documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.

@@ -211,8 +211,9 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
         max_ignored_errors, fallback_to_stale_replicas,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-                "PoolWithFailoverBase::getMany() returned less than min_entries entries.");
+        throw DB::Exception(
+                "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
+                DB::ErrorCodes::LOGICAL_ERROR);
     return results[0].entry;
 }
 
@@ -291,8 +292,9 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
 
     if (usable_count < min_entries)
-        throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-                "All connection tries failed. Log: \n\n{}\n", fail_messages);
+        throw DB::NetException(
+                "All connection tries failed. Log: \n\n" + fail_messages + "\n",
+                DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 
     std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 
@@ -319,8 +321,10 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         try_results.resize(up_to_date_count);
     }
     else
-        throw DB::Exception(DB::ErrorCodes::ALL_REPLICAS_ARE_STALE,
-                "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}", up_to_date_count, max_entries);
+        throw DB::Exception(
+                "Could not find enough connections to up-to-date replicas. Got: " + std::to_string(up_to_date_count)
+                + ", needed: " + std::to_string(min_entries),
+                DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
 
     return try_results;
 }
@@ -335,7 +339,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     Int64 config_priority = 1;
     /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
-    UInt64 random = 0;
+    UInt32 random = 0;
 
     void randomize()
     {
@@ -349,7 +353,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     }
 
 private:
-    std::minstd_rand rng = std::minstd_rand(static_cast<uint_fast32_t>(randomSeed()));
+    std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
 
 template <typename TNestedPool>
@@ -381,7 +385,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 {
     time_t current_time = time(nullptr);
 
-    if (last_decrease_time)
+    if (last_decrease_time) //-V1051
     {
         time_t delta = current_time - last_decrease_time;
 

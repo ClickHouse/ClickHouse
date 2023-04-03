@@ -43,7 +43,7 @@ namespace detail
     {
         static Ret hash(UInt128 x)
         {
-            return static_cast<Ret>(sipHash64(x));
+            return sipHash64(x);
         }
     };
 
@@ -126,8 +126,7 @@ class AggregateFunctionUniqCombined final
 {
 public:
     AggregateFunctionUniqCombined(const DataTypes & argument_types_, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>(argument_types_, params_, std::make_shared<DataTypeUInt64>())
-    {}
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>(argument_types_, params_) {}
 
     String getName() const override
     {
@@ -135,6 +134,11 @@ public:
             return "uniqCombined64";
         else
             return "uniqCombined";
+    }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -188,7 +192,7 @@ private:
 public:
     explicit AggregateFunctionUniqCombinedVariadic(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>,
-            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>>(arguments, params, std::make_shared<DataTypeUInt64>())
+            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>>(arguments, params)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -202,6 +206,11 @@ public:
             return "uniqCombined64";
         else
             return "uniqCombined";
+    }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }

@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/utilities/clickhouse-format
 sidebar_position: 65
 sidebar_label: clickhouse-format
 ---

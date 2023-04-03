@@ -3,7 +3,6 @@
 
 #include <sys/epoll.h>
 #include <vector>
-#include <functional>
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
 

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 ---
 
@@ -8,12 +7,11 @@ sidebar_label: GROUP BY
 `GROUP BY` 子句将 `SELECT` 查询结果转换为聚合模式，其工作原理如下:
 
 -   `GROUP BY` 子句包含表达式列表（或单个表达式 -- 可以认为是长度为1的列表）。 这份名单充当 “grouping key”，而每个单独的表达式将被称为 “key expressions”.
--   在所有的表达式在 [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having.md)，和 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 子句中 **必须** 基于键表达式进行计算 **或** 上 [聚合函数](../../../sql-reference/aggregate-functions/index.md) 在非键表达式（包括纯列）上。 换句话说，从表中选择的每个列必须用于键表达式或聚合函数内，但不能同时使用。
+-   在所有的表达式在 [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having)，和 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 子句中 **必须** 基于键表达式进行计算 **或** 上 [聚合函数](../../../sql-reference/aggregate-functions/index.md) 在非键表达式（包括纯列）上。 换句话说，从表中选择的每个列必须用于键表达式或聚合函数内，但不能同时使用。
 -   聚合结果 `SELECT` 查询将包含尽可能多的行，因为有唯一值 “grouping key” 在源表中。 通常这会显着减少行数，通常是数量级，但不一定：如果所有行数保持不变 “grouping key” 值是不同的。
 
-:::note
-还有一种额外的方法可以在表上运行聚合。 如果查询仅在聚合函数中包含表列，则 `GROUP BY` 可以省略，并且通过一个空的键集合来假定聚合。 这样的查询总是只返回一行。
-:::
+!!! note "注"
+    还有一种额外的方法可以在表上运行聚合。 如果查询仅在聚合函数中包含表列，则 `GROUP BY` 可以省略，并且通过一个空的键集合来假定聚合。 这样的查询总是只返回一行。
 
 ## 空处理 {#null-processing}
 
@@ -58,7 +56,7 @@ sidebar_label: GROUP BY
 -   在 `Pretty*` 格式时，该行在主结果之后作为单独的表输出。
 -   在其他格式中，它不可用。
 
-`WITH TOTALS` 可以以不同的方式运行时 [HAVING](../../../sql-reference/statements/select/having.md) 是存在的。 该行为取决于 `totals_mode` 设置。
+`WITH TOTALS` 可以以不同的方式运行时 [HAVING](../../../sql-reference/statements/select/having) 是存在的。 该行为取决于 `totals_mode` 设置。
 
 ### 配置总和处理 {#configuring-totals-processing}
 
@@ -77,54 +75,6 @@ sidebar_label: GROUP BY
 如果 `max_rows_to_group_by` 和 `group_by_overflow_mode = 'any'` 不使用，所有的变化 `after_having` 是相同的，你可以使用它们中的任何一个（例如, `after_having_auto`).
 
 您可以使用 `WITH TOTALS` 在子查询中，包括在子查询 [JOIN](../../../sql-reference/statements/select/join.md) 子句（在这种情况下，将各自的总值合并）。
-
-## GROUP BY ALL {#group-by-all}
-
-`GROUP BY ALL` 相当于对所有被查询的并且不被聚合函数使用的字段进行`GROUP BY`。
-
-例如
-
-``` sql
-SELECT
-    a * 2,
-    b,
-    count(c),
-FROM t
-GROUP BY ALL
-```
-
-效果等同于
-
-``` sql
-SELECT
-    a * 2,
-    b,
-    count(c),
-FROM t
-GROUP BY a * 2, b
-```
-
-对于一种特殊情况，如果一个 function 的参数中同时有聚合函数和其他字段，会对参数中能提取的最大非聚合字段进行`GROUP BY`。
-
-例如:
-
-``` sql
-SELECT
-    substring(a, 4, 2),
-    substring(substring(a, 1, 2), 1, count(b))
-FROM t
-GROUP BY ALL
-```
-
-效果等同于
-
-``` sql
-SELECT
-    substring(a, 4, 2),
-    substring(substring(a, 1, 2), 1, count(b))
-FROM t
-GROUP BY substring(a, 4, 2), substring(a, 1, 2)
-```
 
 ## 例子 {#examples}
 

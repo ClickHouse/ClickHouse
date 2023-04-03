@@ -12,9 +12,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/ReadBufferFromString.h>
-
-#include <base/unit.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -24,64 +21,34 @@
 namespace DB
 {
 
-namespace ErrorCodes
+void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    extern const int INCORRECT_DATA;
-    extern const int TOO_LARGE_STRING_SIZE;
-}
-
-void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    const String & s = field.get<const String &>();
-    if (settings.max_binary_string_size && s.size() > settings.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            s.size(),
-            settings.max_binary_string_size);
-
+    const String & s = get<const String &>(field);
     writeVarUInt(s.size(), ostr);
     writeString(s, ostr);
 }
 
 
-void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     UInt64 size;
     readVarUInt(size, istr);
-    if (settings.max_binary_string_size && size > settings.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.max_binary_string_size);
-
     field = String();
-    String & s = field.get<String &>();
+    String & s = get<String &>(field);
     s.resize(size);
     istr.readStrict(s.data(), size);
 }
 
 
-void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-    if (settings.max_binary_string_size && s.size > settings.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            s.size,
-            settings.max_binary_string_size);
-
     writeVarUInt(s.size, ostr);
     writeString(s, ostr);
 }
 
 
-void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     ColumnString & column_string = assert_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
@@ -89,13 +56,6 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 
     UInt64 size;
     readVarUInt(size, istr);
-    if (settings.max_binary_string_size && size > settings.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.max_binary_string_size);
 
     size_t old_chars_size = data.size();
     size_t offset = old_chars_size + size + 1;
@@ -122,7 +82,7 @@ void SerializationString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     const ColumnString::Chars & data = column_string.getChars();
     const ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    size_t size = column_string.size();
+    size_t size = column.size();
     if (!size)
         return;
 
@@ -159,14 +119,6 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         UInt64 size;
         readVarUInt(size, istr);
-
-        static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
-        if (size > max_string_size)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "Too large string size: {}. The maximum is: {}.",
-                size,
-                max_string_size);
 
         offset += size + 1;
         offsets.push_back(offset);
@@ -214,7 +166,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
 
     double avg_chars_size = 1; /// By default reserve only for empty strings.
 
-    if (avg_value_size_hint > 0.0 && avg_value_size_hint > sizeof(offsets[0]))
+    if (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0]))
     {
         /// Randomly selected.
         constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
@@ -222,7 +174,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
 
-    size_t size_to_reserve = data.size() + static_cast<size_t>(std::ceil(limit * avg_chars_size));
+    size_t size_to_reserve = data.size() + std::ceil(limit * avg_chars_size);
 
     /// Never reserve for too big size.
     if (size_to_reserve < 256 * 1024 * 1024)
@@ -319,28 +271,9 @@ void SerializationString::serializeTextJSON(const IColumn & column, size_t row_n
 }
 
 
-void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
-    {
-        String field;
-        readJSONObjectPossiblyInvalid(field, istr);
-        ReadBufferFromString buf(field);
-        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
-    }
-    else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
-    {
-        String field;
-        readJSONField(field, istr);
-        Float64 tmp;
-        ReadBufferFromString buf(field);
-        if (tryReadFloatText(tmp, buf) && buf.eof())
-            read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
-        else
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
-    }
-    else
-        read(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
 }
 
 

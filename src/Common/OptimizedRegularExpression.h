@@ -5,8 +5,9 @@
 #include <memory>
 #include <optional>
 #include <Common/StringSearcher.h>
-#include "config.h"
 #include <re2/re2.h>
+
+#include <Common/config.h>
 #include <re2_st/re2.h>
 
 
@@ -95,24 +96,17 @@ public:
         out_required_substring_is_prefix = required_substring_is_prefix;
     }
 
-    /// analyze function will extract the longest string literal or multiple alternative string literals from regexp for pre-checking if
-    /// a string contains the string literal(s). If not, we can tell this string can never match the regexp.
-    static void analyze(
-        std::string_view regexp_,
-        std::string & required_substring,
-        bool & is_trivial,
-        bool & required_substring_is_prefix,
-        std::vector<std::string> & alternatives);
-
 private:
     bool is_trivial;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
     std::string required_substring;
-    std::optional<DB::ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
-    std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
+    std::optional<DB::StringSearcher<true, true>> case_sensitive_substring_searcher;
+    std::optional<DB::StringSearcher<false, true>> case_insensitive_substring_searcher;
     std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
+
+    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 };
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;

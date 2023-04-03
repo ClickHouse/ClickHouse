@@ -8,18 +8,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void connect(OutputPort & output, InputPort & input, bool reconnect)
+void connect(OutputPort & output, InputPort & input)
 {
-    if (!reconnect && input.state)
+    if (input.state)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is already connected, (header: [{}])", input.header.dumpStructure());
 
-    if (!reconnect && output.state)
+    if (output.state)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is already connected, (header: [{}])", output.header.dumpStructure());
 
-    auto out_name = output.processor ? output.getProcessor().getName() : "null";
-    auto in_name = input.processor ? input.getProcessor().getName() : "null";
+    auto out_name = output.getProcessor().getName();
+    auto in_name = input.getProcessor().getName();
 
-    assertCompatibleHeader(output.getHeader(), input.getHeader(), fmt::format("function connect between {} and {}", out_name, in_name));
+    assertCompatibleHeader(output.getHeader(), input.getHeader(), fmt::format(" function connect between {} and {}", out_name, in_name));
 
     input.output_port = &output;
     output.input_port = &input;

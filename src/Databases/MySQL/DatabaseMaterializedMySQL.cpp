@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 
@@ -103,13 +103,13 @@ void DatabaseMaterializedMySQL::renameTable(ContextPtr context_, const String & 
     checkIsInternalQuery(context_, "RENAME TABLE");
 
     if (exchange)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support EXCHANGE TABLE.");
+        throw Exception("MaterializedMySQL database does not support EXCHANGE TABLE.", ErrorCodes::NOT_IMPLEMENTED);
 
     if (dictionary)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support RENAME DICTIONARY.");
+        throw Exception("MaterializedMySQL database does not support RENAME DICTIONARY.", ErrorCodes::NOT_IMPLEMENTED);
 
     if (to_database.getDatabaseName() != DatabaseAtomic::getDatabaseName())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for MaterializedMySQL database.");
+        throw Exception("Cannot rename with other database for MaterializedMySQL database.", ErrorCodes::NOT_IMPLEMENTED);
 
     DatabaseAtomic::renameTable(context_, name, *this, to_name, exchange, dictionary);
 }

@@ -21,7 +21,7 @@ ENGINE = MergeTree
 ORDER BY (key, ts);
 
 INSERT INTO normal SELECT
-    number,
+    1,
     toDateTime('2021-12-06 00:00:00') + number,
     number
 FROM numbers(100000);

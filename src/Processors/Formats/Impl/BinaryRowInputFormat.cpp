@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int CANNOT_SKIP_UNKNOWN_FIELD;
 }
 
-BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, const Block & header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
         header,
         in_,
@@ -59,7 +59,7 @@ std::vector<String> BinaryFormatReader::readTypes()
 
 bool BinaryFormatReader::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
 {
-    serialization->deserializeBinary(column, *in, format_settings);
+    serialization->deserializeBinary(column, *in);
     return true;
 }
 
@@ -90,10 +90,9 @@ void BinaryFormatReader::skipTypes()
 void BinaryFormatReader::skipField(size_t file_column)
 {
     if (file_column >= read_data_types.size())
-        throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD,
-                        "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
+        throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD, "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
     Field field;
-    read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in, format_settings);
+    read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in);
 }
 
 BinaryWithNamesAndTypesSchemaReader::BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

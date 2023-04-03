@@ -1,8 +1,0 @@
-position: 80
-label: 'About Us'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: About Us
-  slug: /ru/about-us/

@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_ICU
 #    include <Columns/ColumnConst.h>
@@ -67,8 +67,8 @@ private:
                     &status);
 
             if (!U_SUCCESS(status))
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHARSET_CONVERTER, "Cannot create UConverter with charset {}, error: {}",
-                    charset, String(u_errorName(status)));
+                throw Exception("Cannot create UConverter with charset " + charset + ", error: " + String(u_errorName(status)),
+                    ErrorCodes::CANNOT_CREATE_CHARSET_CONVERTER);
         }
 
         ~Converter()
@@ -123,8 +123,8 @@ private:
                     &status);
 
                 if (!U_SUCCESS(status))
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_CHARSET, "Cannot convert from charset {}, error: {}",
-                        from_charset, String(u_errorName(status)));
+                    throw Exception("Cannot convert from charset " + from_charset + ", error: " + String(u_errorName(status)),
+                        ErrorCodes::CANNOT_CONVERT_CHARSET);
 
                 auto max_to_char_size = ucnv_getMaxCharSize(converter_to->impl);
                 auto max_to_size = UCNV_GET_MAX_BYTES_FOR_STRING(res, max_to_char_size);
@@ -138,8 +138,8 @@ private:
                     &status);
 
                 if (!U_SUCCESS(status))
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_CHARSET, "Cannot convert to charset {}, error: {}",
-                        to_charset, String(u_errorName(status)));
+                    throw Exception("Cannot convert to charset " + to_charset + ", error: " + String(u_errorName(status)),
+                        ErrorCodes::CANNOT_CONVERT_CHARSET);
 
                 current_to_offset += res;
             }
@@ -175,8 +175,8 @@ public:
     {
         for (size_t i : collections::range(0, 3))
             if (!isString(arguments[i]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, must be String",
-                    arguments[i]->getName(), getName());
+                throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
+                    + ", must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -194,9 +194,8 @@ public:
         const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
 
         if (!col_charset_from || !col_charset_to)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "2nd and 3rd arguments of function {} (source charset and destination charset) must "
-                            "be constant strings.", getName());
+            throw Exception("2nd and 3rd arguments of function " + getName() + " (source charset and destination charset) must be constant strings.",
+                ErrorCodes::ILLEGAL_COLUMN);
 
         String charset_from = col_charset_from->getValue<String>();
         String charset_to = col_charset_to->getValue<String>();
@@ -208,7 +207,8 @@ public:
             return col_to;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column passed as first argument of function {} (must be ColumnString).", getName());
+            throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

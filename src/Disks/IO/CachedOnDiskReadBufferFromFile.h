@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Interpreters/Cache/FileCache.h>
+#include <Common/FileCache.h>
 #include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/Cache/FileSegment.h>
+#include <Common/FileSegment.h>
 
 
 namespace CurrentMetrics
@@ -80,7 +80,7 @@ private:
 
     void assertCorrectness() const;
 
-    std::shared_ptr<ReadBufferFromFileBase> getRemoteFSReadBuffer(FileSegment & file_segment, ReadType read_type_);
+    std::shared_ptr<ReadBufferFromFileBase> getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
 
     size_t getTotalSizeToRead();
 
@@ -89,8 +89,6 @@ private:
     void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
 
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
-
-    static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
 
     Poco::Logger * log;
     FileCache::Key cache_key;
@@ -127,7 +125,7 @@ private:
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     size_t first_offset = 0;

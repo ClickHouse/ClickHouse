@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>
@@ -9,8 +9,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
 
@@ -44,7 +44,7 @@ public:
         const String & metadata_path,
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,
-        std::unique_ptr<MySQLSettings> settings_,
+        std::unique_ptr<ConnectionMySQLSettings> settings_,
         mysqlxx::PoolWithFailover && pool,
         bool attach);
 
@@ -93,7 +93,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;
-    std::unique_ptr<MySQLSettings> mysql_settings;
+    std::unique_ptr<ConnectionMySQLSettings> database_settings;
 
     std::atomic<bool> quit{false};
     std::condition_variable cond;

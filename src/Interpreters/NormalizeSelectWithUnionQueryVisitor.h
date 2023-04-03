@@ -18,7 +18,7 @@ class NormalizeSelectWithUnionQueryMatcher
 public:
     struct Data
     {
-        const SetOperationMode union_default_mode;
+        const UnionMode & union_default_mode;
     };
 
     static void getSelectsFromUnionListNode(ASTPtr ast_select, ASTs & selects);

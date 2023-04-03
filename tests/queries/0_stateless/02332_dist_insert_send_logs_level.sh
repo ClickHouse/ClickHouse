@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-upgrade-check
+# Tags: no-backward-compatibility-check
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/exchange
 sidebar_position: 49
 sidebar_label: EXCHANGE
 ---
