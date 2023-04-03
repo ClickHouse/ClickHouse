@@ -142,18 +142,18 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
         if (s_kql.ignore(pos, expected))
         {
             if (!open_bracket.ignore(pos, expected))
-                throw Exception("Syntax error near typeof", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near typeof");
 
             type_literal = String(pos->begin, pos->end);
 
             if (type_cast.find(type_literal) == type_cast.end())
-                throw Exception(type_literal + " is not a supported kusto data type for extract", ErrorCodes::UNKNOWN_TYPE);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "{} is not a supported kusto data type for extract", type_literal);
 
             type_literal = type_cast[type_literal];
             ++pos;
 
             if (!close_bracket.ignore(pos, expected))
-                throw Exception("Syntax error near typeof", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near typeof");
         }
     }
 
@@ -276,17 +276,17 @@ bool ExtractJson::convertImpl(String & out, IParser::Pos & pos)
         if (s_kql.ignore(pos, expected))
         {
             if (!open_bracket.ignore(pos, expected))
-                throw Exception("Syntax error near typeof", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near typeof");
 
             datatype = String(pos->begin, pos->end);
 
             if (type_cast.find(datatype) == type_cast.end())
-                throw Exception(datatype + " is not a supported kusto data type for " + fn_name, ErrorCodes::UNKNOWN_TYPE);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "{} is not a supported kusto data type for {}", datatype, fn_name);
             datatype = type_cast[datatype];
             ++pos;
 
             if (!close_bracket.ignore(pos, expected))
-                throw Exception("Syntax error near typeof", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near typeof");
         }
     }
     const auto json_val = std::format("JSON_VALUE({0},{1})", json_datasource, json_datapath);
@@ -402,7 +402,7 @@ bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
     const String type = getConvertedArgument(fn_name, pos);
 
     if (type != "'windows'")
-        throw Exception("Supported type argument is windows for  " + fn_name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Supported type argument is windows for {}", fn_name);
 
     out = std::format(
         "if(empty({0}) OR hasAll(splitByChar(' ', {0}) , ['']) , arrayMap(x->null, splitByChar(' ', '')), splitByChar(' ', {0}))",
@@ -603,7 +603,7 @@ bool StrCatDelim::convertImpl(String & out, IParser::Pos & pos)
     args += ")";
 
     if (arg_count < 2 || arg_count > 64)
-        throw Exception("argument count out of bound in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "argument count out of bound in function: {}", fn_name);
 
     out = std::move(args);
     return true;
@@ -674,7 +674,7 @@ bool SubString::convertImpl(String & out, IParser::Pos & pos)
         auto length = getConvertedArgument(fn_name, pos);
 
         if (starting_index.empty())
-            throw Exception("number of arguments do not match in function: " + fn_name, ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "number of arguments do not match in function: {}", fn_name);
         else
             out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + ", " + "((" + starting_index + "% toInt64(length("
                 + source + "))  + toInt64(length(" + source + "))) % toInt64(length(" + source + ")))  + 1, " + length + ") )";

@@ -716,7 +716,7 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
         <!-- Default settings. -->
         <default>
             <load_balancing>random</load_balancing>
-            <dialect>kusto_auto</dialect>
+            <dialect>kusto</dialect>
         </default> `
    
    - Query can be executed with HTTP client as below once dialect is set in users.xml
@@ -725,12 +725,12 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
    - To execute the query using clickhouse-client , Update clickhouse-client.xml as below and connect clickhouse-client with --config-file option (` clickhouse-client --config-file=<config-file path> `) 
 
      ` <config>
-         <dialect>kusto_auto</dialect>
+         <dialect>kusto</dialect>
       </config>  `
 
    OR 
       pass dialect setting with '--'. For example : 
-      ` clickhouse-client --dialect='kusto_auto' -q "KQL query" `
+      ` clickhouse-client --dialect='kusto' -q "KQL query" `
 
 - **strcmp** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/strcmpfunction)  
    `print strcmp('abc','ABC')`
@@ -773,7 +773,6 @@ https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-seriesoper
 
 `set dialect='clickhouse'`  
 `set dialect='kusto'`  
-`set dialect='kusto_auto'`
 
 ## IP functions
 - [parse_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4function)
@@ -850,8 +849,7 @@ Please note that the functions listed below only take constant parameters for no
     `set sql_dialect='clickhouse'`
 - only process kql  
     `set sql_dialect='kusto'`
-- process both kql and CH sql  
-    `set sql_dialect='kusto_auto'`
+
 ## KQL() function
 
  - create table  

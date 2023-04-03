@@ -1,7 +1,7 @@
 #include <Parsers/TokenIterator.h>
 #include <unordered_set>
 #include <base/types.h>
-
+#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 namespace DB
 {
 
@@ -21,53 +21,57 @@ Tokens::Tokens(const char * begin, const char * end, size_t max_query_size, bool
 
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
 {
-    std::unordered_set<String> valid_kql_negative_suffix
-    ({
-        "contains",
-        "contains_cs",
-        "endswith",
-        "endswith_cs",
-        "~",
-        "=",
-        "has",
-        "has_cs",
-        "hasprefix",
-        "hasprefix_cs",
-        "hassuffix",
-        "hassuffix_cs",
-        "in",
-        "startswith",
-        "startswith_cs"
-    });
+    std::unordered_set<String> valid_kql_negative_suffix(
+        {
+         "between",
+         "contains",
+         "contains_cs",
+         "endswith",
+         "endswith_cs",
+         "~",
+         "=",
+         "has",
+         "has_cs",
+         "hasprefix",
+         "hasprefix_cs",
+         "hassuffix",
+         "hassuffix_cs",
+         "in",
+         "startswith",
+         "startswith_cs"});
     /// We have just two kind of parentheses: () and [].
     UnmatchedParentheses stack;
 
     /// We have to iterate through all tokens until the end to avoid false positive "Unmatched parentheses" error
     /// when parser failed in the middle of the query.
-    bool is_kql_included = false;
-    for (TokenIterator it = begin; !it->isEnd() ; ++it)
+    for (TokenIterator it = begin; !it->isEnd(); ++it)
     {
-        //for kql function in sql like : select * from kql(Customers | where FirstName !in ("test", "test2"));
-        if (String(it.get().begin, it.get().end) == "kql")
+        if (!it.isValid()) // allow kql negative operators
         {
-            ++it;
-            if (it->type == TokenType::OpeningRoundBracket)
-                is_kql_included = true;
-            --it;
-        }
-
-        if (!it.isValid())
-        {
-            if (!is_kql_included)
-                break;
-
             if (it->type == TokenType::ErrorSingleExclamationMark)
-             {
-                 ++it;
-                 if (valid_kql_negative_suffix.find(String(it.get().begin, it.get().end)) == valid_kql_negative_suffix.end())
+            {
+                ++it;
+                if (!valid_kql_negative_suffix.contains(String(it.get().begin, it.get().end)))
                     break;
                 --it;
-             }
+            }
+            else if (it->type == TokenType::ErrorWrongNumber)
+            {
+                if (!ParserKQLDateTypeTimespan().parseConstKQLTimespan(String(it.get().begin, it.get().end)))
+                    break;
+            }
+            else
+            {
+                if (String(it.get().begin, it.get().end) == "~")
+                {
+                    --it;
+                    if (const auto prev = String(it.get().begin, it.get().end); prev != "!" && prev != "=" && prev != "in")
+                        break;
+                    ++it;
+                }
+                else
+                    break;
+            }
         }
 
         if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)
@@ -82,7 +86,8 @@ UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
                 stack.push_back(*it);
                 return stack;
             }
-            else if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
+            else if (
+                (stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
                 || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
             {
                 /// Valid match.

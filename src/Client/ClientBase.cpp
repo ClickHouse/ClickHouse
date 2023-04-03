@@ -352,15 +352,6 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
         String message;
         if (dialect == Dialect::kusto)
              res = tryParseQuery(kql_parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else if (dialect == Dialect::kusto_auto)
-        {
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-            if (!res)
-            {
-                pos = begin;
-                res = tryParseQuery(kql_parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-            }
-        }
         else
             res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
@@ -374,18 +365,6 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     {
         if (dialect == Dialect::kusto)
             res = parseQueryAndMovePosition(kql_parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else if (dialect == Dialect::kusto_auto)
-        {
-            try
-            {
-                res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-            }
-            catch (...)
-            {
-                pos = begin;
-                res = parseQueryAndMovePosition(kql_parser, begin, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-            }
-        }
         else
             res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }

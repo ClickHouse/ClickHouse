@@ -1,7 +1,7 @@
+#include <cmath>
 #include <cstdlib>
 #include <format>
 #include <unordered_map>
-#include <cmath>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
@@ -27,7 +27,7 @@ bool ParserKQLDateTypeTimespan ::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & 
     return true;
 }
 
-double ParserKQLDateTypeTimespan ::toSeconds()
+double ParserKQLDateTypeTimespan::toSeconds()
 {
     switch (time_span_unit)
     {
