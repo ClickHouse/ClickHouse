@@ -6,6 +6,7 @@
 #if USE_AWS_S3
 #include <Storages/DataLakes/S3MetadataReader.h>
 #include <Storages/StorageS3.h>
+#include <ranges>
 
 namespace DB
 {
@@ -71,19 +72,19 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
      *             \"nullCount\":{\"col-6c990940-59bb-4709-8f2e-17083a82c01a\":0,\"col-763cd7e2-7627-4d8e-9fb7-9e85d0c8845b\":0}}"}}
      * "
      */
-    void handleJSON(const JSON & json, std::set<String> & result)
+    void handleJSON(const JSON & json, const String & prefix, std::set<String> & result)
     {
         if (json.has("add"))
         {
             const auto path = json["add"]["path"].getString();
-            const auto [_, inserted] = result.insert(path);
+            const auto [_, inserted] = result.insert(fs::path(prefix) / path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
         else if (json.has("remove"))
         {
             const auto path = json["remove"]["path"].getString();
-            const bool erase = result.erase(path);
+            const bool erase = result.erase(fs::path(prefix) / path);
             if (!erase)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File doesn't exist {}", path);
         }
@@ -120,7 +121,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
                     continue;
 
                 const JSON json(json_str);
-                handleJSON(json, result);
+                handleJSON(json, configuration.getPath(), result);
             }
         }
         return result;
@@ -136,8 +137,8 @@ DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::DeltaLakeMetadataPar
 template <typename Configuration, typename MetadataReadHelper>
 Strings DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr context)
 {
-    auto data_files = impl->processMetadataFiles(configuration, context);
-    return Strings(data_files.begin(), data_files.end());
+    auto result = impl->processMetadataFiles(configuration, context);
+    return Strings(result.begin(), result.end());
 }
 
 template DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::DeltaLakeMetadataParser();

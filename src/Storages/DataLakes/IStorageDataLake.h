@@ -72,7 +72,7 @@ private:
         LOG_TRACE(
             &Poco::Logger::get("DataLake"),
             "New configuration path: {}, keys: {}",
-            configuration.getPath(), fmt::join(keys, ", "));
+            configuration.getPath(), fmt::join(configuration.keys, ", "));
 
         configuration.connect(local_context);
         return configuration;
@@ -80,10 +80,7 @@ private:
 
     static Strings getDataFiles(const Configuration & configuration, ContextPtr local_context)
     {
-        auto files =  MetadataParser().getFiles(configuration, local_context);
-        for (auto & file : files)
-            file = std::filesystem::path(configuration.getPath()) / file;
-        return files;
+        return MetadataParser().getFiles(configuration, local_context);
     }
 
     void updateConfigurationImpl(ContextPtr local_context)

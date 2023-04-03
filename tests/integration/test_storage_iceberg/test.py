@@ -83,21 +83,33 @@ def get_spark():
 
 
 def write_iceberg_from_file(
-    spark, path, table_name, mode="overwrite", format_version="1"
+    spark, path, table_name, mode="overwrite", format_version="1", partition_by=None
 ):
     if mode == "overwrite":
-        spark.read.load(f"file://{path}").writeTo(table_name).tableProperty(
-            "format-version", format_version
-        ).using("iceberg").create()
+        if partition_by is None:
+            spark.read.load(f"file://{path}").writeTo(table_name).tableProperty(
+                "format-version", format_version
+            ).using("iceberg").create()
+        else:
+            spark.read.load(f"file://{path}").writeTo(table_name).partitionedBy(
+                partition_by
+            ).tableProperty("format-version", format_version).using("iceberg").create()
     else:
         spark.read.load(f"file://{path}").writeTo(table_name).append()
 
 
-def write_iceberg_from_df(spark, df, table_name, mode="overwrite", format_version="1"):
+def write_iceberg_from_df(
+    spark, df, table_name, mode="overwrite", format_version="1", partition_by=None
+):
     if mode == "overwrite":
-        df.writeTo(table_name).tableProperty("format-version", format_version).using(
-            "iceberg"
-        ).create()
+        if partition_by is None:
+            df.writeTo(table_name).tableProperty(
+                "format-version", format_version
+            ).using("iceberg").create()
+        else:
+            df.writeTo(table_name).tableProperty(
+                "format-version", format_version
+            ).partitionedBy(partition_by).using("iceberg").create()
     else:
         df.writeTo(table_name).append()
 
@@ -166,6 +178,32 @@ def test_single_iceberg_file(started_cluster, format_version):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
+def test_partition_by(started_cluster, format_version):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+    TABLE_NAME = "test_partition_by_" + format_version
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 10),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
+        partition_by="a",
+    )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+    assert len(files) == 14  # 10 partitiions + 4 metadata files
+
+    create_iceberg_table(instance, TABLE_NAME)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
 def test_multiple_iceberg_files(started_cluster, format_version):
     instance = started_cluster.instances["node1"]
     minio_client = started_cluster.minio_client
@@ -174,7 +212,11 @@ def test_multiple_iceberg_files(started_cluster, format_version):
     TABLE_NAME = "test_multiple_iceberg_files_" + format_version
 
     write_iceberg_from_df(
-        spark, generate_data(spark, 0, 100), TABLE_NAME, mode="overwrite", format_version=format_version,
+        spark,
+        generate_data(spark, 0, 100),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
     )
 
     files = upload_directory(
@@ -191,7 +233,11 @@ def test_multiple_iceberg_files(started_cluster, format_version):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_iceberg_from_df(
-        spark, generate_data(spark, 100, 200), TABLE_NAME, mode="append", format_version=format_version
+        spark,
+        generate_data(spark, 100, 200),
+        TABLE_NAME,
+        mode="append",
+        format_version=format_version,
     )
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}", ""
@@ -232,7 +278,9 @@ def test_types(started_cluster, format_version):
     )
     df = spark.createDataFrame(data=data, schema=schema)
     df.printSchema()
-    write_iceberg_from_df(spark, df, TABLE_NAME, mode="overwrite", format_version=format_version)
+    write_iceberg_from_df(
+        spark, df, TABLE_NAME, mode="overwrite", format_version=format_version
+    )
 
     upload_directory(minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}", "")
 
