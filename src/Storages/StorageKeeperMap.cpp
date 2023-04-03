@@ -93,7 +93,7 @@ class StorageKeeperMapSink : public SinkToStorage
 
 public:
     StorageKeeperMapSink(StorageKeeperMap & storage_, Block header, ContextPtr context_)
-        : SinkToStorage(std::move(header)), storage(storage_), context(std::move(context_))
+        : SinkToStorage(header), storage(storage_), context(std::move(context_))
     {
         auto primary_key = storage.getPrimaryKey();
         assert(primary_key.size() == 1);
@@ -171,7 +171,10 @@ public:
         zkutil::ZooKeeper::MultiExistsResponse results;
 
         if constexpr (!for_update)
-            results = zookeeper->exists(key_paths);
+        {
+            if (!strict)
+                results = zookeeper->exists(key_paths);
+        }
 
         Coordination::Requests requests;
         requests.reserve(key_paths.size());
@@ -189,11 +192,8 @@ public:
             }
             else
             {
-                if (results[i].error == Coordination::Error::ZOK)
+                if (!strict && results[i].error == Coordination::Error::ZOK)
                 {
-                    if (strict)
-                        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Value for key '{}' already exists", key);
-
                     requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
                 }
                 else
@@ -937,8 +937,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     while (executor.pull(block))
         sink->consume(Chunk{block.getColumns(), block.rows()});
 
-    sink->finalize<true>(local_context->getSettingsRef().keeper_map_strict_mode);
-    sink->onFinish();
+    sink->finalize<true>(strict);
 }
 
 namespace
