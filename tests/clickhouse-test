@@ -2076,7 +2076,10 @@ def reportLogStats(args):
               'AST is too deep. Maximum: {}', 'Array sizes are too large: {}', 'Unable to connect to HDFS: {}',
               'Shutdown is called for table', 'File is not inside {}',
               'Table {} doesn''t exist', 'Database {} doesn''t exist', 'Table {}.{} doesn''t exist',
-              'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved'
+              'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved',
+              'Could not find table: {}', 'Detached part "{}" not found', 'Unknown data type family: {}',
+              'Unknown input format {}', 'Cannot UPDATE key column {}', 'Substitution {} is not set',
+              'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
@@ -2084,7 +2087,7 @@ def reportLogStats(args):
             AND (length(message_format_string) < 16
                 OR (length(message_format_string) < 30 AND message ilike '%DB::Exception%'))
             AND message_format_string NOT IN known_short_messages
-        GROUP BY message_format_string ORDER BY c DESC LIMIT 30 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")
