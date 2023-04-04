@@ -8,7 +8,8 @@
 namespace DB
 {
 
-BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_) : file_infos(plain_backup_)
+BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_)
+    : log(&Poco::Logger::get("BackupCoordinationLocal")), file_infos(plain_backup_)
 {
 }
 
@@ -125,7 +126,12 @@ bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)
 
 bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
 {
-    return (num_active_backups > 1);
+    if (num_active_backups > 1)
+    {
+        LOG_WARNING(log, "Found concurrent backups: num_active_backups={}", num_active_backups);
+        return true;
+    }
+    return false;
 }
 
 }
