@@ -52,7 +52,6 @@ void MutatePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
-    /// Use PreparedSetsCache shared different tasks of this mutation.
     auto mutation_id = future_part->part_info.mutation;
     auto prepared_sets_cache_for_mutation = storage.getPreparedSetsCache(mutation_id);
     task_context->setPreparedSetsCache(prepared_sets_cache_for_mutation);

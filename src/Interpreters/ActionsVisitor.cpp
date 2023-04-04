@@ -1193,7 +1193,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     /// If prepared_set is not empty, we have a set made with literals.
                     /// Create a const ColumnSet to make constant folding work
                     if (is_constant_set)
-                        column.column = ColumnConst::create(std::move(column_set), 1); /// TODO: and here we alos must not handle set form cahce as const!!!
+                        column.column = ColumnConst::create(std::move(column_set), 1); /// TODO: and here we also must not handle set form cache as const!!!
                     else
                         column.column = std::move(column_set);
                     data.addColumn(column);

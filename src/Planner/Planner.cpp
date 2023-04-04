@@ -905,7 +905,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
             subquery_planner.buildQueryPlanIfNeeded();
 
             SubqueryForSet subquery_for_set;
-            subquery_for_set.set = makeReadyFutureSet(planner_set->getSet()); // TODO: make it lazy?
+            subquery_for_set.set_in_progress = planner_set->getSet();
             subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
             subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));

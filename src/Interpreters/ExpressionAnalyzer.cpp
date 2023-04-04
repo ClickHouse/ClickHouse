@@ -468,7 +468,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         auto io = interpreter_subquery->execute();
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
-        SizeLimits size_limits_for_key_condition_sets(0, 50*1000*1000, OverflowMode::BREAK);
+        SizeLimits size_limits_for_key_condition_sets(0, 400*1024*1024, OverflowMode::BREAK);
         SetPtr set = std::make_shared<Set>(size_limits_for_key_condition_sets, true, getContext()->getSettingsRef().transform_null_in);
         set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
