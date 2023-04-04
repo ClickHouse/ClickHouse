@@ -8,10 +8,28 @@
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
 {
+
+constexpr bool debug_logging_enabled = true;
+
+template <typename T>
+void logDebug(String key, const T & value, const char * separator = " : ")
+{
+    if constexpr (debug_logging_enabled)
+    {
+        WriteBufferFromOwnString ss;
+        if constexpr (std::is_pointer_v<T>)
+            ss << *value;
+        else
+            ss << value;
+
+        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
+    }
+}
 
 namespace ErrorCodes
 {
@@ -233,6 +251,9 @@ FillingTransform::FillingTransform(
             interpolate_column_positions.push_back(header_.getPositionByName(name));
 }
 
+/// prepair() is overrididen to cover cases when we need to generate rows for no input (so chunk in transform() will have no rows)
+/// (1) when all data are processed and WITH FILL .. TO is provided, we may need to generate suffix
+/// (2) for empty result set when WITH FILL FROM .. TO is provided (see PR #30888) (first and generate_suffix are both true)
 IProcessor::Status FillingTransform::prepare()
 {
     if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
@@ -244,8 +265,8 @@ IProcessor::Status FillingTransform::prepare()
 
         if (first || filling_row < next_row)
         {
-            /// Output if has data.
-            if (has_output)
+            /// push output data to output port if we can
+            if (has_output && output.canPush())
             {
                 output.pushData(std::move(output_data));
                 has_output = false;
@@ -370,9 +391,6 @@ void FillingTransform::initColumns(
 
 void FillingTransform::transform(Chunk & chunk)
 {
-    if (!chunk.hasRows() && !generate_suffix)
-        return;
-
     Columns old_fill_columns;
     Columns old_interpolate_columns;
     Columns old_other_columns;
@@ -385,6 +403,8 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (generate_suffix)
     {
+        chassert(!chunk.hasRows());
+
         const auto & empty_columns = input.getHeader().getColumns();
         initColumns(
             empty_columns,
@@ -405,11 +425,10 @@ void FillingTransform::transform(Chunk & chunk)
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        interpolate(result_columns, interpolate_block);
         while (filling_row.next(next_row))
         {
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
             interpolate(result_columns, interpolate_block);
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
         size_t num_output_rows = result_columns[0]->size();
@@ -453,7 +472,12 @@ void FillingTransform::transform(Chunk & chunk)
 
     for (size_t row_ind = 0; row_ind < num_rows; ++row_ind)
     {
+        logDebug("row", row_ind);
+        logDebug("filling_row", filling_row);
+        logDebug("next_row", next_row);
+
         should_insert_first = next_row < filling_row;
+        logDebug("should_insert_first", true);
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
@@ -465,6 +489,7 @@ void FillingTransform::transform(Chunk & chunk)
             else
                 next_row[i] = fill_to;
         }
+        logDebug("next_row updated", next_row);
 
         /// A case, when at previous step row was initialized from defaults 'fill_from' values
         ///  and probably we need to insert it to block.
@@ -474,11 +499,10 @@ void FillingTransform::transform(Chunk & chunk)
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        interpolate(result_columns, interpolate_block);
         while (filling_row.next(next_row))
         {
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
             interpolate(result_columns, interpolate_block);
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
         copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);

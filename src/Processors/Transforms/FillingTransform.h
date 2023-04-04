@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Processors/ISimpleTransform.h>
-#include <Core/SortDescription.h>
 #include <Core/InterpolateDescription.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/FillingRow.h>
+#include <Processors/ISimpleTransform.h>
 
 
 namespace DB
@@ -29,7 +29,7 @@ protected:
 
 private:
     void saveLastRow(const MutableColumns & result_columns);
-    void interpolate(const MutableColumns& result_columns, Block & interpolate_block);
+    void interpolate(const MutableColumns & result_columns, Block & interpolate_block);
 
     using MutableColumnRawPtrs = std::vector<IColumn *>;
     void initColumns(
@@ -54,8 +54,8 @@ private:
     Positions other_column_positions;
     std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
-    bool first = true;
-    bool generate_suffix = false;
+    bool first = true;              /// flag to determine if transform is/will be called for the first time
+    bool generate_suffix = false;   /// flag to determine if we need to generate filling rows after latest chunk is processed (only for WITH FILL ... TO)
 
     Columns last_row;
 

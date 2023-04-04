@@ -1,5 +1,6 @@
 #include <Interpreters/FillingRow.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -105,6 +106,24 @@ void FillingRow::initFromDefaults(size_t from_pos)
 {
     for (size_t i = from_pos; i < sort_description.size(); ++i)
         row[i] = getFillDescription(i).fill_from;
+}
+
+String FillingRow::dump() const
+{
+    WriteBufferFromOwnString out;
+    for (size_t i = 0; i < row.size(); ++i)
+    {
+        if (i != 0)
+            out << ", ";
+        out << row[i].dump();
+    }
+    return out.str();
+}
+
+WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row)
+{
+    out << row.dump();
+    return out;
 }
 
 }
