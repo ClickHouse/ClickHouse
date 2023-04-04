@@ -176,37 +176,76 @@ def test_partition_by(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
-# def test_checkpoint(started_cluster):
-#     instance = started_cluster.instances["node1"]
-#     minio_client = started_cluster.minio_client
-#     bucket = started_cluster.minio_bucket
-#     spark = get_spark()
-#     TABLE_NAME = "test_checkpoint"
-#
-#     write_delta_from_df(
-#         spark,
-#         generate_data(spark, 0, 1),
-#         f"/{TABLE_NAME}",
-#         mode="overwrite",
-#     )
-#     for i in range(1, 25):
-#         write_delta_from_df(
-#             spark,
-#             generate_data(spark, i, i + 1),
-#             f"/{TABLE_NAME}",
-#             mode="append",
-#         )
-#
-#     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-#     time.sleep(500)
-#     ok = false
-#     for file in files:
-#         if file.endswith("last_checkpoint"):
-#             ok = true
-#     assert ok
-#
-#     create_delta_table(instance, TABLE_NAME)
-#     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 16
+def test_checkpoint(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+    TABLE_NAME = "test_checkpoint"
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+    for i in range(1, 25):
+        write_delta_from_df(
+            spark,
+            generate_data(spark, i, i + 1),
+            f"/{TABLE_NAME}",
+            mode="append",
+        )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    # 25 data files
+    # 25 metadata files
+    # 1 last_metadata file
+    # 2 checkpoints
+    assert len(files) == 25 * 2 + 3
+
+    ok = False
+    for file in files:
+        if file.endswith("last_checkpoint"):
+            ok = True
+    assert ok
+
+    create_delta_table(instance, TABLE_NAME)
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_parquet_allow_missing_columns=1"
+            )
+        )
+        == 25
+    )
+
+    table = DeltaTable.forPath(spark, f"/{TABLE_NAME}")
+    table.delete("a < 10")
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 15
+
+    for i in range(0, 5):
+        write_delta_from_df(
+            spark,
+            generate_data(spark, i, i + 1),
+            f"/{TABLE_NAME}",
+            mode="append",
+        )
+    # + 1 metadata files (for delete)
+    # + 5 data files
+    # + 5 metadata files
+    # + 1 checkpoint file
+    # + 1 ?
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 53 + 1 + 5 * 2 + 1 + 1
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 20
+
+    assert instance.query(
+        f"SELECT * FROM {TABLE_NAME} ORDER BY 1"
+    ).strip() == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(5) "
+        "UNION ALL SELECT number, toString(number + 1) FROM numbers(10, 15) ORDER BY 1"
+    ).strip()
 
 
 def test_multiple_log_files(started_cluster):

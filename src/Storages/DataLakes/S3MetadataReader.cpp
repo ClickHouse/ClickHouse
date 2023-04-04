@@ -33,6 +33,11 @@ S3DataLakeMetadataReadHelper::createReadBuffer(const String & key, ContextPtr co
         context->getReadSettings());
 }
 
+bool S3DataLakeMetadataReadHelper::exists(const String & key, const StorageS3::Configuration & configuration)
+{
+    return S3::objectExists(*configuration.client, configuration.url.bucket, key);
+}
+
 std::vector<String> S3DataLakeMetadataReadHelper::listFiles(
     const StorageS3::Configuration & base_configuration, const String & prefix, const String & suffix)
 {
