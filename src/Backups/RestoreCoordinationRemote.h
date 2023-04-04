@@ -66,7 +66,6 @@ private:
     const bool is_internal;
     Poco::Logger * const log;
 
-    Poco::Logger * log;
     mutable WithRetries with_retries;
     std::optional<BackupCoordinationStageSync> stage_sync;
     mutable std::mutex mutex;

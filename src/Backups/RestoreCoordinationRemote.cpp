@@ -29,7 +29,6 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
     , current_host_index(BackupCoordinationRemote::findCurrentHostIndex(all_hosts, current_host))
     , is_internal(is_internal_)
     , log(&Poco::Logger::get("RestoreCoordinationRemote"))
-<<<<<<< HEAD
     , with_retries(
         log,
         get_zookeeper_,
@@ -49,19 +48,13 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
                     throw zkutil::KeeperException(code, alive_node_path);
             }
         })
-=======
->>>>>>> 5f930aeb2619bda8f27f3cfc6ba01ffaf48c3d64
 {
     createRootNodes();
 
     stage_sync.emplace(
-<<<<<<< HEAD
         zookeeper_path,
         with_retries,
         log);
-=======
-        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, log);
->>>>>>> 5f930aeb2619bda8f27f3cfc6ba01ffaf48c3d64
 }
 
 RestoreCoordinationRemote::~RestoreCoordinationRemote()

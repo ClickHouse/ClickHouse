@@ -198,14 +198,17 @@ BackupCoordinationRemote::BackupCoordinationRemote(
 }
 
 BackupCoordinationRemote::~BackupCoordinationRemote()
+{
     try
     {
         if (!is_internal)
+            removeAllNodes();
+    }
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
 
 void BackupCoordinationRemote::createRootNodes()
 {
