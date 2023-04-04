@@ -48,9 +48,6 @@ String remove_hilites(std::string_view string)
  */
 bool are_equal_with_hilites(std::string_view left, std::string_view right)
 {
-    if (!are_equal_with_hilites_removed(left, right))
-        return false;
-
     const char * left_it = left.begin();
     const char * right_it = right.begin();
     Hilite left_hilite = DB::IAST::hilite_none;
@@ -70,7 +67,6 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right)
 
         // Lookup one character.
         // Check characters match.
-        // Redundant check, given the hilite-ignorant comparison at the beginning, but let's keep it just in case.
         if (*left_it != *right_it)
             return false;
 
