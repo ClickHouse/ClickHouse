@@ -72,6 +72,7 @@ public:
     void setProperClientInfo(size_t replica_number, size_t count_participating_replicas);
 
     const Planner & getPlanner() const { return planner; }
+    Planner & getPlanner() { return planner; }
 
 private:
     ASTPtr query;
