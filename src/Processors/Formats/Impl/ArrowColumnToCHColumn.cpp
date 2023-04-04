@@ -632,7 +632,7 @@ static ColumnWithTypeAndName readIPv4ColumnWithInt32Data(std::shared_ptr<arrow::
 {
     auto internal_type = std::make_shared<DataTypeIPv4>();
     auto internal_column = internal_type->createColumn();
-    auto & column_data = static_cast<ColumnIPv4 &>(*internal_column).getData();
+    auto & column_data = assert_cast<ColumnIPv4 &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
