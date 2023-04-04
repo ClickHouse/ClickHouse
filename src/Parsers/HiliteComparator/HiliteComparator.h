@@ -5,7 +5,9 @@
 
 namespace HiliteComparator {
 
-const std::vector<const char *> HILITES =
+using Hilite = const char *;
+
+const std::vector<Hilite> HILITES =
     {
         DB::IAST::hilite_keyword,
         DB::IAST::hilite_identifier,
@@ -16,7 +18,7 @@ const std::vector<const char *> HILITES =
         DB::IAST::hilite_none
 };
 
-[[maybe_unused]] const char * consume_hilites(const char ** ptr_ptr);
+[[maybe_unused]] Hilite consume_hilites(const char ** ptr_ptr);
 
 String remove_hilites(std::string_view string);
 
