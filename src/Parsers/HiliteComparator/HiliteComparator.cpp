@@ -8,7 +8,7 @@ void consume_hilites(const char * & ptr, Hilite * last_hilite)
     while (true)
     {
         bool changed_hilite = false;
-        for (Hilite hilite : HILITES)
+        for (Hilite hilite : hilites)
         {
             if (std::string_view(ptr).starts_with(hilite))
             {

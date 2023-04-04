@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <string>
+#include <string_view>
 
 
 namespace HiliteComparator
@@ -8,7 +10,7 @@ namespace HiliteComparator
 
 using Hilite = const char *;
 
-const std::vector<Hilite> HILITES = {
+static const std::vector<Hilite> hilites = {
         DB::IAST::hilite_keyword,
         DB::IAST::hilite_identifier,
         DB::IAST::hilite_function,
