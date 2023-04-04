@@ -54,25 +54,25 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         // reference: https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
         while (pos_x < x.size() && pos_y < y.size())
         {
-            if (y[pos_y] - x[pos_x] >= -tol)
+            if (likely(fabs(x[pos_x] - y[pos_y]) >= tol))
             {
-                now_s += n1_d;
-                if (likely(fabs(x[pos_x] - y[pos_y]) >= tol))
+                if (x[pos_x] < y[pos_y])
                 {
-                    max_s = std::max(max_s, now_s);
-                    min_s = std::min(min_s, now_s);
+                    now_s += n1_d;
+                    ++pos_x;
                 }
-                pos_x++;
+                else
+                {
+                    now_s -= n2_d;
+                    ++pos_y;
+                }
+                max_s = std::max(max_s, now_s);
+                min_s = std::min(min_s, now_s);
             }
             else
             {
-                now_s -= n2_d;
-                if (likely(fabs(x[pos_x] - y[pos_y]) >= tol))
-                {
-                    max_s = std::max(max_s, now_s);
-                    min_s = std::min(min_s, now_s);
-                }
-                pos_y++;
+                now_s += n1_d;
+                ++pos_x;
             }
         }
         now_s += n1_d * (x.size() - pos_x) - n2_d * (y.size() - pos_y);
@@ -114,35 +114,35 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
 
             const Float64 f_n1 = static_cast<Float64>(n1);
             const Float64 f_n2 = static_cast<Float64>(n2);
-            const Float64 k_q = (0.5 + floor(d * f_n2 * f_n1 - tol)) / (f_n2 * f_n1);
-            PaddedPODArray<Float64> u(n1 + 1);
+            const Float64 k_d = (0.5 + floor(d * f_n2 * f_n1 - tol)) / (f_n2 * f_n1);
+            PaddedPODArray<Float64> c(n1 + 1);
 
             auto check = alternative == Alternative::TwoSided ?
                          [](const Float64 & q, const Float64 & r, const Float64 & s) { return fabs(r - s) >= q; }
                        : [](const Float64 & q, const Float64 & r, const Float64 & s) { return r - s >= q; };
 
-            u[0] = 0;
+            c[0] = 0;
             for (UInt64 j = 1; j <= n1; j++)
-                if (check(k_q, 0., j / f_n1))
-                    u[j] = 1.;
+                if (check(k_d, 0., j / f_n1))
+                    c[j] = 1.;
                 else
-                    u[j] = u[j - 1];
+                    c[j] = c[j - 1];
 
             for (UInt64 i = 1; i <= n2; i++)
             {
-                if (check(k_q, i / f_n2, 0.))
-                    u[0] = 1.;
+                if (check(k_d, i / f_n2, 0.))
+                    c[0] = 1.;
                 for (UInt64 j = 1; j <= n1; j++)
-                    if (check(k_q, i / f_n2, j / f_n1))
-                        u[j] = 1.;
+                    if (check(k_d, i / f_n2, j / f_n1))
+                        c[j] = 1.;
                     else
                     {
                         Float64 v = i / static_cast<Float64>(i + j);
                         Float64 w = j / static_cast<Float64>(i + j);
-                        u[j] = v * u[j] + w * u[j - 1];
+                        c[j] = v * c[j] + w * c[j - 1];
                     }
             }
-            p_value = u[n1];
+            p_value = c[n1];
         }
         else if (method == "asymp")
         {
