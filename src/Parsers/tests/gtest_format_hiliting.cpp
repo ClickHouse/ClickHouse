@@ -59,90 +59,77 @@ void compare(const String & query, const String & expected)
     ASSERT_PRED2(HiliteComparator::are_equal_with_hilites, expected, write_buffer.str());
 }
 
-TEST(FormatHiliting, SimpleSelect)
-{
-    String query = "select * from table";
+const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs = {
+    // Simple select
+    {
+        keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
+     "select * from table"
+    },
 
-    String expected = keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table");
+    // ASTWithElement
+    {
+        keyword("WITH ") + alias("alias ") + keyword("AS ")
+            + "(" + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + ") "
+            + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
+        "with alias as (select * from table) select * from table"
+    },
 
-    compare(query, expected);
-}
+    // ASTWithAlias
+    {
+        keyword("SELECT ") + identifier("a ") + op("+ ") + "1 " + keyword("AS ") + alias("b") + ", " + identifier("b"),
+        "select a + 1 as b, b"
+    },
 
-TEST(FormatHiliting, ASTWithElement)
-{
-    String query = "with alias as (select * from table) select * from table";
+    // ASTFunction
+    {
+        keyword("SELECT ") + "* " + keyword("FROM ")
+            + function("view(") + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + function(")"),
+        "select * from view(select * from table)"
+    },
 
-    String expected = keyword("WITH ") + alias("alias ") + keyword("AS ")
-             + "(" + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + ") "
-             + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table");
-
-    compare(query, expected);
-}
-
-TEST(FormatHiliting, ASTWithAlias)
-{
-    String query = "select a + 1 as b, b";
-
-    String expected = keyword("SELECT ") + identifier("a ") + op("+ ") + "1 " + keyword("AS ") + alias("b") + ", " + identifier("b");
-
-    compare(query, expected);
-}
-
-TEST(FormatHiliting, ASTFunction)
-{
-    String query = "select * from view(select * from table)";
-
-    String expected = keyword("SELECT ") + "* " + keyword("FROM ")
-            + function("view(") + keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table") + function(")");
-
-    compare(query, expected);
-}
-
-TEST(FormatHiliting, ASTDictionaryAttributeDeclaration)
-{
-    String query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID)";
-
-    String expected = keyword("CREATE DICTIONARY ") + "name "
+    // ASTDictionaryAttributeDeclaration
+    {
+        keyword("CREATE DICTIONARY ") + "name "
             + "(`Name` " + function("ClickHouseDataType ")
             + keyword("DEFAULT ") + "'' "
             + keyword("EXPRESSION ") + function("rand64() ")
-            + keyword("IS_OBJECT_ID") + ")";
+            + keyword("IS_OBJECT_ID") + ")",
+        "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID)"
+    },
 
-    compare(query, expected);
-}
-
-TEST(FormatHiliting, ASTDictionaryClassSourceKeyword)
-{
-    String query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID) "
-                        "SOURCE(FILE(PATH 'path'))";
-
-    String expected = keyword("CREATE DICTIONARY ") + "name "
+    // ASTDictionary, SOURCE keyword
+    {
+        keyword("CREATE DICTIONARY ") + "name "
             + "(`Name` " + function("ClickHouseDataType ")
             + keyword("DEFAULT ") + "'' "
             + keyword("EXPRESSION ") + function("rand64() ")
             + keyword("IS_OBJECT_ID") + ") "
-            + keyword("SOURCE") + "(" + keyword("FILE") + "(" + keyword("PATH ") + "'path'))";
+            + keyword("SOURCE") + "(" + keyword("FILE") + "(" + keyword("PATH ") + "'path'))",
+        "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID) "
+        "SOURCE(FILE(PATH 'path'))"
+    },
 
-    compare(query, expected);
-}
-
-TEST(FormatHiliting, ASTKillQueryQuery)
-{
-    String query = "KILL QUERY ON CLUSTER clustername WHERE user = 'username' SYNC";
-
-    String expected = keyword("KILL QUERY ON CLUSTER ") + "clustername "
+    // ASTKillQueryQuery
+    {
+        keyword("KILL QUERY ON CLUSTER ") + "clustername "
             + keyword("WHERE ") + identifier("user ") + op("= ") + "'username' "
-            + keyword("SYNC");
+            + keyword("SYNC"),
+        "KILL QUERY ON CLUSTER clustername WHERE user = 'username' SYNC"
+    },
 
-    compare(query, expected);
-}
+    // ASTCreateQuery
+    {
+        keyword("CREATE TABLE ") + "name " + keyword("AS (SELECT ") + "*" + keyword(") ")
+            + keyword("COMMENT ") + "'hello'",
+        "CREATE TABLE name AS (SELECT *) COMMENT 'hello'"
+    },
+};
 
-TEST(FormatHiliting, ASTCreateQuery)
+
+TEST(FormatHiliting, Queries)
 {
-    String query = "CREATE TABLE name AS (SELECT *) COMMENT 'hello'";
-
-    String expected = keyword("CREATE TABLE ") + "name " + keyword("AS (SELECT ") + "*" + keyword(") ")
-            + keyword("COMMENT ") + "'hello'";
-
-    compare(query, expected);
+    for (const auto & [expected, query] : expected_and_query_pairs)
+    {
+        compare(query, expected);
+    }
 }
