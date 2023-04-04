@@ -44,7 +44,7 @@ String substitution(const String & s)
 }
 
 
-void compare(const String & query, const String & expected)
+void compare(const String & expected, const String & query)
 {
     using namespace DB;
     ParserQuery parser(query.data() + query.size());
@@ -130,6 +130,6 @@ TEST(FormatHiliting, Queries)
 {
     for (const auto & [expected, query] : expected_and_query_pairs)
     {
-        compare(query, expected);
+        compare(expected, query);
     }
 }
