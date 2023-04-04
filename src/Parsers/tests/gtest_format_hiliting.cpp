@@ -56,7 +56,7 @@ void compare(const String & expected, const String & query)
     ast->format(settings);
 
     ASSERT_PRED2(HiliteComparator::are_equal_with_hilites_removed, expected, write_buffer.str());
-    ASSERT_PRED2(HiliteComparator::are_equal_with_hilites, expected, write_buffer.str());
+    ASSERT_PRED2(HiliteComparator::are_equal_with_hilites_and_end_without_hilite, expected, write_buffer.str());
 }
 
 const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs = {
