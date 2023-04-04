@@ -45,9 +45,12 @@ struct SearchSymbols
         : str(std::move(in))
     {
 #if defined(__SSE4_2__)
-        assert(str.size() <= BUFFER_SIZE);
+        if (str.size() > BUFFER_SIZE)
+        {
+            throw std::runtime_error("SearchSymbols can contain at most " + std::to_string(BUFFER_SIZE) + " symbols and " + std::to_string(str.size()) + " was provided\n");
+        }
 
-        char tmp_safety_buffer[16] = {0};
+        char tmp_safety_buffer[BUFFER_SIZE] = {0};
 
         memcpy(tmp_safety_buffer, str.data(), str.size());
 
