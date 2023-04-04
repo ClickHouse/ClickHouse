@@ -27,6 +27,7 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
             .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
+            .preserves_data_hints = false,
         },
         {
             .preserves_number_of_rows = false,

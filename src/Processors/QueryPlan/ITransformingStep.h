@@ -30,8 +30,8 @@ public:
         /// Examples: true for FilterStep, false for PartialSortingStep
         bool preserves_sorting;
 
-        /// Doesn't change column hints.
-        /// Examples: true for SortingStep, false for ExpressionStep
+        /// Doesn't change column hints (like `col_x` values are in range [L, R]).
+        /// Examples: true for SortingStep
         bool preserves_data_hints;
     };
 

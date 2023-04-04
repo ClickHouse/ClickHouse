@@ -1,0 +1,9 @@
+<test>
+    <query>SELECT CounterID, COUNT(*) FROM hits_10m_single WHERE CounterID >= 0 AND CounterID < 255 GROUP BY CounterID</query>
+    <query>SELECT CounterID, COUNT(*) FROM hits_10m_single WHERE CounterID >= 100 AND CounterID < 400 GROUP BY CounterID</query>
+    <query>SELECT CounterID, COUNT(*) FROM hits_10m_single WHERE CounterID >= 1000 AND CounterID < 5000 GROUP BY CounterID</query>
+
+    <query>SELECT CounterID, AVG(LENGTH(Title)) FROM hits_10m_single WHERE CounterID >= 0 AND CounterID <= 255 GROUP BY CounterID</query>
+    <query>SELECT CounterID, AVG(LENGTH(Title)) FROM hits_10m_single WHERE CounterID >= 100 AND CounterID < 400 GROUP BY CounterID</query>
+    <query>SELECT CounterID, AVG(LENGTH(Title)) FROM hits_10m_single WHERE CounterID >= 1000 AND CounterID < 5000 GROUP BY CounterID</query>
+</test>

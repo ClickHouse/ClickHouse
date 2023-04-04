@@ -23,6 +23,7 @@ static ITransformingStep::Traits getTraits()
 ExtremesStep::ExtremesStep(const DataStream & input_stream_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
 {
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void ExtremesStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

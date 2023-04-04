@@ -5,6 +5,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -56,6 +57,7 @@ DistinctStep::DistinctStep(
     , pre_distinct(pre_distinct_)
     , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -31,6 +31,7 @@ LimitByStep::LimitByStep(
     , group_offset(group_offset_)
     , columns(columns_)
 {
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 

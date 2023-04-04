@@ -98,6 +98,8 @@ private:
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
 
+    DataHints hints;
+
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;

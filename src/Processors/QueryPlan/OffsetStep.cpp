@@ -27,6 +27,7 @@ OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , offset(offset_)
 {
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
