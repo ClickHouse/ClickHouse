@@ -115,14 +115,11 @@ def run_and_check(
     return out
 
 
-# Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
+# Based on https://stackoverflow.com/a/1365284/3706827
 def get_free_port():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("", 0))
-    s.listen(1)
-    port = s.getsockname()[1]
-    s.close()
-    return port
+    with socket.socket() as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
