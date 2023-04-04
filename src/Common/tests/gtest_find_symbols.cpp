@@ -57,54 +57,6 @@ TEST(FindSymbols, SimpleTest)
     }
 }
 
-template <bool positive, detail::ReturnMode return_mode>
-inline const char * find_first_symbols_sse42_MY(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
-{
-    using namespace detail;
-    const char * pos = begin;
-
-#if defined(__SSE4_2__)
-    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
-
-#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
-
-#else
-    // This is to avoid read past end of allocated string while loading `set` from `symbols` if `num_chars < 16`.
-    char buffer[16] = {'\0'};
-    memcpy(buffer, symbols, num_chars);
-    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(buffer));
-#endif
-
-    for (; pos + 15 < end; pos += 16)
-    {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-
-        if constexpr (positive)
-        {
-            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode))
-                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode);
-        }
-        else
-        {
-            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY))
-                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY);
-        }
-    }
-#endif
-
-    for (; pos < end; ++pos)
-        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
-            return pos;
-
-    return return_mode == ReturnMode::End ? end : nullptr;
-}
-
-template <char... symbols>
-inline const char * find_first_symbols_MY(const char * begin, const char * end)
-{
-    return detail::find_first_symbols_dispatch<true, detail::ReturnMode::End, symbols...>(begin, end);
-}
-
 TEST(FindSymbols, RunTimeNeedle)
 {
     auto test_haystack = [](const auto & haystack, const auto & unfindable_needle) {
