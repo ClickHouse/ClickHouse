@@ -18,9 +18,45 @@ class QueryPlan;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
-using ConstSetPtr = std::shared_ptr<const Set>;
-using FutureSet = std::shared_future<SetPtr>;
 class InterpreterSelectWithUnionQuery;
+
+class FutureSet final : public std::shared_future<SetPtr>
+{
+public:
+    FutureSet() = default;
+    FutureSet(const std::shared_future<SetPtr> & future) : std::shared_future<SetPtr>(future) {}
+
+    bool isReady() const;
+
+    bool isCreated() const;
+};
+
+/// Information on how to build set for the [GLOBAL] IN section.
+class SubqueryForSet
+{
+public:
+
+    void createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_ = nullptr);
+
+    bool hasSource() const;
+
+    /// Returns query plan for the set's source
+    /// and removes it from SubqueryForSet because we need to build it only once.
+    std::unique_ptr<QueryPlan> detachSource();
+
+    /// Build this set from the result of the subquery.
+    String key;
+    SetPtr set_in_progress;
+    std::promise<SetPtr> promise_to_fill_set;
+    FutureSet set = {promise_to_fill_set.get_future()};
+
+    /// If set, put the result into the table.
+    /// This is a temporary table for transferring to remote servers for distributed query processing.
+    StoragePtr table;
+
+    /// The source is obtained using the InterpreterSelectQuery subquery.
+    std::unique_ptr<QueryPlan> source;
+};
 
 struct PreparedSetKey
 {
@@ -44,33 +80,10 @@ struct PreparedSetKey
     };
 };
 
-
-/// Information on how to build set for the [GLOBAL] IN section.
-class SubqueryForSet
+inline String toString(const PreparedSetKey & key)
 {
-public:
-
-    void createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_ = nullptr);
-
-    bool hasSource() const;
-
-    /// Returns query plan for the set's source
-    /// and removes it from SubqueryForSet because we need to build it only once.
-    std::unique_ptr<QueryPlan> detachSource();
-
-    /// Build this set from the result of the subquery.
-    PreparedSetKey key;
-    SetPtr set_in_progress;
-    std::promise<SetPtr> promise_to_fill_set;
-    FutureSet set = promise_to_fill_set.get_future();
-
-    /// If set, put the result into the table.
-    /// This is a temporary table for transferring to remote servers for distributed query processing.
-    StoragePtr table;
-
-    /// The source is obtained using the InterpreterSelectQuery subquery.
-    std::unique_ptr<QueryPlan> source;
-};
+    return "__set_" + std::to_string(key.ast_hash.first) + "_" + std::to_string(key.ast_hash.second);
+}
 
 class PreparedSets
 {
@@ -115,11 +128,7 @@ using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 class PreparedSetsCache
 {
 public:
-    /// Returns the set from the cache or builds it using the provided function.
-    /// If the set is already being built by another task, then this call will wait for the set to be built.
-    FutureSet findOrBuild(const PreparedSetKey & key, const std::function<FutureSet()> & build_set);
-
-    std::variant<std::promise<SetPtr>, FutureSet> findOrPromiseToBuild(const PreparedSetKey & key);
+    std::variant<std::promise<SetPtr>, FutureSet> findOrPromiseToBuild(const String & key);
 
 private:
     struct Entry
@@ -132,7 +141,7 @@ private:
 
     /// Protects just updates to the cache. When we got EntyPtr from the cache we can access it without locking.
     std::mutex cache_mutex;
-    std::unordered_map<PreparedSetKey, EntryPtr, PreparedSetKey::Hash> cache;
+    std::unordered_map<String, EntryPtr> cache;
 };
 
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;

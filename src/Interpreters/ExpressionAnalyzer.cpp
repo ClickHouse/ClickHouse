@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <memory>
 #include <Core/Block.h>
 
@@ -57,8 +56,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/PreparedSets.h"
-#include "QueryPipeline/SizeLimits.h"
+#include <QueryPipeline/SizeLimits.h>
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -71,6 +69,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -493,7 +492,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     auto set_cache = getContext()->getPreparedSetsCache();
     if (set_cache)
     {
-        auto from_cache = set_cache->findOrPromiseToBuild(set_key);
+        auto from_cache = set_cache->findOrPromiseToBuild(toString(set_key));
         if (from_cache.index() == 0)
         {
             LOG_TRACE(getLogger(), "Building set, key: {}:{}", set_key.ast_hash.first, set_key.ast_hash.second);

@@ -7,6 +7,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -56,18 +57,18 @@ class PlannerSet
 {
 public:
     /// Construct planner set that is ready for execution
-    explicit PlannerSet(SetPtr set_)
+    explicit PlannerSet(FutureSet set_)
         : set(std::move(set_))
     {}
 
     /// Construct planner set with set and subquery node
-    explicit PlannerSet(SetPtr set_, QueryTreeNodePtr subquery_node_)
-        : set(std::move(set_))
+    explicit PlannerSet(QueryTreeNodePtr subquery_node_)
+        : set(promise_to_build_set.get_future())
         , subquery_node(std::move(subquery_node_))
     {}
 
     /// Get set
-    const SetPtr & getSet() const
+    const FutureSet & getSet() const
     {
         return set;
     }
@@ -78,8 +79,11 @@ public:
         return subquery_node;
     }
 
+    std::promise<SetPtr> getPromiseToBuildSet() const { return std::move(promise_to_build_set); }
+
 private:
-    SetPtr set;
+    mutable std::promise<SetPtr> promise_to_build_set; // FIXME: mutable is a hack
+    FutureSet set;
 
     QueryTreeNodePtr subquery_node;
 };

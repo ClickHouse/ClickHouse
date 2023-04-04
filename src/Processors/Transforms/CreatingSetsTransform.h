@@ -1,6 +1,5 @@
 #pragma once
 
-#include <future>
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IAccumulatingTransform.h>

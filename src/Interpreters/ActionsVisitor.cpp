@@ -1181,7 +1181,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
-                const bool is_constant_set = prepared_set.wait_for(std::chrono::seconds(0)) == std::future_status::ready && prepared_set.get()->isCreated();
+                const bool is_constant_set = prepared_set.isCreated();
                 if (is_constant_set)  /// TODO: if the set is from prepared_sets_cache, it might be not empty already but we should not handle it as const!!!
                     column.name = data.getUniqueName("__set");
                 else
