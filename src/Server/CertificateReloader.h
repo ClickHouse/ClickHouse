@@ -89,6 +89,19 @@ public:
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl, const MultiData * pdata);
 
+    struct LetsEncryptConfigurationData
+    {
+        bool is_issuing_enabled;
+        int reissue_days_before;
+    };
+
+    MultiVersion<Data> data;
+    bool init_was_not_made = true;
+
+    MultiVersion<LetsEncryptConfigurationData> let_encrypt_configuration_data;
+
+    bool ShouldReissueCertificates();
+
 private:
     CertificateReloader() = default;
 
