@@ -431,13 +431,12 @@ namespace DB
         const auto & internal_data = internal_column.getChars();
         size_t fixed_length = internal_column.getN();
         arrow::FixedSizeBinaryBuilder & builder = assert_cast<arrow::FixedSizeBinaryBuilder &>(*array_builder);
-        arrow::Status status;
 
         PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
         const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
 
         const uint8_t * data_start = reinterpret_cast<const uint8_t *>(internal_data.data() + start * fixed_length);
-        status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        arrow::Status status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         checkStatus(status, write_column->getName(), format_name);
     }
 
@@ -453,13 +452,12 @@ namespace DB
         const auto & internal_data = internal_column.getData();
         size_t fixed_length = sizeof(IPv6);
         arrow::FixedSizeBinaryBuilder & builder = assert_cast<arrow::FixedSizeBinaryBuilder &>(*array_builder);
-        arrow::Status status;
 
         PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
         const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
 
         const uint8_t * data_start = reinterpret_cast<const uint8_t *>(internal_data.data()) + start * fixed_length;
-        status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        arrow::Status status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         checkStatus(status, write_column->getName(), format_name);
     }
 
@@ -473,11 +471,10 @@ namespace DB
     {
         const auto & internal_data = assert_cast<const ColumnIPv4 &>(*write_column).getData();
         auto & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
-        arrow::Status status;
 
         PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
         const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
-        status = builder.AppendValues(&(internal_data.data() + start)->toUnderType(), end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        arrow::Status status = builder.AppendValues(&(internal_data.data() + start)->toUnderType(), end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         checkStatus(status, write_column->getName(), format_name);
     }
 
@@ -589,13 +586,12 @@ namespace DB
         const auto & internal_data = internal_column.getData();
         size_t fixed_length = sizeof(typename ColumnType::ValueType);
         arrow::FixedSizeBinaryBuilder & builder = assert_cast<arrow::FixedSizeBinaryBuilder &>(*array_builder);
-        arrow::Status status;
 
         PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
         const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
 
         const uint8_t * data_start = reinterpret_cast<const uint8_t *>(internal_data.data()) + start * fixed_length;
-        status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        arrow::Status status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         checkStatus(status, write_column->getName(), format_name);
     }
 
