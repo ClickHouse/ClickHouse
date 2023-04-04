@@ -1,6 +1,10 @@
 #include <Planner/PlannerJoinTree.h>
 
+#include "Common/logger_useful.h"
 #include <Common/scope_guard_safe.h>
+#include "Parsers/ExpressionListParsers.h"
+#include "Parsers/parseQuery.h"
+#include "Storages/SelectQueryInfo.h"
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -468,6 +472,51 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info, planner_context);
 }
 
+/// Apply filters from additional_table_filters setting
+FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
+    const String & table_expression_alias,
+    SelectQueryInfo & table_expression_query_info,
+    PlannerContextPtr & planner_context)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto const & additional_filters = settings.additional_table_filters.value;
+    if (additional_filters.empty())
+        return {};
+
+    auto const & storage_id = storage->getStorageID();
+
+    LOG_DEBUG(&Poco::Logger::get("buildAdditionalFiltersIfNeeded"), "Trying to find additional filters for table: {}", storage_id.getFullTableName());
+
+    ASTPtr additional_filter_ast;
+
+    for (size_t i = 0; i < additional_filters.size(); ++i)
+    {
+        const auto & tuple = additional_filters[i].safeGet<const Tuple &>();
+        auto const & table = tuple.at(0).safeGet<String>();
+        auto const & filter = tuple.at(1).safeGet<String>();
+
+        if (table == table_expression_alias ||
+            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
+            (table == storage_id.getFullNameNotQuoted()))
+        {
+            ParserExpression parser;
+            additional_filter_ast = parseQuery(
+                parser, filter.data(), filter.data() + filter.size(),
+                "additional filter", settings.max_query_size, settings.max_parser_depth);
+            break;
+        }
+    }
+
+    if (!additional_filter_ast)
+        return {};
+
+    LOG_DEBUG(&Poco::Logger::get("buildAdditionalFiltersIfNeeded"), "Found additional filter: {}", additional_filter_ast->formatForErrorMessage());
+
+    return buildFilterInfo(additional_filter_ast, table_expression_query_info, planner_context);
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -696,6 +745,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
+                const auto & table_expression_alias = table_expression->getAlias();
+                auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
+                add_filter(additional_filters_info, "additional filter");
+
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
 
@@ -712,6 +765,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             filter_info.do_remove_column);
                         filter_step->setStepDescription(description);
                         query_plan.addStep(std::move(filter_step));
+                    }
+                    else
+                    {
+                        LOG_DEBUG(&Poco::Logger::get("PlannerJoinTree"), "Can not add filter: {}", description);
                     }
                 }
 
