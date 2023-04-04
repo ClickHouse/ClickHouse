@@ -3,12 +3,12 @@
 #include <Parsers/IAST.h>
 
 
-namespace HiliteComparator {
+namespace HiliteComparator
+{
 
 using Hilite = const char *;
 
-const std::vector<Hilite> HILITES =
-    {
+const std::vector<Hilite> HILITES = {
         DB::IAST::hilite_keyword,
         DB::IAST::hilite_identifier,
         DB::IAST::hilite_function,
@@ -16,7 +16,7 @@ const std::vector<Hilite> HILITES =
         DB::IAST::hilite_alias,
         DB::IAST::hilite_substitution,
         DB::IAST::hilite_none
-};
+    };
 
 [[maybe_unused]] Hilite consume_hilites(const char ** ptr_ptr);
 
