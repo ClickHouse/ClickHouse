@@ -61,10 +61,7 @@ def main():
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")
-        commit = get_commit(gh, pr_info.sha)
-        commit.create_status(
-            context=NAME, description="No changes in docs", state="success"
-        )
+        post_commit_status(gh, pr_info.sha, NAME, "No changes in docs", "success", "")
         sys.exit(0)
 
     if pr_info.has_changes_in_documentation():
