@@ -48,7 +48,7 @@ String remove_hilites(std::string_view string)
  *      a. hilite_keyword foo hilite_none hilite_operator +
  *      b. hilite_keyword foo hilite_operator +
  */
-bool are_equal_with_hilites(std::string_view left, std::string_view right)
+bool are_equal_with_hilites(std::string_view left, std::string_view right, bool check_end_without_hilite)
 {
     const char * left_it = left.begin();
     const char * right_it = right.begin();
@@ -62,7 +62,14 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right)
         consume_hilites(right_it, &right_hilite);
 
         if (left_it == left.end() && right_it == right.end())
+        {
+            if (left_hilite != right_hilite)
+                return false;
+            if (check_end_without_hilite)
+                if (left_hilite != DB::IAST::hilite_none)
+                    throw std::logic_error("Expected string ends with a hilite");
             return true;
+        }
 
         if (left_it == left.end() || right_it == right.end())
             return false;
@@ -80,6 +87,11 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right)
         left_it++;
         right_it++;
     }
+}
+
+bool are_equal_with_hilites_and_end_without_hilite(std::string_view left, std::string_view right)
+{
+    return are_equal_with_hilites(left, right, true);
 }
 
 

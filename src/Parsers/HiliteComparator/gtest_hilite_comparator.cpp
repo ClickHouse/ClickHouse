@@ -47,20 +47,26 @@ TEST(HiliteComparator, RemoveHilites)
 TEST(HiliteComparator, AreEqualWithHilites)
 {
     using namespace DB;
-    ASSERT_PRED2(are_equal_with_hilites, "", "");
+    String s = IAST::hilite_keyword;
+    ASSERT_THROW(are_equal_with_hilites(s, s, true), std::logic_error);
+    ASSERT_TRUE(are_equal_with_hilites(s, s, false));
+}
 
-    for (const char * hilite : HILITES)
-    {
-        ASSERT_PRED2(are_equal_with_hilites, "", std::string_view(hilite));
-        ASSERT_PRED2(are_equal_with_hilites, std::string_view(hilite), "");
-    }
+TEST(HiliteComparator, AreEqualWithHilitesAndEndWithoutHilite)
+{
+    using namespace DB;
+
+    ASSERT_PRED2(are_equal_with_hilites_and_end_without_hilite, "", "");
+    ASSERT_PRED2(are_equal_with_hilites_and_end_without_hilite, "", IAST::hilite_none);
+    ASSERT_PRED2(are_equal_with_hilites_and_end_without_hilite, IAST::hilite_none, "");
+    ASSERT_PRED2(are_equal_with_hilites_and_end_without_hilite, IAST::hilite_none, IAST::hilite_none);
 
     {
         String s;
         s += IAST::hilite_none;
         s += "select";
         s += IAST::hilite_none;
-        ASSERT_PRED2(are_equal_with_hilites, s, "select");
+        ASSERT_PRED2(are_equal_with_hilites_and_end_without_hilite, s, "select");
     }
 
     {
@@ -70,7 +76,7 @@ TEST(HiliteComparator, AreEqualWithHilites)
         s += DB::IAST::hilite_none;
         s += "ect";
         s += DB::IAST::hilite_none;
-        ASSERT_PRED2(are_equal_with_hilites, s, "\n select");
+        ASSERT_PRED2(are_equal_with_hilites_and_end_without_hilite, s, "\n select");
     }
 
     {
@@ -86,6 +92,7 @@ TEST(HiliteComparator, AreEqualWithHilites)
         right += " ";
         right += DB::IAST::hilite_keyword;
         right += "long";
-        ASSERT_PRED2(are_equal_with_hilites, left, right);
+        right += DB::IAST::hilite_none;
+        ASSERT_PRED2(are_equal_with_hilites_and_end_without_hilite, left, right);
     }
 }
