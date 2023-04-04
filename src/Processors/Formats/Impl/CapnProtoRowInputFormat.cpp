@@ -106,6 +106,9 @@ static void insertInteger(IColumn & column, const DataTypePtr & column_type, UIn
         case TypeIndex::UInt32:
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
+        case TypeIndex::IPv4:
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
+            break;
         case TypeIndex::Int64:
             assert_cast<ColumnInt64 &>(column).insertValue(value);
             break;
@@ -122,7 +125,7 @@ static void insertInteger(IColumn & column, const DataTypePtr & column_type, UIn
             assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
             break;
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column type is not a signed integer.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column type {} cannot be parsed from integer", column_type->getName());
     }
 }
 

@@ -265,7 +265,7 @@ static bool checkTupleType(const capnp::Type & capnp_type, const DataTypePtr & d
         return false;
     }
 
-    bool have_explicit_names = false;
+    bool have_explicit_names = tuple_data_type->haveExplicitNames();
     const auto & nested_names = tuple_data_type->getElementNames();
     for (uint32_t i = 0; i != nested_names.size(); ++i)
     {
@@ -414,10 +414,10 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
             return capnp_type.isUInt32();
         case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Decimal32:
-            return capnp_type.isInt32();
+            return capnp_type.isInt32() || capnp_type.isUInt32();
         case TypeIndex::DateTime64: [[fallthrough]];
         case TypeIndex::Decimal64:
-            return capnp_type.isUInt64();
+            return capnp_type.isInt64() || capnp_type.isUInt64();
         case TypeIndex::Float32:[[fallthrough]];
         case TypeIndex::Float64:
             /// Allow converting between Float32 and isFloat64
