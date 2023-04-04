@@ -1,6 +1,7 @@
 #include "HiliteComparator.h"
 
-namespace HiliteComparator {
+namespace HiliteComparator
+{
 
 [[maybe_unused]] Hilite consume_hilites(const char ** ptr_ptr)
 {
