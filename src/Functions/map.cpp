@@ -179,7 +179,7 @@ public:
         if (const auto * keys_type = checkAndGetDataType<DataTypeArray>(arguments[0].get()))
             key_type = keys_type->getNestedType();
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Array or Map", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an Array", getName());
 
         DataTypePtr value_type;
         if (const auto * value_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
