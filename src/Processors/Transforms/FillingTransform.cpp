@@ -258,10 +258,16 @@ IProcessor::Status FillingTransform::prepare()
 {
     if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
     {
+        logDebug("prepare()", "check if need to generate suffix");
+
         should_insert_first = next_row < filling_row || first;
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
             next_row[i] = filling_row.getFillDescription(i).fill_to;
+
+        logDebug("prepare() filling_row", filling_row);
+        logDebug("prepare() next_row", next_row);
+        logDebug("prepare() first", first);
 
         if (first || filling_row < next_row)
         {
@@ -271,6 +277,8 @@ IProcessor::Status FillingTransform::prepare()
                 output.pushData(std::move(output_data));
                 has_output = false;
             }
+
+            logDebug("prepare()", "need to generate suffix");
 
             generate_suffix = true;
             /// return Ready to call transform() for generating filling rows after latest chunk was processed
@@ -392,6 +400,14 @@ void FillingTransform::initColumns(
 
 void FillingTransform::transform(Chunk & chunk)
 {
+    logDebug("new chunk rows", chunk.getNumRows());
+    logDebug("generate suffix", generate_suffix);
+
+    /// if got chunk with no rows and it's not for suffix generation, then just skip it
+    /// Note: ExpressionTransform can return chunk with no rows, see 02579_fill_empty_chunk.sql for example
+    if (!chunk.hasRows() && !generate_suffix)
+        return;
+
     Columns old_fill_columns;
     Columns old_interpolate_columns;
     Columns old_other_columns;
@@ -436,6 +452,8 @@ void FillingTransform::transform(Chunk & chunk)
         chunk.setColumns(std::move(result_columns), num_output_rows);
         return;
     }
+
+    chassert(chunk.hasRows());
 
     const size_t num_rows = chunk.getNumRows();
     auto old_columns = chunk.detachColumns();
