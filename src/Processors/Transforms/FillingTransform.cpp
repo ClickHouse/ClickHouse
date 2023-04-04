@@ -273,6 +273,7 @@ IProcessor::Status FillingTransform::prepare()
             }
 
             generate_suffix = true;
+            /// return Ready to call transform() for generating filling rows after latest chunk was processed
             return Status::Ready;
         }
     }
