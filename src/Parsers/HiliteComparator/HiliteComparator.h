@@ -18,7 +18,7 @@ const std::vector<Hilite> HILITES = {
         DB::IAST::hilite_none
     };
 
-[[maybe_unused]] Hilite consume_hilites(const char * & ptr);
+void consume_hilites(const char * & ptr, Hilite * last_hilite = nullptr);
 
 String remove_hilites(std::string_view string);
 
