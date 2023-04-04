@@ -57,7 +57,7 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right)
 
     while (true)
     {
-        // Consume all prefix hilites, update the current hilite to be the last one.
+        // For each argument, consume all prefix hilites, and update the current hilite to be the last one.
         consume_hilites(left_it, &left_hilite);
         consume_hilites(right_it, &right_hilite);
 

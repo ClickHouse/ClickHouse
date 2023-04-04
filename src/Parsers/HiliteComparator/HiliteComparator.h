@@ -18,6 +18,10 @@ const std::vector<Hilite> HILITES = {
         DB::IAST::hilite_none
     };
 
+/*
+ * Consume all prefix hilites, by moving `ptr` to
+ * If `last_hilite` is not `nullptr`, update the last hilite to be the last hilite of the prefix hilites.
+ */
 void consume_hilites(const char * & ptr, Hilite * last_hilite = nullptr);
 
 String remove_hilites(std::string_view string);
