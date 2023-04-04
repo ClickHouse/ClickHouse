@@ -20,7 +20,7 @@ TEST(HiliteComparator, ConsumeHilites)
     s += IAST::hilite_keyword;
     const char * ptr = s.c_str();
     const char * expected_ptr = strchr(ptr, 't');
-    const char * last_hilite = consume_hilites(&ptr);
+    const char * last_hilite = consume_hilites(ptr);
     ASSERT_EQ(expected_ptr, ptr);
     ASSERT_TRUE(last_hilite != nullptr);
     ASSERT_EQ(IAST::hilite_function, last_hilite);
