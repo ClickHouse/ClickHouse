@@ -369,9 +369,6 @@ private:
 
     ProcessList * process_list;
 
-    std::atomic<bool> stop_flag = false;
-    ThreadFromGlobalPool thread;
-
     std::mutex mutex;
     std::condition_variable cv;
     QueryStatusPtr query_to_cancel;
@@ -381,6 +378,9 @@ private:
     const char * description;
     Int64 memory_current;
     Int64 memory_limit;
+
+    std::atomic<bool> stop_flag = false;
+    ThreadFromGlobalPool thread;
 };
 
 class ProcessList : public ProcessListBase
