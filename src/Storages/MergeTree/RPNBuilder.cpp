@@ -288,7 +288,7 @@ ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
     {
         auto set = column_set->getData();
 
-        if (set->isCreated())
+        if (set && set->isCreated())
             return set;
     }
 

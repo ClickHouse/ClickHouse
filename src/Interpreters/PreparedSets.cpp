@@ -1,3 +1,5 @@
+#include <chrono>
+#include <variant>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -51,10 +53,20 @@ SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, c
     /// If you already created a Set with the same subquery / table for another ast
     /// In that case several PreparedSetKey would share same subquery and set
     /// Not sure if it's really possible case (maybe for distributed query when set was filled by external table?)
-    if (subquery.set)
-        sets[key] = subquery.set;
+    if (subquery.set.valid())
+        sets[key] = subquery.set; // TODO:
     else
-        sets[key] = subquery.set = std::make_shared<Set>(set_size_limit, false, transform_null_in);
+    {
+        subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
+        sets[key] = subquery.promise_to_fill_set.get_future();
+    }
+
+    if (!subquery.set_in_progress)
+    {
+        subquery.key = key;
+        subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
+    }
+
     return subquery;
 }
 
@@ -62,17 +74,31 @@ SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, c
 /// It's aimed to fill external table passed to SubqueryForSet::createSource.
 SubqueryForSet & PreparedSets::getSubquery(const String & subquery_id) { return subqueries[subquery_id]; }
 
-void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = set_; }
+void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = makeReadyFutureSet(set_); }
 
-SetPtr & PreparedSets::get(const PreparedSetKey & key) { return sets[key]; }
+FutureSet PreparedSets::getFuture(const PreparedSetKey & key) const
+{
+    auto it = sets.find(key);
+    if (it == sets.end())// || it->second.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return {};
+    return it->second;
+}
 
-std::vector<SetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash)
+SetPtr PreparedSets::get(const PreparedSetKey & key) const
+{
+    auto it = sets.find(key);
+    if (it == sets.end() || it->second.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return nullptr;
+    return it->second.get();
+}
+
+std::vector<SetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash) const
 {
     std::vector<SetPtr> res;
     for (const auto & it : this->sets)
     {
         if (it.first.ast_hash == ast_hash)
-            res.push_back(it.second);
+            res.push_back(it.second.get());
     }
     return res;
 }
@@ -106,12 +132,10 @@ QueryPlanPtr SubqueryForSet::detachSource()
     return res;
 }
 
-SetPtr PreparedSetsCache::findOrBuild(const PreparedSetKey & key, const std::function<SetPtr()> & build_set)
-{
-    auto* log = &Poco::Logger::get("PreparedSetsCache");
 
-    EntryPtr entry;
-    bool need_to_build_set = false;
+std::variant<std::promise<SetPtr>, FutureSet> PreparedSetsCache::findOrPromiseToBuild(const PreparedSetKey & key)
+{
+//    auto* log = &Poco::Logger::get("PreparedSetsCache");
 
     /// Look for existing entry in the cache.
     {
@@ -120,48 +144,30 @@ SetPtr PreparedSetsCache::findOrBuild(const PreparedSetKey & key, const std::fun
         auto it = cache.find(key);
         if (it != cache.end())
         {
-            entry = it->second;
+            /// If the set is being built, return its future, but if it's ready and is nullptr then we should retry building it.
+            /// TODO: consider moving retry logic outside of the cache.
+            if (it->second->future.valid() &&
+                (it->second->future.wait_for(std::chrono::seconds(0)) != std::future_status::ready || it->second->future.get() != nullptr))
+                return it->second->future;
         }
-        else
-        {
-            if (build_set == nullptr)
-                return nullptr;
 
+        {
             /// Insert the entry into the cache so that other threads can find it and start waiting for the set.
-            entry = std::make_shared<Entry>();
-            entry->filled_set = entry->promise.get_future();
+            std::promise<SetPtr> promise_to_fill_set;
+            auto entry = std::make_shared<Entry>();
+            entry->future = promise_to_fill_set.get_future();
             cache[key] = entry;
-            need_to_build_set = true;
+            return promise_to_fill_set;
         }
     }
-
-    if (need_to_build_set)
-    {
-        LOG_DEBUG(log, "Building set for key {}:{}", key.ast_hash.first, key.ast_hash.second);
-        try
-        {
-            auto set = build_set();
-            entry->promise.set_value(set);
-        }
-        catch (...)
-        {
-            entry->promise.set_exception(std::current_exception());
-            throw;
-        }
-
-        return entry->filled_set.get();
-    }
-
-    if (entry->filled_set.valid() && entry->filled_set.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-    {
-        LOG_DEBUG(log, "Found set for key {}:{} without wait", key.ast_hash.first, key.ast_hash.second);
-    }
-    else
-    {
-        LOG_DEBUG(log, "Found set for key {}:{} with wait", key.ast_hash.first, key.ast_hash.second);
-    }
-    return entry->filled_set.get();
 }
 
+
+FutureSet makeReadyFutureSet(SetPtr set)
+{
+    std::promise<SetPtr> promise;
+    promise.set_value(set);
+    return promise.get_future();
+}
 
 };

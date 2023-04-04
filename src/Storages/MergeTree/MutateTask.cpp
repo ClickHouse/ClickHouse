@@ -1725,6 +1725,10 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
 
+//    /// Skip using large sets in keyCondition
+//    context_for_reading->setSetting("max_bytes_in_set", 50*1000*1000);
+//    context_for_reading->setSetting("set_overflow_mode", String("break"));
+
     for (const auto & command : *ctx->commands)
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
@@ -1773,6 +1777,9 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("max_threads", 1);
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
+    /// Restore settings for large sets.
+    context_for_reading->setSetting("max_bytes_in_set", ctx->context->getSettings().max_bytes_in_set.value);
+    context_for_reading->setSetting("set_overflow_mode", ctx->context->getSettings().set_overflow_mode.toString());
 
     MutationHelpers::splitAndModifyMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
 

@@ -1,3 +1,5 @@
+#include <memory>
+#include <mutex>
 #include <optional>
 
 #include <Core/Field.h>
@@ -236,6 +238,26 @@ bool Set::insertFromBlock(const Columns & columns)
     return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
+void Set::finishInsert()
+{
+    is_created = true;
+    is_created_promise.set_value();
+}
+
+void Set::waitForIsCreated() const
+{
+    if (is_created.load())
+        return;
+
+// FIXME: each thread must wait on its own copy of the future
+    std::shared_future<void> local_is_created_future;
+    {
+        std::lock_guard<std::mutex> lock(is_created_future_mutex);
+        local_is_created_future = is_created_future;
+    }
+
+    local_is_created_future.wait();
+}
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
@@ -243,6 +265,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
     if (0 == num_key_columns)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
+
+    waitForIsCreated();
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();

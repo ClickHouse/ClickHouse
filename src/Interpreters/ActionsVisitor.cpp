@@ -544,7 +544,6 @@ ActionsMatcher::Data::Data(
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
     , prepared_sets(prepared_sets_)
-    , prepared_sets_cache(context_->getPreparedSetsCache())
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
@@ -953,14 +952,16 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    SetPtr prepared_set;
+    FutureSet prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
-        if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty())
-            && (prepared_set = makeSet(node, data, data.no_subqueries)))
+        if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
+            prepared_set = makeSet(node, data, data.no_subqueries);
+
+        if (prepared_set.valid())
         {
             /// Transform tuple or subquery into a set.
         }
@@ -1173,14 +1174,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 num_arguments += columns.size() - 1;
                 arg += columns.size() - 1;
             }
-            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
+            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set.valid())
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
-                if (!prepared_set->empty())
+                const bool is_constant_set = prepared_set.wait_for(std::chrono::seconds(0)) == std::future_status::ready && prepared_set.get()->isCreated();
+                if (is_constant_set)  /// TODO: if the set is from prepared_sets_cache, it might be not empty already but we should not handle it as const!!!
                     column.name = data.getUniqueName("__set");
                 else
                     column.name = child->getColumnName();
@@ -1190,12 +1192,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     auto column_set = ColumnSet::create(1, prepared_set);
                     /// If prepared_set is not empty, we have a set made with literals.
                     /// Create a const ColumnSet to make constant folding work
-                    if (!prepared_set->empty())
-                        column.column = ColumnConst::create(std::move(column_set), 1);
+                    if (is_constant_set)
+                        column.column = ColumnConst::create(std::move(column_set), 1); /// TODO: and here we alos must not handle set form cahce as const!!!
                     else
                         column.column = std::move(column_set);
                     data.addColumn(column);
                 }
+
+                // TODO: if we added an empty set it means that it has not been built yet.
+                // We should add a wait for it to be filled somewhere before we access it
 
                 argument_types.push_back(column.type);
                 argument_names.push_back(column.name);
@@ -1371,10 +1376,10 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     data.addColumn(std::move(column));
 }
 
-SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
+FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     if (!data.prepared_sets)
-        return nullptr;
+        return {};//nullptr;
 
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
@@ -1391,16 +1396,11 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (no_subqueries)
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
-        if (SetPtr set = data.prepared_sets->get(set_key))
-            return set;
 
-        if (data.prepared_sets_cache)
         {
-            if (auto set = data.prepared_sets_cache->findOrBuild(set_key, nullptr))
-            {
-                data.prepared_sets->set(set_key, set);
+            auto set = data.prepared_sets->getFuture(set_key);
+            if (set.valid())
                 return set;
-            }
         }
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
@@ -1417,7 +1417,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
                 {
                     SetPtr set = storage_set->getSet();
                     data.prepared_sets->set(set_key, set);
-                    return set;
+                    return makeReadyFutureSet(set);
                 }
             }
         }
@@ -1449,7 +1449,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         const auto & index = data.actions_stack.getLastActionsIndex();
         if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets);
+            return makeReadyFutureSet(
+                makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets));
         else
             return {};
     }
