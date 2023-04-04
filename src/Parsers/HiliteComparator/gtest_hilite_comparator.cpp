@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <Parsers/IAST.h>
-#include <utils/hilite_comparator/HiliteComparator.h>
+#include <Parsers/HiliteComparator/HiliteComparator.h>
 
 
 TEST(FormatHiliting, MetaTestConsumeHilites)
