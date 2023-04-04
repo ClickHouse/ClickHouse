@@ -63,7 +63,7 @@ const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs 
     // Simple select
     {
         keyword("SELECT ") + "* " + keyword("FROM ") + identifier("table"),
-     "select * from table"
+        "select * from table"
     },
 
     // ASTWithElement
