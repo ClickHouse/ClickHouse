@@ -25,6 +25,7 @@ const char * auto_contributors[] {
     "Aleksandr Shalimov",
     "Aleksandra (Ася)",
     "Aleksandrov Vladimir",
+    "Aleksei Filatov",
     "Aleksei Levushkin",
     "Aleksei Semiglazov",
     "Aleksey",
