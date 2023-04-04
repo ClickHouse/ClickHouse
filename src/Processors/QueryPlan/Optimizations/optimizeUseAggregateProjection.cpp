@@ -245,6 +245,35 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     return res;
 }
 
+static void appendAggregateFunctions(
+    ActionsDAG & proj_dag,
+    const AggregateDescriptions & aggregates,
+    const AggregateFunctionMatches & matched_aggregates)
+{
+    std::unordered_map<const AggregateDescription *, const ActionsDAG::Node *> inputs;
+
+    /// Just add all the aggregates to dag inputs.
+    auto & proj_dag_outputs =  proj_dag.getOutputs();
+    size_t num_aggregates = aggregates.size();
+    for (size_t i = 0; i < num_aggregates; ++i)
+    {
+        const auto & aggregate = aggregates[i];
+        const auto & match = matched_aggregates[i];
+        auto type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, match.argument_types, aggregate.parameters);
+
+        auto & input = inputs[match.description];
+        if (!input)
+            input = &proj_dag.addInput(match.description->column_name, std::move(type));
+
+        const auto * node = input;
+
+        if (node->result_name != aggregate.column_name)
+            node = &proj_dag.addAlias(*node, aggregate.column_name);
+
+        proj_dag_outputs.push_back(node);
+    }
+}
+
 ActionsDAGPtr analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
@@ -365,23 +394,7 @@ ActionsDAGPtr analyzeAggregateProjection(
     // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Folding actions by projection");
 
     auto proj_dag = query.dag->foldActionsByProjection(new_inputs, query_key_nodes);
-
-    /// Just add all the aggregates to dag inputs.
-    auto & proj_dag_outputs =  proj_dag->getOutputs();
-    size_t num_aggregates = aggregates.size();
-    for (size_t i = 0; i < num_aggregates; ++i)
-    {
-        const auto & aggregate = aggregates[i];
-        const auto & match = (*matched_aggregates)[i];
-        auto type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, match.argument_types, aggregate.parameters);
-        const auto * node = &proj_dag->addInput(match.description->column_name, std::move(type));
-
-        if (aggregate.column_name != match.description->column_name)
-            node = &proj_dag->addAlias(*node, aggregate.column_name);
-
-        proj_dag_outputs.push_back(node);
-    }
-
+    appendAggregateFunctions(*proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
 
