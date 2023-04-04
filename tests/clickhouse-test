@@ -144,7 +144,7 @@ def clickhouse_execute_http(
         except Exception as ex:
             if i == max_http_retries - 1:
                 raise ex
-
+            client.close()
             sleep(i + 1)
 
     if res.status != 200:
