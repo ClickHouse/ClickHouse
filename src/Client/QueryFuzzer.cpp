@@ -107,8 +107,9 @@ Field QueryFuzzer::fuzzField(Field field)
         type_index = 1;
     }
     else if (type == Field::Types::Decimal32
-             || type == Field::Types::Decimal64
-             || type == Field::Types::Decimal128)
+        || type == Field::Types::Decimal64
+        || type == Field::Types::Decimal128
+        || type == Field::Types::Decimal256)
     {
         type_index = 2;
     }

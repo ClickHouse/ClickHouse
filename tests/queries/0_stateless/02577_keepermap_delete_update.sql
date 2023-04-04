@@ -31,12 +31,14 @@ ALTER TABLE 02661_keepermap_delete_update UPDATE value = 'Another' WHERE key > 2
 SELECT * FROM 02661_keepermap_delete_update ORDER BY key;
 SELECT '-----------';
 
-ALTER TABLE 02661_keepermap_delete_update UPDATE key = key * 10 WHERE 1 = 1; -- { serverError 36 }
+ALTER TABLE 02661_keepermap_delete_update UPDATE key = key * 10 WHERE 1 = 1; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM 02661_keepermap_delete_update ORDER BY key;
 SELECT '-----------';
 
 ALTER TABLE 02661_keepermap_delete_update UPDATE value2 = value2 * 10 + 2 WHERE value2 < 100;
 SELECT * FROM 02661_keepermap_delete_update ORDER BY key;
 SELECT '-----------';
+
+ALTER TABLE 02661_keepermap_delete_update ON CLUSTER test_shard_localhost UPDATE value2 = value2 * 10 + 2 WHERE value2 < 100; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS 02661_keepermap_delete_update;

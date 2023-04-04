@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
+#include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
@@ -23,7 +24,7 @@ public:
         UInt64 keeper_max_retries;
         UInt64 keeper_retry_initial_backoff_ms;
         UInt64 keeper_retry_max_backoff_ms;
-        UInt64 batch_size_for_keeper_multiread;
+        UInt64 keeper_value_max_size;
     };
 
     BackupCoordinationRemote(
@@ -33,6 +34,7 @@ public:
         const String & backup_uuid_,
         const Strings & all_hosts_,
         const String & current_host_,
+        bool plain_backup_,
         bool is_internal_);
 
     ~BackupCoordinationRemote() override;
@@ -67,17 +69,10 @@ public:
     void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) override;
     Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
-    void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
-    void updateFileInfo(const FileInfo & file_info) override;
-
-    std::vector<FileInfo> getAllFileInfos() const override;
-    Strings listFiles(const String & directory, bool recursive) const override;
-    bool hasFiles(const String & directory) const override;
-    std::optional<FileInfo> getFileInfo(const String & file_name) const override;
-    std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
-
-    String getNextArchiveSuffix() override;
-    Strings getAllArchiveSuffixes() const override;
+    void addFileInfos(BackupFileInfos && file_infos) override;
+    BackupFileInfos getFileInfos() const override;
+    BackupFileInfos getFileInfosForAllHosts() const override;
+    bool startWritingFile(size_t data_file_index) override;
 
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
@@ -85,16 +80,19 @@ public:
 
 private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
-    zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
     void createRootNodes();
     void removeAllNodes();
+
+    void serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name);
+    String deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const;
 
     /// Reads data of all objects from ZooKeeper that replicas have added to backup and add it to the corresponding
     /// BackupCoordinationReplicated* objects.
     /// After that, calling addReplicated* functions is not allowed and throws an exception.
-    void prepareReplicatedTables() const;
-    void prepareReplicatedAccess() const;
-    void prepareReplicatedSQLObjects() const;
+    void prepareReplicatedTables() const TSA_REQUIRES(replicated_tables_mutex);
+    void prepareReplicatedAccess() const TSA_REQUIRES(replicated_access_mutex);
+    void prepareReplicatedSQLObjects() const TSA_REQUIRES(replicated_sql_objects_mutex);
+    void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
 
     const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
@@ -104,16 +102,24 @@ private:
     const Strings all_hosts;
     const String current_host;
     const size_t current_host_index;
+    const bool plain_backup;
     const bool is_internal;
+    Poco::Logger * const log;
 
     mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
-    mutable std::mutex mutex;
-    mutable zkutil::ZooKeeperPtr zookeeper;
-    mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
-    mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
-    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects;
+    mutable zkutil::ZooKeeperPtr TSA_GUARDED_BY(zookeeper_mutex) zookeeper;
+    mutable std::optional<BackupCoordinationReplicatedTables> TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
+    mutable std::optional<BackupCoordinationReplicatedAccess> TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
+    mutable std::optional<BackupCoordinationReplicatedSQLObjects> TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
+    mutable std::optional<BackupCoordinationFileInfos> TSA_GUARDED_BY(file_infos_mutex) file_infos;
+
+    mutable std::mutex zookeeper_mutex;
+    mutable std::mutex replicated_tables_mutex;
+    mutable std::mutex replicated_access_mutex;
+    mutable std::mutex replicated_sql_objects_mutex;
+    mutable std::mutex file_infos_mutex;
 };
 
 }
