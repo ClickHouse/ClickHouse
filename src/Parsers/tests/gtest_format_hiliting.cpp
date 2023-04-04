@@ -129,7 +129,5 @@ const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs 
 TEST(FormatHiliting, Queries)
 {
     for (const auto & [expected, query] : expected_and_query_pairs)
-    {
         compare(expected, query);
-    }
 }
