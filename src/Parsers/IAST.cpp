@@ -162,14 +162,7 @@ String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
 
-    FormatSettings settings{
-            .hilite = false,
-            .one_line = one_line,
-            .always_quote_identifiers = false,
-            .identifier_quoting_style = IdentifierQuotingStyle::Backticks,
-            .show_secrets = false
-    };
-
+    FormatSettings settings{.one_line = one_line, .show_secrets = false};
     format(buf, settings);
 
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
