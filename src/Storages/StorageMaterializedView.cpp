@@ -401,7 +401,10 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
 
 NamesAndTypesList StorageMaterializedView::getVirtuals() const
 {
-    return getTargetTable()->getVirtuals();
+    if (hasInnerTable())
+        return getTargetTable()->getVirtuals();
+
+    return {};
 }
 
 Strings StorageMaterializedView::getDataPaths() const
@@ -453,7 +456,7 @@ std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & setti
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
-    if (has_inner_table)
+    if (hasInnerTable())
     {
         if (auto target_table = tryGetTargetTable())
             return target_table->getActionLock(type);

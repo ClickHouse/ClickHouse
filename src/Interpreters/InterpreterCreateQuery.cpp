@@ -802,7 +802,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
 {
     /// Check for duplicates
     std::unordered_set<std::string_view> all_columns;
-    all_columns.reserve(all_columns.size());
+    all_columns.reserve(properties.columns.size());
 
     for (const auto & column : properties.columns)
     {
@@ -1400,7 +1400,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     std::unordered_set<std::string_view> all_columns;
-    all_columns.reserve(all_columns.size());
+    all_columns.reserve(properties.columns.size());
 
     for (const auto & column : properties.columns)
         all_columns.emplace(column.name);
@@ -1408,8 +1408,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     auto reserved_columns = res->getVirtuals().getNames();
     for (const auto & column : reserved_columns)
     {
-        auto search = all_columns.find(column);
-        if (search != all_columns.end())
+        if (all_columns.contains(column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Cannot create table with column '{}' for engine {} because it "
                             "is reserved for internal usage",
