@@ -104,6 +104,7 @@ private:
     const size_t current_host_index;
     const bool plain_backup;
     const bool is_internal;
+    Poco::Logger * const log;
 
     mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
