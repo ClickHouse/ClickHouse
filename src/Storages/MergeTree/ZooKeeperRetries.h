@@ -128,6 +128,12 @@ public:
         user_error = UserError{};
     }
 
+    template <typename... Args>
+    void setKeeperError(Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
+    {
+        setKeeperError(code, fmt::format(fmt, std::forward<Args>(args)...));
+    }
+
     void stopRetries() { stop_retries = true; }
 
     void requestUnconditionalRetry() { unconditional_retry = true; }

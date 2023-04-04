@@ -208,7 +208,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-referen
 Query:
 
 ``` sql
-CREATE TABLE tupletest (`col` Tuple(user_ID UInt64, session_ID UInt64) ENGINE = Memory;
+CREATE TABLE tupletest (col Tuple(user_ID UInt64, session_ID UInt64)) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES (tuple( 100, 2502)), (tuple(1,100));
 
@@ -227,11 +227,11 @@ Result:
 It is possible to transform colums to rows using this function:
 
 ``` sql
-CREATE TABLE tupletest (`col` Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
+CREATE TABLE tupletest (col Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES(tuple(3.3, 5.5, 6.6));
 
-SELECT arrayJoin(tupleToNameValuePairs(col))FROM tupletest;
+SELECT arrayJoin(tupleToNameValuePairs(col)) FROM tupletest;
 ```
 
 Result:
