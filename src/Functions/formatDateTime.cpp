@@ -150,8 +150,8 @@ private:
         /// Joda format generally requires capturing extra variables (i.e. holding state) which is more convenient with
         /// std::function and std::bind. Unfortunately, std::function causes a performance degradation by 0.45x compared to raw function
         /// pointers. For MySQL format, we generally prefer raw function pointers. Because of the special case that not all formatters are
-        /// fixed-width formatters (see mysqlLiteral instruction ), we still need to be able to store state. For that reason, we use member
-        /// function pointers (which come with even uglier syntax) instead of static function pointers.
+        /// fixed-width formatters (see mysqlLiteral instruction), we still need to be able to store state. For that reason, we use member
+        /// function pointers instead of static function pointers.
         using FuncMysql = size_t (Instruction<Time>::*)(char *, Time, UInt64, UInt32, const DateLUTImpl &);
         FuncMysql func_mysql = nullptr;
 
@@ -173,8 +173,8 @@ private:
         void perform(char *& dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
             size_t shift = func_mysql
-                           ? ((static_cast<Instruction<Time>*>(this))->*func_mysql)(dest, source, fractional_second, scale, timezone)
-                           : func_joda(dest, source, fractional_second, scale, timezone);
+                           ? std::invoke(func_mysql, this, dest, source, fractional_second, scale, timezone)
+                           : std::invoke(func_joda, dest, source, fractional_second, scale, timezone);
             dest += shift + extra_shift;
         }
 
@@ -674,7 +674,7 @@ private:
 
     static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format)
     {
-        constexpr std::array variable_width_formatter = {'M', 'W'};
+        static constexpr std::array variable_width_formatter = {'M', 'W'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -835,11 +835,15 @@ public:
             scale = times->getScale();
 
         /// For MySQL, we support two modes of execution:
-        /// - All formatters in the format string are fixed-width. As a result, all output rows will have the same with and structure. We
-        ///   take advantage of this and 1. create a "template" with placeholders from the format string, 2. allocate a result column large
-        ///   enough to store the template on each row, 3. copy the template into each result row 4. run instructions which replace the
-        ///   formatter placeholders. All other parts of the template (e.g. whitespaces) are already as desired and instructions skip over
-        ///   them (see 'extra_shift' in the formatters).
+        ///
+        /// - All formatters in the format string are fixed-width. As a result, all output rows will have the same width and structure. We
+        ///   take advantage of this and
+        ///     1. create a "template" with placeholders from the format string,
+        ///     2. allocate a result column large enough to store the template on each row,
+        ///     3. copy the template into each result row,
+        ///     4. run instructions which replace the formatter placeholders. All other parts of the template (e.g. whitespaces) are already
+        ///        as desired and instructions skip over them (see 'extra_shift' in the formatters).
+        ///
         /// - The format string contains at least one variable-width formatter. Output rows will potentially be of different size.
         ///   Steps 1. and 2. are performed as above (the result column is allocated based on a worst-case size estimation). The result
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
@@ -1220,7 +1224,7 @@ public:
                     // AM or PM
                     case 'p':
                     {
-                        constexpr std::string_view val = "AM";
+                        static constexpr std::string_view val = "AM";
                         add_time_instruction(&Instruction<T>::mysqlAMPM, 2, val);
                         out_template += val;
                         break;
@@ -1229,7 +1233,7 @@ public:
                     // 12-hour HH:MM time, equivalent to %h:%i %p 2:55 PM
                     case 'r':
                     {
-                        constexpr std::string_view val = "12:00 AM";
+                        static constexpr std::string_view val = "12:00 AM";
                         add_time_instruction(&Instruction<T>::mysqlHHMM12, 8, val);
                         out_template += val;
                         break;
@@ -1238,7 +1242,7 @@ public:
                     // 24-hour HH:MM time, equivalent to %H:%i 14:55
                     case 'R':
                     {
-                        constexpr std::string_view val = "00:00";
+                        static constexpr std::string_view val = "00:00";
                         add_time_instruction(&Instruction<T>::mysqlHHMM24, 5, val);
                         out_template += val;
                         break;
@@ -1247,7 +1251,7 @@ public:
                     // Seconds
                     case 's':
                     {
-                        constexpr std::string_view val = "00";
+                        static constexpr std::string_view val = "00";
                         add_time_instruction(&Instruction<T>::mysqlSecond, 2, val);
                         out_template += val;
                         break;
@@ -1256,7 +1260,7 @@ public:
                     // Seconds
                     case 'S':
                     {
-                        constexpr std::string_view val = "00";
+                        static constexpr std::string_view val = "00";
                         add_time_instruction(&Instruction<T>::mysqlSecond, 2, val);
                         out_template += val;
                         break;
@@ -1265,7 +1269,7 @@ public:
                     // ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S 14:55:02
                     case 'T':
                     {
-                        constexpr std::string_view val = "00:00:00";
+                        static constexpr std::string_view val = "00:00:00";
                         add_time_instruction(&Instruction<T>::mysqlISO8601Time, 8, val);
                         out_template += val;
                         break;
@@ -1274,7 +1278,7 @@ public:
                     // Hour in 12h format (01-12)
                     case 'h':
                     {
-                        constexpr std::string_view val = "12";
+                        static constexpr std::string_view val = "12";
                         add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
                         out_template += val;
                         break;
@@ -1283,7 +1287,7 @@ public:
                     // Hour in 24h format (00-23)
                     case 'H':
                     {
-                        constexpr std::string_view val = "00";
+                        static constexpr std::string_view val = "00";
                         add_time_instruction(&Instruction<T>::mysqlHour24, 2, val);
                         out_template += val;
                         break;
@@ -1292,7 +1296,7 @@ public:
                     // Minute of hour range [0, 59]
                     case 'i':
                     {
-                        constexpr std::string_view val = "00";
+                        static constexpr std::string_view val = "00";
                         add_time_instruction(&Instruction<T>::mysqlMinute, 2, val);
                         out_template += val;
                         break;
@@ -1301,7 +1305,7 @@ public:
                     // Hour in 12h format (01-12)
                     case 'I':
                     {
-                        constexpr std::string_view val = "12";
+                        static constexpr std::string_view val = "12";
                         add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
                         out_template += val;
                         break;
@@ -1310,7 +1314,7 @@ public:
                     // Hour in 24h format (00-23)
                     case 'k':
                     {
-                        constexpr std::string_view val = "00";
+                        static constexpr std::string_view val = "00";
                         add_time_instruction(&Instruction<T>::mysqlHour24, 2, val);
                         out_template += val;
                         break;
@@ -1319,7 +1323,7 @@ public:
                     // Hour in 12h format (01-12)
                     case 'l':
                     {
-                        constexpr std::string_view val = "12";
+                        static constexpr std::string_view val = "12";
                         add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
                         out_template += val;
                         break;
@@ -1327,7 +1331,7 @@ public:
 
                     case 't':
                     {
-                        constexpr std::string_view val = "\t";
+                        static constexpr std::string_view val = "\t";
                         add_extra_shift_or_literal_instruction(1, val);
                         out_template += val;
                         break;
@@ -1335,7 +1339,7 @@ public:
 
                     case 'n':
                     {
-                        constexpr std::string_view val = "\n";
+                        static constexpr std::string_view val = "\n";
                         add_extra_shift_or_literal_instruction(1, val);
                         out_template += val;
                         break;
@@ -1344,7 +1348,7 @@ public:
                     // Escaped literal characters.
                     case '%':
                     {
-                        constexpr std::string_view val = "%";
+                        static constexpr std::string_view val = "%";
                         add_extra_shift_or_literal_instruction(1, val);
                         out_template += val;
                         break;
