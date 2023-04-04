@@ -26,6 +26,9 @@ void consume_hilites(const char * & ptr, Hilite * last_hilite = nullptr);
 
 String remove_hilites(std::string_view string);
 
+/*
+ * Copies both strings, for the simplicity of the implementation.
+ */
 bool are_equal_with_hilites_removed(std::string_view left, std::string_view right);
 
 /*
