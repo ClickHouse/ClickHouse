@@ -115,10 +115,11 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (!storage.engine)
         return;
-    if (storage.engine->name != "Dictionary")
-        return;
-
-    extractTableNameFromArgument(*storage.engine, data, 0);
+    
+    if (storage.engine->name == "Distributed")
+        extractDictNameForDistEngineFromArg(*storage.engine, data);
+    else if (storage.engine->name == "Dictionary")
+        extractTableNameFromArgument(*storage.engine, data, 0);
 }
 
 
@@ -168,4 +169,39 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     data.dependencies.emplace(std::move(qualified_name));
 }
 
+void DDLLoadingDependencyVisitor::extractDictNameForDistEngineFromArg(const ASTFunction& function, Data & data)
+{
+    const size_t shard_key_ind = 3;
+    /// We check that the sharding key is exist and it is a function for accessing to the dictionary.     
+    if (!function.arguments || function.arguments->children.size() <= shard_key_ind)
+        return;    
+    
+    const auto * arg = function.arguments->as<ASTExpressionList>()->children[shard_key_ind].get();
+    const auto * shard_key_with_dict_func = arg->as<ASTFunction>();
+     
+    if (!shard_key_with_dict_func) 
+        return;
+
+    if (!functionIsDictGet(shard_key_with_dict_func->name))
+        return;
+    /// Get the dictionary name from `dict*` function.
+    const auto * literal_arg = shard_key_with_dict_func->arguments->as<ASTExpressionList>()->children[0].get();
+    const auto * dictionary_name = literal_arg->as<ASTLiteral>();
+    
+    if (!dictionary_name)
+        return;
+    if (dictionary_name->value.getType() != Field::Types::String)
+        return;
+
+    auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name->value.get<String>());
+
+    if (!qualified_name)
+        return;
+
+    if (qualified_name->database.empty())
+    {
+        qualified_name->database = data.default_database;
+    }
+    data.dependencies.emplace(std::move(*qualified_name));
+}
 }
