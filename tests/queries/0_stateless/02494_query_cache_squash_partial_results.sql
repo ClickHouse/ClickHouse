@@ -4,7 +4,6 @@
 SET allow_experimental_query_cache = true;
 
 SYSTEM DROP QUERY CACHE;
-
 DROP TABLE IF EXISTS t;
 
 -- Create test table with "many" rows
@@ -51,3 +50,4 @@ SELECT * FROM t ORDER BY c
 SETTINGS max_block_size = 2, use_query_cache = true;
 
 DROP TABLE t;
+SYSTEM DROP QUERY CACHE;

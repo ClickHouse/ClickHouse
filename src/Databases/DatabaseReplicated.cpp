@@ -34,6 +34,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
+#include <Storages/StorageKeeperMap.h>
 
 namespace DB
 {
@@ -1390,6 +1391,13 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
+        auto table_id = query_context->resolveStorageID(*alter, Context::ResolveOrdinary);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+        /// we never replicate KeeperMap operations because it doesn't make sense
+        if (auto * keeper_map = table->as<StorageKeeperMap>())
+            return false;
+
         return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
     }
 
