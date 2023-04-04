@@ -17,6 +17,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/CurrentMetrics.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -117,6 +118,10 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric MergeTreePartsLoaderThreads;
+    extern const Metric MergeTreePartsLoaderThreadsActive;
+    extern const Metric MergeTreePartsCleanerThreads;
+    extern const Metric MergeTreePartsCleanerThreadsActive;
 }
 
 
@@ -1517,24 +1522,32 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     {
         /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
-        /// If disk is wrapped into cached disk, it will not be defined in storage policy.
-        std::unordered_set<String> disk_names_wrapped_in_cache;
 
         for (const auto & disk_ptr : disks)
-            defined_disk_names.insert(disk_ptr->getName());
-
-        for (const auto & [disk_name, disk_ptr] : getContext()->getDisksMap())
         {
-            /// In composable cache with the underlying source disk there might the following structure:
-            /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
-            /// In configuration file each of these layers has a different name, but data path
-            /// (getPath() result) is the same. We need to take it into account here.
-            if (disk_ptr->supportsCache() && defined_disk_names.contains(disk_ptr->getName()))
+            defined_disk_names.insert(disk_ptr->getName());
+        }
+
+        /// In case of delegate disks it is not enough to traverse `disks`,
+        /// because for example cache or encrypted disk which wrap s3 disk and s3 disk itself can be put into different storage policies.
+        /// But disk->exists returns the same thing for both disks.
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
+            /// As encrypted disk can use the same path of its nested disk,
+            /// we need to take it into account here.
+            const auto & delegate = disk->getDelegateDiskIfExists();
+            if (delegate && disk->getPath() == delegate->getPath())
+                defined_disk_names.insert(delegate->getName());
+
+            if (disk->supportsCache())
             {
-                auto caches = disk_ptr->getCacheLayersNames();
-                disk_names_wrapped_in_cache.insert(caches.begin(), caches.end());
-                LOG_TEST(log, "Cache layers for cache disk `{}`, inner disk `{}`: {}",
-                         disk_name, disk_ptr->getName(), fmt::join(caches, ", "));
+                /// As cache is implemented on object storage layer, not on disk level, e.g.
+                /// we have such structure:
+                /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
+                /// and disk_ptr->getName() here is the name of last delegate - ObjectStorage.
+                /// So now we need to add cache layers to defined disk names.
+                auto caches = disk->getCacheLayersNames();
+                defined_disk_names.insert(caches.begin(), caches.end());
             }
         }
 
@@ -1543,9 +1556,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (disk->isBroken() || disk->isCustomDisk())
                 continue;
 
-            if (!defined_disk_names.contains(disk_name)
-                && disk->exists(relative_data_path)
-                && !disk_names_wrapped_in_cache.contains(disk_name))
+            if (!defined_disk_names.contains(disk_name) && disk->exists(relative_data_path))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
@@ -1553,16 +1564,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     {
                         throw Exception(
                             ErrorCodes::UNKNOWN_DISK,
-                            "Part {} ({}) was found on disk {} which is not defined in the storage policy (defined disks: {}, wrapped disks: {})",
-                            backQuote(it->name()), backQuote(it->path()), backQuote(disk_name),
-                            fmt::join(defined_disk_names, ", "), fmt::join(disk_names_wrapped_in_cache, ", "));
+                            "Part {} ({}) was found on disk {} which is not defined in the storage policy (defined disks: {})",
+                            backQuote(it->name()), backQuote(it->path()), backQuote(disk_name), fmt::join(defined_disk_names, ", "));
                     }
                 }
             }
         }
     }
 
-    ThreadPool pool(disks.size());
+    ThreadPool pool(CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive, disks.size());
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
 
     for (size_t i = 0; i < disks.size(); ++i)
@@ -2294,7 +2304,7 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
     /// Parallel parts removal.
     size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
     std::mutex part_names_mutex;
-    ThreadPool pool(num_threads);
+    ThreadPool pool(CurrentMetrics::MergeTreePartsCleanerThreads, CurrentMetrics::MergeTreePartsCleanerThreadsActive, num_threads);
 
     bool has_zero_copy_parts = false;
     if (settings->allow_remote_fs_zero_copy_replication && dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr)
@@ -2930,7 +2940,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         old_types.emplace(column.name, column.type.get());
 
     NamesAndTypesList columns_to_check_conversion;
-    auto name_deps = getDependentViewsByColumn(local_context);
+
+    std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
         /// Just validate partition expression
@@ -3012,7 +3023,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (!command.clear)
             {
-                const auto & deps_mv = name_deps[command.column_name];
+                if (!name_deps)
+                    name_deps = getDependentViewsByColumn(local_context);
+                const auto & deps_mv = name_deps.value()[command.column_name];
                 if (!deps_mv.empty())
                 {
                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
