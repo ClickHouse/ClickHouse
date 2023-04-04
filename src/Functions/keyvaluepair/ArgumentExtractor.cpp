@@ -11,12 +11,6 @@ namespace ErrorCodes
 
 ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithTypeAndName & arguments)
 {
-    /*
-     * TODO validate arguments:
-     *  2. Check if it's not empty
-     *  4. Use uint8_t column instead of string column for escaping lol
-     * */
-
     if (arguments.empty())
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function extractKeyValuePairs requires at least one argument");
