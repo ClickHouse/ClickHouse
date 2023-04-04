@@ -353,6 +353,7 @@ public:
         Delete,
         Create,
         Drop,
+        Undrop,
         Rename,
         Optimize,
         Check,
