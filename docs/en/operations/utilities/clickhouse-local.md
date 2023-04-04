@@ -8,9 +8,149 @@ sidebar_label: clickhouse-local
 
 The `clickhouse-local` program enables you to perform fast processing on local files, without having to deploy and configure the ClickHouse server. It accepts data that represent tables and queries them using [ClickHouse SQL dialect](../../sql-reference/index.md). `clickhouse-local` uses the same core as ClickHouse server, so it supports most of the features and the same set of formats and table engines.
 
-By default `clickhouse-local` has access to data on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
+## Download clickhouse-local
+
+`clickhouse-local` is executed using the same `clickhouse` binary that runs the ClickHouse server and `clickhouse-client`. The easiest way to download the latest version is with the following command:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+:::note
+The binary you just downloaded can run all sorts of ClickHouse tools and utilities. If you want to run ClickHouse as a database server, check out the [Quick Start](../../quick-start.mdx).
+:::
+
+## Query data in a CSV file using SQL
+
+A common use of `clickhouse-local` is to run ad-hoc queries on files: where you don't have to insert the data into a table. `clickhouse-local` can stream the data from a file into a temporary table and execute your SQL.
+
+If the file is sitting on the same machine as `clickhouse-local`, use the `file` table engine. The following `reviews.tsv` file contains a sampling of Amazon product reviews:
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
+```
+
+ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
+    ```bash
+    ./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+    ```
+
+The `file` table function creates a table, and you can use `DESCRIBE` to see the inferred schema:
+
+```bash
+./clickhouse local -q "DESCRIBE file('reviews.tsv')"
+```
+
+```response
+marketplace	Nullable(String)
+customer_id	Nullable(Int64)
+review_id	Nullable(String)
+product_id	Nullable(String)
+product_parent	Nullable(Int64)
+product_title	Nullable(String)
+product_category	Nullable(String)
+star_rating	Nullable(Int64)
+helpful_votes	Nullable(Int64)
+total_votes	Nullable(Int64)
+vine	Nullable(String)
+verified_purchase	Nullable(String)
+review_headline	Nullable(String)
+review_body	Nullable(String)
+review_date	Nullable(Date)
+```
+
+Let's find a product with the highest rating:
+
+```bash
+./clickhouse local -q "SELECT
+    argMax(product_title,star_rating),
+    max(star_rating)
+FROM file('reviews.tsv')"
+```
+
+```response
+Monopoly Junior Board Game	5
+```
+
+## Query data in a Parquet file in AWS S3
+
+If you have a file in S3, use `clickhouse-local` and the `s3` table function to query the file in place (without inserting the data into a ClickHouse table). We have a file named `house_0.parquet` in a public bucket that contains home prices of property sold in the United Kingdom. Let's see how many rows it has:
+
+```bash
+./clickhouse local -q "
+SELECT count()
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+The file has 2.7M rows:
+
+```response
+2772030
+```
+
+It's always useful to see what the inferred schema that ClickHouse determines from the file:
+
+```bash
+./clickhouse local -q "DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+```response
+price	Nullable(Int64)
+date	Nullable(UInt16)
+postcode1	Nullable(String)
+postcode2	Nullable(String)
+type	Nullable(String)
+is_new	Nullable(UInt8)
+duration	Nullable(String)
+addr1	Nullable(String)
+addr2	Nullable(String)
+street	Nullable(String)
+locality	Nullable(String)
+town	Nullable(String)
+district	Nullable(String)
+county	Nullable(String)
+```
+
+Let's see what the most expensive neighborhoods are:
+
+```bash
+./clickhouse local -q "
+SELECT
+    town,
+    district,
+    count() AS c,
+    round(avg(price)) AS price,
+    bar(price, 0, 5000000, 100)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+GROUP BY
+    town,
+    district
+HAVING c >= 100
+ORDER BY price DESC
+LIMIT 10"
+```
+
+```response
+LONDON	CITY OF LONDON	886	2271305	█████████████████████████████████████████████▍
+LEATHERHEAD	ELMBRIDGE	206	1176680	███████████████████████▌
+LONDON	CITY OF WESTMINSTER	12577	1108221	██████████████████████▏
+LONDON	KENSINGTON AND CHELSEA	8728	1094496	█████████████████████▉
+HYTHE	FOLKESTONE AND HYTHE	130	1023980	████████████████████▍
+CHALFONT ST GILES	CHILTERN	113	835754	████████████████▋
+AMERSHAM	BUCKINGHAMSHIRE	113	799596	███████████████▉
+VIRGINIA WATER	RUNNYMEDE	356	789301	███████████████▊
+BARNET	ENFIELD	282	740514	██████████████▊
+NORTHWOOD	THREE RIVERS	184	731609	██████████████▋
+```
+
+:::tip
+When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](../../quick-start.mdx) for more details.
+:::
+
 
 ## Usage {#usage}
+
+By default `clickhouse-local` has access to data of a ClickHouse server on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
 
 Basic usage (Linux):
 
@@ -24,7 +164,9 @@ Basic usage (Mac):
 $ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
-Also supported on Windows through WSL2.
+:::note
+`clickhouse-local` is also supported on Windows through WSL2.
+:::
 
 Arguments:
 

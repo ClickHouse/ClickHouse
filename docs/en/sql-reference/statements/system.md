@@ -114,11 +114,11 @@ This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper. Note that `SYSTEM RELOAD CONFIG` does not reload `USER` configuration stored in ZooKeeper, it only reloads `USER` configuration that is stored in `users.xml`.  To reload all `USER` config use `SYSTEM RELOAD USERS`
 
 ## RELOAD USERS
 
-Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. Note that `SYSTEM RELOAD CONFIG` will only reload users.xml access storage.
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. 
 
 ## SHUTDOWN
 
