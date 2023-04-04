@@ -49,6 +49,13 @@ public:
 
     static AtomicFormula pushNotIntoFunction(const AtomicFormula & atom, const ContextPtr & context);
 
+    template <typename F>
+    void iterateGroups(F func) const
+    {
+        for (const auto & group : statements)
+            func(group);
+    }
+
     explicit CNF(AndGroup statements_);
 
     static std::optional<CNF> tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);

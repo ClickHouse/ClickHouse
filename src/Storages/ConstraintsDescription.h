@@ -63,12 +63,14 @@ public:
     public:
         const QueryTreeNodes & getConstraints() const;
         const std::vector<std::vector<Analyzer::CNF::AtomicFormula>> & getConstraintData() const;
+        const std::vector<Analyzer::CNF::AtomicFormula> & getAtomicConstraintData() const;
         std::optional<AtomIds> getAtomIds(const QueryTreeNodePtrWithHash & node_with_hash) const;
         std::vector<Analyzer::CNF::AtomicFormula> getAtomsById(const AtomIds & ids) const;
         const ComparisonGraph<QueryTreeNodePtr> & getGraph() const;
     private:
         QueryTreeNodes constraints;
         std::vector<std::vector<Analyzer::CNF::AtomicFormula>> cnf_constraints;
+        std::vector<Analyzer::CNF::AtomicFormula> atomic_constraints_data;
         QueryTreeNodePtrWithHashMap<AtomIds> query_node_to_atom_ids;
         std::unique_ptr<ComparisonGraph<QueryTreeNodePtr>> graph;
 

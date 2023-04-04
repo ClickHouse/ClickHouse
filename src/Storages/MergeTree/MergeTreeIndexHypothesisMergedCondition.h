@@ -12,29 +12,17 @@ class MergeTreeIndexhypothesisMergedCondition : public IMergeTreeIndexMergedCond
 {
 public:
     MergeTreeIndexhypothesisMergedCondition(
-        const SelectQueryInfo & query, const ConstraintsDescription & constraints, size_t granularity_);
+        const SelectQueryInfo & query_info, const ConstraintsDescription & constraints, size_t granularity_, ContextPtr context);
 
     void addIndex(const MergeTreeIndexPtr & index) override;
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const override;
 
+    ~MergeTreeIndexhypothesisMergedCondition() override;
+
+    class IIndexImpl;
 private:
-    void addConstraints(const ConstraintsDescription & constraints_description);
-    std::unique_ptr<ComparisonGraph<ASTPtr>> buildGraph(const std::vector<bool> & values) const;
-    const ComparisonGraph<ASTPtr> * getGraph(const std::vector<bool> & values) const;
-
-    ASTPtr expression_ast;
-    std::unique_ptr<CNFQuery> expression_cnf;
-
-    /// Part analysis can be done in parallel.
-    /// So, we have shared answer and graph cache.
-    mutable std::mutex cache_mutex;
-    mutable std::unordered_map<std::vector<bool>, std::unique_ptr<ComparisonGraph<ASTPtr>>> graph_cache;
-    mutable std::unordered_map<std::vector<bool>, bool> answer_cache;
-
-    std::vector<std::vector<ASTPtr>> index_to_compare_atomic_hypotheses;
-    std::vector<std::vector<CNFQuery::OrGroup>> index_to_atomic_hypotheses;
-    ASTs atomic_constraints;
+    std::unique_ptr<IIndexImpl> impl{nullptr};
 };
 
 }
