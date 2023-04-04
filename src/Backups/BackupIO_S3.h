@@ -7,6 +7,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3Settings.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -52,7 +53,7 @@ public:
     void removeFiles(const Strings & file_names) override;
 
     DataSourceDescription getDataSourceDescription() const override;
-    bool supportNativeCopy(DataSourceDescription data_source_description, bool has_throttling) const override;
+    bool supportNativeCopy(DataSourceDescription data_source_description) const override;
     void copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name) override;
 
 private:
@@ -76,7 +77,6 @@ private:
 
     S3::URI s3_uri;
     std::shared_ptr<S3::Client> client;
-    ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
     Poco::Logger * log;
     std::optional<bool> supports_batch_delete;

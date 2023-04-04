@@ -161,9 +161,9 @@ void BackupReaderS3::copyFileToDisk(const String & file_name, size_t size, DiskP
 
 BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
-    : s3_uri(s3_uri_)
+    : IBackupWriter(context_)
+    , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
-    , read_settings(context_->getBackupReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
     , log(&Poco::Logger::get("BackupWriterS3"))
 {
@@ -176,7 +176,7 @@ DataSourceDescription BackupWriterS3::getDataSourceDescription() const
     return DataSourceDescription{DataSourceType::S3, s3_uri.endpoint, false, false};
 }
 
-bool BackupWriterS3::supportNativeCopy(DataSourceDescription data_source_description, bool /* has_throttling */) const
+bool BackupWriterS3::supportNativeCopy(DataSourceDescription data_source_description) const
 {
     return getDataSourceDescription() == data_source_description;
 }

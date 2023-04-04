@@ -109,7 +109,6 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    const bool has_throttler;
     const String backup_name_for_logging;
     const bool use_archive;
     const ArchiveParams archive_params;
