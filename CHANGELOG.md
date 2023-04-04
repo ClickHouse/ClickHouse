@@ -140,7 +140,7 @@
 * Upgrade Intel QPL from v0.3.0 to v1.0.0 2. Build libaccel-config and link it statically to QPL library instead of dynamically. [#45809](https://github.com/ClickHouse/ClickHouse/pull/45809) ([jasperzhu](https://github.com/jinjunzh)).
 
 
-#### Bug Fix (user-visible misbehavior in official stable or prestable release)
+#### Bug Fix (user-visible misbehavior in official stable release)
 
 * Flush data exactly by `rabbitmq_flush_interval_ms` or by `rabbitmq_max_block_size` in `StorageRabbitMQ`. Closes [#42389](https://github.com/ClickHouse/ClickHouse/issues/42389). Closes [#45160](https://github.com/ClickHouse/ClickHouse/issues/45160). [#44404](https://github.com/ClickHouse/ClickHouse/pull/44404) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Use PODArray to render in sparkBar function, so we can control the memory usage. Close [#44467](https://github.com/ClickHouse/ClickHouse/issues/44467). [#44489](https://github.com/ClickHouse/ClickHouse/pull/44489) ([Duc Canh Le](https://github.com/canhld94)).

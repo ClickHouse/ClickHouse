@@ -48,10 +48,9 @@ void backupUserDefinedSQLObjects(
     }
 
     String replication_id = loader.getReplicationID();
-    String current_host_id = backup_entries_collector.getBackupSettings().host_id;
 
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
-    backup_coordination->addReplicatedSQLObjectsDir(replication_id, object_type, current_host_id, data_path_in_backup);
+    backup_coordination->addReplicatedSQLObjectsDir(replication_id, object_type, data_path_in_backup);
 
     // On the stage of running post tasks, all directories will already be added to the backup coordination object.
     // They will only be returned for one of the hosts below, for the rest an empty list.
@@ -60,11 +59,10 @@ void backupUserDefinedSQLObjects(
         [backup_entries = std::move(backup_entries),
          replication_id = std::move(replication_id),
          object_type,
-         current_host_id = std::move(current_host_id),
          &backup_entries_collector,
          backup_coordination]
         {
-            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(replication_id, object_type, current_host_id);
+            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(replication_id, object_type);
 
             for (const auto & dir : dirs)
             {

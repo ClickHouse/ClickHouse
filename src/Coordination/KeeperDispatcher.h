@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -103,6 +104,11 @@ private:
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
+    std::mutex read_request_queue_mutex;
+
+    /// queue of read requests that can be processed after a request with specific session ID and XID is committed
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorage::RequestsForSessions>> read_request_queue;
+
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 

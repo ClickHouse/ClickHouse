@@ -1148,9 +1148,10 @@ Result:
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTime
+## parseDateTime {#type_conversion_functions-parseDateTime}
 
 Converts a [String](/docs/en/sql-reference/data-types/string.md) to [DateTime](/docs/en/sql-reference/data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+
 This function is the opposite operation of function [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime).
 
 **Syntax**
@@ -1163,6 +1164,7 @@ parseDateTime(str, format[, timezone])
 
 -   `str` — the String to be parsed
 -   `format` — the format string
+-   `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
@@ -1186,9 +1188,20 @@ SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 Alias: `TO_TIMESTAMP`.
 
-## parseDateTimeInJodaSyntax
+## parseDateTimeOrZero
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeOrNull
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+Alias: `str_to_date`.
+
+## parseDateTimeInJodaSyntax {#type_conversion_functions-parseDateTimeInJodaSyntax}
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
+
 This function is the opposite operation of function [formatDateTimeInJodaSyntax](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTimeInJodaSyntax).
 
 **Syntax**
@@ -1201,6 +1214,7 @@ parseDateTimeInJodaSyntax(str, format[, timezone])
 
 -   `str` — the String to be parsed
 -   `format` — the format string
+-   `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
@@ -1222,6 +1236,14 @@ SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', '
 │                                                                     2023-02-24 14:53:31 │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## parseDateTimeInJodaSyntaxOrZero
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeInJodaSyntaxOrNull
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
