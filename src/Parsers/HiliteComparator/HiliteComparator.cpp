@@ -5,9 +5,9 @@ namespace HiliteComparator
 
 void consume_hilites(const char * & ptr, Hilite * last_hilite)
 {
-    bool changed_hilite = false;
-    do
+    while (true)
     {
+        bool changed_hilite = false;
         for (Hilite hilite : HILITES)
         {
             if (std::string_view(ptr).starts_with(hilite))
@@ -18,7 +18,9 @@ void consume_hilites(const char * & ptr, Hilite * last_hilite)
                     *last_hilite = hilite;
             }
         }
-    } while (changed_hilite);
+        if (!changed_hilite)
+            break;
+    }
 }
 
 bool are_equal_with_hilites_removed(std::string_view left, std::string_view right)
