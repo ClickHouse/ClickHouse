@@ -26,6 +26,15 @@ int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
 /// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
 int CertificateReloader::setCertificate(SSL * ssl)
 {
+
+    auto letsencrypt_configuration = let_encrypt_configuration_data.get();
+    LOG_ERROR(log, "BBBBBBBBBBBBBBBBB\n\n\n\n\nBBBBBBBBBBBBBBBBB");
+    if (letsencrypt_configuration){
+        if (letsencrypt_configuration.is_issuing_enabled){
+            LOG_ERROR(log, "AAAAAAAAAAAAAAAA\n\n\n\n\nAAAAAAAAAAAAAAAA");
+        }
+    }
+
     auto current = data.get();
     if (!current)
         return -1;
@@ -63,6 +72,9 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
 
     std::string new_cert_path = config.getString("openSSL.server.certificateFile", "");
     std::string new_key_path = config.getString("openSSL.server.privateKeyFile", "");
+
+    let_encrypt_configuration_data.is_issuing_enabled = config.getBool("LetsEncrypt.enableAutomaticIssue", false);
+    let_encrypt_configuration_data.reissue_days_before = config.getInt("LetsEncrypt.reissueDaysBefore", 2);
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required

@@ -75,8 +75,18 @@ private:
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };
 
+    struct LetsEncryptConfigurationData
+    {
+        bool is_issuing_enabled;
+        int reissue_days_before;
+    };
+
     MultiVersion<Data> data;
     bool init_was_not_made = true;
+
+    MultiVersion<LetsEncryptConfigurationData> let_encrypt_configuration_data;
+
+    bool ShouldReissueCertificates();
 };
 
 }
