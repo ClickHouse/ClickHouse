@@ -25,11 +25,12 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
     , current_host(current_host_)
     , current_host_index(BackupCoordinationRemote::findCurrentHostIndex(all_hosts, current_host))
     , is_internal(is_internal_)
+    , log(&Poco::Logger::get("RestoreCoordinationRemote"))
 {
     createRootNodes();
 
     stage_sync.emplace(
-        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("RestoreCoordination"));
+        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, log);
 }
 
 RestoreCoordinationRemote::~RestoreCoordinationRemote()
@@ -197,7 +198,10 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
 
             const auto status = zk->get(root_zookeeper_path + "/" + existing_restore_path + "/stage");
             if (status != Stage::COMPLETED)
+            {
+                LOG_WARNING(log, "Found a concurrent restore: {}, current restore: {}", existing_restore_uuid, toString(restore_uuid));
                 return true;
+            }
         }
 
         zk->createIfNotExists(path, "");
