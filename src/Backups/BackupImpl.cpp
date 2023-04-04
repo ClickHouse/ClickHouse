@@ -81,8 +81,7 @@ BackupImpl::BackupImpl(
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
     const ContextPtr & context_)
-    : has_throttler(static_cast<bool>(context_->getBackupsThrottler()))
-    , backup_name_for_logging(backup_name_for_logging_)
+    : backup_name_for_logging(backup_name_for_logging_)
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
@@ -105,8 +104,7 @@ BackupImpl::BackupImpl(
     const std::shared_ptr<IBackupCoordination> & coordination_,
     const std::optional<UUID> & backup_uuid_,
     bool deduplicate_files_)
-    : has_throttler(static_cast<bool>(context_->getBackupsThrottler()))
-    , backup_name_for_logging(backup_name_for_logging_)
+    : backup_name_for_logging(backup_name_for_logging_)
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
@@ -836,7 +834,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     /// We need to copy whole file without archive, we can do it faster
     /// if source and destination are compatible
-    if (!use_archive && writer->supportNativeCopy(reader_description, has_throttler))
+    if (!use_archive && writer->supportNativeCopy(reader_description))
     {
         /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", info.data_file_name);

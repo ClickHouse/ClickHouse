@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <Backups/BackupIO.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -30,7 +31,7 @@ private:
 class BackupWriterDisk : public IBackupWriter
 {
 public:
-    BackupWriterDisk(const DiskPtr & disk_, const String & path_);
+    BackupWriterDisk(const DiskPtr & disk_, const String & path_, const ContextPtr & context_);
     ~BackupWriterDisk() override;
 
     bool fileExists(const String & file_name) override;
@@ -41,7 +42,7 @@ public:
     void removeFiles(const Strings & file_names) override;
     DataSourceDescription getDataSourceDescription() const override;
 
-    bool supportNativeCopy(DataSourceDescription data_source_description, bool has_throttling) const override;
+    bool supportNativeCopy(DataSourceDescription data_source_description) const override;
     void copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name) override;
 
 private:
