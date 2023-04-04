@@ -251,7 +251,7 @@ FillingTransform::FillingTransform(
             interpolate_column_positions.push_back(header_.getPositionByName(name));
 }
 
-/// prepair() is overrididen to cover cases when we need to generate rows for no input (so chunk in transform() will have no rows)
+/// prepare() is overrididen to cover cases when we need to generate rows for no input (so chunk in transform() will have no rows)
 /// (1) when all data are processed and WITH FILL .. TO is provided, we may need to generate suffix
 /// (2) for empty result set when WITH FILL FROM .. TO is provided (see PR #30888) (first and generate_suffix are both true)
 IProcessor::Status FillingTransform::prepare()
