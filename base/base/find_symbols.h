@@ -287,11 +287,12 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 {
     const char * pos = begin;
 
+    const auto num_chars = symbols.str.size();
+
 #if defined(__SSE4_2__)
     constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
 
     const __m128i set = symbols.simd_vector;
-    const auto num_chars = symbols.str.size();
 
     for (; pos + 15 < end; pos += 16)
     {
