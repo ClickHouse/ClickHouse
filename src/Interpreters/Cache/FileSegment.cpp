@@ -429,6 +429,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
     {
         std::unique_lock segment_lock(mutex);
 
+
         assertNotDetachedUnlocked(segment_lock);
         assertIsDownloaderUnlocked("reserve", segment_lock);
 
