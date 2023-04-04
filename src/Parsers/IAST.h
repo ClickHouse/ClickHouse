@@ -191,20 +191,12 @@ public:
     struct FormatSettings
     {
         bool hilite = false;
-        bool one_line;
+        bool one_line = true;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
-        explicit FormatSettings(bool one_line_, bool always_quote_identifiers_ = false,
-                       IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks, bool hilite_ = false,
-                       bool show_secrets_ = true)
-            : hilite(hilite_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
-            identifier_quoting_style(identifier_quoting_style_), show_secrets(show_secrets_) {}
-
-        FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
-            : hilite(other.hilite), one_line(other.one_line), always_quote_identifiers(always_quote_identifiers_),
-            identifier_quoting_style(other.identifier_quoting_style), show_secrets(other.show_secrets) {}
+        FormatSettings copyWithAlwaysQuoteIdentifiers() const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.

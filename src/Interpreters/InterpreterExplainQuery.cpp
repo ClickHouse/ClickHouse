@@ -381,7 +381,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
+            ast.getExplainedQuery()->format(buf, IAST::FormatSettings{.one_line = settings.oneline});
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -419,7 +419,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 buf << '\n';
                 buf << '\n';
-                query_tree->toAST()->format(buf, IAST::FormatSettings(false));
+                query_tree->toAST()->format(buf, IAST::FormatSettings{.one_line = false});
             }
 
             break;

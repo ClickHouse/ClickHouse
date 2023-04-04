@@ -87,8 +87,7 @@ static String formattedAST(const ASTPtr & ast)
         return {};
 
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(true, true);
-    ast->format(buf, ast_format_settings);
+    ast->format(buf, IAST::FormatSettings{.always_quote_identifiers = true});
     return buf.str();
 }
 

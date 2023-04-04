@@ -523,7 +523,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         else
         {
             writeCString("(", ostr);
-            window_definition->format(ostr, FormatSettings{true});
+            window_definition->format(ostr, FormatSettings());
             writeCString(")", ostr);
         }
     }

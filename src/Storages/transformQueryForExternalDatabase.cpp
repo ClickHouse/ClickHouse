@@ -328,7 +328,10 @@ String transformQueryForExternalDatabase(
     dropAliases(select_ptr);
 
     WriteBufferFromOwnString out;
-    IAST::FormatSettings settings(true, identifier_quoting_style != IdentifierQuotingStyle::None, identifier_quoting_style);
+    IAST::FormatSettings settings{
+            .always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None,
+          .identifier_quoting_style = identifier_quoting_style
+    };
 
     select->format(out, settings);
 

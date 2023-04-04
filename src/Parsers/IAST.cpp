@@ -162,7 +162,14 @@ String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
 
-    FormatSettings settings(one_line, false, IdentifierQuotingStyle::Backticks, false, false);
+    FormatSettings settings{
+            .hilite = false,
+            .one_line = one_line,
+            .always_quote_identifiers = false,
+            .identifier_quoting_style = IdentifierQuotingStyle::Backticks,
+            .show_secrets = false
+    };
+
     format(buf, settings);
 
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
@@ -198,6 +205,13 @@ String IAST::getColumnNameWithoutAlias() const
     WriteBufferFromOwnString write_buffer;
     appendColumnNameWithoutAlias(write_buffer);
     return write_buffer.str();
+}
+
+IAST::FormatSettings IAST::FormatSettings::copyWithAlwaysQuoteIdentifiers() const
+{
+    IAST::FormatSettings copy;
+    copy.always_quote_identifiers = true;
+    return copy;
 }
 
 const char * IAST::FormattingBuffer::hilite_keyword      = "\033[1m";

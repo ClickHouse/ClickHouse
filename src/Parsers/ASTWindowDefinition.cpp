@@ -133,8 +133,7 @@ void ASTWindowDefinition::formatImpl(FormattingBuffer out) const
 std::string ASTWindowDefinition::getDefaultWindowName() const
 {
     WriteBufferFromOwnString ostr;
-    FormatSettings settings(true);
-    format(ostr, settings);
+    format(ostr, FormatSettings());
     return ostr.str();
 }
 
