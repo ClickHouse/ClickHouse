@@ -4169,7 +4169,7 @@ class ClickHouseInstance:
     def _create_odbc_config_file(self) -> None:
         with open(self.odbc_ini_path.split(":")[0], "w") as f:
             for driver_setup in self.odbc_drivers.values():
-                f.write(f"[{driver_setup['DNS']}]\n")
+                f.write(f"[{driver_setup['DSN']}]\n")
                 for key, value in driver_setup.items():
                     if key != "DSN":
                         f.write(f"{key}={value}\n")
