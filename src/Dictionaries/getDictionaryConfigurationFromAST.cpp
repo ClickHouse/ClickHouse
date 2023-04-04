@@ -381,21 +381,21 @@ void buildPrimaryKeyConfiguration(
 
         auto key_type = DataTypeFactory::instance().tryGet(dict_attr->type);
 
-        auto check_sample_dict_key_is_correct = context->getSettings().check_sample_dict_key_is_correct;
+        auto check_dictionary_primary_key = context->getSettingsRef().check_dictionary_primary_key;
 
         if (dict_settings)
         {
-            if (const auto * check_sample_dict_key_is_correct_change = dict_settings->changes.tryGet("check_sample_dict_key_is_correct"))
+            if (const auto * check_dictionary_primary_key_change = dict_settings->changes.tryGet("check_dictionary_primary_key"))
             {
-                check_sample_dict_key_is_correct = check_sample_dict_key_is_correct_change->get<bool>();
+                check_dictionary_primary_key = check_dictionary_primary_key_change->get<bool>();
             }
         }
 
-        if (check_sample_dict_key_is_correct && !WhichDataType(key_type).isNativeUInt())
+        if (check_dictionary_primary_key && !WhichDataType(key_type).isNativeUInt())
         {
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
                 "Invalid Primary key type for simple dictionary: {}. Must be native unsigned integer type. "
-                "To avoid checking it, please set check_sample_dict_key_is_correct=false",
+                "To avoid checking it, please set check_dictionary_primary_key=false",
                 dict_attr->name);
         }
 

@@ -11,7 +11,7 @@ CREATE TABLE test_sample_key_local
 ENGINE = Memory;
 
 
--- create DICTIONARY with default settings check_sample_dict_key_is_correct = 1
+-- create DICTIONARY with default settings check_dictionary_primary_key = 1
 CREATE DICTIONARY test_sample_key_dict1
 (
     `id` Int128,
@@ -23,7 +23,7 @@ LIFETIME(MIN 0 MAX 300)
 LAYOUT(HASHED()); -- { serverError 489 }
 
 
--- create DICTIONARY with settings check_sample_dict_key_is_correct = 0
+-- create DICTIONARY with settings check_dictionary_primary_key = 0
 CREATE DICTIONARY test_sample_key_dict2
 (
     `id` Int128,
@@ -33,7 +33,7 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'test_sample_key_local'))
 LIFETIME(MIN 0 MAX 300)
 LAYOUT(HASHED())
-SETTINGS(check_sample_dict_key_is_correct = 0);
+SETTINGS(check_dictionary_primary_key = 0);
 
 
 DROP DICTIONARY IF EXISTS test_sample_key_dict1;
