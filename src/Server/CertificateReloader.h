@@ -90,6 +90,8 @@ public:
     {
         bool is_issuing_enabled;
         int reissue_days_before;
+
+        LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_days_before_);
     };
 
     MultiVersion<Data> data;
