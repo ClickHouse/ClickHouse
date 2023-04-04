@@ -240,12 +240,13 @@ def test_checkpoint(started_cluster):
     assert len(files) == 53 + 1 + 5 * 2 + 1 + 1
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 20
 
-    assert instance.query(
-        f"SELECT * FROM {TABLE_NAME} ORDER BY 1"
-    ).strip() == instance.query(
-        "SELECT number, toString(number + 1) FROM numbers(5) "
-        "UNION ALL SELECT number, toString(number + 1) FROM numbers(10, 15) ORDER BY 1"
-    ).strip()
+    assert (
+        instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1").strip()
+        == instance.query(
+            "SELECT number, toString(number + 1) FROM numbers(5) "
+            "UNION ALL SELECT number, toString(number + 1) FROM numbers(10, 15) ORDER BY 1"
+        ).strip()
+    )
 
 
 def test_multiple_log_files(started_cluster):
