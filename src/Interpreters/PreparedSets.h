@@ -138,7 +138,6 @@ private:
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 
-
 FutureSet makeReadyFutureSet(SetPtr set);
 
 }
