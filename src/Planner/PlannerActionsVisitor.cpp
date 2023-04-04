@@ -633,7 +633,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     column.type = std::make_shared<DataTypeSet>();
 
     bool set_is_created = planner_set.getSet()->isCreated();
-    auto column_set = ColumnSet::create(1, planner_set.getSet());
+    auto column_set = ColumnSet::create(1, FutureSet{});//planner_set.getSet());
 
     if (set_is_created)
         column.column = ColumnConst::create(std::move(column_set), 1);

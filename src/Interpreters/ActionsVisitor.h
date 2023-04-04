@@ -126,7 +126,6 @@ public:
         size_t subquery_depth;
         const NamesAndTypesList & source_columns;
         PreparedSetsPtr prepared_sets;
-        PreparedSetsCachePtr prepared_sets_cache;
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;
@@ -220,7 +219,7 @@ private:
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
     static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
-    static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static FutureSet makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
     static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
     static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };

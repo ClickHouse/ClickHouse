@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <memory>
 #include <Core/Block.h>
 
@@ -56,6 +57,8 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/PreparedSets.h"
+#include "QueryPipeline/SizeLimits.h"
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -450,7 +453,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets->get(set_key))
+    if (prepared_sets->getFuture(set_key).valid())
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
@@ -465,7 +468,8 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         auto io = interpreter_subquery->execute();
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
-        SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
+        SizeLimits size_limits_for_key_condition_sets(0, 50*1000*1000, OverflowMode::BREAK);
+        SetPtr set = std::make_shared<Set>(size_limits_for_key_condition_sets, true, getContext()->getSettingsRef().transform_null_in);
         set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
         Block block;
@@ -484,9 +488,28 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         return set;
     };
 
-    auto set_cache = getContext()->getPreparedSetsCache();
+    SetPtr set;
 
-    auto set = set_cache ? set_cache->findOrBuild(set_key, build_set) : build_set();
+    auto set_cache = getContext()->getPreparedSetsCache();
+    if (set_cache)
+    {
+        auto from_cache = set_cache->findOrPromiseToBuild(set_key);
+        if (from_cache.index() == 0)
+        {
+            LOG_TRACE(getLogger(), "Building set, key: {}:{}", set_key.ast_hash.first, set_key.ast_hash.second);
+            set = build_set();
+            std::get<0>(from_cache).set_value(set);
+        }
+        else
+        {
+            LOG_TRACE(getLogger(), "Waiting for set, key: {}:{}", set_key.ast_hash.first, set_key.ast_hash.second);
+            set = std::get<1>(from_cache).get();
+        }
+    }
+    else
+    {
+        set = build_set();
+    }
 
     if (!set)
         return;

@@ -2,19 +2,60 @@
 
 DROP TABLE IF EXISTS 02581_trips;
 
-CREATE TABLE 02581_trips(id UInt32, description String) ENGINE=MergeTree ORDER BY id;
+CREATE TABLE 02581_trips(id UInt32, description String, id2 UInt32, PRIMARY KEY id) ENGINE=MergeTree ORDER BY id;
 
 -- Make multiple parts
-INSERT INTO 02581_trips SELECT number, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+100000, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+200000, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+300000, '' FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number, '', number FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+100000, '', number FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+200000, '', number FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+300000, '', number FROM numbers(10000);
 
-SELECT count() from 02581_trips;
+SELECT count() from 02581_trips WHERE description = '';
+
 
 SELECT name FROM system.parts WHERE database=currentDatabase() AND table = '02581_trips' AND active ORDER BY name;
 
--- Run mutation with a 'IN big subquery'
-ALTER TABLE 02581_trips UPDATE description='' WHERE id IN (SELECT (number+5)::UInt32 FROM numbers(100000000)) SETTINGS mutations_sync=2;
+-- Run mutation with `id` a 'IN big subquery'
+ALTER TABLE 02581_trips UPDATE description='a' WHERE id IN (SELECT (number*10)::UInt32 FROM numbers(200000000)) SETTINGS mutations_sync=2;
+SELECT count() from 02581_trips WHERE description = '';
 
+ALTER TABLE 02581_trips UPDATE description='a' WHERE id IN (SELECT (number*10 + 1)::UInt32 FROM numbers(200000000)) SETTINGS mutations_sync=2, max_rows_in_set=1000;
+SELECT count() from 02581_trips WHERE description = '';
+
+-- Run mutation with func(`id`) IN big subquery
+ALTER TABLE 02581_trips UPDATE description='b' WHERE id::UInt64 IN (SELECT (number*10 + 2)::UInt32 FROM numbers(200000000)) SETTINGS mutations_sync=2;
+SELECT count() from 02581_trips WHERE description = '';
+
+-- Run mutation with non-PK `id2` IN big subquery
+ALTER TABLE 02581_trips UPDATE description='c' WHERE id2 IN (SELECT (number*10 + 3)::UInt32 FROM numbers(200000000)) SETTINGS mutations_sync=2;
+SELECT count() from 02581_trips WHERE description = '';
+
+-- Run mutation with PK and non-PK IN big subquery
+ALTER TABLE 02581_trips UPDATE description='c'
+WHERE
+    (id IN (SELECT (number*10 + 4)::UInt32 FROM numbers(200000000))) OR
+    (id2 IN (SELECT (number*10 + 4)::UInt32 FROM numbers(200000000)))
+SETTINGS mutations_sync=2;
+SELECT count() from 02581_trips WHERE description = '';
+
+-- Run mutation with PK and non-PK IN big subquery
+ALTER TABLE 02581_trips UPDATE description='c'
+WHERE
+    (id::UInt64 IN (SELECT (number*10 + 5)::UInt32 FROM numbers(200000000))) OR
+    (id2::UInt64 IN (SELECT (number*10 + 5)::UInt32 FROM numbers(200000000)))
+SETTINGS mutations_sync=2;
+SELECT count() from 02581_trips WHERE description = '';
+
+
+
+CREATE TABLE 02581_set (id UInt32) ENGINE = Set;
+
+INSERT INTO 02581_set SELECT number*10+6 FROM numbers(200000000);
+
+-- Run mutation with non-PK `id2` IN big subquery
+ALTER TABLE 02581_trips UPDATE description='d' WHERE id IN 02581_set SETTINGS mutations_sync=2;
+SELECT count() from 02581_trips WHERE description = '';
+
+
+DROP TABLE 02581_set;
 DROP TABLE 02581_trips;
