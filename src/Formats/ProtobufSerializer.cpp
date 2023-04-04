@@ -3453,13 +3453,33 @@ namespace
                     const auto & tuple_data_type = assert_cast<const DataTypeTuple &>(*data_type);
                     size_t size_of_tuple = tuple_data_type.getElements().size();
 
-                    if (tuple_data_type.haveExplicitNames() && field_descriptor.message_type())
+                    if (field_descriptor.message_type())
                     {
+                        bool have_explicit_names = tuple_data_type.haveExplicitNames();
+                        Names element_names;
+                        if (have_explicit_names)
+                        {
+                            element_names = tuple_data_type.getElementNames();
+                        }
+                        else
+                        {
+                            /// Match unnamed Tuple elements and Message fields by position.
+                            size_t field_count = field_descriptor.message_type()->field_count();
+                            if (field_count != tuple_data_type.getElements().size())
+                                throw Exception(
+                                    ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
+                                    "The number of fields in Protobuf message ({}) is not equal to the number of elements in unnamed Tuple ({})",
+                                    field_count,
+                                    tuple_data_type.getElements().size());
+                            for (size_t i = 0; i != field_count; ++i)
+                                element_names.push_back(field_descriptor.message_type()->field(static_cast<int>(i))->name());
+                        }
+
                         /// Try to serialize as a nested message.
                         std::vector<size_t> used_column_indices;
                         auto message_serializer = buildMessageSerializerImpl(
                             size_of_tuple,
-                            tuple_data_type.getElementNames().data(),
+                            element_names.data(),
                             tuple_data_type.getElements().data(),
                             *field_descriptor.message_type(),
                             /* with_length_delimiter = */ false,
