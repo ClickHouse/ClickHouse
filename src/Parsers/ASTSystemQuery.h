@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
+#include <Parsers/SyncReplicaMode.h>
 
 #include "config.h"
 
@@ -108,7 +109,7 @@ public:
 
     String schema_cache_storage;
 
-    bool strict_sync = false;
+    SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     String getID(char) const override { return "SYSTEM query"; }
 

@@ -175,8 +175,11 @@ void ASTSystemQuery::formatImpl(FormattingBuffer out) const
         else if (!disk.empty())
             print_identifier(disk);
 
-        if (strict_sync)
-            out.writeKeyword(" STRICT");
+        if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+        {
+            out.ostr << ' ';
+            out.writeKeyword(magic_enum::enum_name(sync_replica_mode));
+        }
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)
     {
