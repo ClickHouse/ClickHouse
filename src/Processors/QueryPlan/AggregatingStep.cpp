@@ -21,6 +21,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/Optimizations/dataHints.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
@@ -47,7 +48,7 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
             .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
-            .preserves_data_hints = false,
+            .preserves_data_hints = true,
         },
         {
             .preserves_number_of_rows = false,
@@ -130,6 +131,8 @@ AggregatingStep::AggregatingStep(
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
+    hints = input_streams.front().hints;
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
     if (memoryBoundMergingWillBeUsed())
     {
         output_stream->sort_description = group_by_sort_description;
@@ -450,62 +453,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    std::optional<std::string> changed_key;
-    std::optional<DataTypePtr> key_data_type;
-    if (transform_params->params.keys.size() == 1)
-    {
-        const auto & key = transform_params->params.keys.front();
-        const auto & input_stream = input_streams.front();
-        const auto & hints = input_stream.hints;
-        if (hints.contains(key) && hints.at(key).isRangeLengthLessOrEqualThan(256))
-        {
-            changed_key = key;
-            auto dag = std::make_shared<ActionsDAG>(input_stream.header.getColumnsWithTypeAndName());
-            const ActionsDAG::Node * key_column_node = dag->tryFindInOutputs(key);
-            key_data_type = key_column_node->result_type;
-            ColumnWithTypeAndName const_column;
-            if (hints.at(key).lower_boundary->getTypeName() == "Int64")
-                const_column.type = std::make_shared<DataTypeInt64>();
-            else
-                const_column.type = std::make_shared<DataTypeUInt64>();
-            const_column.column = const_column.type->createColumnConst(1, hints.at(key).lower_boundary.value());
-            const_column.name = "__minus_value";
-            const auto * hint_node = &dag->addColumn(const_column);
-
-            ActionsDAG::NodeRawConstPtrs children = {key_column_node, hint_node};
-            auto minus_function = FunctionFactory::instance().get("minus", Context::getGlobalContextInstance());
-            const auto & added_function = dag->addFunction(minus_function, children, "__hinted_key_uncasted");
-            const auto & added_cast = dag->addCast(added_function, std::make_shared<DataTypeUInt8>(), "__hinted_key");
-            dag->addOrReplaceInOutputs(added_cast);
-
-            auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ExpressionTransform>(header, expression);
-            });
-            Aggregator::Params new_params
-                {
-                    {"__hinted_key"},
-                    transform_params->params.aggregates,
-                    transform_params->params.overflow_row,
-                    transform_params->params.max_rows_to_group_by,
-                    transform_params->params.group_by_overflow_mode,
-                    transform_params->params.group_by_two_level_threshold,
-                    transform_params->params.group_by_two_level_threshold_bytes,
-                    transform_params->params.max_bytes_before_external_group_by,
-                    transform_params->params.empty_result_for_aggregation_by_empty_set,
-                    transform_params->params.tmp_data_scope,
-                    transform_params->params.max_threads,
-                    transform_params->params.min_free_disk_space,
-                    transform_params->params.compile_aggregate_expressions,
-                    transform_params->params.min_count_to_compile_aggregate_expression,
-                    transform_params->params.max_block_size,
-                    transform_params->params.enable_prefetch,
-                    transform_params->params.only_merge,
-                    transform_params->params.stats_collecting_params};
-            transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getHeader(), std::move(new_params), final);
-        }
-    }
+    const auto & [changed_keys, changed_data_types] = optimizeAggregatingStepWithDataHints(
+            transform_params, pipeline, hints, input_streams.front().header.getColumnsWithTypeAndName(), settings, final);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
@@ -545,33 +494,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         aggregating = collector.detachProcessors(0);
     }
 
-    if (changed_key.has_value())
-    {
-        const auto & key = changed_key.value();
-        const auto & input_stream = input_streams.front();
-        const auto & hints = input_stream.hints;
-
-        auto dag = std::make_shared<ActionsDAG>(pipeline.getHeader().getColumnsWithTypeAndName());
-        const auto * hinted_key_casted_column_node = &dag->addCast(dag->findInOutputs("__hinted_key"), key_data_type.value(), key);
-        ColumnWithTypeAndName const_column;
-        if (hints.at(key).lower_boundary->getTypeName() == "Int64")
-            const_column.type = std::make_shared<DataTypeInt64>();
-        else
-            const_column.type = std::make_shared<DataTypeUInt64>();
-        const_column.column = const_column.type->createColumnConst(1, hints.at(key).lower_boundary.value());
-        const_column.name = "__plus_value";
-        const auto * hint_node = &dag->addColumn(const_column);
-
-        ActionsDAG::NodeRawConstPtrs children = {hinted_key_casted_column_node, hint_node};
-        auto plus_function = FunctionFactory::instance().get("plus", Context::getGlobalContextInstance());
-        dag->addOrReplaceInOutputs(dag->addFunction(plus_function, children, key));
-        dag->removeUnusedResult("__hinted_key");
-        auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, expression);
-        });
-    }
+    optimizeAggregatingStepWithDataHintsReturnInitialColumns(pipeline, hints, changed_keys, changed_data_types, settings);
 }
 
 void AggregatingStep::describeActions(FormatSettings & settings) const

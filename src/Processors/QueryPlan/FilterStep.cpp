@@ -52,14 +52,11 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
-    output_stream->hints = input_stream_.hints;
     for (const auto & output_node_ptr : actions_dag->getOutputs())
     {
         const auto & output_node = *output_node_ptr;
         if (output_node.type == ActionsDAG::ActionType::FUNCTION)
-        {
             updateDataHintsWithFilterActionsDAG(output_stream->hints, output_node);
-        }
     }
 }
 

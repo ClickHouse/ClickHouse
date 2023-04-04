@@ -321,6 +321,15 @@ ReadFromMergeTree::ReadFromMergeTree(
         query_info.input_order_info,
         prewhere_info,
         enable_vertical_final);
+
+    /// Build data hints for output stream
+    if (prewhere_info && prewhere_info->prewhere_actions)
+        for (const auto & output_node_ptr : prewhere_info->prewhere_actions->getOutputs())
+        {
+            const auto & output_node = *output_node_ptr;
+            if (output_node.type == ActionsDAG::ActionType::FUNCTION)
+                updateDataHintsWithFilterActionsDAG(output_stream->hints, output_node);
+        }
 }
 
 

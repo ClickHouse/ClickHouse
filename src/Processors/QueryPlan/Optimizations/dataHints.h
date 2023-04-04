@@ -4,6 +4,9 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 #include <Core/Field.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -194,5 +197,22 @@ void intersectDataHints(DataHints & left_hints, const DataHints & right_hints);
 void unionDataHints(DataHints & left_hints, const DataHints & right_hints);
 
 void unionJoinDataHints(DataHints & left_hints, const DataHints & right_hints, const TableJoin & table_join);
+
+void updateDataHintsWithOutputHeaderKeys(DataHints & hints, const Names & keys);
+
+std::pair<Names, DataTypes> optimizeAggregatingStepWithDataHints(
+        std::shared_ptr<AggregatingTransformParams> & transform_params,
+        QueryPipelineBuilder & pipeline,
+        const DataHints & hints,
+        const ColumnsWithTypeAndName & input_header,
+        const BuildQueryPipelineSettings & settings,
+        const bool final);
+
+void optimizeAggregatingStepWithDataHintsReturnInitialColumns(
+    QueryPipelineBuilder & pipeline,
+    const DataHints & hints,
+    const Names & changed_keys,
+    const DataTypes & changed_data_types,
+    const BuildQueryPipelineSettings & settings);
 
 }

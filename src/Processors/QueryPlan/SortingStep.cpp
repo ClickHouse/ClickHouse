@@ -78,6 +78,8 @@ SortingStep::SortingStep(
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
     output_stream->sort_scope = DataStream::SortScope::Global;
+
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 SortingStep::SortingStep(
