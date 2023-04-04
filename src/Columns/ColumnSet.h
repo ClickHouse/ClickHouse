@@ -1,19 +1,15 @@
 #pragma once
 
+#include <Interpreters/PreparedSets.h>
 #include <Columns/IColumnDummy.h>
 #include <Core/Field.h>
-#include "Common/Exception.h"
-#include <chrono>
-#include <future>
-#include <stdexcept>
+
 
 namespace DB
 {
 
 class Set;
-using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
-using FutureSet = std::shared_future<SetPtr>;
 
 
 /** A column containing multiple values in the `IN` section.
@@ -33,7 +29,7 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Set; }
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
-    ConstSetPtr getData() const { if (!data.valid() || data.wait_for(std::chrono::seconds(0)) != std::future_status::ready ) return nullptr; return data.get(); }
+    ConstSetPtr getData() const { if (!data.isReady()) return nullptr; return data.get(); }
 
     // Used only for debugging, making it DUMPABLE
     Field operator[](size_t) const override { return {}; }

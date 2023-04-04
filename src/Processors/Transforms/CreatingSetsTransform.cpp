@@ -70,7 +70,7 @@ void CreatingSetsTransform::startSubquery()
     }
 
     if (subquery.set_in_progress)
-        LOG_TRACE(log, "Creating set, key: {}:{}", subquery.key.ast_hash.first, subquery.key.ast_hash.second);
+        LOG_TRACE(log, "Creating set, key: {}", subquery.key);
     if (subquery.table)
         LOG_TRACE(log, "Filling temporary table.");
 

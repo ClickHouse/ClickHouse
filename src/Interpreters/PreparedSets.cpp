@@ -58,12 +58,12 @@ SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, c
     else
     {
         subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
-        sets[key] = subquery.promise_to_fill_set.get_future();
+        sets[key] = FutureSet(subquery.promise_to_fill_set.get_future());
     }
 
     if (!subquery.set_in_progress)
     {
-        subquery.key = key;
+        subquery.key = toString(key);
         subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
     }
 
@@ -132,8 +132,19 @@ QueryPlanPtr SubqueryForSet::detachSource()
     return res;
 }
 
+bool FutureSet::isReady() const
+{
+    return valid() &&
+        wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
 
-std::variant<std::promise<SetPtr>, FutureSet> PreparedSetsCache::findOrPromiseToBuild(const PreparedSetKey & key)
+bool FutureSet::isCreated() const
+{
+    return isReady() && get() != nullptr && get()->isCreated();
+}
+
+
+std::variant<std::promise<SetPtr>, FutureSet> PreparedSetsCache::findOrPromiseToBuild(const String & key)
 {
 //    auto* log = &Poco::Logger::get("PreparedSetsCache");
 
@@ -167,7 +178,7 @@ FutureSet makeReadyFutureSet(SetPtr set)
 {
     std::promise<SetPtr> promise;
     promise.set_value(set);
-    return promise.get_future();
+    return FutureSet(promise.get_future());
 }
 
 };
