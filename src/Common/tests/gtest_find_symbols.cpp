@@ -137,11 +137,8 @@ TEST(FindSymbols, RunTimeNeedle)
         test_haystack(short_haystack, unfindable_short_needle);
     }
 
-    // Check that nothing matches on big haystack,
-    EXPECT_EQ(find_first_symbols(long_haystack, SearchSymbols("ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz")), long_haystack.data() + long_haystack.size());
-
-    // only 16 bytes of haystack are checked, so nothing is found
-    EXPECT_EQ(find_first_symbols(long_haystack, SearchSymbols("ABCDEFIJKLMNOPQR0helloworld")), long_haystack.data() + long_haystack.size());
+    // Assert big haystack is not accepted and exception is thrown
+    ASSERT_ANY_THROW(find_first_symbols(long_haystack, SearchSymbols("ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz")));
 }
 
 TEST(FindNotSymbols, AllSymbolsPresent)
