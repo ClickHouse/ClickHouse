@@ -2,6 +2,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/HiliteComparator/HiliteComparator.h>
 
+using namespace HiliteComparator;
 
 TEST(FormatHiliting, MetaTestConsumeHilites)
 {
