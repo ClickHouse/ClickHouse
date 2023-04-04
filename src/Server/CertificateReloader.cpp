@@ -34,10 +34,10 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
     auto current = pdata->data.get();
 
     auto letsencrypt_configuration = let_encrypt_configuration_data.get();
-    LOG_ERROR(log, "BBBBBBBBBBBBBBBBB\n\n\n\n\nBBBBBBBBBBBBBBBBB");
+
     if (letsencrypt_configuration){
-        if (letsencrypt_configuration.is_issuing_enabled){
-            LOG_ERROR(log, "AAAAAAAAAAAAAAAA\n\n\n\n\nAAAAAAAAAAAAAAAA");
+        if (letsencrypt_configuration->is_issuing_enabled /* TODO: Еще проверяем что серту осталось меньше N дней*/){
+            // Запускаем процесс обновления сертов
         }
     }
 
@@ -143,8 +143,10 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     std::string new_cert_path = config.getString(prefix + "certificateFile", "");
     std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
 
-    let_encrypt_configuration_data.is_issuing_enabled = config.getBool("LetsEncrypt.enableAutomaticIssue", false);
-    let_encrypt_configuration_data.reissue_days_before = config.getInt("LetsEncrypt.reissueDaysBefore", 2);
+    // Fetching configuration for reissuing let's encrypt certificates
+    bool is_issuing_enabled = config.getBool("LetsEncrypt.enableAutomaticIssue", false);
+    int reissue_days_before = config.getInt("LetsEncrypt.reissueDaysBefore", 2);
+    let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(is_issuing_enabled, reissue_days_before));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
@@ -192,6 +194,11 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : certs_chain(Poco::Crypto::X509Certificate::readPEM(cert_path)), key(/* public key */ "", /* private key */ key_path, pass_phrase)
+{
+}
+
+CertificateReloader::LetsEncryptConfigurationData::LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_days_before_)
+            : is_issuing_enabled(is_issuing_enabled_), reissue_days_before(reissue_days_before_)
 {
 }
 
