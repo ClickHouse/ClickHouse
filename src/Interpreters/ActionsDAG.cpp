@@ -2497,4 +2497,30 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     return result_dag;
 }
 
+FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
+    :actions(actions_)
+{
+    for (const auto * node : actions->getOutputs())
+        index.emplace(node->result_name, node);
+}
+
+const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
+{
+    const auto it = index.find(output_name);
+    if (it == index.end())
+        return nullptr;
+
+    /// find original(non alias) node it refers to
+    const ActionsDAG::Node * node = it->second;
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        chassert(!node->children.empty());
+        node = node->children.front();
+    }
+    if (node && node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+
+    return node;
+}
+
 }
