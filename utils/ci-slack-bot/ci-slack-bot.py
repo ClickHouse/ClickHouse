@@ -15,6 +15,7 @@
 import os
 import json
 import base64
+import random
 
 if os.environ.get("AWS_LAMBDA_ENV", "0") == "1":
     # For AWS labmda (python 3.7)
@@ -28,25 +29,34 @@ DRY_RUN_MARK = "<no url, dry run>"
 MAX_FAILURES_DEFAULT = 50
 SLACK_URL_DEFAULT = DRY_RUN_MARK
 
-# Find tests that failed in master during the last check_period hours,
+EXTENDED_CHECK_PERIOD_MUL = 3
+FLAKY_ALERT_PROBABILITY = 0.20
+
+# Find tests that failed in master during the last check_period * 12 hours,
 # but did not fail during the last 2 weeks. Assuming these tests were broken recently.
-# NOTE: It may report flaky tests that fail too rarely.
+# Counts number of failures in check_period and check_period * 12 time windows
+# to distinguish rare flaky tests from completely broken tests
 NEW_BROKEN_TESTS_QUERY = """
 WITH
     1 AS check_period,
+    check_period * 12 AS extended_check_period,
     now() as now
-SELECT test_name, any(report_url)
+SELECT
+    test_name,
+    any(report_url),
+    countIf((check_start_time + check_duration_ms / 1000) < now - INTERVAL check_period HOUR) AS count_prev_periods,
+    countIf((check_start_time + check_duration_ms / 1000) >= now - INTERVAL check_period HOUR) AS count
 FROM checks
 WHERE 1
-    AND check_start_time >= now - INTERVAL 1 WEEK
-    AND (check_start_time + check_duration_ms / 1000) >= now - INTERVAL check_period HOUR
+    AND check_start_time BETWEEN now - INTERVAL 1 WEEK AND now
+    AND (check_start_time + check_duration_ms / 1000) >= now - INTERVAL extended_check_period HOUR
     AND pull_request_number = 0
     AND test_status LIKE 'F%'
     AND check_status != 'success'
     AND test_name NOT IN (
         SELECT test_name FROM checks WHERE 1
         AND check_start_time >= now - INTERVAL 1 MONTH
-        AND (check_start_time + check_duration_ms / 1000) BETWEEN now - INTERVAL 2 WEEK AND now - INTERVAL check_period HOUR 
+        AND (check_start_time + check_duration_ms / 1000) BETWEEN now - INTERVAL 2 WEEK AND now - INTERVAL extended_check_period HOUR 
         AND pull_request_number = 0
         AND check_status != 'success'
         AND test_status LIKE 'F%')
@@ -74,6 +84,27 @@ WHERE 1
     AND check_name ILIKE check_name_pattern
 """
 
+# It shows all recent failures of the specified test (helps to find when it started)
+ALL_RECENT_FAILURES_QUERY = """
+WITH
+    '{}' AS name_substr,
+    90 AS interval_days,
+    ('Stateless tests (asan)', 'Stateless tests (address)', 'Stateless tests (address, actions)') AS backport_and_release_specific_checks
+SELECT
+    toStartOfDay(check_start_time) AS d,
+    count(),
+    groupUniqArray(pull_request_number) AS prs,
+    any(report_url)
+FROM checks
+WHERE ((now() - toIntervalDay(interval_days)) <= check_start_time) AND (pull_request_number NOT IN (
+    SELECT pull_request_number AS prn
+    FROM checks
+    WHERE (prn != 0) AND ((now() - toIntervalDay(interval_days)) <= check_start_time) AND (check_name IN (backport_and_release_specific_checks))
+)) AND (position(test_name, name_substr) > 0) AND (test_status IN ('FAIL', 'ERROR', 'FLAKY'))
+GROUP BY d
+ORDER BY d DESC
+"""
+
 SLACK_MESSAGE_JSON = {"type": "mrkdwn", "text": None}
 
 
@@ -97,16 +128,62 @@ def run_clickhouse_query(query):
     return [x.split("\t") for x in lines]
 
 
-def get_new_broken_tests_message(broken_tests):
-    if not broken_tests:
+def split_broken_and_flaky_tests(failed_tests):
+    if not failed_tests:
         return None
-    msg = "There are {} new broken tests in master:\n".format(len(broken_tests))
-    for name, report in broken_tests:
-        msg += " - *{}*  -  <{}|Report>\n".format(name, report)
+
+    broken_tests = []
+    flaky_tests = []
+    for name, report, count_prev_str, count_str in failed_tests:
+        count_prev, count = int(count_prev_str), int(count_str)
+        if (2 <= count and count_prev < 2) or (count_prev == 1 and count == 1):
+            # It failed 2 times or more within extended time window, it's definitely broken.
+            # 2 <= count_prev means that it was not reported as broken on previous runs
+            broken_tests.append([name, report])
+        elif 0 < count and count_prev == 0:
+            # It failed only once, can be a rare flaky test
+            flaky_tests.append([name, report])
+
+    return broken_tests, flaky_tests
+
+
+def format_failed_tests_list(failed_tests, failure_type):
+    if len(failed_tests) == 1:
+        res = "There is a new {} test:\n".format(failure_type)
+    else:
+        res = "There are {} new {} tests:\n".format(len(failed_tests), failure_type)
+
+    for name, report in failed_tests:
+        cidb_url = get_play_url(ALL_RECENT_FAILURES_QUERY.format(name))
+        res += " - *{}*  -  <{}|Report>  -  <{}|CI DB> \n".format(
+            name, report, cidb_url
+        )
+    return res
+
+
+def get_new_broken_tests_message(failed_tests):
+    if not failed_tests:
+        return None
+
+    broken_tests, flaky_tests = split_broken_and_flaky_tests(failed_tests)
+    if len(broken_tests) == 0 and len(flaky_tests) == 0:
+        return None
+
+    msg = ""
+    if len(broken_tests) > 0:
+        msg += format_failed_tests_list(broken_tests, "*BROKEN*")
+    elif random.random() > FLAKY_ALERT_PROBABILITY:
+        # Should we report fuzzers unconditionally?
+        print("Will not report flaky tests to avoid noise: ", flaky_tests)
+        return None
+
+    if len(flaky_tests) > 0:
+        msg += format_failed_tests_list(flaky_tests, "flaky")
+
     return msg
 
 
-def get_too_many_failures_message(failures_count):
+def get_too_many_failures_message_impl(failures_count):
     MAX_FAILURES = int(os.environ.get("MAX_FAILURES", MAX_FAILURES_DEFAULT))
     curr_failures = int(failures_count[0][0])
     prev_failures = int(failures_count[0][1])
@@ -127,6 +204,13 @@ def get_too_many_failures_message(failures_count):
     return "CI is broken and it's getting worse: there are {} failures during the last 24 hours".format(
         curr_failures
     )
+
+
+def get_too_many_failures_message(failures_count):
+    msg = get_too_many_failures_message_impl(failures_count)
+    if msg:
+        msg += "\nSee https://aretestsgreenyet.com/"
+    return msg
 
 
 def send_to_slack(message):
