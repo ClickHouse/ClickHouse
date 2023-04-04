@@ -69,7 +69,7 @@ namespace
             S3::CredentialsConfiguration
             {
                 settings.auth_settings.use_environment_credentials.value_or(
-                    context->getConfigRef().getBool("s3.use_environment_credentials", false)),
+                    context->getConfigRef().getBool("s3.use_environment_credentials", true)),
                 settings.auth_settings.use_insecure_imds_request.value_or(
                     context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
                 settings.auth_settings.expiration_window_seconds.value_or(
