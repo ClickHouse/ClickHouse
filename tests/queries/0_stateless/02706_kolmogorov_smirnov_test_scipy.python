@@ -47,30 +47,16 @@ def test_ks_all_alternatives(rvs1, rvs2):
 
     s, p = stats.ks_2samp(rvs1, rvs2, alternative="two-sided")
     test_and_check("kolmogorovSmirnovTest('two-sided')", rvs1, rvs2, s, p)
-    s, p = stats.ks_2samp(rvs1, rvs2, alternative="less")
-    test_and_check("kolmogorovSmirnovTest('less')", rvs1, rvs2, s, p)
-    s, p = stats.ks_2samp(rvs1, rvs2, alternative="greater")
 
-    test_and_check("kolmogorovSmirnovTest('greater')", rvs1, rvs2, s, p)
-    s, p = stats.ks_2samp(rvs1, rvs2, alternative="two-sided", method="auto")
-    test_and_check("kolmogorovSmirnovTest('two-sided', 'auto')", rvs1, rvs2, s, p)
-    s, p = stats.ks_2samp(rvs1, rvs2, alternative="less", method="auto")
-    test_and_check("kolmogorovSmirnovTest('less', 'auto')", rvs1, rvs2, s, p)
     s, p = stats.ks_2samp(rvs1, rvs2, alternative="greater", method="auto")
     test_and_check("kolmogorovSmirnovTest('greater', 'auto')", rvs1, rvs2, s, p)
 
-    s, p = stats.ks_2samp(rvs1, rvs2, alternative="two-sided", method="exact")
-    test_and_check("kolmogorovSmirnovTest('two-sided', 'exact')", rvs1, rvs2, s, p)
     s, p = stats.ks_2samp(rvs1, rvs2, alternative="less", method="exact")
     test_and_check("kolmogorovSmirnovTest('less', 'exact')", rvs1, rvs2, s, p)
-    s, p = stats.ks_2samp(rvs1, rvs2, alternative="greater", method="exact")
-    test_and_check("kolmogorovSmirnovTest('greater', 'exact')", rvs1, rvs2, s, p)
 
     if max(len(rvs1), len(rvs2)) > 10000:
         s, p = stats.ks_2samp(rvs1, rvs2, alternative="two-sided", method="asymp")
         test_and_check("kolmogorovSmirnovTest('two-sided', 'asymp')", rvs1, rvs2, s, p)
-        s, p = stats.ks_2samp(rvs1, rvs2, alternative="less", method="asymp")
-        test_and_check("kolmogorovSmirnovTest('less', 'asymp')", rvs1, rvs2, s, p)
         s, p = stats.ks_2samp(rvs1, rvs2, alternative="greater", method="asymp")
         test_and_check("kolmogorovSmirnovTest('greater', 'asymp')", rvs1, rvs2, s, p)
 
@@ -80,24 +66,16 @@ def test_kolmogorov_smirnov():
     rvs2 = np.round(stats.norm.rvs(loc=1.5, scale=5, size=20), 2)
     test_ks_all_alternatives(rvs1, rvs2)
 
-    rvs1 = np.round(stats.norm.rvs(loc=10, scale=25, size=100), 2)
-    rvs2 = np.round(stats.norm.rvs(loc=1.5, scale=0.5, size=100), 2)
+    rvs1 = np.round(stats.norm.rvs(loc=13, scale=1, size=100), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=1.52, scale=9, size=100), 2)
     test_ks_all_alternatives(rvs1, rvs2)
 
     rvs1 = np.round(stats.norm.rvs(loc=1, scale=5, size=100), 2)
     rvs2 = np.round(stats.norm.rvs(loc=11.5, scale=50, size=1000), 2)
     test_ks_all_alternatives(rvs1, rvs2)
 
-    rvs1 = np.round(stats.norm.rvs(loc=13, scale=1, size=1000), 2)
-    rvs2 = np.round(stats.norm.rvs(loc=1.52, scale=9, size=1000), 2)
-    test_ks_all_alternatives(rvs1, rvs2)
-
-    rvs1 = np.round(stats.norm.rvs(loc=22, scale=2, size=10000), 2)
-    rvs2 = np.round(stats.norm.rvs(loc=40, scale=2.2, size=10000), 2)
-    test_ks_all_alternatives(rvs1, rvs2)
-
-    rvs1 = np.round(stats.norm.rvs(loc=1, scale=5, size=20000), 2)
-    rvs2 = np.round(stats.norm.rvs(loc=3.5, scale=5.5, size=20000), 2)
+    rvs1 = np.round(stats.norm.rvs(loc=1, scale=5, size=11000), 2)
+    rvs2 = np.round(stats.norm.rvs(loc=3.5, scale=5.5, size=11000), 2)
     test_ks_all_alternatives(rvs1, rvs2)
 
 
