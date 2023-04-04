@@ -179,13 +179,13 @@
          You have to configure certificate to enable this interface.
          See the openSSL section below.
     -->
-    <!-- <https_port>8443</https_port> -->
+    <https_port>8443</https_port>
 
     <!-- Native interface with TLS.
          You have to configure certificate to enable this interface.
          See the openSSL section below.
     -->
-    <!-- <tcp_port_secure>9440</tcp_port_secure> -->
+    <tcp_port_secure>9440</tcp_port_secure>
 
     <!-- Native interface wrapped with PROXYv1 protocol
          PROXYv1 header sent for every connection.
@@ -302,8 +302,8 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
+            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
