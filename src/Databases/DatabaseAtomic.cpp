@@ -30,23 +30,15 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
-{
-public:
-    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base)
-        : DatabaseTablesSnapshotIterator(std::move(base)) {}
-    UUID uuid() const override { return table()->getStorageID().uuid; }
-};
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
-    , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
+    , TableDataMapping(getContext()->getPath(), "data/" + escapeForFileName(name_), "DatabaseMemory(" + name_ + ")")
     , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
     fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
-    fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
 
@@ -58,11 +50,7 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, C
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
 {
     std::lock_guard lock(mutex);
-    auto it = table_name_to_path.find(table_name);
-    if (it == table_name_to_path.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} not found in database {}", table_name, database_name);
-    assert(it->second != data_path && !it->second.empty());
-    return it->second;
+    return getTableDataPathUnlocked(table_name, database_name);
 }
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
@@ -175,123 +163,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
-    auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
-    bool inside_database = this == &other_db;
-
-    String old_metadata_path = getObjectMetadataPath(table_name);
-    String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
-
-    auto detach = [](DatabaseAtomic & db, const String & table_name_, bool has_symlink) TSA_REQUIRES(db.mutex)
-    {
-        auto it = db.table_name_to_path.find(table_name_);
-        String table_data_path_saved;
-        /// Path can be not set for DDL dictionaries, but it does not matter for StorageDictionary.
-        if (it != db.table_name_to_path.end())
-            table_data_path_saved = it->second;
-        assert(!table_data_path_saved.empty());
-        db.tables.erase(table_name_);
-        db.table_name_to_path.erase(table_name_);
-        if (has_symlink)
-            db.tryRemoveSymlink(table_name_);
-        return table_data_path_saved;
-    };
-
-    auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_) TSA_REQUIRES(db.mutex)
-    {
-        db.tables.emplace(table_name_, table_);
-        if (table_data_path_.empty())
-            return;
-        db.table_name_to_path.emplace(table_name_, table_data_path_);
-        if (table_->storesDataOnDisk())
-            db.tryCreateSymlink(table_name_, table_data_path_);
-    };
-
-    auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_)
-    {
-        if (inside_database)
-            return;
-        if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
-            if (mv->hasInnerTable())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
-    };
-
-    String table_data_path;
-    String other_table_data_path;
-
-    if (inside_database && table_name == to_table_name)
-        return;
-
-    std::unique_lock<std::mutex> db_lock;
-    std::unique_lock<std::mutex> other_db_lock;
-    if (inside_database)
-        db_lock = std::unique_lock{mutex};
-    else if (this < &other_db)
-    {
-        db_lock = std::unique_lock{mutex};
-        other_db_lock = std::unique_lock{other_db.mutex};
-    }
-    else
-    {
-        other_db_lock = std::unique_lock{other_db.mutex};
-        db_lock = std::unique_lock{mutex};
-    }
-
-    if (!exchange)
-        other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name);
-
-    StoragePtr table = getTableUnlocked(table_name);
-
-    if (dictionary && !table->isDictionary())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
-
-    StorageID old_table_id = table->getStorageID();
-    StorageID new_table_id = {other_db.database_name, to_table_name, old_table_id.uuid};
-    table->checkTableCanBeRenamed({new_table_id});
-    assert_can_move_mat_view(table);
-    StoragePtr other_table;
-    StorageID other_table_new_id = StorageID::createEmpty();
-    if (exchange)
-    {
-        other_table = other_db.getTableUnlocked(to_table_name);
-        if (dictionary && !other_table->isDictionary())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
-        other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
-        other_table->checkTableCanBeRenamed(other_table_new_id);
-        assert_can_move_mat_view(other_table);
-    }
-
-    /// Table renaming actually begins here
-    auto txn = local_context->getZooKeeperMetadataTransaction();
-    if (txn && !local_context->isInternalSubquery())
-        txn->commit();     /// Commit point (a sort of) for Replicated database
-
-    /// NOTE: replica will be lost if server crashes before the following rename
-    /// TODO better detection and recovery
-
-    if (exchange)
-        renameExchange(old_metadata_path, new_metadata_path);
-    else
-        renameNoReplace(old_metadata_path, new_metadata_path);
-
-    /// After metadata was successfully moved, the following methods should not throw (if they do, it's a logical error)
-    table_data_path = detach(*this, table_name, table->storesDataOnDisk());
-    if (exchange)
-        other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
-
-    table->renameInMemory(new_table_id);
-    if (exchange)
-        other_table->renameInMemory(other_table_new_id);
-
-    if (!inside_database)
-    {
-        DatabaseCatalog::instance().updateUUIDMapping(old_table_id.uuid, other_db.shared_from_this(), table);
-        if (exchange)
-            DatabaseCatalog::instance().updateUUIDMapping(other_table->getStorageID().uuid, shared_from_this(), other_table);
-    }
-
-    attach(other_db, to_table_name, table_data_path, table);
-    if (exchange)
-        attach(*this, table_name, other_table_data_path, other_table);
+    renameTableImpl<DatabaseAtomic>(local_context, table_name, to_database, to_table_name, exchange, dictionary);
 }
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -413,7 +285,7 @@ DatabaseTablesIteratorPtr
 DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction & filter_by_table_name) const
 {
     auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
-    return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
+    return std::make_unique<DatabaseTablesSnapshotIteratorWithUUID>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
@@ -464,34 +336,6 @@ void DatabaseAtomic::startupTables(ThreadPool & thread_pool, LoadingStrictnessLe
     fs::create_directories(path_to_table_symlinks);
     for (const auto & table : table_names)
         tryCreateSymlink(table.first, table.second, true);
-}
-
-void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
-{
-    try
-    {
-        String link = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
-        if (!if_data_path_exist || fs::exists(data))
-            fs::create_directory_symlink(data, link);
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
-    }
-}
-
-void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
-{
-    try
-    {
-        String path = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::remove(path);
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
-    }
 }
 
 void DatabaseAtomic::tryCreateMetadataSymlink()

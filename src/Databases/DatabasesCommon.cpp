@@ -12,6 +12,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseMemory.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Interpreters/DDLTask.h>
+#include <Common/atomicRename.h>
 
 
 namespace DB
@@ -26,6 +31,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int INCONSISTENT_METADATA_FOR_BACKUP;
+    extern const int INCORRECT_QUERY;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
@@ -368,5 +374,206 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
     interpreter.setInternal(true);
     interpreter.execute();
 }
+
+template <class DatabaseClass>
+void DatabaseWithOwnTablesBase::renameTableImpl(ContextPtr local_context, const String & table_name, IDatabase & to_database,
+                                 const String & to_table_name, bool exchange, bool dictionary)
+    TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking
+{
+    auto & current_db = dynamic_cast<DatabaseClass &>(*this);
+    auto & other_db = dynamic_cast<DatabaseClass &>(to_database);
+    bool inside_database = &current_db == &other_db;
+
+    String old_metadata_path;
+    String new_metadata_path;
+
+    if constexpr (std::is_same_v<DatabaseClass, DatabaseAtomic>)
+    {
+        old_metadata_path = current_db.getObjectMetadataPath(table_name);
+        new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
+    }
+
+    auto detach = [](DatabaseClass & db, const String & table_name_, bool has_symlink) TSA_REQUIRES(db.mutex)
+    {
+        auto it = db.table_name_to_path.find(table_name_);
+        String table_data_path_saved;
+        /// Path can be not set for DDL dictionaries, but it does not matter for StorageDictionary.
+        if (it != db.table_name_to_path.end())
+            table_data_path_saved = it->second;
+        assert(!table_data_path_saved.empty());
+        db.tables.erase(table_name_);
+        db.table_name_to_path.erase(table_name_);
+        if (has_symlink)
+            db.tryRemoveSymlink(table_name_);
+        return table_data_path_saved;
+    };
+
+    auto attach = [](DatabaseClass & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_) TSA_REQUIRES(db.mutex)
+    {
+        db.tables.emplace(table_name_, table_);
+        if (table_data_path_.empty())
+            return;
+        db.table_name_to_path.emplace(table_name_, table_data_path_);
+        if (table_->storesDataOnDisk())
+            db.tryCreateSymlink(table_name_, table_data_path_);
+    };
+
+    auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_)
+    {
+        if (inside_database)
+            return;
+        if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
+            if (mv->hasInnerTable())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
+    };
+
+    String table_data_path;
+    String other_table_data_path;
+
+    if (inside_database && table_name == to_table_name)
+        return;
+
+    std::unique_lock<std::mutex> db_lock;
+    std::unique_lock<std::mutex> other_db_lock;
+    if (inside_database)
+    {
+        db_lock = std::unique_lock{mutex};
+    }
+    else if (&current_db < &other_db)
+    {
+        db_lock = std::unique_lock{current_db.mutex};
+        other_db_lock = std::unique_lock{other_db.mutex};
+    }
+    else
+    {
+        other_db_lock = std::unique_lock{other_db.mutex};
+        db_lock = std::unique_lock{current_db.mutex};
+    }
+
+    if constexpr (std::is_same_v<DatabaseClass, DatabaseAtomic>)
+    {
+        if (!exchange)
+            other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name);
+    }
+
+    StoragePtr table = getTableUnlocked(table_name);
+
+    if (dictionary && !table->isDictionary())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+
+    StorageID old_table_id = table->getStorageID();
+    StorageID new_table_id = {other_db.database_name, to_table_name, old_table_id.uuid};
+    table->checkTableCanBeRenamed({new_table_id});
+    assert_can_move_mat_view(table);
+    StoragePtr other_table;
+    StorageID other_table_new_id = StorageID::createEmpty();
+    if (exchange)
+    {
+        other_table = other_db.getTableUnlocked(to_table_name);
+        if (dictionary && !other_table->isDictionary())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+        other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
+        other_table->checkTableCanBeRenamed(other_table_new_id);
+        assert_can_move_mat_view(other_table);
+    }
+
+    if constexpr (std::is_same_v<DatabaseClass, DatabaseAtomic>)
+    {
+        /// Table renaming actually begins here
+        auto txn = local_context->getZooKeeperMetadataTransaction();
+        if (txn && !local_context->isInternalSubquery())
+            txn->commit();     /// Commit point (a sort of) for Replicated database
+
+        /// NOTE: replica will be lost if server crashes before the following rename
+        /// TODO better detection and recovery
+
+        if (exchange)
+            renameExchange(old_metadata_path, new_metadata_path);
+        else
+            renameNoReplace(old_metadata_path, new_metadata_path);
+    }
+
+    /// After metadata was successfully moved, the following methods should not throw (if they do, it's a logical error)
+    table_data_path = detach(current_db, table_name, table->storesDataOnDisk());
+    if (exchange)
+        other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
+
+    table->renameInMemory(new_table_id);
+    if (exchange)
+        other_table->renameInMemory(other_table_new_id);
+
+    if (!inside_database)
+    {
+        DatabaseCatalog::instance().updateUUIDMapping(old_table_id.uuid, other_db.shared_from_this(), table);
+        if (exchange)
+            DatabaseCatalog::instance().updateUUIDMapping(other_table->getStorageID().uuid, current_db.shared_from_this(), other_table);
+    }
+
+    attach(other_db, to_table_name, table_data_path, table);
+    if (exchange)
+        attach(current_db, table_name, other_table_data_path, other_table);
+}
+
+template void DatabaseWithOwnTablesBase::renameTableImpl<DatabaseAtomic>(ContextPtr, const String &, IDatabase &, const String &, bool, bool);
+template void DatabaseWithOwnTablesBase::renameTableImpl<DatabaseMemory>(ContextPtr, const String &, IDatabase &, const String &, bool, bool);
+
+template <bool lazy>
+TableDataMapping<lazy>::TableDataMapping(const String & current_path_, const String & path_to_table_symlinks_, const String & logger)
+    : log_mapping(&Poco::Logger::get(logger))
+    , current_path(current_path_)
+    , path_to_table_symlinks(fs::path(current_path_) / path_to_table_symlinks_ / "")
+{
+    if constexpr (!lazy)
+        fs::create_directories(path_to_table_symlinks);
+}
+
+template <bool lazy>
+void TableDataMapping<lazy>::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
+{
+    try
+    {
+        if constexpr (lazy)
+        {
+            if (!fs::exists(path_to_table_symlinks))
+                fs::create_directories(path_to_table_symlinks);
+        }
+
+        String link = path_to_table_symlinks + escapeForFileName(table_name);
+        fs::path data = fs::canonical(current_path) / actual_data_path;
+        if (!if_data_path_exist || fs::exists(data))
+            fs::create_directory_symlink(data, link);
+    }
+    catch (...)
+    {
+        LOG_WARNING(log_mapping, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+    }
+}
+
+template <bool lazy>
+void TableDataMapping<lazy>::tryRemoveSymlink(const String & table_name)
+{
+    try
+    {
+        String path = path_to_table_symlinks + escapeForFileName(table_name);
+        fs::remove(path);
+    }
+    catch (...)
+    {
+        LOG_WARNING(log_mapping, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+    }
+}
+
+template <bool lazy>
+String TableDataMapping<lazy>::getTableDataPathUnlocked(const String & table_name, const String & database_name) const
+{
+    auto it = table_name_to_path.find(table_name);
+    if (it == table_name_to_path.end())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} not found in database {}", table_name, database_name);
+    assert(it->second != data_path && !it->second.empty());
+    return it->second;
+}
+
+template class TableDataMapping<true>;
+template class TableDataMapping<false>;
 
 }
