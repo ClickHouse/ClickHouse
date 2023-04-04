@@ -4,7 +4,7 @@
 
 using namespace HiliteComparator;
 
-TEST(FormatHiliting, MetaTestConsumeHilites)
+TEST(HiliteComparator, ConsumeHilites)
 {
     using namespace DB;
     // The order is different from the order in HILITES on purpose.
@@ -26,7 +26,7 @@ TEST(FormatHiliting, MetaTestConsumeHilites)
     ASSERT_EQ(IAST::hilite_function, last_hilite);
 }
 
-TEST(FormatHiliting, MetaTestRemoveHilites)
+TEST(HiliteComparator, RemoveHilites)
 {
     using namespace DB;
     String s;
@@ -43,7 +43,7 @@ TEST(FormatHiliting, MetaTestRemoveHilites)
     ASSERT_EQ("test", remove_hilites(s));
 }
 
-TEST(FormatHiliting, MetaTestAreEqualWithHilites)
+TEST(HiliteComparator, AreEqualWithHilites)
 {
     using namespace DB;
     ASSERT_PRED2(are_equal_with_hilites, "", "");
