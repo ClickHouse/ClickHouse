@@ -815,7 +815,7 @@ namespace DB
             return arrow::boolean();
 
         if (isIPv6(column_type))
-            return arrow::fixed_size_binary(sizeof(IPv6));
+            return arrow::binary();
 
         if (isIPv4(column_type))
             return arrow::uint32();
