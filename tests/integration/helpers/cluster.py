@@ -467,10 +467,10 @@ class ClickHouseCluster:
         # available when with_kafka == True
         self.kafka_host = "kafka1"
         self.kafka_dir = os.path.join(self.instances_dir, "kafka")
-        self.kafka_port = get_free_port()
+        self._kafka_port = 0
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
-        self.schema_registry_port = get_free_port()
+        self._schema_registry_port = 0
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
@@ -478,7 +478,7 @@ class ClickHouseCluster:
         # available when with_kerberozed_kafka == True
         # reuses kafka_dir
         self.kerberized_kafka_host = "kerberized_kafka1"
-        self.kerberized_kafka_port = get_free_port()
+        self._kerberized_kafka_port = 0
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
             self.kerberized_kafka_host
         )
@@ -489,15 +489,15 @@ class ClickHouseCluster:
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
-        self.mongo_port = get_free_port()
+        self._mongo_port = 0
         self.mongo_no_cred_host = "mongo2"
-        self.mongo_no_cred_port = get_free_port()
+        self._mongo_no_cred_port = 0
 
         # available when with_meili == True
         self.meili_host = "meili1"
-        self.meili_port = get_free_port()
+        self._meili_port = 0
         self.meili_secure_host = "meili_secure"
-        self.meili_secure_port = get_free_port()
+        self._meili_secure_port = 0
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -527,7 +527,7 @@ class ClickHouseCluster:
 
         # available when with_redis == True
         self.redis_host = "redis1"
-        self.redis_port = get_free_port()
+        self._redis_port = 0
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -612,6 +612,62 @@ class ClickHouseCluster:
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
+
+    @property
+    def kafka_port(self):
+        if self._kafka_port:
+            return self._kafka_port
+        self._kafka_port = get_free_port()
+        return self._kafka_port
+
+    @property
+    def schema_registry_port(self):
+        if self._schema_registry_port:
+            return self._schema_registry_port
+        self._schema_registry_port = get_free_port()
+        return self._schema_registry_port
+
+    @property
+    def kerberized_kafka_port(self):
+        if self._kerberized_kafka_port:
+            return self._kerberized_kafka_port
+        self._kerberized_kafka_port = get_free_port()
+        return self._kerberized_kafka_port
+
+    @property
+    def mongo_port(self):
+        if self._mongo_port:
+            return self._mongo_port
+        self._mongo_port = get_free_port()
+        return self._mongo_port
+
+    @property
+    def mongo_no_cred_port(self):
+        if self._mongo_no_cred_port:
+            return self._mongo_no_cred_port
+        self._mongo_no_cred_port = get_free_port()
+        return self._mongo_no_cred_port
+
+    @property
+    def meili_port(self):
+        if self._meili_port:
+            return self._meili_port
+        self._meili_port = get_free_port()
+        return self._meili_port
+
+    @property
+    def meili_secure_port(self):
+        if self._meili_secure_port:
+            return self._meili_secure_port
+        self._meili_secure_port = get_free_port()
+        return self._meili_secure_port
+
+    @property
+    def redis_port(self):
+        if self._redis_port:
+            return self._redis_port
+        self._redis_port = get_free_port()
+        return self._redis_port
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
