@@ -1,0 +1,3 @@
+id	Nullable(Int64)					
+data	Map(String, Nullable(String))					
+1234	{'abc':'123','bcd':'234'}
