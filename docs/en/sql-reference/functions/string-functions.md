@@ -1199,7 +1199,7 @@ The function is named “injective” if it always returns different result for 
 
 ## extractKeyValuePairs
 
-Extracts key value pairs from any string. The string does not need to be 100% structured in a key value pair format;
+Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
 
 It can contain noise (e.g. log files). The key-value pair format to be interpreted should be specified via function arguments.
 
