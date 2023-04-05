@@ -1,13 +1,13 @@
 <test>
-    <query>select k, count(k) from (select number % 255 as k from numbers(100000000)) where k >= 0 and k < 240 group by k</query>
+    <query><![CDATA[select k, count(k) from (select number % 255 as k from numbers(100000000)) where k >= 0 and k < 240 group by k]]></query>
 
-    <query>select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 100 and k < 300 group by k</query>
-    <query>select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1000 and k < 1250 group by k</query>
-    <query>select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1000 and k < 1450 group by k</query>
-    <query>select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1200 and k < 3000 group by k</query>
+    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 100 and k < 300 group by k]]></query>
+    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1000 and k < 1250 group by k]]></query>
+    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1000 and k < 1450 group by k]]></query>
+    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1200 and k < 3000 group by k]]></query>
 
-    <query>select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 0 and k < 256 group by k</query>
-    <query>select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 100 and k < 300 group by k</query>
-    <query>select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 1000 and k < 1450 group by k</query>
-    <query>select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 1200 and k < 3000 group by k</query>
+    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 0 and k < 256 group by k]]></query>
+    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 100 and k < 300 group by k]]></query>
+    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 1000 and k < 1450 group by k]]></query>
+    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 1200 and k < 3000 group by k]]></query>
 </test>
