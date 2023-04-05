@@ -284,6 +284,7 @@ void updateDataHintsWithOutputHeaderKeys(DataHints & hints, const Names & keys)
 
 std::tuple<Names, Names, DataTypes> optimizeAggregatingStepWithDataHints(
         QueryPipelineBuilder & pipeline,
+        const Names & keys,
         const DataHints & hints,
         const ColumnsWithTypeAndName & input_header,
         const BuildQueryPipelineSettings & settings,
@@ -295,7 +296,7 @@ std::tuple<Names, Names, DataTypes> optimizeAggregatingStepWithDataHints(
     DataTypes changed_data_types;
 
     auto dag = std::make_shared<ActionsDAG>(input_header);
-    for (const auto & old_key : transform_params->params.keys)
+    for (const auto & old_key : keys)
     {
         if (hints.contains(old_key) && hints.at(old_key).isRangeLengthLessOrEqualThan(65535))
         {
