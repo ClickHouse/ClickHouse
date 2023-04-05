@@ -1182,7 +1182,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
                 const bool is_constant_set = prepared_set.isCreated();
-                if (is_constant_set)  /// TODO: if the set is from prepared_sets_cache, it might be not empty already but we should not handle it as const!!!
+                if (is_constant_set)  /// TODO: if the set is from prepared_sets_cache, it might be not empty already but we should not handle it as const!
                     column.name = data.getUniqueName("__set");
                 else
                     column.name = child->getColumnName();
@@ -1193,7 +1193,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     /// If prepared_set is not empty, we have a set made with literals.
                     /// Create a const ColumnSet to make constant folding work
                     if (is_constant_set)
-                        column.column = ColumnConst::create(std::move(column_set), 1); /// TODO: and here we also must not handle set form cache as const!!!
+                        column.column = ColumnConst::create(std::move(column_set), 1); /// TODO: and here we also must not handle set from cache as const!
                     else
                         column.column = std::move(column_set);
                     data.addColumn(column);
@@ -1417,7 +1417,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
                 {
                     SetPtr set = storage_set->getSet();
                     data.prepared_sets->set(set_key, set);
-                    return makeReadyFutureSet(set);
+                    return FutureSet(set);
                 }
             }
         }
@@ -1449,7 +1449,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
         const auto & index = data.actions_stack.getLastActionsIndex();
         if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return makeReadyFutureSet(
+            return FutureSet(
                 makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets));
         else
             return {};

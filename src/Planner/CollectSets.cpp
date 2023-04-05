@@ -54,7 +54,7 @@ public:
         if (storage_set)
         {
             /// TODO: need to handle storage_set as not-yet-built set?
-            planner_context.registerSet(set_key, PlannerSet(makeReadyFutureSet(storage_set->getSet())));
+            planner_context.registerSet(set_key, PlannerSet(FutureSet(storage_set->getSet())));
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
@@ -64,7 +64,7 @@ public:
                 constant_node->getResultType(),
                 settings);
 
-            planner_context.registerSet(set_key, PlannerSet(makeReadyFutureSet(std::move(set))));
+            planner_context.registerSet(set_key, PlannerSet(FutureSet(std::move(set))));
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION)

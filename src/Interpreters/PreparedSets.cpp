@@ -74,7 +74,7 @@ SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, c
 /// It's aimed to fill external table passed to SubqueryForSet::createSource.
 SubqueryForSet & PreparedSets::getSubquery(const String & subquery_id) { return subqueries[subquery_id]; }
 
-void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = makeReadyFutureSet(set_); }
+void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = FutureSet(set_); }
 
 FutureSet PreparedSets::getFuture(const PreparedSetKey & key) const
 {
@@ -132,6 +132,15 @@ QueryPlanPtr SubqueryForSet::detachSource()
     return res;
 }
 
+
+FutureSet::FutureSet(SetPtr set)
+{
+    std::promise<SetPtr> promise;
+    promise.set_value(set);
+    *this = FutureSet(promise.get_future());
+}
+
+
 bool FutureSet::isReady() const
 {
     return valid() &&
@@ -159,7 +168,7 @@ std::variant<std::promise<SetPtr>, FutureSet> PreparedSetsCache::findOrPromiseTo
             /// TODO: consider moving retry logic outside of the cache.
             if (it->second->future.valid() &&
                 (it->second->future.wait_for(std::chrono::seconds(0)) != std::future_status::ready || it->second->future.get() != nullptr))
-                return it->second->future;
+                return FutureSet{it->second->future};
         }
 
         {
@@ -171,14 +180,6 @@ std::variant<std::promise<SetPtr>, FutureSet> PreparedSetsCache::findOrPromiseTo
             return promise_to_fill_set;
         }
     }
-}
-
-
-FutureSet makeReadyFutureSet(SetPtr set)
-{
-    std::promise<SetPtr> promise;
-    promise.set_value(set);
-    return FutureSet(promise.get_future());
 }
 
 };
