@@ -158,7 +158,6 @@ def test_dependency_via_dictionary_database(node):
 
 @pytest.mark.parametrize("node", nodes)
 def test_dependent_dict_table_distr(node):
-
     query = node.query
     query("CREATE DATABASE test_db;")
     query(
