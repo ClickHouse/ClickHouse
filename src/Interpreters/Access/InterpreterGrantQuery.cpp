@@ -369,7 +369,7 @@ BlockIO InterpreterGrantQuery::execute()
     if (query.current_grants)
     {
         AccessRights new_rights(elements_to_grant);
-        new_rights.makeIntersection(*current_user_access->getAccessRightsWithImplicit());
+        new_rights.makeIntersection(*current_user_access->getAccessRights());
         elements_to_grant = new_rights.getElements();
     }
 

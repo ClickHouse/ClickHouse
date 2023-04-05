@@ -285,7 +285,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     bool current_grants = false;
-    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
+    if (!is_revoke && cluster.empty() && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
     {
         current_grants = true;
         if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
@@ -305,14 +305,14 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    if (cluster.empty())
+    if (cluster.empty() && !current_grants)
         parseOnCluster(pos, expected, cluster);
 
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     if (!parseToGrantees(pos, expected, is_revoke, grantees))
         return false;
 
-    if (cluster.empty())
+    if (cluster.empty() && !current_grants)
         parseOnCluster(pos, expected, cluster);
 
     if (!is_revoke)
@@ -326,7 +326,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             is_replace = true;
     }
 
-    if (cluster.empty())
+    if (cluster.empty() && !current_grants)
         parseOnCluster(pos, expected, cluster);
 
     if (grant_option && roles)

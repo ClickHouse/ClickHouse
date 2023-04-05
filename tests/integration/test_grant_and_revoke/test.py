@@ -585,3 +585,23 @@ def test_grant_with_replace_option():
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         ["GRANT INSERT ON test.table TO B"]
     )
+
+
+def test_grant_current_grants():
+    instance.query("CREATE USER A")
+    instance.query("GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION")
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION"]
+    )
+
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS TO B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO B"]
+    )
+
+    instance.query("CREATE USER C")
+    instance.query("GRANT CURRENT GRANTS(CREATE ON test.*) TO C", user="A")
+    assert instance.query("SHOW GRANTS FOR C") == TSV(
+        ["GRANT CREATE TABLE, CREATE VIEW ON test.* TO C"]
+    )
