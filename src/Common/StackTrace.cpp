@@ -459,3 +459,8 @@ void StackTrace::dropCache()
     std::lock_guard lock{stacktrace_cache_mutex};
     cacheInstance().clear();
 }
+
+std::string printStackTrace()
+{
+    return StackTrace{}.toString();
+}

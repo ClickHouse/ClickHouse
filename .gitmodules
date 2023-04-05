@@ -94,7 +94,7 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
-	branch = v1.33.2
+	branch = understanding-kick-failed
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse/aws-sdk-cpp
