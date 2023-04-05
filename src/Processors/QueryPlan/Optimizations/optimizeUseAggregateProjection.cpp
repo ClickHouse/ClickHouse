@@ -61,11 +61,15 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     /// This is a bad approach.
     /// We'd better have a separate interpreter for projections.
     /// Now it's not obvious we didn't miss anything here.
+    ///
+    /// Setting ignoreASTOptimizations is used because some of them are invalid for projections.
+    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
+    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
         Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock())),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState});
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
     const auto & query_analyzer = interpreter.getQueryAnalyzer();
