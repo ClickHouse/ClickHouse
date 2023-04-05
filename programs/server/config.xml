@@ -339,6 +339,7 @@
 
     <LetsEncrypt>
         <enableAutomaticIssue>true</enableAutomaticIssue>
+        <reissueHoursBefore>100000</reissueHoursBefore>
     </LetsEncrypt>
 
     <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->

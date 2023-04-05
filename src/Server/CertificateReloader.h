@@ -4,6 +4,7 @@
 
 #if USE_SSL
 
+#include <chrono>
 #include <string>
 #include <filesystem>
 #include <list>
@@ -89,9 +90,9 @@ public:
     struct LetsEncryptConfigurationData
     {
         bool is_issuing_enabled;
-        int reissue_days_before;
+        int reissue_hours_before;
 
-        LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_days_before_);
+        LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_hours_before_);
     };
 
     MultiVersion<Data> data;
