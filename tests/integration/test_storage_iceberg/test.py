@@ -8,6 +8,7 @@ import os
 import json
 import pytest
 import time
+import glob
 
 from pyspark.sql.types import (
     StructType,
@@ -153,6 +154,13 @@ def create_initial_data_file(node, query, table_name, compression_method="none")
     return result_path
 
 
+def print_recursive(path):
+    for root, dirs, files in os.walk(path):
+        for basename in files:
+            filename = os.path.join(root, basename)
+            print(f"Found file {filename}")
+
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 def test_single_iceberg_file(started_cluster, format_version):
     instance = started_cluster.instances["node1"]
@@ -163,6 +171,7 @@ def test_single_iceberg_file(started_cluster, format_version):
 
     inserted_data = "SELECT number, toString(number) FROM numbers(100)"
     parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
+    print_recursive(SCRIPT_DIR)
     write_iceberg_from_file(
         spark, parquet_data_path, TABLE_NAME, format_version=format_version
     )
