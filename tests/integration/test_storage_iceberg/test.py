@@ -29,7 +29,6 @@ from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
 
 
 @pytest.fixture(scope="module")
@@ -140,7 +139,9 @@ def create_iceberg_table(node, table_name):
     )
 
 
-def create_initial_data_file(node, query, table_name, compression_method="none"):
+def create_initial_data_file(
+    cluster, node, query, table_name, compression_method="none"
+):
     node.query(
         f"""
         INSERT INTO TABLE FUNCTION
@@ -150,15 +151,11 @@ def create_initial_data_file(node, query, table_name, compression_method="none")
             s3_truncate_on_insert=1 {query}
         FORMAT Parquet"""
     )
-    result_path = f"{USER_FILES_PATH}/{table_name}.parquet"
+    user_files_path = os.path.join(
+        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
+    )
+    result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
-
-
-def print_recursive(path):
-    for root, dirs, files in os.walk(path):
-        for basename in files:
-            filename = os.path.join(root, basename)
-            print(f"Found file {filename}")
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -170,8 +167,10 @@ def test_single_iceberg_file(started_cluster, format_version):
     TABLE_NAME = "test_single_iceberg_file_" + format_version
 
     inserted_data = "SELECT number, toString(number) FROM numbers(100)"
-    parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
-    print_recursive(SCRIPT_DIR)
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME
+    )
+
     write_iceberg_from_file(
         spark, parquet_data_path, TABLE_NAME, format_version=format_version
     )
