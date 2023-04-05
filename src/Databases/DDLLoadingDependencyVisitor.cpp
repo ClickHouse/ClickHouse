@@ -139,14 +139,14 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     {
         if (!functionIsDictGet(dict_function->name))
             return;
-        
+
         /// Get the dictionary name from `dict*` function.
         const auto * literal_arg = dict_function->arguments->as<ASTExpressionList>()->children[0].get();
         const auto * dictionary_name = literal_arg->as<ASTLiteral>();
 
         if (!dictionary_name)
             return;
-        
+
         if (dictionary_name->value.getType() != Field::Types::String)
             return;
 
