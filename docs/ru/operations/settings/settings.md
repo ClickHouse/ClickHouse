@@ -1122,6 +1122,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
     :::note "Предупреждение"
     Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
     :::
+
 ## max_query_size {#settings-max_query_size}
 
 Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
@@ -2517,68 +2518,27 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
-Задает количество потоков для выполнения фонового сброса данных в таблицах с движком [Buffer](../../engines/table-engines/special/buffer.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_buffer_flush_schedule_pool_size).
 
 ## background_move_pool_size {#background_move_pool_size}
 
-Задает количество потоков для фоновых перемещений кусков между дисками. Работает для таблиц с движком [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 8.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_move_pool_size).
 
 ## background_schedule_pool_size {#background_schedule_pool_size}
 
-Задает количество потоков для выполнения фоновых задач. Работает для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц, стримов в [Kafka](../../engines/table-engines/integrations/kafka.md) и обновления IP адресов у записей во внутреннем [DNS кеше](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 128.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_schedule_pool_size).
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Задает количество потоков для скачивания кусков данных для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе. Для использования в продакшене с частыми небольшими вставками или медленным кластером ZooKeeper рекомендуется использовать значение по умолчанию.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 8.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_fetches_pool_size).
 
 ## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
 
-Задает количество потоков для выполнения фоновых задач. Работает для таблиц с движком [Distributed](../../engines/table-engines/special/distributed.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_distributed_schedule_pool_size).
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Задает количество потоков для фонового потокового вывода сообщений. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
-
-**Смотрите также**
-
--   Движок [Kafka](../../engines/table-engines/integrations/kafka.md#kafka).
--   Движок [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine).
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
@@ -3388,6 +3348,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 │ 109 │
 └─────┘
 ```
+
 ## http_connection_timeout {#http_connection_timeout}
 
 Тайм-аут для HTTP-соединения (в секундах).

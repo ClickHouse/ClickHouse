@@ -18,25 +18,35 @@ struct CleanupQueue;
 
 struct FileSegmentMetadata : private boost::noncopyable
 {
-    FileSegmentPtr file_segment;
-
-    /// Iterator is put here on first reservation attempt, if successful.
-    IFileCachePriority::Iterator queue_iterator;
+    FileSegmentMetadata(
+        FileSegmentPtr file_segment_,
+        LockedKeyMetadata & locked_key,
+        LockedCachePriority * locked_queue);
 
     /// Pointer to file segment is always hold by the cache itself.
     /// Apart from pointer in cache, it can be hold by cache users, when they call
     /// getorSet(), but cache users always hold it via FileSegmentsHolder.
     bool releasable() const { return file_segment.unique(); }
 
+    IFileCachePriority::Iterator & getQueueIterator() const;
+
+    bool valid() const { return *evict_flag == false; }
+
     size_t size() const;
 
-    FileSegmentMetadata(
-        FileSegmentPtr file_segment_,
-        LockedKeyMetadata & locked_key,
-        LockedCachePriority * locked_queue);
+    FileSegmentPtr file_segment;
 
-    FileSegmentMetadata(FileSegmentMetadata && other) noexcept
-        : file_segment(std::move(other.file_segment)), queue_iterator(std::move(other.queue_iterator)) {}
+    using EvictFlag = std::shared_ptr<std::atomic<bool>>;
+    EvictFlag evict_flag = std::make_shared<std::atomic<bool>>(false);
+    struct EvictHolder : boost::noncopyable
+    {
+        explicit EvictHolder(EvictFlag evict_flag_) : evict_flag(evict_flag_) { *evict_flag = true; }
+        ~EvictHolder() { *evict_flag = false; }
+        EvictFlag evict_flag;
+    };
+    using EvictHolderPtr = std::unique_ptr<EvictHolder>;
+
+    EvictHolderPtr getEvictHolder() { return std::make_unique<EvictHolder>(evict_flag); }
 };
 
 struct KeyMetadata : private std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
@@ -60,35 +70,21 @@ public:
     explicit KeyMetadata(bool created_base_directory_, CleanupQueue & cleanup_queue_)
         : created_base_directory(created_base_directory_), cleanup_queue(cleanup_queue_) {}
 
-    const FileSegmentMetadata * getByOffset(size_t offset) const;
-    FileSegmentMetadata * getByOffset(size_t offset);
-
-    const FileSegmentMetadata * tryGetByOffset(size_t offset) const;
-    FileSegmentMetadata * tryGetByOffset(size_t offset);
-
-    std::string toString() const;
-
-    KeyGuard::Lock lock() const { return guard.lock(); }
-
-    bool createdBaseDirectory(const KeyGuard::Lock &) const { return created_base_directory; }
-
-    enum class CleanupState
+    enum class KeyState
     {
-        NOT_SUBMITTED,
-        SUBMITTED_TO_CLEANUP_QUEUE,
-        CLEANED_BY_CLEANUP_THREAD,
+        ACTIVE,
+        REMOVING,
+        REMOVED,
     };
 
-    CleanupState getCleanupState(const KeyGuard::Lock &) const { return cleanup_state; }
-
-    void addToCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
-
-    void removeFromCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
+    bool created_base_directory = false;
 
 private:
+    KeyGuard::Lock lock() const { return guard.lock(); }
+
+    KeyState key_state = KeyState::ACTIVE;
+
     mutable KeyGuard guard;
-    bool created_base_directory = false;
-    CleanupState cleanup_state = CleanupState::NOT_SUBMITTED;
     CleanupQueue & cleanup_queue;
 };
 
@@ -128,7 +124,7 @@ public:
     };
     LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyNotFoundPolicy key_not_found_policy, bool is_initial_load = false);
 
-    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata, bool return_null_if_in_cleanup_queue = false) const;
+    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata, bool skip_if_in_cleanup_queue = false) const;
 
     using IterateCacheMetadataFunc = std::function<void(const LockedKeyMetadata &)>;
     void iterate(IterateCacheMetadataFunc && func);
@@ -136,9 +132,6 @@ public:
     void doCleanup();
 
 private:
-    void addToCleanupQueue(const Key & key, const KeyGuard::Lock &);
-    void removeFromCleanupQueue(const Key & key, const KeyGuard::Lock &);
-
     const std::string base_directory;
     CacheMetadataGuard guard;
     CleanupQueue cleanup_queue;
@@ -162,16 +155,25 @@ struct LockedKeyMetadata : private boost::noncopyable
     LockedKeyMetadata(
         const FileCacheKey & key_,
         std::shared_ptr<KeyMetadata> key_metadata_,
-        KeyGuard::Lock && key_lock_,
         const std::string & key_path_);
 
     ~LockedKeyMetadata();
 
     const FileCacheKey & getKey() const { return key; }
 
-    void createKeyDirectoryIfNot();
+    auto begin() const { return key_metadata->begin(); }
+    auto end() const { return key_metadata->end(); }
+
+    const FileSegmentMetadata * getByOffset(size_t offset) const;
+    FileSegmentMetadata * getByOffset(size_t offset);
+
+    const FileSegmentMetadata * tryGetByOffset(size_t offset) const;
+    FileSegmentMetadata * tryGetByOffset(size_t offset);
+
+    KeyMetadata::KeyState getKeyState() const { return key_metadata->key_state; }
 
     KeyMetadataPtr getKeyMetadata() const { return key_metadata; }
+    KeyMetadataPtr getKeyMetadata() { return key_metadata; }
 
     void removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
@@ -181,7 +183,15 @@ struct LockedKeyMetadata : private boost::noncopyable
 
     void assertFileSegmentCorrectness(const FileSegment & file_segment) const;
 
-    KeyMetadata::CleanupState getCleanupState() const { return key_metadata->cleanup_state; }
+    bool isRemovalCandidate() const;
+
+    bool markAsRemovalCandidate(size_t offset);
+
+    void removeFromCleanupQueue();
+
+    bool markAsRemoved();
+
+    std::string toString() const;
 
 private:
     const FileCacheKey key;

@@ -10,6 +10,7 @@
 #include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <list>
 #include <queue>
 
@@ -78,6 +79,7 @@ friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 friend class StorageSystemFilesystemCache;
 friend struct LockedKeyMetadata;
+friend struct FileSegmentMetadata;
 
 public:
     using Key = FileCacheKey;
@@ -121,10 +123,11 @@ public:
     };
 
     FileSegment(
+        const Key & key_,
         size_t offset_,
         size_t size_,
-        const Key & key_,
         std::weak_ptr<KeyMetadata> key_metadata,
+        IFileCachePriority::Iterator queue_iterator_,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -225,8 +228,6 @@ public:
 
     bool assertCorrectness() const;
 
-    bool assertCorrectnessUnlocked(const FileSegmentMetadata & metadata, const KeyGuard::Lock &) const;
-
     /**
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
@@ -266,6 +267,8 @@ public:
 
     size_t getReservedSize() const;
 
+    IFileCachePriority::Iterator & getQueueIterator() const { return queue_iterator; }
+
 private:
     String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
@@ -302,6 +305,9 @@ private:
     void wrapWithCacheInfo(Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
 
     Range segment_range;
+
+    /// Iterator is put here on first reservation attempt, if successful.
+    mutable IFileCachePriority::Iterator queue_iterator;
 
     std::atomic<State> download_state;
 

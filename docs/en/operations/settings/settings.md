@@ -1552,6 +1552,7 @@ For the replicated tables by default the only 100 of the most recent blocks for 
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 ## Asynchronous Insert settings
+
 ### async_insert {#async-insert}
 
 Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
@@ -1645,6 +1646,7 @@ Possible values:
 -   0 — Timeout disabled.
 
 Default value: `0`.
+
 ### async_insert_deduplicate {#settings-async-insert-deduplicate}
 
 Enables or disables insert deduplication of `ASYNC INSERT` (for Replicated\* tables).
@@ -2449,43 +2451,19 @@ Default value: `1`.
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
-Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_buffer_flush_schedule_pool_size).
 
 ## background_move_pool_size {#background_move_pool_size}
 
-Sets the number of threads performing background moves of data parts for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 8.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_move_pool_size).
 
 ## background_schedule_pool_size {#background_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md/#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 128.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_schedule_pool_size).
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster it is recommended to use default value.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 8.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_fetches_pool_size).
 
 ## always_fetch_merged_part {#always_fetch_merged_part}
 
@@ -2506,28 +2484,11 @@ Default value: 0.
 
 ## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_distributed_schedule_pool_size).
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Sets the number of threads performing background tasks for message streaming. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
-
-**See Also**
-
--   [Kafka](../../engines/table-engines/integrations/kafka.md/#kafka) engine.
--   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md/#rabbitmq-engine) engine.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
 
 ## validate_polygons {#validate_polygons}
 
@@ -2769,7 +2730,7 @@ Default value: `120` seconds.
 
 ## cast_keep_nullable {#cast_keep_nullable}
 
-Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) operations.
+Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md/#castx-t) operations.
 
 When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
