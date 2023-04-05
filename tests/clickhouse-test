@@ -2079,7 +2079,16 @@ def reportLogStats(args):
               'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved',
               'Could not find table: {}', 'Detached part "{}" not found', 'Unknown data type family: {}',
               'Unknown input format {}', 'Cannot UPDATE key column {}', 'Substitution {} is not set',
-              'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}'
+              'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}',
+              'Unsupported cipher mode', 'Unknown explain kind ''{}''', 'Table {} was suddenly removed',
+              'No cache found by path: {}', 'No such column {} in table {}', 'There is no port named {}',
+              'Function {} cannot resize {}', 'Function {} is not parametric', 'Unknown key attribute ''{}''',
+              'Transaction was cancelled', 'Unknown parent id {}', 'Session {} not found', 'Mutation {} was killed',
+              'Table {}.{} doesn''t exist.', 'Table is not initialized yet', '{} is not an identifier',
+              'Column ''{}'' already exists', 'No macro {} in config', 'Invalid origin H3 index: {}',
+              'Invalid session timeout: ''{}''', 'Tuple cannot be empty', 'Database name is empty',
+              'Table {} is not a Dictionary', 'Expected function, got: {}', 'Unknown identifier: ''{}''',
+              'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log

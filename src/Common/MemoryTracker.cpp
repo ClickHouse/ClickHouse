@@ -95,7 +95,7 @@ inline void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
         return;
 
     MemoryTrackerBlockerInThread blocker;
-    LOG_TRACE(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
+    LOG_TEST(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
                                                    "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
 #else
     return;     /// Avoid trash logging in release builds
