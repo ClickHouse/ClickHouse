@@ -303,9 +303,9 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     }
 }
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas)
     : impl(std::make_unique<ParserWithOptionalAlias>(
-        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>(allow_trailing_commas)),
         allow_alias_without_as_keyword))
 {
 }
@@ -314,7 +314,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function, allow_trailing_commas),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
@@ -783,9 +783,11 @@ class ExpressionLayer : public Layer
 {
 public:
 
-    explicit ExpressionLayer(bool is_table_function_) : Layer(false, false)
+    explicit ExpressionLayer(bool is_table_function_, bool allow_trailing_commas_ = false)
+        : Layer(false, false)
     {
         is_table_function = is_table_function_;
+        allow_trailing_commas = allow_trailing_commas_;
     }
 
     bool getResult(ASTPtr & node) override
@@ -799,13 +801,52 @@ public:
         return Layer::getResultImpl(node);
     }
 
-    bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & /*action*/) override
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
         if (pos->type == TokenType::Comma)
+        {
             finished = true;
+
+            if (!allow_trailing_commas)
+                return true;
+
+            /// We support trailing commas at the end of the column declaration:
+            ///  - SELECT a, b, c, FROM table
+            ///  - SELECT 1,
+
+            /// For this purpose we eliminate the following cases:
+            ///  1. WITH 1 AS from SELECT 2, from
+            ///  2. SELECT to, from FROM table
+            ///  3. SELECT to, from AS alias FROM table
+            ///  4. SELECT to, from + to FROM table
+
+            auto test_pos = pos;
+            ++test_pos;
+
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+            {
+                if (!ParserKeyword("FROM").ignore(test_pos, expected))
+                    return true;
+
+                if (ParserKeyword("FROM").ignore(test_pos, expected))
+                    return true;
+
+                if (ParserAlias(false).ignore(test_pos, expected))
+                    return true;
+
+                if (!ParserIdentifier(true).ignore(test_pos, expected))
+                    return true;
+            }
+
+            ++pos;
+            return true;
+        }
 
         return true;
     }
+
+private:
+    bool allow_trailing_commas;
 };
 
 /// Basic layer for a function with certain separator and end tokens:
@@ -2201,7 +2242,7 @@ struct ParserExpressionImpl
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<ExpressionLayer>(false);
+    auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
@@ -2543,18 +2584,17 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (cur_op == operators_table.end())
     {
+        if (!layers.back()->allow_alias || layers.back()->parsed_alias)
+            return Action::NONE;
+
         ASTPtr alias;
         ParserAlias alias_parser(layers.back()->allow_alias_without_as_keyword);
 
-        if (layers.back()->allow_alias &&
-            !layers.back()->parsed_alias &&
-            alias_parser.parse(pos, alias, expected) &&
-            layers.back()->insertAlias(alias))
-        {
-            layers.back()->parsed_alias = true;
-            return Action::OPERATOR;
-        }
-        return Action::NONE;
+        if (!alias_parser.parse(pos, alias, expected) || !layers.back()->insertAlias(alias))
+            return Action::NONE;
+
+        layers.back()->parsed_alias = true;
+        return Action::OPERATOR;
     }
 
     auto op = cur_op->second;
