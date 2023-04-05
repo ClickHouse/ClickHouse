@@ -1199,50 +1199,84 @@ The function is named “injective” if it always returns different result for 
 
 ## extractKeyValuePairs
 
-Extracts key value pairs from any string. The string does not need to be 100% structured in a key value pair format,
-it might contain noise (e.g. log files). The key value pair format to be interpreted should be specified via function arguments.
-A key value pair consists of a key followed by a key_value_pair_delimiter and a value. 
-Special characters (e.g. $!@#¨) must be escaped. Enclosed/ quoted keys and values are accepted.
+Extracts key value pairs from any string. The string does not need to be 100% structured in a key value pair format;
 
-The below grammar is a simplified representation of what is expected/ supported (does not include escaping and character allow_listing):
+It can contain noise (e.g. log files). The key-value pair format to be interpreted should be specified via function arguments.
 
-* line = (reserved_char* key_value_pair)*  reserved_char*
-* key_value_pair = key kv_separator value
-* key = <quoted_string> |  asciichar asciialphanumeric*
-* kv_separator = ':'
-* value = <quoted_string> | asciialphanum*
-* item_delimiter = ','
+A key-value pair consists of a key followed by a `key_value_delimiter` and a value. Quoted keys and values are also supported. Key value pairs must be separated by pair delimiters.
+Escaping support can be turned on and off.
 
-Both key and values accepts underscores as well.
+Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
+Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
+`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).  
 
 **Syntax**
 ``` sql
-extractKeyValuePairs(data, [escape_character], [key_value_pair_delimiter], [item_delimiter], [enclosing_character], [value_special_characters_allow_list])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [escaping_support])
 ```
 
 **Arguments**
-- data - string to extract key value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md). 
-- escape_character - character to be used as escape. Defaults to '\\'. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- key_value_pair_delimiter - character to be used as delimiter between the key and the value. Defaults to ':'. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- item_delimiter - character to be used as delimiter between pairs. Defaults to ','. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- enclosing_character - character to be used as enclosing/quoting character. Defaults to '\"'. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- value_special_characters_allow_list - special (e.g. $!@#¨) value characters to ignore during value parsing and include without the need to escape. Should be specified without separators. Defaults to empty. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md). 
+- `data` - String to extract key-value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md). 
+- `escaping_support` - Turns escaping support on or off. Defaults to off. 
 
 **Returned values**
-- The extracted key value pairs in a Map(String, String).
+- The extracted key-value pairs in a Map(String, String).
 
-**Example**
+**Examples**
 
 Query:
 
+**Simple case**
 ``` sql
-select extractKeyValuePairs('9 ads =nm,  no\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
+arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+
+Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+
+┌─kv──────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-Result:
+**Single quote as quoting character**
+``` sql
+arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '0') as kv
 
-``` text
-┌─extractKeyValuePairs('9 ads =nm,  no\\:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe\\ picasso, team: psg,', '\\', ':', ',', '"', '.')─┐
-│ {'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}                                                                            │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '0') as kv
+
+Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+
+┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Escape sequences without escape sequences support**
+``` sql
+arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', '0') as kv
+
+SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', '0') as kv
+
+Query id: 4aa4a519-d130-4b09-b555-9214f9416c01
+
+┌─kv────────────────────────────────────────────────────┐
+│ {'age':'\\x0A'}                                       │
+└───────────────────────────────────────────────────────┘
+```
+
+**Escape sequences with escape sequence support turned on**
+``` sql
+arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', '1') as kv
+
+SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', '1') as kv
+
+Query id: 2c2044c6-3ca7-4300-a582-33b3192ad88d
+
+┌─kv────────────────────────────────────────────────────┐
+│ {'age':'\n'}                                          │
+└───────────────────────────────────────────────────────┘
 ```
