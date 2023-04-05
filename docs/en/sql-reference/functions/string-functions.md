@@ -1208,7 +1208,7 @@ Escaping support can be turned on and off.
 
 Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
 Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).  
+`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
 
 **Syntax**
 ``` sql
@@ -1219,8 +1219,8 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 - `data` - String to extract key-value pairs from. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 - `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 - `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md). 
-- `escaping_support` - Turns escaping support on or off. Defaults to off. 
+- `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `escaping_support` - Turns escaping support on or off. Defaults to off. [Bool](../../sql-reference/data-types/boolean.md).
 
 **Returned values**
 - The extracted key-value pairs in a Map(String, String).
@@ -1244,9 +1244,9 @@ Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 
 **Single quote as quoting character**
 ``` sql
-arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '0') as kv
+arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', 0) as kv
 
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '0') as kv
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', 0) as kv
 
 Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
@@ -1257,9 +1257,9 @@ Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
 **Escape sequences without escape sequences support**
 ``` sql
-arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', '0') as kv
+arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', 0) as kv
 
-SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', '0') as kv
+SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', 0) as kv
 
 Query id: 4aa4a519-d130-4b09-b555-9214f9416c01
 
@@ -1270,9 +1270,9 @@ Query id: 4aa4a519-d130-4b09-b555-9214f9416c01
 
 **Escape sequences with escape sequence support turned on**
 ``` sql
-arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', '1') as kv
+arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', 1) as kv
 
-SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', '1') as kv
+SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', 1) as kv
 
 Query id: 2c2044c6-3ca7-4300-a582-33b3192ad88d
 

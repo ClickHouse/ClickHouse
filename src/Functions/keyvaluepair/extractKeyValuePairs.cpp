@@ -151,7 +151,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             - `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
             - `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
             - `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-            - `escaping_support` - Turns escaping support on or off. Defaults to off.
+            - `escaping_support` - Turns escaping support on or off. Defaults to off. [Bool](../../sql-reference/data-types/boolean.md).
 
             **Returned values**
             - The extracted key-value pairs in a Map(String, String).
@@ -175,9 +175,9 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             **Single quote as quoting character**
             ``` sql
-            arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '0') as kv
+            arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', 0) as kv
 
-            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '0') as kv
+            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', 0) as kv
 
             Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
@@ -188,9 +188,9 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             **Escape sequences without escape sequences support**
             ``` sql
-            arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', '0') as kv
+            arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', 0) as kv
 
-            SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', '0') as kv
+            SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', 0) as kv
 
             Query id: 4aa4a519-d130-4b09-b555-9214f9416c01
 
@@ -201,9 +201,9 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             **Escape sequences with escape sequence support turned on**
             ``` sql
-            arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', '1') as kv
+            arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', 1) as kv
 
-            SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', '1') as kv
+            SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', 1) as kv
 
             Query id: 2c2044c6-3ca7-4300-a582-33b3192ad88d
 
