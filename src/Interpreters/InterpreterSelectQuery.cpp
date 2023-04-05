@@ -955,7 +955,7 @@ BlockIO InterpreterSelectQuery::execute()
     buildQueryPlan(query_plan);
 
     auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        QueryPlanOptimizationSettings::fromContext(context, !(storage && storage->isRemote())), BuildQueryPipelineSettings::fromContext(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 

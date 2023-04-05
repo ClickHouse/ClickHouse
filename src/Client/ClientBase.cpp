@@ -1552,7 +1552,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                     getNumberOfPhysicalCPUCores());
 
             auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(global_context),
+                QueryPlanOptimizationSettings::fromContext(global_context, !(storage && storage->isRemote())),
                 BuildQueryPipelineSettings::fromContext(global_context));
 
             QueryPlanResourceHolder resources;
