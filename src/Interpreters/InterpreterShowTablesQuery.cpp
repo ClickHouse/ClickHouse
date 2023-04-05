@@ -1,4 +1,4 @@
-#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
@@ -24,7 +24,8 @@ namespace ErrorCodes
 
 
 InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-    : WithMutableContext(context_), query_ptr(query_ptr_)
+    : WithMutableContext(context_)
+    , query_ptr(query_ptr_)
 {
 }
 
@@ -87,7 +88,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
 
         /// (*)
-        rewritten_query << " ORDER BY cluster";
+        rewritten_query << " ORDER BY cluster, shard_num, replica_num, host_name, host_address, port";
 
         return rewritten_query.str();
     }
