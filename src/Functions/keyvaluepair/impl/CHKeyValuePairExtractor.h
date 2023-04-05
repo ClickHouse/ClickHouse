@@ -15,6 +15,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/*
+ * Handle state transitions and a few states like `FLUSH_PAIR` and `END`.
+ * */
 template <typename StateHandler>
 class CHKeyValuePairExtractor : public KeyValuePairExtractor
 {

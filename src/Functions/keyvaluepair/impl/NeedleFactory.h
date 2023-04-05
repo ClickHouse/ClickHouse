@@ -11,6 +11,10 @@ namespace DB
 namespace extractKV
 {
 
+/*
+ * `StateHandlerImpl` makes use of string search algorithms to find delimiters. This class creates the needles for each state
+ *  based on the contents of `Configuration`.
+ * */
 template <bool WITH_ESCAPING>
 class NeedleFactory
 {
