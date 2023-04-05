@@ -451,9 +451,9 @@ void FillingTransform::transform(Chunk & chunk)
     if (!chunk.hasRows() && !all_chunks_processed)
         return;
 
-    Columns old_fill_columns;
-    Columns old_interpolate_columns;
-    Columns old_other_columns;
+    Columns input_fill_columns;
+    Columns input_interpolate_columns;
+    Columns input_other_columns;
     MutableColumnRawPtrs res_fill_columns;
     MutableColumnRawPtrs res_interpolate_columns;
     MutableColumnRawPtrs res_other_columns;
@@ -480,12 +480,12 @@ void FillingTransform::transform(Chunk & chunk)
     chassert(chunk.hasRows());
 
     const size_t num_rows = chunk.getNumRows();
-    auto old_columns = chunk.detachColumns();
+    auto input_columns = chunk.detachColumns();
     initColumns(
-        old_columns,
-        old_fill_columns,
-        old_interpolate_columns,
-        old_other_columns,
+        input_columns,
+        input_fill_columns,
+        input_interpolate_columns,
+        input_other_columns,
         result_columns,
         res_fill_columns,
         res_interpolate_columns,
@@ -495,7 +495,7 @@ void FillingTransform::transform(Chunk & chunk)
     {
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*old_fill_columns[i])[0];
+            auto current_value = (*input_fill_columns[i])[0];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
             if (!fill_from.isNull() && !equals(current_value, fill_from))
@@ -520,11 +520,11 @@ void FillingTransform::transform(Chunk & chunk)
         logDebug("next_row", next_row);
 
         bool should_insert_first = next_row < filling_row;
-        logDebug("should_insert_first", true);
+        logDebug("should_insert_first", should_insert_first);
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*old_fill_columns[i])[row_ind];
+            auto current_value = (*input_fill_columns[i])[row_ind];
             const auto & fill_to = filling_row.getFillDescription(i).fill_to;
 
             if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
@@ -548,9 +548,9 @@ void FillingTransform::transform(Chunk & chunk)
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
-        copyRowFromColumns(res_interpolate_columns, old_interpolate_columns, row_ind);
-        copyRowFromColumns(res_other_columns, old_other_columns, row_ind);
+        copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
+        copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
+        copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
     }
 
     saveLastRow(result_columns);
