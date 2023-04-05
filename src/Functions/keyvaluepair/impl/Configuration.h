@@ -24,6 +24,9 @@ public:
     const std::vector<char> pair_delimiters;
 };
 
+/*
+ * Validates (business logic) and creates Configurations for key-value-pair extraction.
+ * */
 struct ConfigurationFactory
 {
 public:
