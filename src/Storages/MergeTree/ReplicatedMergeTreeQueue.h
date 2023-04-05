@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Common/ActionBlocker.h>
+#include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -164,7 +165,7 @@ private:
     /// A subscriber callback is called when an entry queue is deleted
     mutable std::mutex subscribers_mutex;
 
-    using SubscriberCallBack = std::function<void(size_t /* queue_size */, std::unordered_set<String> /*wait_for_ids*/, std::optional<String> /* removed_log_entry_id */)>;
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */, const String * /* removed_log_entry_id */)>;
     using Subscribers = std::list<SubscriberCallBack>;
     using SubscriberIterator = Subscribers::iterator;
 
@@ -182,7 +183,7 @@ private:
     Subscribers subscribers;
 
     /// Notify subscribers about queue change (new queue size and entry that was removed)
-    void notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id);
+    void notifySubscribers(size_t new_queue_size, const String * removed_log_entry_id);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(
@@ -287,7 +288,7 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
-    ~ReplicatedMergeTreeQueue();
+    ~ReplicatedMergeTreeQueue() = default;
 
     /// Clears queue state
     void clear();
@@ -425,7 +426,9 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback);
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode);
+
+    void notifySubscribersOnPartialShutdown();
 
     struct Status
     {

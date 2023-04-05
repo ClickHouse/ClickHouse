@@ -497,10 +497,10 @@ The server successfully detected this situation and will download merged part fr
 namespace ProfileEvents
 {
 
-#define M(NAME, DOCUMENTATION) extern const Event NAME = __COUNTER__;
+#define M(NAME, DOCUMENTATION) extern const Event NAME = Event(__COUNTER__);
     APPLY_FOR_EVENTS(M)
 #undef M
-constexpr Event END = __COUNTER__;
+constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
 Counter global_counters_array[END] {};
@@ -522,7 +522,7 @@ void Counters::resetCounters()
 {
     if (counters)
     {
-        for (Event i = 0; i < num_counters; ++i)
+        for (Event i = Event(0); i < num_counters; ++i)
             counters[i].store(0, std::memory_order_relaxed);
     }
 }
@@ -540,7 +540,7 @@ Counters::Snapshot::Snapshot()
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
-    for (Event i = 0; i < num_counters; ++i)
+    for (Event i = Event(0); i < num_counters; ++i)
         res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
     return res;
 }
@@ -616,7 +616,7 @@ CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
 {
     init();
-    for (Event i = 0; i < Counters::num_counters; ++i)
+    for (Event i = Event(0); i < Counters::num_counters; ++i)
         increment_holder[i] = static_cast<Increment>(after[i]) - static_cast<Increment>(before[i]);
 }
 
