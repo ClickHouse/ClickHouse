@@ -201,6 +201,7 @@ void updateDataHintsWithOutputHeaderKeys(DataHints & hints, const Names & keys);
 
 std::tuple<Names, Names, DataTypes> optimizeAggregatingStepWithDataHints(
         QueryPipelineBuilder & pipeline,
+        const Names & keys,
         const DataHints & hints,
         const ColumnsWithTypeAndName & input_header,
         const BuildQueryPipelineSettings & settings,

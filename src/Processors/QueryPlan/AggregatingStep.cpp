@@ -454,7 +454,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 
     const auto & [changed_keys, new_keys, changed_data_types] = optimizeAggregatingStepWithDataHints(
-            pipeline, hints, input_streams.front().header.getColumnsWithTypeAndName(), settings, final);
+            pipeline, transform_params->params.keys, hints, input_streams.front().header.getColumnsWithTypeAndName(), settings, final);
     if (!changed_keys.empty())
     {
         Aggregator::Params new_params
