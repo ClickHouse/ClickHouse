@@ -1040,7 +1040,8 @@ namespace
                 checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
 
                 Pos start = cur;
-                auto check_is_number = [&](Pos pos) {
+                auto check_is_number = [&](Pos pos)
+                {
                     if (*pos < '0' || *pos > '9')
                         throw Exception(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
