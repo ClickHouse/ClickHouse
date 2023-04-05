@@ -115,7 +115,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (!storage.engine)
         return;
-    
+
     if (storage.engine->name == "Distributed")
         extractDictNameForDistEngineFromArg(*storage.engine, data);
     else if (storage.engine->name == "Dictionary")
@@ -172,14 +172,14 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 void DDLLoadingDependencyVisitor::extractDictNameForDistEngineFromArg(const ASTFunction& function, Data & data)
 {
     const size_t shard_key_ind = 3;
-    /// We check that the sharding key is exist and it is a function for accessing to the dictionary.     
+    /// We check that the sharding key is exist and it is a function for accessing to the dictionary.
     if (!function.arguments || function.arguments->children.size() <= shard_key_ind)
-        return;    
+        return;
     
     const auto * arg = function.arguments->as<ASTExpressionList>()->children[shard_key_ind].get();
     const auto * shard_key_with_dict_func = arg->as<ASTFunction>();
      
-    if (!shard_key_with_dict_func) 
+    if (!shard_key_with_dict_func)
         return;
 
     if (!functionIsDictGet(shard_key_with_dict_func->name))
@@ -187,7 +187,7 @@ void DDLLoadingDependencyVisitor::extractDictNameForDistEngineFromArg(const ASTF
     /// Get the dictionary name from `dict*` function.
     const auto * literal_arg = shard_key_with_dict_func->arguments->as<ASTExpressionList>()->children[0].get();
     const auto * dictionary_name = literal_arg->as<ASTLiteral>();
-    
+
     if (!dictionary_name)
         return;
     if (dictionary_name->value.getType() != Field::Types::String)
