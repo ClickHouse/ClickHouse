@@ -479,6 +479,7 @@ public:
     VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
+    TemporaryDataOnDiskScopePtr getSharedTempDataOnDisk() const;
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setPath(const String & path);
