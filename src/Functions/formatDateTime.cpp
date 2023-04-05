@@ -946,14 +946,14 @@ public:
     }
 
     template <typename T>
-    size_t parseFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, [[maybe_unused]] bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         static_assert(format_syntax == FormatSyntax::MySQL || format_syntax == FormatSyntax::Joda);
 
         if constexpr (format_syntax == FormatSyntax::MySQL)
             return parseMySQLFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
         else
-            return parseJodaFormat(format, instructions, scale, /*dummy*/ false, out_template);
+            return parseJodaFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
     }
 
     template <typename T>
