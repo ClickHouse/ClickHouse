@@ -58,7 +58,7 @@ void test_read_quoted(const auto & handler, std::string_view input, std::string_
 
 }
 
-TEST(extractKVPair_NoEscapingKeyStateHandler, Wait)
+TEST(extractKVPairNoEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' ', '$'};
 
@@ -77,7 +77,7 @@ TEST(extractKVPair_NoEscapingKeyStateHandler, Wait)
     test_wait(handler, "", 0u, State::END);
 }
 
-TEST(extractKVPair_NoEscapingKeyStateHandler, Read)
+TEST(extractKVPairNoEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 

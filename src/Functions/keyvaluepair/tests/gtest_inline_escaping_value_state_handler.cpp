@@ -23,7 +23,7 @@ void test_wait(const auto & handler, std::string_view input, std::size_t expecte
 
 }
 
-TEST(extractKVPair_InlineEscapingValueStateHandler, Wait)
+TEST(extractKVPairInlineEscapingValueStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char> {','};
 

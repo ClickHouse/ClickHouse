@@ -67,10 +67,10 @@ struct KeyValuePairExtractorTestParam
     std::vector<std::pair<std::string, std::string>> expected;
 };
 
-struct extractKVPair_KeyValuePairExtractorTest : public ::testing::TestWithParam<KeyValuePairExtractorTestParam>
+struct extractKVPairKeyValuePairExtractorTest : public ::testing::TestWithParam<KeyValuePairExtractorTestParam>
 {};
 
-TEST_P(extractKVPair_KeyValuePairExtractorTest, Match)
+TEST_P(extractKVPairKeyValuePairExtractorTest, Match)
 {
     const auto & [builder, input, expected] = GetParam();
     SCOPED_TRACE(input);
@@ -106,7 +106,7 @@ const ExpectedValues neymar_expected{
     {"last_key","last_value"}
 };
 
-INSTANTIATE_TEST_SUITE_P(Simple, extractKVPair_KeyValuePairExtractorTest,
+INSTANTIATE_TEST_SUITE_P(Simple, extractKVPairKeyValuePairExtractorTest,
         ::testing::ValuesIn(std::initializer_list<KeyValuePairExtractorTestParam>
         {
             {
@@ -131,7 +131,7 @@ INSTANTIATE_TEST_SUITE_P(Simple, extractKVPair_KeyValuePairExtractorTest,
 );
 
 // It is agreed that value with an invalid escape sequence in it is considered malformed and shouldn't be included in result.
-INSTANTIATE_TEST_SUITE_P(InvalidEscapeSeqInValue, extractKVPair_KeyValuePairExtractorTest,
+INSTANTIATE_TEST_SUITE_P(InvalidEscapeSeqInValue, extractKVPairKeyValuePairExtractorTest,
         ::testing::ValuesIn(std::initializer_list<KeyValuePairExtractorTestParam>
         {
             {
