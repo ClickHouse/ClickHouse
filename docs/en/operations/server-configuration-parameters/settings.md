@@ -2,6 +2,7 @@
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Server Settings
+description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
 # Server Settings
@@ -24,7 +25,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning
+:::note
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -256,6 +257,7 @@ The path to the table in ZooKeeper.
 ``` xml
 <default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
 ```
+
 ## default_replica_name {#default_replica_name}
 
  The replica name in ZooKeeper.
@@ -275,7 +277,7 @@ Path:
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
 
 **Example**
 
@@ -417,6 +419,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```
+
 ## hsts_max_age  {#hsts-max-age}
 
 Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.
@@ -1025,7 +1028,7 @@ If the number of **idle** threads in the Backups IO Thread pool exceeds `max_bac
 Possible values:
 
 -   Positive integer.
--   Zero. 
+-   Zero.
 
 Default value: `0`.
 
@@ -1112,7 +1115,7 @@ Default value: 8.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime.
 
 Possible values:
 
@@ -1128,7 +1131,7 @@ Default value: 8.
 
 ## background_common_pool_size {#background_common_pool_size}
 
-Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime.
 
 Possible values:
 
@@ -1142,6 +1145,25 @@ Default value: 8.
 <background_common_pool_size>36</background_common_pool_size>
 ```
 
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+## background_schedule_pool_size {#background_schedule_pool_size}
+
+Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md/#server-settings-dns-cache-update-period).
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 128.
 
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
@@ -1360,15 +1382,15 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 The following settings are available:
 
--   `size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
+-   `max_size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
 -   `max_entries`: The maximum number of `SELECT` query results stored in the cache. Default value: `1024`.
 -   `max_entry_size`: The maximum size in bytes `SELECT` query results may have to be saved in the cache. Default value: `1048576` (1 MiB).
 -   `max_entry_rows`: The maximum number of rows `SELECT` query results may have to be saved in the cache. Default value: `30000000` (30 mil).
 
 Changed settings take effect immediately.
 
-:::warning
-Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `size` or disable the query cache altogether.
+:::note
+Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size` or disable the query cache altogether.
 :::
 
 **Example**
@@ -1881,6 +1903,16 @@ The update is performed asynchronously, in a separate system thread.
 Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md)  (CREATE, DROP, ALTER, RENAME) on cluster.
 Works only if [ZooKeeper](#server-settings_zookeeper) is enabled.
 
+The configurable settings within `<distributed_ddl>` include:
+
+- **path**: the path in Keeper for the `task_queue` for DDL queries
+- **profile**: the profile used to execute the DDL queries
+- **pool_size**: how many `ON CLUSTER` queries can be run simultaneously
+- **max_tasks_in_queue**: the maximum number of tasks that can be in the queue. Default is 1,000
+- **task_max_lifetime**: delete node if its age is greater than this value. Default is `7 * 24 * 60 * 60` (a week in seconds)
+- **cleanup_delay_period**:  cleaning starts after new node event is received if the last cleaning wasn't made sooner than `cleanup_delay_period` seconds ago. Default is 60 seconds
+
+
 **Example**
 
 ```xml
@@ -1917,7 +1949,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../../operations/access-rights.md#access-control)
+- [Access Control and Account Management](../../guides/sre/user-management/index.md#access-control)
 
 ## user_directories {#user_directories}
 

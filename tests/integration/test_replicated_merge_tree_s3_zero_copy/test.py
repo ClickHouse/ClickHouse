@@ -192,6 +192,11 @@ def test_drop_table(cluster):
         "create table if not exists test_drop_table (n int) engine=ReplicatedMergeTree('/test/drop_table', '1') "
         "order by n partition by n % 99 settings storage_policy='s3'"
     )
+
+    # A table may get stuck in readonly mode if zk connection was lost during CREATE
+    node.query("detach table test_drop_table sync")
+    node.query("attach table test_drop_table")
+
     node.query_with_retry(
         "system sync replica test_drop_table",
         settings={"receive_timeout": 5},

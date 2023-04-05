@@ -95,6 +95,15 @@ public:
         out_required_substring_is_prefix = required_substring_is_prefix;
     }
 
+    /// analyze function will extract the longest string literal or multiple alternative string literals from regexp for pre-checking if
+    /// a string contains the string literal(s). If not, we can tell this string can never match the regexp.
+    static void analyze(
+        std::string_view regexp_,
+        std::string & required_substring,
+        bool & is_trivial,
+        bool & required_substring_is_prefix,
+        std::vector<std::string> & alternatives);
+
 private:
     bool is_trivial;
     bool required_substring_is_prefix;
@@ -104,8 +113,6 @@ private:
     std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
-
-    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 };
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;

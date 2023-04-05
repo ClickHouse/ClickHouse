@@ -10,6 +10,7 @@
 #include <IO/Operators.h>
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
+#include <Interpreters/Cache/IFileCachePriority.h>
 #include <list>
 #include <queue>
 
@@ -30,8 +31,9 @@ class ReadBufferFromFileBase;
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
-struct LockedKey;
-using LockedKeyPtr = std::shared_ptr<LockedKey>;
+struct FileSegmentMetadata;
+struct LockedKeyMetadata;
+using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
 struct KeyMetadata;
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
@@ -76,7 +78,8 @@ friend class FileCache;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 friend class StorageSystemFilesystemCache;
-friend struct LockedKey;
+friend struct LockedKeyMetadata;
+friend struct FileSegmentMetadata;
 
 public:
     using Key = FileCacheKey;
@@ -120,10 +123,11 @@ public:
     };
 
     FileSegment(
+        const Key & key_,
         size_t offset_,
         size_t size_,
-        const Key & key_,
         std::weak_ptr<KeyMetadata> key_metadata,
+        IFileCachePriority::Iterator queue_iterator_,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -182,7 +186,7 @@ public:
     DownloaderId getDownloader() const;
 
     /// Wait for the change of state from DOWNLOADING to any other.
-    State wait();
+    State wait(size_t offset);
 
     bool isDownloaded() const;
 
@@ -212,7 +216,7 @@ public:
     /// 2. Detached file segment can still be hold by some cache users, but it's state became
     /// immutable at the point it was detached, any non-const / stateful method will throw an
     /// exception.
-    void detach(const FileSegmentGuard::Lock &, const LockedKey &);
+    void detach(const FileSegmentGuard::Lock &, const LockedKeyMetadata &);
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
 
@@ -222,7 +226,7 @@ public:
     /// Completed states: DOWNALODED, DETACHED.
     bool isCompleted(bool sync = false) const;
 
-    void assertCorrectness() const;
+    bool assertCorrectness() const;
 
     /**
      * ========== Methods for _only_ file segment's `downloader` ==================
@@ -263,6 +267,8 @@ public:
 
     size_t getReservedSize() const;
 
+    IFileCachePriority::Iterator & getQueueIterator() const { return queue_iterator; }
+
 private:
     String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
@@ -282,9 +288,8 @@ private:
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
-    void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
-    LockedKeyPtr createLockedKey(bool assert_exists = true) const;
+    LockedKeyMetadataPtr lockKeyMetadata(bool assert_exists = true) const;
     KeyMetadataPtr getKeyMetadata() const;
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -292,7 +297,7 @@ private:
     /// Function might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeUnlocked(LockedKey & locked_key, const CacheGuard::Lock &);
+    void completeUnlocked(LockedKeyMetadata & locked_key, const CacheGuard::Lock &);
 
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -300,6 +305,9 @@ private:
     void wrapWithCacheInfo(Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
 
     Range segment_range;
+
+    /// Iterator is put here on first reservation attempt, if successful.
+    mutable IFileCachePriority::Iterator queue_iterator;
 
     std::atomic<State> download_state;
 

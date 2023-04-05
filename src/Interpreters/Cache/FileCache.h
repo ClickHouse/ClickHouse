@@ -12,12 +12,12 @@
 
 #include <IO/ReadSettings.h>
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Cache/LockedFileCachePriority.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/Metadata.h>
-#include <Interpreters/Cache/LockedKey.h>
 #include <Interpreters/Cache/QueryLimit.h>
 #include <filesystem>
 
@@ -27,11 +27,8 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-struct LockedKey;
-using LockedKeyPtr = std::shared_ptr<LockedKey>;
-using LockedKeysMap = std::unordered_map<FileCacheKey, LockedKeyPtr>;
-struct KeysQueue;
-using KeysQueuePtr = std::shared_ptr<KeysQueue>;
+struct LockedKeyMetadata;
+using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
 
 namespace ErrorCodes
 {
@@ -47,6 +44,8 @@ public:
     using QueryLimit = DB::FileCacheQueryLimit;
 
     FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
+
+    ~FileCache();
 
     void initialize();
 
@@ -98,7 +97,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata);
+    bool tryReserve(const FileSegment & file_segment, size_t size);
 
     FileSegmentsHolderPtr getSnapshot();
 
@@ -110,7 +109,11 @@ public:
 
     CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
-    LockedKeyPtr createLockedKey(const Key & key, KeyMetadataPtr key_metadata) const;
+    void cleanup();
+
+    void deactivateBackgroundOperations();
+
+    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata, bool return_null_if_in_cleanup_queue = true) const;
 
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
@@ -135,6 +138,7 @@ private:
     const size_t max_file_segment_size;
     const bool allow_persistent_files;
     const size_t bypass_cache_threshold = 0;
+    const size_t delayed_cleanup_interval_ms;
 
     Poco::Logger * log;
 
@@ -143,17 +147,6 @@ private:
     mutable std::mutex init_mutex;
 
     CacheMetadata metadata;
-
-    enum class KeyNotFoundPolicy
-    {
-        THROW,
-        CREATE_EMPTY,
-        RETURN_NULL,
-    };
-
-    LockedKeyPtr createLockedKey(const Key & key, KeyNotFoundPolicy key_not_found_policy);
-
-    mutable KeysQueuePtr cleanup_keys_metadata_queue;
 
     FileCachePriorityPtr main_priority;
     mutable CacheGuard cache_guard;
@@ -181,24 +174,24 @@ private:
 
     void loadMetadata();
 
-    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range);
+    FileSegments getImpl(const LockedKeyMetadata & locked_key, const FileSegment::Range & range);
 
     FileSegments splitRangeInfoFileSegments(
-        LockedKey & locked_key,
+        LockedKeyMetadata & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings);
 
     void fillHolesWithEmptyFileSegments(
-        LockedKey & locked_key,
+        LockedKeyMetadata & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);
 
     KeyMetadata::iterator addFileSegment(
-        LockedKey & locked_key,
+        LockedKeyMetadata & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
@@ -206,21 +199,14 @@ private:
         const CacheGuard::Lock *);
 
     static void removeFileSegment(
-        LockedKey & locked_key,
+        LockedKeyMetadata & locked_key,
         FileSegmentPtr file_segment,
         const CacheGuard::Lock &);
 
-    bool tryReserveUnlocked(
-        LockedKeyPtr locked_key,
-        size_t offset,
-        size_t size,
-        const CacheGuard::Lock &);
-
     bool tryReserveImpl(
-        IFileCachePriority & priority_queue,
-        LockedKeyPtr locked_key,
-        size_t offset,
+        const FileSegment & file_segment,
         size_t size,
+        IFileCachePriority & priority_queue,
         QueryLimit::LockedQueryContext * query_context,
         const CacheGuard::Lock &);
 
@@ -230,19 +216,11 @@ private:
         bool lock_key = false;
     };
 
-    using IterateAndCollectLocksFunc = std::function<IterateAndLockResult(const IFileCachePriority::Entry &, LockedKey &)>;
-    void iterateCacheAndCollectKeyLocks(
-        LockedCachePriority & priority,
-        IterateAndCollectLocksFunc && func,
-        LockedKeysMap & locked_map) const;
-
-    void iterateCacheMetadata(
-        const CacheMetadataGuard::Lock &, std::function<void(KeyMetadata &)> && func);
-
-    void performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &);
-
     void assertCacheCorrectness();
-    void assertCacheCorrectness(const CacheGuard::Lock & cache_lock, const CacheMetadataGuard::Lock & metadata_lock);
+
+    BackgroundSchedulePool::TaskHolder cleanup_task;
+
+    void cleanupThreadFunc();
 };
 
 }

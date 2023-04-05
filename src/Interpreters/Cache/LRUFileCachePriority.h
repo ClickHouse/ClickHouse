@@ -48,8 +48,10 @@ public:
         LRUFileCachePriority * cache_priority_,
         LRUFileCachePriority::LRUQueueIterator queue_iter_);
 
-    Entry & operator *() override { return *queue_iter; }
-    const Entry & operator *() const override { return *queue_iter; }
+    const Entry & getEntry() const override { return *queue_iter; }
+
+protected:
+    Entry & getEntry() override { return *queue_iter; }
 
     size_t use() override;
 

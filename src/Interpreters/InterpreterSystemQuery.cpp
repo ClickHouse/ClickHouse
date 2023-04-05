@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -63,6 +64,12 @@
 #endif
 
 #include "config.h"
+
+namespace CurrentMetrics
+{
+    extern const Metric RestartReplicaThreads;
+    extern const Metric RestartReplicaThreadsActive;
+}
 
 namespace DB
 {
@@ -509,7 +516,7 @@ BlockIO InterpreterSystemQuery::execute()
             dropDatabaseReplica(query);
             break;
         case Type::SYNC_REPLICA:
-            syncReplica();
+            syncReplica(query);
             break;
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
@@ -685,7 +692,8 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
-    ThreadPool pool(std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size()));
+    size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
+    ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
 
     for (auto & replica : replica_names)
     {
@@ -879,7 +887,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-void InterpreterSystemQuery::syncReplica()
+void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -887,7 +895,8 @@ void InterpreterSystemQuery::syncReplica()
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
-        if (!storage_replicated->waitForProcessingQueue(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.strict_sync))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \

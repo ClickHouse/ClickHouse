@@ -41,8 +41,8 @@ public:
     LockedCachePriorityIterator(const CacheGuard::Lock & lock_, IFileCachePriority::Iterator & iterator_)
         : lock(lock_), iterator(iterator_) {}
 
-    IFileCachePriority::Entry & operator *() { return **iterator; }
-    const IFileCachePriority::Entry & operator *() const { return **iterator; }
+    IFileCachePriority::Entry & getEntry() { return iterator->getEntry(); }
+    const IFileCachePriority::Entry & getEntry() const { return iterator->getEntry(); }
 
     size_t use() { return iterator->use(); }
 
