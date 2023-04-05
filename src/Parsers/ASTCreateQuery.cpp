@@ -449,6 +449,7 @@ void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
     if (select)
     {
         out.writeKeyword(" AS");
+        out.nlOrWs();
         out.writeKeyword(comment ? "(" : "");
         out.nlOrWs();
         select->formatImpl(out);

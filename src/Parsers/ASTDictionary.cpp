@@ -136,9 +136,10 @@ void ASTDictionary::formatImpl(FormattingBuffer out) const
     if (source)
     {
         out.nlOrWs();
-        out.writeKeyword("SOURCE(");
+        out.writeKeyword("SOURCE");
+        out.ostr << "(";
         source->formatImpl(out);
-        out.writeKeyword(")");
+        out.ostr << ")";
     }
 
     if (lifetime)
