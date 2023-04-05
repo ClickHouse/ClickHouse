@@ -25,8 +25,9 @@ public:
 private:
     void initialize();
 
-    CoordinationMode mode{CoordinationMode::Default};
+    std::mutex mutex;
     size_t replicas_count{0};
+    CoordinationMode mode{CoordinationMode::Default};
     std::atomic<bool> initialized{false};
     std::unique_ptr<ImplInterface> pimpl;
 };
