@@ -11,11 +11,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 
-#include <Common/assert_cast.h>
-
 
 namespace
 {
+
 using namespace DB;
 
 auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments)
@@ -83,9 +82,39 @@ ExtractKeyValuePairs::ExtractKeyValuePairs()
 {
 }
 
+String ExtractKeyValuePairs::getName() const
+{
+    return name;
+}
+
+FunctionPtr ExtractKeyValuePairs::create(ContextPtr)
+{
+    return std::make_shared<ExtractKeyValuePairs>();
+}
+
 DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes &) const
 {
     return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+}
+
+bool ExtractKeyValuePairs::isVariadic() const
+{
+    return true;
+}
+
+bool ExtractKeyValuePairs::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const
+{
+    return false;
+}
+
+std::size_t ExtractKeyValuePairs::getNumberOfArguments() const
+{
+    return 0u;
+}
+
+ColumnNumbers ExtractKeyValuePairs::getArgumentsThatAreAlwaysConstant() const
+{
+    return {1, 2, 3, 4, 5};
 }
 
 ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const

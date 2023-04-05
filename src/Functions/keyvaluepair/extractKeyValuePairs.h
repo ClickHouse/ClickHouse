@@ -15,38 +15,21 @@ public:
 
     static constexpr auto name = "extractKeyValuePairs";
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override;
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<ExtractKeyValuePairs>();
-    }
+    static FunctionPtr create(ContextPtr);
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override;
+
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override;
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
+    bool isVariadic() const override;
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override;
 
-    std::size_t getNumberOfArguments() const override
-    {
-        return 0u;
-    }
+    std::size_t getNumberOfArguments() const override;
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        return {1, 2, 3, 4, 5};
-    }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override;
 };
 
 }
