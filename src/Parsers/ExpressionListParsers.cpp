@@ -2256,6 +2256,7 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_t
         {"NOT IN",        Operator("notIn",           8,  2)},
         {"GLOBAL IN",     Operator("globalIn",        8,  2)},
         {"GLOBAL NOT IN", Operator("globalNotIn",     8,  2)},
+        {"PROBAL IN",     Operator("probalIn",        8,  2)},
         {"||",            Operator("concat",          9,  2, OperatorType::Mergeable)},
         {"+",             Operator("plus",            10, 2)},
         {"-",             Operator("minus",           10, 2)},

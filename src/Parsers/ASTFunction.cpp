@@ -710,6 +710,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 "notIn",           " NOT IN ",
                 "globalIn",        " GLOBAL IN ",
                 "globalNotIn",     " GLOBAL NOT IN ",
+                "probalIn",        " PROBAL IN ",
                 nullptr
             };
 
@@ -729,7 +730,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
                     const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
                     const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
-                    bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
+                    bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn" 
+                                                        || name == "probalIn")
                         && !second_arg_func
                         && !(second_arg_literal
                              && (second_arg_literal->value.getType() == Field::Types::Tuple
