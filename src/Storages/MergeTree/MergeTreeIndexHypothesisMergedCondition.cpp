@@ -386,7 +386,6 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
     return impl->mayBeTrueOnGranule(values);
 }
 
-MergeTreeIndexhypothesisMergedCondition::~MergeTreeIndexhypothesisMergedCondition()
-{}
+MergeTreeIndexhypothesisMergedCondition::~MergeTreeIndexhypothesisMergedCondition() = default;
 
 }
