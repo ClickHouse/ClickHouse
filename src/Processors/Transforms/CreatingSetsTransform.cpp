@@ -61,7 +61,7 @@ void CreatingSetsTransform::startSubquery()
         else
         {
             LOG_TRACE(log, "Waiting for set to be build by another thread.");
-            FutureSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
+            SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
             SetPtr ready_set = set_built_by_another_thread.get();
             subquery.promise_to_fill_set.set_value(ready_set);
             done_with_set = true;

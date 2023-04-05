@@ -452,7 +452,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets->getFuture(set_key).valid())
+    if (prepared_sets->getFuture(set_key).isValid())
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
@@ -463,6 +463,8 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     auto build_set = [&] () -> SetPtr
     {
+        LOG_TRACE(getLogger(), "Building set, key: {}", set_key.toString());
+
         auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
         auto io = interpreter_subquery->execute();
         PullingAsyncPipelineExecutor executor(io.pipeline);
@@ -492,16 +494,15 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     auto set_cache = getContext()->getPreparedSetsCache();
     if (set_cache)
     {
-        auto from_cache = set_cache->findOrPromiseToBuild(toString(set_key));
+        auto from_cache = set_cache->findOrPromiseToBuild(set_key.toString());
         if (from_cache.index() == 0)
         {
-            LOG_TRACE(getLogger(), "Building set, key: {}:{}", set_key.ast_hash.first, set_key.ast_hash.second);
             set = build_set();
             std::get<0>(from_cache).set_value(set);
         }
         else
         {
-            LOG_TRACE(getLogger(), "Waiting for set, key: {}:{}", set_key.ast_hash.first, set_key.ast_hash.second);
+            LOG_TRACE(getLogger(), "Waiting for set, key: {}", set_key.toString());
             set = std::get<1>(from_cache).get();
         }
     }
