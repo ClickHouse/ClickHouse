@@ -4,6 +4,7 @@
 
 #if USE_SSL
 
+#include <chrono>
 #include <string>
 #include <filesystem>
 
@@ -78,17 +79,15 @@ private:
     struct LetsEncryptConfigurationData
     {
         bool is_issuing_enabled;
-        int reissue_days_before;
+        int reissue_hours_before;
 
-        LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_days_before_);
+        LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_hours_before_);
     };
 
     MultiVersion<Data> data;
     bool init_was_not_made = true;
 
     MultiVersion<LetsEncryptConfigurationData> let_encrypt_configuration_data;
-
-    bool ShouldReissueCertificates();
 };
 
 }
