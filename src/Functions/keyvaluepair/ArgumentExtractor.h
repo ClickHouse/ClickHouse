@@ -8,6 +8,10 @@
 namespace DB
 {
 
+/*
+ * Validate (API level validation, no business logic validation) and extracts input arguments from
+ * `ColumnsWithTypeAndName` into ArgumentExtractor::ParsedArguments.
+ * */
 class ArgumentExtractor
 {
 public:

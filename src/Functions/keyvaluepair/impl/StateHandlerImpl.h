@@ -19,6 +19,15 @@ namespace DB
 namespace extractKV
 {
 
+
+/*
+ * Handles (almost) all states present in `StateHandler::State`. The description of each state responsibility can be found in
+ * `StateHandler::State`. Advanced & optimized string search algorithms are used to search for control characters and form key value pairs.
+ * Each method returns a `StateHandler::NextState` object which contains the next state itself and the number of characters consumed by the previous state.
+ *
+ * The class is templated with a boolean that controls escaping support. As of now, there are two specializations:
+ * `NoEscapingStateHandler` and `InlineEscapingStateHandler`.
+ * */
 template <bool WITH_ESCAPING>
 class StateHandlerImpl : public StateHandler
 {
@@ -26,6 +35,9 @@ public:
     explicit StateHandlerImpl(Configuration configuration_)
         : configuration(std::move(configuration_))
     {
+        /* SearchNeedles do not change throughout the algorithm. Therefore, they are created only once in the constructor
+         * to avoid unnecessary copies.
+         * */
         NeedleFactory<WITH_ESCAPING> needle_factory;
 
         wait_needles = needle_factory.getWaitNeedles(configuration);
@@ -33,6 +45,9 @@ public:
         read_quoted_needles = needle_factory.getReadQuotedNeedles(configuration);
     }
 
+    /*
+     * Find first character that is considered a valid key character and proceeds to READING_KEY like states.
+     * */
     [[nodiscard]] NextState waitKey(std::string_view file) const
     {
         if (const auto * p = find_first_not_symbols_or_null(file, wait_needles))
@@ -52,6 +67,10 @@ public:
         return {file.size(), State::END};
     }
 
+    /*
+     * Find first delimiter of interest (`read_needles`). Valid symbols are either `key_value_delimiter` and `escape_character` if escaping
+     * support is on. If it finds a pair delimiter, it discards the key.
+     * */
     [[nodiscard]] NextState readKey(std::string_view file, auto & key) const
     {
         key.reset();
@@ -93,6 +112,9 @@ public:
         return {file.size(), State::END};
     }
 
+    /*
+     * Search for closing quoting character and process escape sequences along the way (if escaping support is turned on).
+     * */
     [[nodiscard]] NextState readQuotedKey(std::string_view file, auto & key) const
     {
         key.reset();
@@ -135,6 +157,9 @@ public:
         return {file.size(), State::END};
     }
 
+    /*
+     * Validate expected key-value-delimiter is in place.
+     * */
     [[nodiscard]] NextState readKeyValueDelimiter(std::string_view file) const
     {
         if (!file.empty())
@@ -150,6 +175,10 @@ public:
         return {0, State::WAITING_KEY};
     }
 
+    /*
+     * Check if next character is a valid value character and jumps to read-like states. Caveat here is that a pair delimiter must also lead to
+     * read-like states because it indicates empty values.
+     * */
     [[nodiscard]] NextState waitValue(std::string_view file) const
     {
         size_t pos = 0;
@@ -171,6 +200,10 @@ public:
         return {pos, State::READING_VALUE};
     }
 
+    /*
+     * Finds next delimiter of interest (`read_needles`). Valid symbols are either `pair_delimiter` and `escape_character` if escaping
+     * support is on. If it finds a `key_value_delimiter`, it discards the value.
+     * */
     [[nodiscard]] NextState readValue(std::string_view file, auto & value) const
     {
         value.reset();
@@ -214,6 +247,9 @@ public:
         return {file.size(), State::FLUSH_PAIR};
     }
 
+    /*
+     * Search for closing quoting character and process escape sequences along the way (if escaping support is turned on).
+     * */
     [[nodiscard]] NextState readQuotedValue(std::string_view file, auto & value) const
     {
         size_t pos = 0;
@@ -258,6 +294,10 @@ private:
     SearchSymbols read_needles;
     SearchSymbols read_quoted_needles;
 
+    /*
+     * Helper method to copy bytes until `character_pos` and process possible escape sequence. Returns number a pair containing a boolean
+     * that indicates success and a std::size_t that contains the number of bytes read/ consumed.
+     * */
     std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, auto & output) const
     {
         std::string escaped_sequence;
@@ -298,6 +338,9 @@ private:
 
 struct NoEscapingStateHandler : public StateHandlerImpl<false>
 {
+    /*
+     * View based StringWriter, no temporary copies are used.
+     * */
     class StringWriter
     {
         ColumnString & col;
