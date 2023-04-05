@@ -676,7 +676,7 @@ private:
     static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'M', 'W'};
+        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -688,7 +688,7 @@ private:
                     if (mysql_M_is_month_name)
                     {
                         if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter_M_is_month_name.end(),
+                                variable_width_formatter_M_is_month_name.begin(), variable_width_formatter_M_is_month_name.end(),
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
