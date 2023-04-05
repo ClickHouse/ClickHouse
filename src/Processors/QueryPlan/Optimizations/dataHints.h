@@ -4,7 +4,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 #include <Core/Field.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -200,8 +199,7 @@ void unionJoinDataHints(DataHints & left_hints, const DataHints & right_hints, c
 
 void updateDataHintsWithOutputHeaderKeys(DataHints & hints, const Names & keys);
 
-std::pair<Names, DataTypes> optimizeAggregatingStepWithDataHints(
-        std::shared_ptr<AggregatingTransformParams> & transform_params,
+std::tuple<Names, Names, DataTypes> optimizeAggregatingStepWithDataHints(
         QueryPipelineBuilder & pipeline,
         const DataHints & hints,
         const ColumnsWithTypeAndName & input_header,
