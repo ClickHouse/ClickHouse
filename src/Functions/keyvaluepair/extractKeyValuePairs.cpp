@@ -78,10 +78,6 @@ ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> 
 namespace DB
 {
 
-ExtractKeyValuePairs::ExtractKeyValuePairs()
-{
-}
-
 String ExtractKeyValuePairs::getName() const
 {
     return name;
