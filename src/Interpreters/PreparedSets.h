@@ -20,16 +20,35 @@ class Set;
 using SetPtr = std::shared_ptr<Set>;
 class InterpreterSelectWithUnionQuery;
 
-class FutureSet final : public std::shared_future<SetPtr>
+/// Represents a set in a query that might be referenced at analysis time and built later during execution.
+/// Also it can represent a constant set that is ready to use.
+/// At analysis stage the FutureSets are created but not necessarily filled. Then for non-constant sets there
+/// must be an explicit step to build them before they can be used.
+/// FutureSet objects can be stored in PreparedSets and are not intended to be used from multiple threads.
+class FutureSet final
 {
 public:
     FutureSet() = default;
-    explicit FutureSet(const std::shared_future<SetPtr> & future) : std::shared_future<SetPtr>(future) {}
+
+    /// Create FutureSet from an object that will be created in the future.
+    explicit FutureSet(const std::shared_future<SetPtr> & future_set_) : future_set(future_set_) {}
+
+    /// Create FutureSet from a ready set.
     explicit FutureSet(SetPtr readySet);
 
+    /// The set object will be ready in the future, as oposed to 'null' object  when FutureSet is default constructed.
+    bool isValid() const { return future_set.valid(); }
+
+    /// The the value of SetPtr is ready, but the set object might not have been filled yet.
     bool isReady() const;
 
+    /// The set object is ready and filled.
     bool isCreated() const;
+
+    SetPtr get() const { chassert(isReady()); return future_set.get(); }
+
+private:
+    std::shared_future<SetPtr> future_set;
 };
 
 /// Information on how to build set for the [GLOBAL] IN section.
@@ -75,22 +94,18 @@ struct PreparedSetKey
 
     bool operator==(const PreparedSetKey & other) const;
 
+    String toString() const;
+
     struct Hash
     {
         UInt64 operator()(const PreparedSetKey & key) const { return key.ast_hash.first; }
     };
 };
 
-inline String toString(const PreparedSetKey & key)
-{
-    return "__set_" + std::to_string(key.ast_hash.first) + "_" + std::to_string(key.ast_hash.second);
-}
 
 class PreparedSets
 {
 public:
-//    explicit PreparedSets(PreparedSetsCachePtr cache_ = {}) : cache(cache_) {}
-
     using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
     SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
@@ -121,6 +136,10 @@ private:
 
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
+/// A reference to a set that is being built by another task.
+/// The difference from FutureSet is that this object can be used to wait for the set to be built in another thread.
+using SharedSet = std::shared_future<SetPtr>;
+
 /// This set cache is used to avoid building the same set multiple times. It is different from PreparedSets in way that
 /// it can be used across multiple queries. One use case is when we execute the same mutation on multiple parts. In this
 /// case each part is processed by a separate mutation task but they can share the same set.
@@ -129,25 +148,18 @@ using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 class PreparedSetsCache
 {
 public:
-    std::variant<std::promise<SetPtr>, FutureSet> findOrPromiseToBuild(const String & key);
+    std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuild(const String & key);
 
 private:
     struct Entry
     {
-//        std::promise<SetPtr> promise;          /// The promise is set when the set is built by the first task.
-        std::shared_future<SetPtr> future; /// Other tasks can wait for the set to be built.
+        SharedSet future; /// Other tasks can wait for the set to be built.
     };
 
-    using EntryPtr = std::shared_ptr<Entry>;
-
-    /// Protects just updates to the cache. When we got EntyPtr from the cache we can access it without locking.
     std::mutex cache_mutex;
-    std::unordered_map<String, EntryPtr> cache;
+    std::unordered_map<String, Entry> cache;
 };
 
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
-
-//FutureSet makeReadyFutureSet(SetPtr set);
 
 }

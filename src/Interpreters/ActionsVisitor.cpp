@@ -961,7 +961,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
             prepared_set = makeSet(node, data, data.no_subqueries);
 
-        if (prepared_set.valid())
+        if (prepared_set.isValid())
         {
             /// Transform tuple or subquery into a set.
         }
@@ -1174,7 +1174,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 num_arguments += columns.size() - 1;
                 arg += columns.size() - 1;
             }
-            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set.valid())
+            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set.isValid())
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
@@ -1399,7 +1399,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
 
         {
             auto set = data.prepared_sets->getFuture(set_key);
-            if (set.valid())
+            if (set.isValid())
                 return set;
         }
 
