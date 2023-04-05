@@ -1405,7 +1405,7 @@ REGISTER_FUNCTION(FormatDateTime)
     factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name);
 
     factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", "fromUnixTimestamp");
+    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name);
 
     factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>();
