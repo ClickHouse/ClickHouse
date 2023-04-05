@@ -26,7 +26,6 @@ from pyspark.sql.window import Window
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
 
 
 @pytest.fixture(scope="module")
@@ -145,7 +144,9 @@ def create_hudi_table(node, table_name):
     )
 
 
-def create_initial_data_file(node, query, table_name, compression_method="none"):
+def create_initial_data_file(
+    cluster, node, query, table_name, compression_method="none"
+):
     node.query(
         f"""
         INSERT INTO TABLE FUNCTION
@@ -155,7 +156,10 @@ def create_initial_data_file(node, query, table_name, compression_method="none")
             s3_truncate_on_insert=1 {query}
         FORMAT Parquet"""
     )
-    result_path = f"{USER_FILES_PATH}/{table_name}.parquet"
+    user_files_path = os.path.join(
+        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
+    )
+    result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
 
 
@@ -167,7 +171,9 @@ def test_single_hudi_file(started_cluster):
     TABLE_NAME = "test_single_hudi_file"
 
     inserted_data = "SELECT number as a, toString(number) as b FROM numbers(100)"
-    parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME
+    )
 
     write_hudi_from_file(spark, TABLE_NAME, parquet_data_path, f"/{TABLE_NAME}")
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
