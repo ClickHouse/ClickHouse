@@ -110,7 +110,7 @@ struct ReplaceStringImpl
     requires (sizeof(CharT) == 1)
     static void copyToOutput(
         const CharT * what_start, size_t what_size,
-        ColumnString::Chars & output, size_t & output_offset)
+        ColumnString::Chars & output, ColumnString::Offset & output_offset)
     {
         output.resize(output.size() + what_size);
         memcpy(&output[output_offset], what_start, what_size);
