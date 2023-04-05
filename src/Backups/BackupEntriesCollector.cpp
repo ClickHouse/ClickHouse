@@ -490,7 +490,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     {
         /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
         auto zookeeper_retries_info = global_zookeeper_retries_info;
-        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", zookeeper_retries_info, context->getProcessListElement());
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", zookeeper_retries_info, nullptr);
         retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)
