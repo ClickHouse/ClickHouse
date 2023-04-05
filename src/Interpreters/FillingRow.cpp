@@ -45,6 +45,11 @@ bool FillingRow::operator==(const FillingRow & other) const
     return true;
 }
 
+bool FillingRow::operator>=(const FillingRow & other) const
+{
+    return !(*this < other);
+}
+
 bool FillingRow::next(const FillingRow & to_row)
 {
     const size_t row_size = size();
