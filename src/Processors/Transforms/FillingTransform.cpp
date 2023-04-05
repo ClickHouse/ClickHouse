@@ -251,39 +251,24 @@ FillingTransform::FillingTransform(
             interpolate_column_positions.push_back(header_.getPositionByName(name));
 }
 
-/// prepare() is overrididen to cover cases when we need to generate rows for no input (so chunk in transform() will have no rows)
-/// (1) when all data are processed and WITH FILL .. TO is provided, we may need to generate suffix
-/// (2) for empty result set when WITH FILL FROM .. TO is provided (see PR #30888) (first and generate_suffix are both true)
+/// prepare() is overrididen to call transform() after all chunks are processed
+/// it can be necessary for suffix generation in case of WITH FILL .. TO is provided
 IProcessor::Status FillingTransform::prepare()
 {
-    if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
+    if (input.isFinished() && !output.isFinished() && !has_input && !all_chunks_processed)
     {
-        logDebug("prepare()", "check if need to generate suffix");
+        logDebug("prepare()", "all chunks processed");
+        all_chunks_processed = true;
 
-        should_insert_first = next_row < filling_row || first;
-
-        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-            next_row[i] = filling_row.getFillDescription(i).fill_to;
-
-        logDebug("prepare() filling_row", filling_row);
-        logDebug("prepare() next_row", next_row);
-        logDebug("prepare() first", first);
-
-        if (first || filling_row < next_row)
+        /// push output data to output port if we can
+        if (has_output && output.canPush())
         {
-            /// push output data to output port if we can
-            if (has_output && output.canPush())
-            {
-                output.pushData(std::move(output_data));
-                has_output = false;
-            }
-
-            logDebug("prepare()", "need to generate suffix");
-
-            generate_suffix = true;
-            /// return Ready to call transform() for generating filling rows after latest chunk was processed
-            return Status::Ready;
+            output.pushData(std::move(output_data));
+            has_output = false;
         }
+
+        /// return Ready to call transform() for generating filling rows after latest chunk was processed
+        return Status::Ready;
     }
 
     return ISimpleTransform::prepare();
@@ -346,8 +331,10 @@ static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, c
             interpolate_columns[i]->insertFrom(*columns[i]->convertToFullColumnIfConst(), 0);
     }
     else
+    {
         for (auto * interpolate_column : interpolate_columns)
             interpolate_column->insertDefault();
+    }
 
     for (auto * other_column : other_columns)
         other_column->insertDefault();
@@ -398,14 +385,70 @@ void FillingTransform::initColumns(
     initColumnsByPositions(non_const_columns, input_other_columns, output_columns, output_other_columns, other_column_positions);
 }
 
+bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, MutableColumns & result_columns)
+{
+    logDebug("generateSuffixIfNeeded() filling_row", filling_row);
+    logDebug("generateSuffixIfNeeded() next_row", next_row);
+    logDebug("generateSuffixIfNeeded() first", first);
+
+    /// Determines should we insert filling row before start generating next rows.
+    bool should_insert_first = next_row < filling_row || first;
+
+    for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+        next_row[i] = filling_row.getFillDescription(i).fill_to;
+
+    logDebug("generateSuffixIfNeeded() next_row updated", next_row);
+
+    if (!first && filling_row >= next_row)
+    {
+        logDebug("generateSuffixIfNeeded()", "no need to generate suffix");
+        return false;
+    }
+
+    Columns input_fill_columns;
+    Columns input_interpolate_columns;
+    Columns input_other_columns;
+    MutableColumnRawPtrs res_fill_columns;
+    MutableColumnRawPtrs res_interpolate_columns;
+    MutableColumnRawPtrs res_other_columns;
+
+    initColumns(
+        input_columns,
+        input_fill_columns,
+        input_interpolate_columns,
+        input_other_columns,
+        result_columns,
+        res_fill_columns,
+        res_interpolate_columns,
+        res_other_columns);
+
+    if (first)
+        filling_row.initFromDefaults();
+
+    Block interpolate_block;
+    if (should_insert_first && filling_row < next_row)
+    {
+        interpolate(result_columns, interpolate_block);
+        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+    }
+
+    while (filling_row.next(next_row))
+    {
+        interpolate(result_columns, interpolate_block);
+        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+    }
+
+    return true;
+}
+
 void FillingTransform::transform(Chunk & chunk)
 {
     logDebug("new chunk rows", chunk.getNumRows());
-    logDebug("generate suffix", generate_suffix);
+    logDebug("all chunks processed", all_chunks_processed);
 
     /// if got chunk with no rows and it's not for suffix generation, then just skip it
     /// Note: ExpressionTransform can return chunk with no rows, see 02579_fill_empty_chunk.sql for example
-    if (!chunk.hasRows() && !generate_suffix)
+    if (!chunk.hasRows() && !all_chunks_processed)
         return;
 
     Columns old_fill_columns;
@@ -418,38 +461,19 @@ void FillingTransform::transform(Chunk & chunk)
 
     Block interpolate_block;
 
-    if (generate_suffix)
+    if (all_chunks_processed)
     {
         chassert(!chunk.hasRows());
 
-        const auto & empty_columns = input.getHeader().getColumns();
-        initColumns(
-            empty_columns,
-            old_fill_columns,
-            old_interpolate_columns,
-            old_other_columns,
-            result_columns,
-            res_fill_columns,
-            res_interpolate_columns,
-            res_other_columns);
-
-        if (first)
-            filling_row.initFromDefaults();
-
-        if (should_insert_first && filling_row < next_row)
+        /// if all chunks are processed, then we may need to generate suffix for the following cases:
+        /// (1) when all data are processed and WITH FILL .. TO is provided
+        /// (2) for empty result set when WITH FILL FROM .. TO is provided (see PR #30888)
+        if (generateSuffixIfNeeded(input.getHeader().getColumns(), result_columns))
         {
-            interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            size_t num_output_rows = result_columns[0]->size();
+            chunk.setColumns(std::move(result_columns), num_output_rows);
         }
 
-        while (filling_row.next(next_row))
-        {
-            interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-        }
-
-        size_t num_output_rows = result_columns[0]->size();
-        chunk.setColumns(std::move(result_columns), num_output_rows);
         return;
     }
 
@@ -495,7 +519,7 @@ void FillingTransform::transform(Chunk & chunk)
         logDebug("filling_row", filling_row);
         logDebug("next_row", next_row);
 
-        should_insert_first = next_row < filling_row;
+        bool should_insert_first = next_row < filling_row;
         logDebug("should_insert_first", true);
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)

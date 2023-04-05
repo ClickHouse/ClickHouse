@@ -28,6 +28,7 @@ public:
     size_t size() const { return row.size(); }
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
+    bool operator>=(const FillingRow & other) const;
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
