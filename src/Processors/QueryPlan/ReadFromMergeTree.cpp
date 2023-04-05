@@ -19,7 +19,6 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -99,6 +98,7 @@ namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
 }
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(
@@ -131,6 +131,41 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
             return false;
     }
     return true;
+}
+
+void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const
+{
+
+    /// Do not check number of read rows if we have reading
+    /// in order of sorting key with limit.
+    /// In general case, when there exists WHERE clause
+    /// it's impossible to estimate number of rows precisely,
+    /// because we can stop reading at any time.
+
+    SizeLimits limits;
+    if (settings.read_overflow_mode == OverflowMode::THROW
+        && settings.max_rows_to_read
+        && !query_info_.input_order_info)
+        limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+
+    SizeLimits leaf_limits;
+    if (settings.read_overflow_mode_leaf == OverflowMode::THROW
+        && settings.max_rows_to_read_leaf
+        && !query_info_.input_order_info)
+        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+
+    if (limits.max_rows || leaf_limits.max_rows)
+    {
+        /// Fail fast if estimated number of rows to read exceeds the limit
+        size_t total_rows_estimate = selected_rows;
+        if (query_info_.limit > 0 && total_rows_estimate > query_info_.limit)
+        {
+            total_rows_estimate = query_info_.limit;
+        }
+        limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+        leaf_limits.check(
+            total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+    }
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
@@ -259,9 +294,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    auto is_local_replica = context->getClientInfo().interface == ClientInfo::Interface::LOCAL;
-    if (!is_local_replica)
-        min_marks_for_concurrent_read = static_cast<size_t>(min_marks_for_concurrent_read * context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier);
+    min_marks_for_concurrent_read = static_cast<size_t>(min_marks_for_concurrent_read * context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier);
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         storage_snapshot,
@@ -298,16 +331,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             source->addTotalRowsApprox(total_rows);
 
         pipes.emplace_back(std::move(source));
-
-        /// Add a special dependency transform which will be connected later with
-        /// all RemoteSources through a simple scheduler (ResizeProcessor)
-        if (context->getClientInfo().interface == ClientInfo::Interface::LOCAL)
-        {
-            pipes.back().addSimpleTransform([&](const Block & header) -> ProcessorPtr
-            {
-                return std::make_shared<ReadFromMergeTreeDependencyTransform>(header, context->getParallelReplicasGroupUUID());
-            });
-        }
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -713,12 +736,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             .colums_to_read = column_names
         };
 
-        /// We have a special logic for local replica. It has to read less data, because in some cases it should
-        /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-        auto is_local_replica = context->getClientInfo().interface == ClientInfo::Interface::LOCAL;
         auto min_marks_for_concurrent_read = info.min_marks_for_concurrent_read;
-        if (!is_local_replica)
-            min_marks_for_concurrent_read = static_cast<size_t>(min_marks_for_concurrent_read * settings.parallel_replicas_single_task_marks_count_multiplier);
+        min_marks_for_concurrent_read = static_cast<size_t>(min_marks_for_concurrent_read * settings.parallel_replicas_single_task_marks_count_multiplier);
 
         pool = std::make_shared<MergeTreeInOrderReadPoolParallelReplicas>(
             parts_with_ranges,
@@ -1475,7 +1494,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
     if (std::holds_alternative<std::exception_ptr>(result_ptr->result))
         std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
 
-    return std::get<ReadFromMergeTree::AnalysisResult>(result_ptr->result);
+    return std::get<AnalysisResult>(result_ptr->result);
 }
 
 bool ReadFromMergeTree::isQueryWithFinal() const
@@ -1485,6 +1504,18 @@ bool ReadFromMergeTree::isQueryWithFinal() const
         return query_info.table_expression_modifiers->hasFinal();
     else
         return select.final();
+}
+
+bool ReadFromMergeTree::isQueryWithSampling() const
+{
+    if (context->getSettingsRef().parallel_replicas_count > 1 && data.supportsSampling())
+        return true;
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
+    else
+        return select.sampleSize() != nullptr;
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(
@@ -1503,14 +1534,6 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
         ::sort(column_names_to_read.begin(), column_names_to_read.end());
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
-    }
-
-    /// Construct a proper coordinator
-    if (input_order_info && is_parallel_reading_from_replicas && context->getClientInfo().interface == ClientInfo::Interface::LOCAL)
-    {
-        assert(context->parallel_reading_coordinator);
-        auto mode = input_order_info->direction == 1 ? CoordinationMode::WithOrder : CoordinationMode::ReverseOrder;
-        context->parallel_reading_coordinator->setMode(mode);
     }
 
     if (final)
@@ -1581,6 +1604,8 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, Actions
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = getAnalysisResult();
+    result.checkLimits(context->getSettingsRef(), query_info);
+
     LOG_DEBUG(
         log,
         "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",

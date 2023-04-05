@@ -861,7 +861,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     }
 
     const auto & settings = global_context->getSettingsRef();
-    const Int32 signals_before_stop = settings.stop_reading_on_first_cancel ? 2 : 1;
+    const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
 
     int retries_left = 10;
     while (retries_left)
@@ -885,7 +885,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             if (send_external_tables)
                 sendExternalTables(parsed_query);
 
-            receiveResult(parsed_query, signals_before_stop, settings.stop_reading_on_first_cancel);
+            receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
         }
@@ -910,7 +910,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
 /// Receives and processes packets coming from server.
 /// Also checks if query execution should be cancelled.
-void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool stop_reading_on_first_cancel)
+void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel)
 {
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -934,11 +934,11 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
             /// to avoid losing sync.
             if (!cancelled)
             {
-                if (stop_reading_on_first_cancel && QueryInterruptHandler::cancelled_status() == signals_before_stop - 1)
+                if (partial_result_on_first_cancel && QueryInterruptHandler::cancelled_status() == signals_before_stop - 1)
                 {
                     connection->sendCancel();
                     /// First cancel reading request was sent. Next requests will only be with a full cancel
-                    stop_reading_on_first_cancel = false;
+                    partial_result_on_first_cancel = false;
                 }
                 else if (QueryInterruptHandler::cancelled())
                 {
@@ -1131,6 +1131,8 @@ void ClientBase::onProfileEvents(Block & block)
         {
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
+                /// We need to restart the watch each time we flushed these events
+                profile_events.watch.restart();
                 initLogsOutputStream();
                 if (need_render_progress && tty_buf)
                     progress_indication.clearProgressOutput(*tty_buf);
@@ -1144,7 +1146,6 @@ void ClientBase::onProfileEvents(Block & block)
                 incrementProfileEventsBlock(profile_events.last_block, block);
             }
         }
-        profile_events.watch.restart();
     }
 }
 
