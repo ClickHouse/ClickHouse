@@ -241,22 +241,22 @@ bool Set::insertFromBlock(const Columns & columns)
 void Set::finishInsert()
 {
     is_created = true;
-    is_created_promise.set_value();
+//    is_created_promise.set_value();
 }
 
-void Set::waitForIsCreated() const
+void Set::checkIsCreated() const
 {
-    if (is_created.load())
-        return;
-
-// FIXME: each thread must wait on its own copy of the future
-    std::shared_future<void> local_is_created_future;
-    {
-        std::lock_guard<std::mutex> lock(is_created_future_mutex);
-        local_is_created_future = is_created_future;
-    }
-
-    local_is_created_future.wait();
+    if (!is_created.load())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Trying to use set before it has been built.");
+//
+//// FIXME: each thread must wait on its own copy of the future
+//    std::shared_future<void> local_is_created_future;
+//    {
+//        std::lock_guard<std::mutex> lock(is_created_future_mutex);
+//        local_is_created_future = is_created_future;
+//    }
+//
+//    local_is_created_future.wait();
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -266,7 +266,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     if (0 == num_key_columns)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
 
-    waitForIsCreated();
+    checkIsCreated();
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
