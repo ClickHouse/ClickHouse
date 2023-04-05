@@ -5,7 +5,6 @@
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/Throttler_fwd.h>
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
@@ -191,8 +190,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const WriteSettings & settings = {},
-        ThrottlerPtr throttler = {});
+        const WriteSettings & settings = {});
 
     /// List files at `path` and add their names to `file_names`
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
