@@ -2430,20 +2430,20 @@ ThrottlerPtr Context::getBackupsThrottler() const
 {
     ThrottlerPtr throttler;
 
-    if (shared->server_settings.backup_bandwidth_for_server)
+    if (shared->server_settings.max_backup_bandwidth_for_server)
     {
         auto lock = getLock();
         if (!shared->backups_server_throttler)
-            shared->backups_server_throttler = std::make_shared<Throttler>(shared->server_settings.backup_bandwidth_for_server);
+            shared->backups_server_throttler = std::make_shared<Throttler>(shared->server_settings.max_backup_bandwidth_for_server);
         throttler = shared->backups_server_throttler;
     }
 
     const auto & query_settings = getSettingsRef();
-    if (query_settings.backup_bandwidth)
+    if (query_settings.max_backup_bandwidth)
     {
         auto lock = getLock();
         if (!backups_query_throttler)
-            backups_query_throttler = std::make_shared<Throttler>(query_settings.backup_bandwidth, throttler);
+            backups_query_throttler = std::make_shared<Throttler>(query_settings.max_backup_bandwidth, throttler);
         throttler = backups_query_throttler;
     }
 
