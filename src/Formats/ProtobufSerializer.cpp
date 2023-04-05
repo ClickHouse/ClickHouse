@@ -3453,7 +3453,7 @@ namespace
                     const auto & tuple_data_type = assert_cast<const DataTypeTuple &>(*data_type);
                     size_t size_of_tuple = tuple_data_type.getElements().size();
 
-                    if (auto * message_type = field_descriptor.message_type())
+                    if (const auto * message_type = field_descriptor.message_type())
                     {
                         bool have_explicit_names = tuple_data_type.haveExplicitNames();
                         Names element_names;
