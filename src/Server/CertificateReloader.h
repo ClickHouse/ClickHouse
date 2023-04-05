@@ -21,6 +21,16 @@
 #include <unordered_map>
 #include <mutex>
 
+#include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+#include <Poco/Crypto/RSAKey.h>
+#include <Poco/Crypto/X509Certificate.h>
+#include <Common/MultiVersion.h>
+#include <Common/Logger.h>
+#include <Server/CertificateIssuer.h>
+
 
 namespace DB
 {
@@ -43,6 +53,17 @@ public:
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };
+    /// Initialize the callback and perform the initial cert loading
+    void init();
+
+    /// Handle configuration reload
+    void tryLoad(const Poco::Util::AbstractConfiguration & config);
+
+    /// Reload certificates
+    void reloadCertificates();
+
+    /// A callback for OpenSSL
+    int setCertificate(SSL * ssl);
 
     struct File
     {
