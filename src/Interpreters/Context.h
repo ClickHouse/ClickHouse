@@ -18,8 +18,6 @@
 #include <IO/IResourceManager.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/ResizeProcessor.h>
-#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
