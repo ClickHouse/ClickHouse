@@ -34,6 +34,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
+#include <Storages/StorageKeeperMap.h>
 
 namespace DB
 {
@@ -661,7 +662,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
+    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -1390,6 +1391,13 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
+        auto table_id = query_context->resolveStorageID(*alter, Context::ResolveOrdinary);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+        /// we never replicate KeeperMap operations because it doesn't make sense
+        if (auto * keeper_map = table->as<StorageKeeperMap>())
+            return false;
+
         return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
     }
 
