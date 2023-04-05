@@ -224,6 +224,14 @@ Clears freezed backup with the specified name from all the disks. See more about
 SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
+### WAIT LOADING PARTS
+
+Wait until all asynchronously loading data parts of a table (outdated data parts) will became loaded.
+
+``` sql
+SYSTEM WAIT LOADING PARTS [db.]merge_tree_family_table_name
+```
+
 ## Managing ReplicatedMergeTree Tables
 
 ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
