@@ -204,8 +204,7 @@ std::tuple<Names, Names, DataTypes> optimizeAggregatingStepWithDataHints(
         const Names & keys,
         const DataHints & hints,
         const ColumnsWithTypeAndName & input_header,
-        const BuildQueryPipelineSettings & settings,
-        const bool final);
+        const BuildQueryPipelineSettings & settings);
 
 void optimizeAggregatingStepWithDataHintsReturnInitialColumns(
     QueryPipelineBuilder & pipeline,

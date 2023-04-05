@@ -287,8 +287,7 @@ std::tuple<Names, Names, DataTypes> optimizeAggregatingStepWithDataHints(
         const Names & keys,
         const DataHints & hints,
         const ColumnsWithTypeAndName & input_header,
-        const BuildQueryPipelineSettings & settings,
-        const bool final)
+        const BuildQueryPipelineSettings & settings)
 {
     Names changed_aggregating_keys;
     Names new_aggregating_keys;
