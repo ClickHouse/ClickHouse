@@ -768,31 +768,40 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::MAP:
         {
             DataTypePtr nested_type_hint;
+            DataTypePtr key_type_hint;
             if (type_hint)
             {
                 const auto * map_type_hint = typeid_cast<const DataTypeMap *>(type_hint.get());
                 if (map_type_hint)
+                {
                     nested_type_hint = assert_cast<const DataTypeArray *>(map_type_hint->getNestedType().get())->getNestedType();
+                    key_type_hint = map_type_hint->getKeyType();
+                }
             }
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_infos, allow_null_type, skip_columns_with_unsupported_types, skipped, nested_type_hint, true);
             if (skipped)
                 return {};
 
-            if (nested_type_hint && !nested_type_hint->equals(*nested_column.type))
-            {
-                /// Cast to target type, because it can happen that type from nested_column
-                /// cannot be Map key type.
-                nested_column.column = castColumn(nested_column, nested_type_hint);
-                nested_column.type = nested_type_hint;
-            }
-
             auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
 
             const auto * tuple_column = assert_cast<const ColumnTuple *>(nested_column.column.get());
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(nested_column.type.get());
-            auto map_column = ColumnMap::create(tuple_column->getColumnPtr(0), tuple_column->getColumnPtr(1), offsets_column);
-            auto map_type = std::make_shared<DataTypeMap>(tuple_type->getElements()[0], tuple_type->getElements()[1]);
+            auto key_column = tuple_column->getColumnPtr(0);
+            auto key_type = tuple_type->getElements()[0];
+            auto value_column = tuple_column->getColumnPtr(1);
+            auto value_type = tuple_type->getElements()[1];
+
+            if (key_type_hint && !key_type_hint->equals(*key_type))
+            {
+                /// Cast key column to target type, because it can happen
+                /// that parsed type cannot be ClickHouse Map key type.
+                key_column = castColumn({key_column, key_type, "key"}, key_type_hint);
+                key_type = key_type_hint;
+            }
+
+            auto map_column = ColumnMap::create(std::move(key_column), std::move(value_column), offsets_column);
+            auto map_type = std::make_shared<DataTypeMap>(std::move(key_type), std::move(value_type));
             return {std::move(map_column), std::move(map_type), column_name};
         }
         case arrow::Type::LIST:
