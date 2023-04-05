@@ -175,10 +175,10 @@ void DDLLoadingDependencyVisitor::extractDictNameForDistEngineFromArg(const ASTF
     /// We check that the sharding key is exist and it is a function for accessing to the dictionary.
     if (!function.arguments || function.arguments->children.size() <= shard_key_ind)
         return;
-    
+
     const auto * arg = function.arguments->as<ASTExpressionList>()->children[shard_key_ind].get();
     const auto * shard_key_with_dict_func = arg->as<ASTFunction>();
-     
+
     if (!shard_key_with_dict_func)
         return;
 
