@@ -94,8 +94,8 @@ public:
         void write(WriteBuffer & wb) const
         {
             writeBinary(key, wb);
-            writeVarUInt(count, wb);
-            writeVarUInt(error, wb);
+            writeVarUIntOverflow(count, wb);
+            writeVarUIntOverflow(error, wb);
         }
 
         void read(ReadBuffer & rb)
