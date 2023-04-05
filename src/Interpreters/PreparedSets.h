@@ -24,7 +24,8 @@ class FutureSet final : public std::shared_future<SetPtr>
 {
 public:
     FutureSet() = default;
-    FutureSet(const std::shared_future<SetPtr> & future) : std::shared_future<SetPtr>(future) {}
+    explicit FutureSet(const std::shared_future<SetPtr> & future) : std::shared_future<SetPtr>(future) {}
+    explicit FutureSet(SetPtr readySet);
 
     bool isReady() const;
 
@@ -48,7 +49,7 @@ public:
     String key;
     SetPtr set_in_progress;
     std::promise<SetPtr> promise_to_fill_set;
-    FutureSet set = {promise_to_fill_set.get_future()};
+    FutureSet set = FutureSet{promise_to_fill_set.get_future()};
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.
@@ -124,7 +125,7 @@ using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 /// it can be used across multiple queries. One use case is when we execute the same mutation on multiple parts. In this
 /// case each part is processed by a separate mutation task but they can share the same set.
 
-/// TODO: need to distinguish between sets with and w/o set_elements!!!!
+/// TODO: need to distinguish between sets with and w/o set_elements!
 class PreparedSetsCache
 {
 public:
@@ -147,6 +148,6 @@ private:
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 
-FutureSet makeReadyFutureSet(SetPtr set);
+//FutureSet makeReadyFutureSet(SetPtr set);
 
 }
