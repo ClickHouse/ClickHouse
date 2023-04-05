@@ -49,7 +49,7 @@ TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
     : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
 {}
 
-TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope)
+TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Metric metric_scope)
     : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
     , current_metric_scope(metric_scope)
 {}

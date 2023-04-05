@@ -58,10 +58,13 @@ namespace
 
             BackupCoordinationRemote::BackupKeeperSettings keeper_settings
             {
-                .keeper_max_retries = context->getSettingsRef().backup_keeper_max_retries,
-                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
-                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
-                .keeper_value_max_size = context->getSettingsRef().backup_keeper_value_max_size,
+                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
+                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
+                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
+                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed,
+                .keeper_value_max_size = context->getSettingsRef().backup_restore_keeper_value_max_size,
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -92,10 +95,27 @@ namespace
 
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
 
+            RestoreCoordinationRemote::RestoreKeeperSettings keeper_settings
+            {
+                .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
+                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
+                .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
+                .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed
+            };
+
             auto all_hosts = BackupSettings::Util::filterHostIDs(
                 restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
-            return std::make_shared<RestoreCoordinationRemote>(get_zookeeper, root_zk_path, toString(*restore_settings.restore_uuid), all_hosts, restore_settings.host_id, restore_settings.internal);
+            return std::make_shared<RestoreCoordinationRemote>(
+                get_zookeeper,
+                root_zk_path,
+                keeper_settings,
+                toString(*restore_settings.restore_uuid),
+                all_hosts,
+                restore_settings.host_id,
+                restore_settings.internal);
         }
         else
         {
@@ -660,7 +680,9 @@ void BackupsWorker::doRestore(
             restore_coordination = makeRestoreCoordination(context, restore_settings, /* remote= */ on_cluster);
 
         if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
-            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
+            throw Exception(
+                ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
 
         /// Do RESTORE.
         if (on_cluster)
