@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -e
 
 mkdir -p /etc/docker/
 echo '{
@@ -39,10 +39,8 @@ set -e
 
 java_path="$(update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p')"
 export JAVA_PATH=$java_path
-java -version
 export SPARK_HOME="/spark-3.3.2-bin-hadoop3"
 export PATH=$SPARK_HOME/bin:$PATH
-pyspark --version
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
