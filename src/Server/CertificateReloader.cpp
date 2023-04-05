@@ -9,6 +9,8 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
 
+#include <Server/CertificateIssuer.h>
+
 
 namespace DB
 {
@@ -33,14 +35,6 @@ int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::Mu
 {
     auto current = pdata->data.get();
 
-    auto letsencrypt_configuration = let_encrypt_configuration_data.get();
-
-    if (letsencrypt_configuration){
-        if (letsencrypt_configuration->is_issuing_enabled /* TODO: Еще проверяем что серту осталось меньше N дней*/){
-            // Запускаем процесс обновления сертов
-        }
-    }
-
     if (!current)
         return -1;
     return setCertificateCallback(ssl, current.get(), log);
@@ -50,6 +44,19 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
 {
     if (current_data->certs_chain.empty())
         return -1;
+
+    auto letsencrypt_configuration = let_encrypt_configuration_data.get();
+    if (letsencrypt_configuration)
+    {
+        if (letsencrypt_configuration->is_issuing_enabled
+            && current->cert.expiresOn().timestamp() <= Poco::Timestamp() + Poco::Timespan(3600ll*letsencrypt_configuration->reissue_hours_before, 0))
+        {
+            CertificateIssuer::instance().UpdateCertificates();
+        }
+    }
+
+    SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
+    SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
 
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
     {
@@ -145,8 +152,8 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
 
     // Fetching configuration for reissuing let's encrypt certificates
     bool is_issuing_enabled = config.getBool("LetsEncrypt.enableAutomaticIssue", false);
-    int reissue_days_before = config.getInt("LetsEncrypt.reissueDaysBefore", 2);
-    let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(is_issuing_enabled, reissue_days_before));
+    int reissue_hours_before = config.getInt("LetsEncrypt.reissueHoursBefore", 48);
+    let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(is_issuing_enabled, reissue_hours_before));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
@@ -197,8 +204,9 @@ CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std
 {
 }
 
-CertificateReloader::LetsEncryptConfigurationData::LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_days_before_)
-            : is_issuing_enabled(is_issuing_enabled_), reissue_days_before(reissue_days_before_)
+CertificateReloader::LetsEncryptConfigurationData::LetsEncryptConfigurationData(
+    bool is_issuing_enabled_, int reissue_hours_before_)
+    : is_issuing_enabled(is_issuing_enabled_), reissue_hours_before(reissue_hours_before_)
 {
 }
 
