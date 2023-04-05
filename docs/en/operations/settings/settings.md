@@ -1435,6 +1435,28 @@ Possible values:
 
 Default value: `0`
 
+## query_cache_compress_entries {#query-cache-compress-entries}
+
+Compress entries in the [query cache](../query-cache.md). Lessens the memory consumption of the query cache at the cost of slower inserts into / reads from it.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`
+
+## query_cache_squash_partial_results {#query-cache-squash-partial-results}
+
+Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`
+
 ## query_cache_ttl {#query-cache-ttl}
 
 After this time in seconds entries in the [query cache](../query-cache.md) become stale.
@@ -4078,3 +4100,45 @@ LIFETIME(MIN 0 MAX 300)
 LAYOUT(HASHED())
 SETTINGS(check_dictionary_primary_key = 0);
 ```
+
+## function_json_value_return_type_allow_nullable
+
+Control whether allow to return `NULL` when value is not exist for JSON_VALUE function.
+
+```sql
+SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
+
+┌─JSON_VALUE('{"hello":"world"}', '$.b')─┐
+│ ᴺᵁᴸᴸ                                   │
+└────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+Possible values:
+
+-   true — Allow.
+-   false — Disallow.
+
+Default value: `false`.
+
+## function_json_value_return_type_allow_complex
+
+Control whether allow to return complex type (such as: struct, array, map) for json_value function.
+
+```sql
+SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true
+
+┌─JSON_VALUE('{"hello":{"world":"!"}}', '$.hello')─┐
+│ {"world":"!"}                                    │
+└──────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+Possible values:
+
+-   true — Allow.
+-   false — Disallow.
+
+Default value: `false`.
