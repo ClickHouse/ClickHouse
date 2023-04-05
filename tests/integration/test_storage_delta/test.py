@@ -7,6 +7,7 @@ import logging
 import os
 import json
 import time
+import glob
 
 import pyspark
 import delta
@@ -30,7 +31,7 @@ from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_conte
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
+USER_FILES_PATH = os.path.join(SCRIPT_DIR, "_instances/node1/database/user_files")
 
 
 @pytest.fixture(scope="module")
@@ -132,6 +133,13 @@ def create_initial_data_file(node, query, table_name, compression_method="none")
     return result_path
 
 
+def print_recursive(path):
+    for root, dirs, files in os.walk(path):
+        for basename in files:
+            filename = os.path.join(root, basename)
+            print(f"Found file {filename}")
+
+
 def test_single_log_file(started_cluster):
     instance = started_cluster.instances["node1"]
     minio_client = started_cluster.minio_client
@@ -142,6 +150,7 @@ def test_single_log_file(started_cluster):
     inserted_data = "SELECT number, toString(number + 1) FROM numbers(100)"
     parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
 
+    print_recursive(SCRIPT_DIR)
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 2  # 1 metadata files + 1 data file
