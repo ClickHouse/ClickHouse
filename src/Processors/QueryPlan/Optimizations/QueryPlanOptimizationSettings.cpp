@@ -5,7 +5,7 @@
 namespace DB
 {
 
-QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const Settings & from)
+QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const Settings & from, bool aggregation_with_data_hints)
 {
     QueryPlanOptimizationSettings settings;
     settings.optimize_plan = from.query_plan_enable_optimizations;
@@ -19,12 +19,13 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.remove_redundant_distinct = from.query_plan_remove_redundant_distinct;
     settings.optimize_projection = from.allow_experimental_projection_optimization && from.query_plan_optimize_projection;
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
+    settings.aggregation_with_data_hints = aggregation_with_data_hints;
     return settings;
 }
 
-QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromContext(ContextPtr from)
+QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromContext(ContextPtr from, bool aggregation_with_data_hints)
 {
-    return fromSettings(from->getSettingsRef());
+    return fromSettings(from->getSettingsRef(), aggregation_with_data_hints);
 }
 
 }

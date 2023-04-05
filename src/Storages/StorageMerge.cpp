@@ -699,7 +699,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         }
 
         builder = plan.buildQueryPipeline(
-            QueryPlanOptimizationSettings::fromContext(modified_context),
+            QueryPlanOptimizationSettings::fromContext(modified_context, !(storage && storage->isRemote())),
             BuildQueryPipelineSettings::fromContext(modified_context));
     }
     else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))

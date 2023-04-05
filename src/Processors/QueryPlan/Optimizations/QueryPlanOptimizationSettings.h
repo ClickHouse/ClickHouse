@@ -42,8 +42,11 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection = false;
     bool force_use_projection = false;
 
-    static QueryPlanOptimizationSettings fromSettings(const Settings & from);
-    static QueryPlanOptimizationSettings fromContext(ContextPtr from);
+    /// If query is not remote
+    bool aggregation_with_data_hints = false;
+
+    static QueryPlanOptimizationSettings fromSettings(const Settings & from, bool aggregation_with_data_hints = true);
+    static QueryPlanOptimizationSettings fromContext(ContextPtr from, bool aggregation_with_data_hints = true);
 };
 
 }
