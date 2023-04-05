@@ -863,17 +863,18 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 
 void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
 {
-    auto lock = getLock();
+    StoragePolicyPtr tmp_policy;
+    {
+        /// lock in required only for accessing `shared->merge_tree_storage_policy_selector`
+        /// StoragePolicy itself is immutable.
+        std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
+        tmp_policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
+    }
 
-    if (shared->root_temp_data_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
-
-    std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
-
-    StoragePolicyPtr tmp_policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
     if (tmp_policy->getVolumes().size() != 1)
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
+
     VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
@@ -897,6 +898,11 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
         setupTmpPath(shared->log, disk->getPath());
     }
+
+    auto lock = getLock();
+
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
     shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
 }
