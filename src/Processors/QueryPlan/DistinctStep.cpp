@@ -42,7 +42,7 @@ static SortDescription getSortDescription(const SortDescription & input_sort_des
 
 DistinctStep::DistinctStep(
     const DataStream & input_stream_,
-    const SizeLimiDiits_,
+    const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
     bool pre_distinct_,
