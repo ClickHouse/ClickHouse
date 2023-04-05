@@ -589,7 +589,9 @@ def test_grant_with_replace_option():
 
 def test_grant_current_grants():
     instance.query("CREATE USER A")
-    instance.query("GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION")
+    instance.query(
+        "GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION"
+    )
     assert instance.query("SHOW GRANTS FOR A") == TSV(
         ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION"]
     )
