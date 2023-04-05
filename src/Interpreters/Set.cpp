@@ -266,7 +266,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     if (0 == num_key_columns)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
 
-    checkIsCreated();
+// TODO: in case of ENGINE=Set it is the set can be used and updated "concurrently"
+//    checkIsCreated();
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
