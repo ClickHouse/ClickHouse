@@ -1035,6 +1035,36 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
+            {
+                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
+
+                Pos start = cur;
+                auto check_is_number = [&](Pos pos) {
+                    if (*pos < '0' || *pos > '9')
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Unable to parse fragment '{}' from '{}' because '{}'' is not a number ",
+                            fragment,
+                            std::string_view(start, end),
+                            *cur);
+                };
+
+                check_is_number(cur);
+                ++cur;
+                check_is_number(cur);
+                ++cur;
+                check_is_number(cur);
+                ++cur;
+                check_is_number(cur);
+                ++cur;
+                check_is_number(cur);
+                ++cur;
+                check_is_number(cur);
+                ++cur;
+                return cur;
+            }
+
             static Pos mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment);
@@ -1446,6 +1476,10 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
+                        // Fractional seconds
+                        case 'f':
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMicrosecond));
+                            break;
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
@@ -1593,8 +1627,6 @@ namespace
                         /// Unimplemented
 
                         /// Fractional seconds
-                        case 'f':
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
                         case 'U':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                         case 'v':
