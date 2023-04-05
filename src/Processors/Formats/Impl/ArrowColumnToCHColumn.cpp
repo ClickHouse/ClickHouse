@@ -800,8 +800,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                 key_type = key_type_hint;
             }
 
-            auto map_column = ColumnMap::create(std::move(key_column), std::move(value_column), offsets_column);
-            auto map_type = std::make_shared<DataTypeMap>(std::move(key_type), std::move(value_type));
+            auto map_column = ColumnMap::create(key_column, value_column, offsets_column);
+            auto map_type = std::make_shared<DataTypeMap>(key_type, value_type);
             return {std::move(map_column), std::move(map_type), column_name};
         }
         case arrow::Type::LIST:
