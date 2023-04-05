@@ -137,7 +137,7 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
                 }
                 continue;
             }
-            else if (name == "equal")
+            else if (name == "equals")
             {
                 const auto & info = processPredicate(*node);
                 if (info)
