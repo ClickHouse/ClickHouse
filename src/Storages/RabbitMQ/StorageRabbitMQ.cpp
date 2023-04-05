@@ -799,7 +799,8 @@ void StorageRabbitMQ::startup()
         try
         {
             auto consumer = createConsumer();
-            pushConsumer(std::move(consumer));
+            consumers_ref.push_back(consumer);
+            pushConsumer(consumer);
             ++num_created_consumers;
         }
         catch (...)
@@ -818,8 +819,8 @@ void StorageRabbitMQ::shutdown()
 {
     shutdown_called = true;
 
-    for (auto & consumer : consumers)
-        consumer->shutdown();
+    for (auto & consumer : consumers_ref)
+        consumer.lock()->shutdown();
 
     LOG_TRACE(log, "Deactivating background tasks");
 
