@@ -476,7 +476,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         0, /* no redirects */
         static_cast<uint64_t>(data_settings->replicated_max_parallel_fetches_for_host));
 
-    //in->setProtocol("enet");
+    #if USE_ENET
+    in->setProtocol("enet");
+    #endif
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
 

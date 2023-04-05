@@ -231,11 +231,16 @@ namespace detail
                                 "An error occurred while trying to create an ENet client host.\n");
                     }
 
-                    std::ostringstream stream;
+                    std::ostream stream(nullptr);
 
                     request.write(stream);
 
-                    std::string request_string =  stream.str();
+                    std::string request_string =
+                    {
+                        std::istreambuf_iterator<char>(stream.rdbuf()),
+                        std::istreambuf_iterator<char>()
+                    };
+
                     const char* request_cstr = request_string.c_str();
 
                     ENetPacket * packet = enet_packet_create (request_cstr,
