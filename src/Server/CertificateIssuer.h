@@ -5,8 +5,10 @@
 #if USE_SSL
 
 #include <atomic>
+#include <functional>
 
 #include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -23,7 +25,17 @@ public:
         return instance;
     }
 
-    void UpdateCertificates();
+    struct LetsEncryptConfigurationData
+    {
+        bool is_issuing_enabled;
+        int reissue_hours_before;
+
+        LetsEncryptConfigurationData(const Poco::Util::AbstractConfiguration & config);
+    };
+
+    void UpdateCertificates(const LetsEncryptConfigurationData & config_data, std::function<void()> callback);
+
+    void UpdateCertificatesIfNeeded(const Poco::Util::AbstractConfiguration & config);
 
 private:
     CertificateIssuer() = default;
