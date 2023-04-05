@@ -117,7 +117,9 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
         return;
 
     if (storage.engine->name == "Distributed")
-        extractDictNameForDistEngineFromArg(*storage.engine, data);
+        /// Checks that dict* expression was used as sharding_key and builds dependency between the dictionary and current table.
+        /// Distributed(logs, default, hits[, sharding_key[, policy_name]])
+        extractTableNameFromArgument(*storage.engine, data, 3);
     else if (storage.engine->name == "Dictionary")
         extractTableNameFromArgument(*storage.engine, data, 0);
 }
@@ -132,7 +134,27 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     QualifiedTableName qualified_name;
 
     const auto * arg = function.arguments->as<ASTExpressionList>()->children[arg_idx].get();
-    if (const auto * literal = arg->as<ASTLiteral>())
+
+    if (const auto * dict_function = arg->as<ASTFunction>())
+    {
+        if (!functionIsDictGet(dict_function->name))
+        return;
+        /// Get the dictionary name from `dict*` function.
+        const auto * literal_arg = dict_function->arguments->as<ASTExpressionList>()->children[0].get();
+        const auto * dictionary_name = literal_arg->as<ASTLiteral>();
+
+        if (!dictionary_name)
+            return;
+        if (dictionary_name->value.getType() != Field::Types::String)
+            return;
+
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(dictionary_name->value.get<String>());
+        if (!maybe_qualified_name)
+            return;
+
+        qualified_name = std::move(*maybe_qualified_name);
+    }
+    else if (const auto * literal = arg->as<ASTLiteral>())
     {
         if (literal->value.getType() != Field::Types::String)
             return;
@@ -167,41 +189,5 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
         qualified_name.database = data.default_database;
     }
     data.dependencies.emplace(std::move(qualified_name));
-}
-
-void DDLLoadingDependencyVisitor::extractDictNameForDistEngineFromArg(const ASTFunction& function, Data & data)
-{
-    const size_t shard_key_ind = 3;
-    /// We check that the sharding key is exist and it is a function for accessing to the dictionary.
-    if (!function.arguments || function.arguments->children.size() <= shard_key_ind)
-        return;
-
-    const auto * arg = function.arguments->as<ASTExpressionList>()->children[shard_key_ind].get();
-    const auto * shard_key_with_dict_func = arg->as<ASTFunction>();
-
-    if (!shard_key_with_dict_func)
-        return;
-
-    if (!functionIsDictGet(shard_key_with_dict_func->name))
-        return;
-    /// Get the dictionary name from `dict*` function.
-    const auto * literal_arg = shard_key_with_dict_func->arguments->as<ASTExpressionList>()->children[0].get();
-    const auto * dictionary_name = literal_arg->as<ASTLiteral>();
-
-    if (!dictionary_name)
-        return;
-    if (dictionary_name->value.getType() != Field::Types::String)
-        return;
-
-    auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name->value.get<String>());
-
-    if (!qualified_name)
-        return;
-
-    if (qualified_name->database.empty())
-    {
-        qualified_name->database = data.default_database;
-    }
-    data.dependencies.emplace(std::move(*qualified_name));
 }
 }

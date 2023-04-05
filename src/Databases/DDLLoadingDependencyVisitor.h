@@ -50,9 +50,6 @@ private:
     static void visit(const ASTStorage & storage, Data & data);
 
     static void extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx);
-    /// Distributed(logs, default, hits[, sharding_key[, policy_name]])
-    /// Checks that dict* expression was used as sharding_key and builds dependency between the dictionary and current table.
-    static void extractDictNameForDistEngineFromArg(const ASTFunction& function, Data & data);
 };
 
 }
