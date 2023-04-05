@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
 #include <optional>
@@ -34,6 +35,7 @@ public:
 
 private:
     static ArgumentExtractor::CharArgument extractControlCharacter(ColumnPtr column);
+    static ArgumentExtractor::BoolArgument extractBoolArgument(ColumnPtr column);
 };
 
 }
