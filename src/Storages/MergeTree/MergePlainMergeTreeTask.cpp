@@ -4,6 +4,8 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ProfileEvents.h>
+
 
 namespace DB
 {
@@ -106,6 +108,19 @@ void MergePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
+    transfer_profile_counters_to_initial_query = [this, query_thread_group = CurrentThread::getGroup()] ()
+    {
+        if (query_thread_group)
+        {
+            auto task_thread_group = (*merge_list_entry)->thread_group;
+            auto task_counters_snapshot = task_thread_group->performance_counters.getPartiallyAtomicSnapshot();
+
+            auto & query_counters = query_thread_group->performance_counters;
+            for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
+                query_counters.incrementNoTrace(i, task_counters_snapshot[i]);
+        }
+    };
+
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_part,
             metadata_snapshot,
@@ -133,6 +148,7 @@ void MergePlainMergeTreeTask::finish()
 
     write_part_log({});
     storage.incrementMergedPartsProfileEvent(new_part->getType());
+    transfer_profile_counters_to_initial_query();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
