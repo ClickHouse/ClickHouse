@@ -28,7 +28,8 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
-    /// Metrics will be saved in the thread_group.
+    /// All metrics will be saved in the thread_group, including all scheduled tasks.
+    /// In profile_counters only metrics from this thread will be saved.
     ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
@@ -112,7 +113,7 @@ void MergePlainMergeTreeTask::prepare()
             {} /* projection_merge_list_element */,
             table_lock_holder,
             time(nullptr),
-            storage.getContext(),
+            task_context,
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
