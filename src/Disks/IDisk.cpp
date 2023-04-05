@@ -27,15 +27,14 @@ bool IDisk::isDirectoryEmpty(const String & path) const
     return !iterateDirectory(path)->isValid();
 }
 
-void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path, const WriteSettings & settings, ThrottlerPtr throttler) /// NOLINT
+void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path, const WriteSettings & settings) /// NOLINT
 {
     LOG_DEBUG(&Poco::Logger::get("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
               getName(), getPath(), from_file_path, to_disk.getName(), to_disk.getPath(), to_file_path);
 
     auto in = readFile(from_file_path);
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-    std::atomic<int> cancelled;
-    copyDataWithThrottler(*in, *out, cancelled, throttler);
+    copyData(*in, *out);
     out->finalize();
 }
 
