@@ -3,6 +3,7 @@
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/SeekableReadBuffer.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -21,6 +22,11 @@ void IBackupReader::copyFileToDisk(const String & file_name, size_t size, DiskPt
     copyData(*read_buffer, *write_buffer, size);
     write_buffer->finalize();
 }
+
+IBackupWriter::IBackupWriter(const ContextPtr & context_)
+    : read_settings(context_->getBackupReadSettings())
+    , has_throttling(static_cast<bool>(context_->getBackupsThrottler()))
+{}
 
 void IBackupWriter::copyDataToFile(const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name)
 {
