@@ -9,8 +9,6 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
 
-#include <Server/CertificateIssuer.h>
-
 
 namespace DB
 {
@@ -26,6 +24,11 @@ int callSetCertificate(SSL * ssl, void * arg)
 
     const CertificateReloader::MultiData * pdata = reinterpret_cast<CertificateReloader::MultiData *>(arg);
     return CertificateReloader::instance().setCertificate(ssl, pdata);
+}
+
+void callReloadCertificates()
+{
+    return CertificateReloader::instance().reloadCertificates();
 }
 
 }
@@ -51,7 +54,7 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
         if (letsencrypt_configuration->is_issuing_enabled
             && current->cert.expiresOn().timestamp() <= Poco::Timestamp() + Poco::Timespan(3600ll*letsencrypt_configuration->reissue_hours_before, 0))
         {
-            CertificateIssuer::instance().UpdateCertificates();
+            CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
         }
     }
 
@@ -150,10 +153,8 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     std::string new_cert_path = config.getString(prefix + "certificateFile", "");
     std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
 
-    // Fetching configuration for reissuing let's encrypt certificates
-    bool is_issuing_enabled = config.getBool("LetsEncrypt.enableAutomaticIssue", false);
-    int reissue_hours_before = config.getInt("LetsEncrypt.reissueHoursBefore", 48);
-    let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(is_issuing_enabled, reissue_hours_before));
+    // Fetching configuration for possible reissuing let's encrypt certificates
+    let_encrypt_configuration_data.set(std::make_unique<const CertificateIssuer::LetsEncryptConfigurationData>(config));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
@@ -164,6 +165,8 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
     else
     {
+        CertificateIssuer::instance().UpdateCertificatesIfNeeded(config);
+
         try
         {
             auto it = findOrInsert(ctx, prefix);
@@ -190,6 +193,12 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
 }
 
+void CertificateReloader::reloadCertificates(){
+    LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
+    data.set(std::make_unique<const Data>(cert_file.path, key_file.path, ""));
+    LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
+}
+
 
 void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration & config)
 {
@@ -201,12 +210,6 @@ void CertificateReloader::tryReloadAll(const Poco::Util::AbstractConfiguration &
 
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : certs_chain(Poco::Crypto::X509Certificate::readPEM(cert_path)), key(/* public key */ "", /* private key */ key_path, pass_phrase)
-{
-}
-
-CertificateReloader::LetsEncryptConfigurationData::LetsEncryptConfigurationData(
-    bool is_issuing_enabled_, int reissue_hours_before_)
-    : is_issuing_enabled(is_issuing_enabled_), reissue_hours_before(reissue_hours_before_)
 {
 }
 
