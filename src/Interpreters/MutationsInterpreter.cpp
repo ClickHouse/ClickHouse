@@ -550,6 +550,12 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (source.hasLightweightDeleteMask())
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
 
+    if (return_all_columns)
+    {
+        for (const auto & column : source.getStorage()->getVirtuals())
+            all_columns.push_back(column);
+    }
+
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
 
@@ -906,6 +912,8 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context);
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    if (return_all_columns)
+        options.withVirtuals();
     auto all_columns = storage_snapshot->getColumns(options);
 
     /// Add _row_exists column if it is present in the part
@@ -1256,6 +1264,7 @@ void MutationsInterpreter::validate()
     }
 
     QueryPlan plan;
+
     initQueryPlan(stages.front(), plan);
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }

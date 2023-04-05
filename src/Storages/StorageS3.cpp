@@ -1252,7 +1252,7 @@ void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & u
         upd.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
         S3::CredentialsConfiguration{
-            upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
+            upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", true)),
             upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
             upd.auth_settings.expiration_window_seconds.value_or(
                 ctx->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
@@ -1272,7 +1272,7 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
 
     configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
     configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
-    configuration.auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 0);
+    configuration.auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
     configuration.auth_settings.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
     configuration.auth_settings.expiration_window_seconds = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
