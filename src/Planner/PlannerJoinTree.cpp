@@ -512,6 +512,8 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     if (!additional_filter_ast)
         return {};
 
+    table_expression_query_info.additional_filter_ast = additional_filter_ast;
+
     LOG_DEBUG(&Poco::Logger::get("buildAdditionalFiltersIfNeeded"), "Found additional filter: {}", additional_filter_ast->formatForErrorMessage());
 
     return buildFilterInfo(additional_filter_ast, table_expression_query_info, planner_context);
