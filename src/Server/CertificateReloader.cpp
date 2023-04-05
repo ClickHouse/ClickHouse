@@ -8,8 +8,6 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
 
-#include <Server/CertificateIssuer.h>
-
 
 namespace DB
 {
@@ -20,6 +18,11 @@ namespace
 int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
 {
     return CertificateReloader::instance().setCertificate(ssl);
+}
+
+void callReloadCertificates()
+{
+    return CertificateReloader::instance().reloadCertificates();
 }
 
 }
@@ -38,7 +41,7 @@ int CertificateReloader::setCertificate(SSL * ssl)
         if (letsencrypt_configuration->is_issuing_enabled
             && current->cert.expiresOn().timestamp() <= Poco::Timestamp() + Poco::Timespan(3600ll*letsencrypt_configuration->reissue_hours_before, 0))
         {
-            CertificateIssuer::instance().UpdateCertificates();
+            CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
         }
     }
 
@@ -76,10 +79,8 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
     std::string new_cert_path = config.getString("openSSL.server.certificateFile", "");
     std::string new_key_path = config.getString("openSSL.server.privateKeyFile", "");
 
-    // Fetching configuration for reissuing let's encrypt certificates
-    bool is_issuing_enabled = config.getBool("LetsEncrypt.enableAutomaticIssue", false);
-    int reissue_hours_before = config.getInt("LetsEncrypt.reissueHoursBefore", 48);
-    let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(is_issuing_enabled, reissue_hours_before));
+    // Fetching configuration for possible reissuing let's encrypt certificates
+    let_encrypt_configuration_data.set(std::make_unique<const CertificateIssuer::LetsEncryptConfigurationData>(config));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
@@ -90,6 +91,8 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
     }
     else
     {
+        CertificateIssuer::instance().UpdateCertificatesIfNeeded(config);
+
         bool cert_file_changed = cert_file.changeIfModified(std::move(new_cert_path), log);
         bool key_file_changed = key_file.changeIfModified(std::move(new_key_path), log);
         std::string pass_phrase = config.getString("openSSL.server.privateKeyPassphraseHandler.options.password", "");
@@ -115,15 +118,15 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
     }
 }
 
+void CertificateReloader::reloadCertificates(){
+    LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
+    data.set(std::make_unique<const Data>(cert_file.path, key_file.path, ""));
+    LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
+}
+
 
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : cert(cert_path), key(/* public key */ "", /* private key */ key_path, pass_phrase)
-{
-}
-
-CertificateReloader::LetsEncryptConfigurationData::LetsEncryptConfigurationData(
-    bool is_issuing_enabled_, int reissue_hours_before_)
-    : is_issuing_enabled(is_issuing_enabled_), reissue_hours_before(reissue_hours_before_)
 {
 }
 

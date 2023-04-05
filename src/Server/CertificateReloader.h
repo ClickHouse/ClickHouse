@@ -15,6 +15,7 @@
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Common/MultiVersion.h>
+#include <Server/CertificateIssuer.h>
 
 
 namespace DB
@@ -46,6 +47,9 @@ public:
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
+    /// Reload certificates
+    void reloadCertificates();
+
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl);
 
@@ -76,18 +80,10 @@ private:
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
     };
 
-    struct LetsEncryptConfigurationData
-    {
-        bool is_issuing_enabled;
-        int reissue_hours_before;
-
-        LetsEncryptConfigurationData(bool is_issuing_enabled_, int reissue_hours_before_);
-    };
-
     MultiVersion<Data> data;
     bool init_was_not_made = true;
 
-    MultiVersion<LetsEncryptConfigurationData> let_encrypt_configuration_data;
+    MultiVersion<CertificateIssuer::LetsEncryptConfigurationData> let_encrypt_configuration_data;
 };
 
 }
