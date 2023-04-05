@@ -527,7 +527,10 @@ std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 
 void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
+    auto local_context = backup_entries_collector.getContext();
+    ReadSettings read_settings = local_context->getBackupReadSettings();
+
+    auto lock_timeout = getLockTimeout(local_context);
     loadIndices(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -551,7 +554,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         backup_entries_collector.addBackupEntry(
             data_path_in_backup_fs / data_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
+                disk, hardlink_file_path, read_settings, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// index.mrk
@@ -563,7 +566,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         backup_entries_collector.addBackupEntry(
             data_path_in_backup_fs / index_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
+                disk, hardlink_file_path, read_settings, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
