@@ -161,7 +161,6 @@ public:
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
-    void setEnableGeneralDataHintsOptimization(bool flag);
 
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
@@ -216,8 +215,6 @@ private:
 
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
-
-    bool enable_general_data_hints_optimization = true;
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();
