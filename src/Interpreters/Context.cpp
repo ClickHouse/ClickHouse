@@ -748,7 +748,7 @@ Strings Context::getWarnings() const
 }
 
 /// TODO: remove, use `getTempDataOnDisk`
-VolumePtr Context::getTemporaryVolume() const
+VolumePtr Context::getGlobalTemporaryVolume() const
 {
     auto lock = getLock();
     /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
