@@ -40,7 +40,16 @@ create temporary table known_short_messages (s String) as select * from (select
 'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved',
 'Could not find table: {}', 'Detached part "{}" not found', 'Unknown data type family: {}',
 'Unknown input format {}', 'Cannot UPDATE key column {}', 'Substitution {} is not set',
-'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}'
+'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}',
+'Unsupported cipher mode', 'Unknown explain kind ''{}''', 'Table {} was suddenly removed',
+'No cache found by path: {}', 'No such column {} in table {}', 'There is no port named {}',
+'Function {} cannot resize {}', 'Function {} is not parametric', 'Unknown key attribute ''{}''',
+'Transaction was cancelled', 'Unknown parent id {}', 'Session {} not found', 'Mutation {} was killed',
+'Table {}.{} doesn''t exist.', 'Table is not initialized yet', '{} is not an identifier',
+'Column ''{}'' already exists', 'No macro {} in config', 'Invalid origin H3 index: {}',
+'Invalid session timeout: ''{}''', 'Tuple cannot be empty', 'Database name is empty',
+'Table {} is not a Dictionary', 'Expected function, got: {}', 'Unknown identifier: ''{}''',
+'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist'
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
@@ -50,7 +59,7 @@ select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_st
 select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 2) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
 
 -- Same as above, but exceptions must be more informative. Feel free to update the threshold or remove this query if really necessary
-select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 40) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%' and message_format_string not in known_short_messages;
+select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 27) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%' and message_format_string not in known_short_messages;
 
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
