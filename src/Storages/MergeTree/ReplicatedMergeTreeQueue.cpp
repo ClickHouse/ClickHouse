@@ -1134,12 +1134,14 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
         bool replace_range_covered = covering_entry && checkReplaceRangeCanBeRemoved(part_info, *it, *covering_entry);
         if (simple_op_covered || replace_range_covered)
         {
+            const String & znode_name = (*it)->znode_name;
+
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
 
-            auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / (*it)->znode_name);
+            auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / znode_name);
             if (code != Coordination::Error::ZOK)
-                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / (*it)->znode_name).string(), Coordination::errorMessage(code));
+                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / znode_name).string(), Coordination::errorMessage(code));
 
             updateStateOnQueueEntryRemoval(
                 *it, /* is_successful = */ false,
@@ -1147,6 +1149,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
 
             (*it)->removed_by_other_entry = true;
             it = queue.erase(it);
+            notifySubscribers(queue.size(), &znode_name);
             ++removed_entries;
         }
         else
