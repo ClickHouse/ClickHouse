@@ -1,5 +1,7 @@
 #include <Functions/keyvaluepair/ArgumentExtractor.h>
 
+#include <Functions/FunctionHelpers.h>
+
 namespace DB
 {
 
@@ -53,9 +55,7 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
         };
     }
 
-    auto with_escaping_character = extractControlCharacter(arguments[4].column);
-
-    bool with_escaping = with_escaping_character && with_escaping_character == '1';
+    auto with_escaping = extractBoolArgument(arguments[4].column);
 
     return ParsedArguments {
         data_column, key_value_pair_delimiter, pair_delimiters, quoting_character, with_escaping
@@ -76,6 +76,23 @@ ArgumentExtractor::CharArgument ArgumentExtractor::extractControlCharacter(Colum
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Control character argument must either be empty or contain exactly 1 character");
+}
+
+ArgumentExtractor::BoolArgument ArgumentExtractor::extractBoolArgument(ColumnPtr column)
+{
+    if (const auto * escaping_support_column = checkAndGetColumnConst<ColumnUInt8>(column.get()))
+    {
+        if (escaping_support_column->empty())
+        {
+            return {};
+        }
+        else if (escaping_support_column->size() == 1u)
+        {
+            return escaping_support_column->getBool(0u);
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Boolean argument must either be empty or contain exactly 1 value");
 }
 
 }

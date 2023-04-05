@@ -21,7 +21,7 @@ auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments)
 {
     auto builder = KeyValuePairExtractorBuilder();
 
-    if (parsed_arguments.with_escaping.value_or(true))
+    if (parsed_arguments.with_escaping.value_or(false))
     {
         builder.withEscaping();
     }
