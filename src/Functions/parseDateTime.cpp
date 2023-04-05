@@ -466,8 +466,15 @@ namespace
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
+        const bool mysql_M_is_month_name;
+
         static constexpr auto name = Name::name;
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseDateTimeImpl>(); }
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
+
+        explicit FunctionParseDateTimeImpl(ContextPtr context)
+            : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+        {
+        }
 
         String getName() const override { return name; }
 
@@ -1564,9 +1571,14 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
 
-                        // Minute (00-59)
+                        // Depending on a setting
+                        // - Full month [January...December]
+                        // - Minute (00-59) OR
                         case 'M':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
+                            if (mysql_M_is_month_name)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // AM or PM
