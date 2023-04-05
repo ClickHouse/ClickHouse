@@ -503,6 +503,7 @@ void SystemLog<LogElement>::prepareTable()
             rename->elements.emplace_back(std::move(elem));
 
             auto query_context = Context::createCopy(context);
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 
