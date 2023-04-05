@@ -11,7 +11,7 @@ namespace DB
 class ExtractKeyValuePairs : public IFunction
 {
 public:
-    ExtractKeyValuePairs();
+    ExtractKeyValuePairs() = default;
 
     static constexpr auto name = "extractKeyValuePairs";
 
