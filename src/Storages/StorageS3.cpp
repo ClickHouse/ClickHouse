@@ -1121,7 +1121,9 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
                     ++index;
                 }
                 while (S3::objectExists(*query_configuration.client, query_configuration.url.bucket, new_key, query_configuration.url.version_id, query_configuration.request_settings));
+
                 query_configuration.keys.push_back(new_key);
+                configuration.keys.push_back(new_key);
             }
             else
             {
@@ -1218,7 +1220,7 @@ bool StorageS3::Configuration::update(ContextPtr context)
         return false;
 
     auth_settings.updateFrom(s3_settings.auth_settings);
-    keys = {url.key};
+    keys[0] = url.key;
     connect(context);
     return true;
 }
