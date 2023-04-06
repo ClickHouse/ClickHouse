@@ -466,15 +466,8 @@ namespace
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
-        const bool mysql_M_is_month_name;
-
         static constexpr auto name = Name::name;
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
-
-        explicit FunctionParseDateTimeImpl(ContextPtr context)
-            : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
-        {
-        }
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseDateTimeImpl>(); }
 
         String getName() const override { return name; }
 
@@ -792,38 +785,6 @@ namespace
 
                 date.setMonth(it->second.second);
                 cur += 3;
-                return cur;
-            }
-
-            static Pos mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
-            {
-                checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment);
-                String text1(cur, 3);
-                boost::to_lower(text1);
-                auto it = monthMap.find(text1);
-                if (it == monthMap.end())
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
-                        fragment,
-                        std::string_view(cur, end - cur),
-                        text1);
-                cur += 3;
-
-                size_t expected_remaining_size = it->second.first.size();
-                checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
-                String text2(cur, expected_remaining_size);
-                boost::to_lower(text2);
-                if (text2 != it->second.first)
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
-                        fragment,
-                        std::string_view(cur, end - cur),
-                        text1 + text2);
-                cur += expected_remaining_size;
-
-                date.setMonth(it->second.second);
                 return cur;
             }
 
@@ -1571,14 +1532,9 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
 
-                        // Depending on a setting
-                        // - Full month [January...December]
-                        // - Minute (00-59) OR
+                        // Minute (00-59)
                         case 'M':
-                            if (mysql_M_is_month_name)
-                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
-                            else
-                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // AM or PM

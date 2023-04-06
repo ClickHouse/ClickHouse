@@ -673,10 +673,9 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -685,20 +684,10 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
-                    if (mysql_M_is_month_name)
-                    {
-                        if (std::any_of(
-                                variable_width_formatter_M_is_month_name.begin(), variable_width_formatter_M_is_month_name.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
-                    else
-                    {
-                        if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
                     i += 1;
                     continue;
                 default:
@@ -709,17 +698,10 @@ private:
         return true;
     }
 
-    const bool mysql_M_is_month_name;
-
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
-
-    explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
 
     String getName() const override
     {
@@ -870,7 +852,7 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name) : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format) : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
@@ -1092,27 +1074,6 @@ public:
                         break;
                     }
 
-                    // Depending on a setting
-                    // - Full month [January-December] OR
-                    // - Minute of hour range [0, 59]
-                    case 'M':
-                    {
-                        Instruction<T> instruction;
-                        if (mysql_M_is_month_name)
-                        {
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonthOfYearTextLong);
-                            instructions.push_back(std::move(instruction));
-                            out_template += "September"; /// longest possible month name
-                        }
-                        else
-                        {
-                            static constexpr std::string_view val = "00";
-                            add_time_instruction(&Instruction<T>::mysqlMinute, 2, val);
-                            out_template += val;
-                        }
-                        break;
-                    }
-
                     // Fractional seconds
                     case 'f':
                     {
@@ -1255,6 +1216,15 @@ public:
                     }
 
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
+
+                    // Minute (00-59)
+                    case 'M':
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Instruction<T>::mysqlMinute, 2, val);
+                        out_template += val;
+                        break;
+                    }
 
                     // AM or PM
                     case 'p':
