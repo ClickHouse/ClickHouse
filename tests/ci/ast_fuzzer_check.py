@@ -15,7 +15,6 @@ from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     REPORTS_PATH,
-    REPO_COPY,
     TEMP_PATH,
 )
 from get_robot_token import get_best_robot_token
@@ -47,13 +46,12 @@ def get_commit(gh, commit_sha):
     return commit
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
-    repo_path = REPO_COPY
     reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
@@ -173,3 +171,7 @@ if __name__ == "__main__":
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")
     post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
+
+
+if __name__ == "__main__":
+    main()
