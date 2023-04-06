@@ -219,7 +219,11 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    TemporaryDataOnDiskScopePtr temp_data_on_disk;          /// Temporary files that occur when processing the request accounted here.
+
+    /// All temporary files that occur when processing the requests accounted here.
+    /// Child scopes for more fine-grained accounting are created per user/query/etc.
+    /// Initialized once during server startup.
+    TemporaryDataOnDiskScopePtr root_temp_data_on_disk;
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -752,25 +756,35 @@ Strings Context::getWarnings() const
 }
 
 /// TODO: remove, use `getTempDataOnDisk`
-VolumePtr Context::getTemporaryVolume() const
+VolumePtr Context::getGlobalTemporaryVolume() const
 {
     auto lock = getLock();
-    if (shared->temp_data_on_disk)
-        return shared->temp_data_on_disk->getVolume();
+    /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
+    /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
+    if (shared->root_temp_data_on_disk)
+        return shared->root_temp_data_on_disk->getVolume();
     return nullptr;
 }
 
 TemporaryDataOnDiskScopePtr Context::getTempDataOnDisk() const
 {
-    auto lock = getLock();
     if (this->temp_data_on_disk)
         return this->temp_data_on_disk;
-    return shared->temp_data_on_disk;
+
+    auto lock = getLock();
+    return shared->root_temp_data_on_disk;
+}
+
+TemporaryDataOnDiskScopePtr Context::getSharedTempDataOnDisk() const
+{
+    auto lock = getLock();
+    return shared->root_temp_data_on_disk;
 }
 
 void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
 {
-    auto lock = getLock();
+    /// It's set from `ProcessList::insert` in `executeQueryImpl` before query execution
+    /// so no races with `getTempDataOnDisk` which is called from query execution.
     this->temp_data_on_disk = std::move(temp_data_on_disk_);
 }
 
@@ -780,7 +794,7 @@ void Context::setPath(const String & path)
 
     shared->path = path;
 
-    if (shared->tmp_path.empty() && !shared->temp_data_on_disk)
+    if (shared->tmp_path.empty() && !shared->root_temp_data_on_disk)
         shared->tmp_path = shared->path + "tmp/";
 
     if (shared->flags_path.empty())
@@ -836,6 +850,11 @@ static VolumePtr createLocalSingleDiskVolume(const std::string & path)
 
 void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 {
+    auto lock = getLock();
+
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
+
     shared->tmp_path = path;
     if (!shared->tmp_path.ends_with('/'))
         shared->tmp_path += '/';
@@ -847,17 +866,23 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
         setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
 }
 
 void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
 {
-    std::lock_guard lock(shared->storage_policies_mutex);
+    StoragePolicyPtr tmp_policy;
+    {
+        /// lock in required only for accessing `shared->merge_tree_storage_policy_selector`
+        /// StoragePolicy itself is immutable.
+        std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
+        tmp_policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
+    }
 
-     StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
     if (tmp_policy->getVolumes().size() != 1)
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
+
     VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
@@ -882,12 +907,21 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
         setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
-}
+    auto lock = getLock();
 
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
+
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+}
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
 {
+    auto lock = getLock();
+
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
+
     auto disk_ptr = getDisk(cache_disk_name);
     if (!disk_ptr)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
@@ -904,7 +938,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     shared->tmp_path = file_cache->getBasePath();
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
 void Context::setFlagsPath(const String & path)
@@ -3460,7 +3494,7 @@ void Context::shutdown()
     }
 
     /// Special volumes might also use disks that require shutdown.
-    auto & tmp_data = shared->temp_data_on_disk;
+    auto & tmp_data = shared->root_temp_data_on_disk;
     if (tmp_data && tmp_data->getVolume())
     {
         auto & disks = tmp_data->getVolume()->getDisks();
