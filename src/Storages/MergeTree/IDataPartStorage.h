@@ -284,6 +284,8 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+
+    mutable std::atomic<bool> is_part_outdated = false;
 };
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
