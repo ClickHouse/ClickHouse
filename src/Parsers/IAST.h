@@ -226,10 +226,6 @@ public:
     {
     public:
         WriteBuffer & ostr;
-    private:
-        const FormatSettings & settings;
-        FormatState & state;
-        FormatStateStacked stacked_state;
 
         static const char * hilite_keyword;
         static const char * hilite_identifier;
@@ -239,6 +235,12 @@ public:
         static const char * hilite_substitution;
         static const char * hilite_none;
         static const char * hilite_metacharacter;
+
+    private:
+        const FormatSettings & settings;
+        FormatState & state;
+        FormatStateStacked stacked_state;
+
 
         /**
          * To be used in RAII style, just like std::lock_guard with std::mutex.

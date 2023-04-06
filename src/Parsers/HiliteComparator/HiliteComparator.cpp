@@ -52,8 +52,8 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right, bool 
 {
     const char * left_it = left.begin();
     const char * right_it = right.begin();
-    Hilite left_hilite = DB::IAST::hilite_none;
-    Hilite right_hilite = DB::IAST::hilite_none;
+    Hilite left_hilite = DB::IAST::FormattingBuffer::hilite_none;
+    Hilite right_hilite = DB::IAST::FormattingBuffer::hilite_none;
 
     while (true)
     {
@@ -66,7 +66,7 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right, bool 
             if (left_hilite != right_hilite)
                 return false;
             if (check_end_without_hilite)
-                if (left_hilite != DB::IAST::hilite_none)
+                if (left_hilite != DB::IAST::FormattingBuffer::hilite_none)
                     throw std::logic_error("Expected string ends with a hilite");
             return true;
         }

@@ -11,13 +11,13 @@ namespace HiliteComparator
 using Hilite = const char *;
 
 static const std::vector<Hilite> hilites = {
-        DB::IAST::hilite_keyword,
-        DB::IAST::hilite_identifier,
-        DB::IAST::hilite_function,
-        DB::IAST::hilite_operator,
-        DB::IAST::hilite_alias,
-        DB::IAST::hilite_substitution,
-        DB::IAST::hilite_none
+        DB::IAST::FormattingBuffer::hilite_keyword,
+        DB::IAST::FormattingBuffer::hilite_identifier,
+        DB::IAST::FormattingBuffer::hilite_function,
+        DB::IAST::FormattingBuffer::hilite_operator,
+        DB::IAST::FormattingBuffer::hilite_alias,
+        DB::IAST::FormattingBuffer::hilite_substitution,
+        DB::IAST::FormattingBuffer::hilite_none
     };
 
 /*
