@@ -82,6 +82,26 @@ inline std::string_view toDescription(OvercommitResult result)
     }
 }
 
+inline void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]])
+{
+    /// Big allocations through allocNoThrow (without checking memory limits) may easily lead to OOM (and it's hard to debug).
+    /// Let's find them.
+#ifdef ABORT_ON_LOGICAL_ERROR
+    if (size < 0)
+        return;
+
+    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
+    if (size < threshold)
+        return;
+
+    MemoryTrackerBlockerInThread blocker;
+    LOG_TEST(&Poco::Logger::get("MemoryTracker"), "Too big allocation ({} bytes) without checking memory limits, "
+                                                   "it may lead to OOM. Stack trace: {}", size, StackTrace().toString());
+#else
+    return;     /// Avoid trash logging in release builds
+#endif
+}
+
 }
 
 namespace ProfileEvents
@@ -117,7 +137,6 @@ MemoryTracker::~MemoryTracker()
         }
     }
 }
-
 
 void MemoryTracker::logPeakMemoryUsage()
 {
@@ -235,7 +254,10 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
                 formatReadableSizeWithBinarySuffix(current_hard_limit));
         }
         else
+        {
             memory_limit_exceeded_ignored = true;
+            debugLogBigAllocationWithoutCheck(size);
+        }
     }
 
     Int64 limit_to_check = current_hard_limit;
@@ -303,7 +325,10 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             }
         }
         else
+        {
             memory_limit_exceeded_ignored = true;
+            debugLogBigAllocationWithoutCheck(size);
+        }
     }
 
     bool peak_updated = false;
@@ -323,6 +348,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         {
             bool log_memory_usage = false;
             peak_updated = updatePeak(will_be, log_memory_usage);
+            debugLogBigAllocationWithoutCheck(size);
         }
     }
 
