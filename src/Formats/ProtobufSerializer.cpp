@@ -1543,7 +1543,7 @@ namespace
                 }
 
                 default:
-                    incompatibleColumnType("Date");
+                    incompatibleColumnType("Date32");
             }
         }
 
@@ -1619,7 +1619,7 @@ namespace
                 }
 
                 default:
-                    incompatibleColumnType("Date");
+                    incompatibleColumnType("IPv4");
             }
         }
 
