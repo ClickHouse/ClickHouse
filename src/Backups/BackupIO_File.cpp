@@ -49,7 +49,9 @@ void BackupReaderFile::copyFileToDisk(const String & file_name, size_t size, Dis
 }
 
 
-BackupWriterFile::BackupWriterFile(const String & path_) : path(path_)
+BackupWriterFile::BackupWriterFile(const String & path_, const ContextPtr & context_)
+    : IBackupWriter(context_)
+    , path(path_)
 {
 }
 
@@ -152,9 +154,9 @@ void BackupWriterFile::copyFileNative(DiskPtr src_disk, const String & src_file_
     else
         abs_source_path = fs::absolute(src_file_name);
 
-    if ((src_offset != 0) || (src_size != fs::file_size(abs_source_path)))
+    if (has_throttling || (src_offset != 0) || (src_size != fs::file_size(abs_source_path)))
     {
-        auto create_read_buffer = [abs_source_path] { return createReadBufferFromFileBase(abs_source_path, {}); };
+        auto create_read_buffer = [this, abs_source_path] { return createReadBufferFromFileBase(abs_source_path, read_settings); };
         copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
         return;
     }
