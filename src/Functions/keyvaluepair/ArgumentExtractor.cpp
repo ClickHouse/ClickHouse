@@ -25,11 +25,11 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
         return ParsedArguments{data_column};
     }
 
-    auto key_value_pair_delimiter = extractControlCharacter(arguments[1].column);
+    auto key_value_delimiter = extractControlCharacter(arguments[1].column);
 
     if (arguments.size() == 2u)
     {
-        return ParsedArguments {data_column, key_value_pair_delimiter};
+        return ParsedArguments {data_column, key_value_delimiter};
     }
 
     auto pair_delimiters_characters = arguments[2].column->getDataAt(0).toView();
@@ -39,7 +39,7 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
     if (arguments.size() == 3u)
     {
         return ParsedArguments {
-            data_column, key_value_pair_delimiter, pair_delimiters
+            data_column, key_value_delimiter, pair_delimiters
         };
     }
 
@@ -49,7 +49,7 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
     {
         return ParsedArguments {
             data_column,
-            key_value_pair_delimiter,
+            key_value_delimiter,
             pair_delimiters,
             quoting_character,
         };
@@ -58,7 +58,7 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
     auto with_escaping = extractBoolArgument(arguments[4].column);
 
     return ParsedArguments {
-        data_column, key_value_pair_delimiter, pair_delimiters, quoting_character, with_escaping
+        data_column, key_value_delimiter, pair_delimiters, quoting_character, with_escaping
     };
 }
 

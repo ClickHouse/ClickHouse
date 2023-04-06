@@ -26,9 +26,9 @@ auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments)
         builder.withEscaping();
     }
 
-    if (parsed_arguments.key_value_pair_delimiter)
+    if (parsed_arguments.key_value_delimiter)
     {
-        builder.withKeyValuePairDelimiter(parsed_arguments.key_value_pair_delimiter.value());
+        builder.withKeyValueDelimiter(parsed_arguments.key_value_delimiter.value());
     }
 
     if (!parsed_arguments.pair_delimiters.empty())
@@ -117,9 +117,9 @@ ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & argum
 {
     auto parsed_arguments = ArgumentExtractor::extract(arguments);
 
-    auto extractor_without_escaping = getExtractor(parsed_arguments);
+    auto extractor = getExtractor(parsed_arguments);
 
-    return extract(parsed_arguments.data_column, extractor_without_escaping);
+    return extract(parsed_arguments.data_column, extractor);
 }
 
 REGISTER_FUNCTION(ExtractKeyValuePairs)
