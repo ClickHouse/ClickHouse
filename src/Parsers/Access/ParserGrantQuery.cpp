@@ -285,19 +285,17 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     bool current_grants = false;
-    if (!is_revoke && cluster.empty() && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
+    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
     {
         current_grants = true;
         if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
         {
-            if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
+            if (!parseElementsWithoutOptions(pos, expected, elements))
                 return false;
 
             if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 return false;
         }
-        else
-            elements.emplace_back(AccessType::ALL);
     }
     else
     {
@@ -305,14 +303,14 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    if (cluster.empty() && !current_grants)
+    if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     if (!parseToGrantees(pos, expected, is_revoke, grantees))
         return false;
 
-    if (cluster.empty() && !current_grants)
+    if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
     if (!is_revoke)
@@ -326,7 +324,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             is_replace = true;
     }
 
-    if (cluster.empty() && !current_grants)
+    if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
     if (grant_option && roles)
@@ -372,6 +370,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
     query->current_grants = current_grants;
+    query->with_grant_option = grant_option;
 
     return true;
 }
