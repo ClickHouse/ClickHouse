@@ -401,8 +401,9 @@ void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
     {
         out.nlOrWs();
         out.ostr << "(";
-        out.isOneLine() ? dictionary_attributes_list->formatImpl(out)
-                        : dictionary_attributes_list->formatImplMultiline(out);
+        out.isOneLine()
+            ? dictionary_attributes_list->formatImpl(out)
+            : dictionary_attributes_list->formatImplMultiline(out);
         out.nlOrNothing();
         out.ostr << ")";
     }

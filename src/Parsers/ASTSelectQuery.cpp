@@ -108,8 +108,8 @@ void ASTSelectQuery::formatImpl(FormattingBuffer out) const
         if (!group_by_with_grouping_sets)
         {
             out.isOneLine()
-            ? groupBy()->formatImpl(out)
-            : groupBy()->as<ASTExpressionList &>().formatImplMultiline(out);
+                ? groupBy()->formatImpl(out)
+                : groupBy()->as<ASTExpressionList &>().formatImplMultiline(out);
         }
     }
 
@@ -143,8 +143,8 @@ void ASTSelectQuery::formatImpl(FormattingBuffer out) const
                 .setExpressionListPrependWhitespace(false)
                 .increaseIndent();
         out.isOneLine()
-        ? groupBy()->formatImpl(out_copy)
-        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(out_copy);
+            ? groupBy()->formatImpl(out_copy)
+            : groupBy()->as<ASTExpressionList &>().formatImplMultiline(out_copy);
         out.ostr << ")";
     }
 
