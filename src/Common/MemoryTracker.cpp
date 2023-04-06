@@ -138,7 +138,6 @@ MemoryTracker::~MemoryTracker()
     }
 }
 
-
 void MemoryTracker::logPeakMemoryUsage()
 {
     log_peak_memory_usage_in_destructor = false;

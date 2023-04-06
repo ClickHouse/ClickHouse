@@ -6929,8 +6929,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     if (query_context->getClientInfo().collaborate_with_initiator)
         return QueryProcessingStage::Enum::FetchColumns;
 
-    if (query_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
-        && !query_context->getClientInfo().collaborate_with_initiator
+    if (query_context->canUseParallelReplicasOnInitiator()
         && to_stage >= QueryProcessingStage::WithMergeableState)
         return QueryProcessingStage::Enum::WithMergeableState;
 
@@ -7421,7 +7420,7 @@ try
 
         part_log_elem.rows = (*merge_entry)->rows_written;
         part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
-        part_log_elem.peak_memory_usage = (*merge_entry)->memory_tracker.getPeak();
+        part_log_elem.peak_memory_usage = (*merge_entry)->getMemoryTracker().getPeak();
     }
 
     if (profile_counters)
