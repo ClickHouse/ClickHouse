@@ -17,6 +17,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -434,6 +435,9 @@ BlockIO InterpreterGrantQuery::execute()
     /// Executing on cluster.
     if (!query.cluster.empty())
     {
+        if (query.current_grants)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "GRANT CURRENT GRANTS can't be executed on cluster.");
+
         auto required_access = getRequiredAccessForExecutingOnCluster(elements_to_grant, elements_to_revoke);
         checkAdminOptionForExecutingOnCluster(*current_user_access, roles_to_grant, roles_to_revoke);
         current_user_access->checkGranteesAreAllowed(grantees);
