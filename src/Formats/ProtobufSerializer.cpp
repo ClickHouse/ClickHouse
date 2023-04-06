@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int PROTOBUF_BAD_CAST;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -298,7 +299,10 @@ namespace
             try
             {
                 /// TODO: use accurate::convertNumeric() maybe?
-                result = boost::numeric_cast<DestType>(value);
+                if constexpr (std::is_same_v<SrcType, IPv4>)
+                    result = boost::numeric_cast<DestType>(value.toUnderType());
+                else
+                    result = boost::numeric_cast<DestType>(value);
             }
             catch (boost::numeric::bad_numeric_cast &)
             {
@@ -504,7 +508,7 @@ namespace
                     {
                         UInt64 u64 = readUInt();
                         if (u64 < 2)
-                            return static_cast<NumberType>(u64);
+                            return castNumber<NumberType>(u64);
                         else
                             cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>);
                     };
@@ -1722,7 +1726,7 @@ namespace
         String text_buffer;
     };
 
-    using ProtobufSerializerIPv4 = ProtobufSerializerNumber<UInt32>;
+    using ProtobufSerializerIPv4 = ProtobufSerializerNumber<IPv4>;
 
     using ProtobufSerializerInterval = ProtobufSerializerNumber<Int64>;
 
@@ -3341,6 +3345,7 @@ namespace
                 case TypeIndex::UInt256: return std::make_unique<ProtobufSerializerNumber<UInt256>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int8: return std::make_unique<ProtobufSerializerNumber<Int8>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int16: return std::make_unique<ProtobufSerializerNumber<Int16>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Date32: return std::make_unique<ProtobufSerializerNumber<Int32>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int32: return std::make_unique<ProtobufSerializerNumber<Int32>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int64: return std::make_unique<ProtobufSerializerNumber<Int64>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int128: return std::make_unique<ProtobufSerializerNumber<Int128>>(column_name, field_descriptor, reader_or_writer);
@@ -3528,7 +3533,7 @@ namespace
                 }
 
                 default:
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data type: {}", data_type->getName());
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported in Protobuf format", data_type->getName());
             }
         }
 
