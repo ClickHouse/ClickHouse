@@ -42,6 +42,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
