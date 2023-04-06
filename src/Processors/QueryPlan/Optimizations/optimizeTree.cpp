@@ -105,7 +105,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Inside optimizeTreeSecondPass, flag is {}", optimization_settings.aggregation_with_data_hints);
     size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t num_applied_projection = 0;
     bool has_reading_from_mt = false;
