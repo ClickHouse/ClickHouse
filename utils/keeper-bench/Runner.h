@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include "Generator.h"
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -38,28 +39,7 @@ public:
         double max_time_,
         double delay_,
         bool continue_on_error_,
-        size_t max_iterations_)
-        : concurrency(concurrency_)
-        , pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
-        , hosts_strings(hosts_strings_)
-        , max_time(max_time_)
-        , delay(delay_)
-        , continue_on_error(continue_on_error_)
-        , max_iterations(max_iterations_)
-        , info(std::make_shared<Stats>())
-        , queue(concurrency)
-    {
-        if (!generator_name.empty() && !config_path.empty())
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are defined. Please define only one of them");
-
-        if (generator_name.empty() && config_path.empty())
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are empty. Please define one of them");
-
-        if (!generator_name.empty())
-            generator = getGenerator(generator_name);
-        else
-            generator = constructGeneratorFromConfig(config_path);
-    }
+        size_t max_iterations_);
 
     void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers);
 
@@ -79,7 +59,7 @@ private:
 
     ThreadPool pool;
     Strings hosts_strings;
-    std::unique_ptr<IGenerator> generator;
+    std::unique_ptr<Generator> generator;
     double max_time = 0;
     double delay = 1;
     bool continue_on_error = false;
