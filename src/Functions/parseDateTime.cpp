@@ -716,13 +716,31 @@ namespace
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
 
-                if (*cur != expected)
+                if (*cur != expected) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
                         String(expected, 1),
+                        String(*cur, 1));
+
+                ++cur;
+                return cur;
+            }
+
+            template <NeedCheckSpace need_check_space>
+            static Pos assertNumber(Pos cur, Pos end, const String & fragment)
+            {
+                if constexpr (need_check_space == NeedCheckSpace::Yes)
+                    checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
+
+                if (*cur < '0' || *cur > '9') [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because {} is not a number",
+                        fragment,
+                        std::string_view(cur, end - cur),
                         String(*cur, 1));
 
                 ++cur;
@@ -1037,32 +1055,8 @@ namespace
 
             static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
             {
-                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
-
-                Pos start = cur;
-                auto check_is_number = [&](Pos pos)
-                {
-                    if (*pos < '0' || *pos > '9')
-                        throw Exception(
-                            ErrorCodes::CANNOT_PARSE_DATETIME,
-                            "Unable to parse fragment '{}' from '{}' because '{}'' is not a number ",
-                            fragment,
-                            std::string_view(start, end),
-                            *cur);
-                };
-
-                check_is_number(cur);
-                ++cur;
-                check_is_number(cur);
-                ++cur;
-                check_is_number(cur);
-                ++cur;
-                check_is_number(cur);
-                ++cur;
-                check_is_number(cur);
-                ++cur;
-                check_is_number(cur);
-                ++cur;
+                for (size_t i = 0; i < 6; ++i)
+                    cur = assertNumber<NeedCheckSpace::Yes>(cur, end, fragment);
                 return cur;
             }
 
