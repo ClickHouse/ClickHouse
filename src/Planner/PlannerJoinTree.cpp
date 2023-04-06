@@ -387,46 +387,6 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     prewhere_outputs.insert(prewhere_outputs.end(), required_output_nodes.begin(), required_output_nodes.end());
 }
 
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        SelectQueryInfo & table_expression_query_info,
-        PlannerContextPtr & planner_context)
-{
-    const auto & query_context = planner_context->getQueryContext();
-
-    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
-
-    QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
-    query_analysis_pass.run(filter_query_tree, query_context);
-
-    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression_query_info.table_expression);
-    const auto table_expression_names = table_expression_data.getColumnNames();
-    NameSet table_expression_required_names_without_filter(table_expression_names.begin(), table_expression_names.end());
-
-    collectSourceColumns(filter_query_tree, planner_context);
-    collectSets(filter_query_tree, *planner_context);
-
-    auto filter_actions_dag = std::make_shared<ActionsDAG>();
-
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
-    if (expression_nodes.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Filter actions must return single output node. Actual {}",
-            expression_nodes.size());
-
-    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
-    filter_actions_outputs = std::move(expression_nodes);
-
-    std::string filter_node_name = filter_actions_outputs[0]->result_name;
-    bool remove_filter_column = true;
-
-    for (const auto & filter_input_node : filter_actions_dag->getInputs())
-        if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
-            filter_actions_outputs.push_back(filter_input_node);
-
-    return {std::move(filter_actions_dag), std::move(filter_node_name), remove_filter_column};
-}
-
 FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context)
@@ -438,7 +398,7 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     if (!row_policy_filter)
         return {};
 
-    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info, planner_context);
+    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
 }
 
 FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
@@ -469,7 +429,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
             *storage,
             query_context);
 
-    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info, planner_context);
+    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
 /// Apply filters from additional_table_filters setting
@@ -516,7 +476,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
 
     LOG_DEBUG(&Poco::Logger::get("buildAdditionalFiltersIfNeeded"), "Found additional filter: {}", additional_filter_ast->formatForErrorMessage());
 
-    return buildFilterInfo(additional_filter_ast, table_expression_query_info, planner_context);
+    return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
