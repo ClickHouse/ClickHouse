@@ -5,7 +5,11 @@ from github import Github
 from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit, get_commit_filtered_statuses
+from commit_status_helper import (
+    get_commit,
+    get_commit_filtered_statuses,
+    post_commit_status,
+)
 
 NAME = "Run Check"
 
@@ -25,9 +29,11 @@ if __name__ == "__main__":
         if status.context == NAME and status.state == "pending"
     )
     if pending_status:
-        commit.create_status(
-            context=NAME,
-            description="All checks finished",
-            state="success",
-            target_url=url,
+        post_commit_status(
+            gh,
+            pr_info.sha,
+            NAME,
+            "All checks finished",
+            "success",
+            url,
         )
