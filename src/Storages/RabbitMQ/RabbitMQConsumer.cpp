@@ -38,7 +38,10 @@ void RabbitMQConsumer::shutdown()
 {
     stopped = true;
     cv.notify_one();
+}
 
+void RabbitMQConsumer::closeConnections()
+{
     if (consumer_channel)
         consumer_channel->close();
 }

@@ -837,6 +837,9 @@ void StorageRabbitMQ::shutdown()
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
+        for (auto & consumer : consumers_ref)
+            consumer.lock()->closeConnections();
+
         if (drop_table)
             cleanupRabbitMQ();
 
