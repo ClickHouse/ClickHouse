@@ -19,6 +19,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -42,7 +43,6 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -145,6 +145,12 @@ namespace CurrentMetrics
     extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
     extern const Metric BackgroundCommonPoolSize;
+    extern const Metric MarksLoaderThreads;
+    extern const Metric MarksLoaderThreadsActive;
+    extern const Metric IOPrefetchThreads;
+    extern const Metric IOPrefetchThreadsActive;
+    extern const Metric IOWriterThreads;
+    extern const Metric IOWriterThreadsActive;
 }
 
 namespace DB
@@ -272,8 +278,14 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
+
     mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
     mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
+
+    mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
+    mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
+
+    mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -283,6 +295,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
+
+    ServerSettings server_settings;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings;   /// Settings of ReplicatedMergeTree* engines.
@@ -1832,6 +1846,32 @@ ContextMutablePtr Context::getBufferContext() const
     return buffer_context;
 }
 
+void Context::makeQueryContext()
+{
+    query_context = shared_from_this();
+
+    /// Create throttlers, to inherit the ThrottlePtr in the context copies.
+    {
+        getRemoteReadThrottler();
+        getRemoteWriteThrottler();
+
+        getLocalReadThrottler();
+        getLocalWriteThrottler();
+
+        getBackupsThrottler();
+    }
+}
+
+void Context::makeSessionContext()
+{
+    session_context = shared_from_this();
+}
+
+void Context::makeGlobalContext()
+{
+    initGlobal();
+    global_context = shared_from_this();
+}
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
@@ -2099,7 +2139,8 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     {
         auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
         auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
-        shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+        shared->load_marks_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, pool_size, pool_size, queue_size);
     }
     return *shared->load_marks_threadpool;
 }
@@ -2124,7 +2165,8 @@ ThreadPool & Context::getPrefetchThreadpool() const
     {
         auto pool_size = getPrefetchThreadpoolSize();
         auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
-        shared->prefetch_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+        shared->prefetch_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, pool_size, pool_size, queue_size);
     }
     return *shared->prefetch_threadpool;
 }
@@ -2261,11 +2303,8 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_buffer_flush_schedule_pool_size,
+            shared->server_settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -2310,11 +2349,8 @@ BackgroundSchedulePool & Context::getSchedulePool() const
     auto lock = getLock();
     if (!shared->schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_schedule_pool_size,
+            shared->server_settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -2328,11 +2364,8 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_distributed_schedule_pool_size,
+            shared->server_settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -2346,11 +2379,8 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     auto lock = getLock();
     if (!shared->message_broker_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_message_broker_schedule_pool_size,
+            shared->server_settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -2381,22 +2411,124 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->remote_read_throttler)
-        shared->remote_read_throttler = std::make_shared<Throttler>(
-            settings.max_remote_read_network_bandwidth_for_server);
+    ThrottlerPtr throttler;
 
-    return shared->remote_read_throttler;
+    const auto & query_settings = getSettingsRef();
+    UInt64 bandwidth_for_server = shared->server_settings.max_remote_read_network_bandwidth_for_server;
+    if (bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->remote_read_throttler)
+            shared->remote_read_throttler = std::make_shared<Throttler>(bandwidth_for_server);
+        throttler = shared->remote_read_throttler;
+    }
+
+    if (query_settings.max_remote_read_network_bandwidth)
+    {
+        auto lock = getLock();
+        if (!remote_read_query_throttler)
+            remote_read_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_read_network_bandwidth, throttler);
+        throttler = remote_read_query_throttler;
+    }
+
+    return throttler;
 }
 
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->remote_write_throttler)
-        shared->remote_write_throttler = std::make_shared<Throttler>(
-            settings.max_remote_write_network_bandwidth_for_server);
+    ThrottlerPtr throttler;
 
-    return shared->remote_write_throttler;
+    const auto & query_settings = getSettingsRef();
+    UInt64 bandwidth_for_server = shared->server_settings.max_remote_write_network_bandwidth_for_server;
+    if (bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->remote_write_throttler)
+            shared->remote_write_throttler = std::make_shared<Throttler>(bandwidth_for_server);
+        throttler = shared->remote_write_throttler;
+    }
+
+    if (query_settings.max_remote_write_network_bandwidth)
+    {
+        auto lock = getLock();
+        if (!remote_write_query_throttler)
+            remote_write_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_write_network_bandwidth, throttler);
+        throttler = remote_write_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getLocalReadThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_local_read_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->local_read_throttler)
+            shared->local_read_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_read_bandwidth_for_server);
+        throttler = shared->local_read_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_local_read_bandwidth)
+    {
+        auto lock = getLock();
+        if (!local_read_query_throttler)
+            local_read_query_throttler = std::make_shared<Throttler>(query_settings.max_local_read_bandwidth, throttler);
+        throttler = local_read_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getLocalWriteThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_local_write_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->local_write_throttler)
+            shared->local_write_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_write_bandwidth_for_server);
+        throttler = shared->local_write_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_local_write_bandwidth)
+    {
+        auto lock = getLock();
+        if (!local_write_query_throttler)
+            local_write_query_throttler = std::make_shared<Throttler>(query_settings.max_local_write_bandwidth, throttler);
+        throttler = local_write_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getBackupsThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_backup_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->backups_server_throttler)
+            shared->backups_server_throttler = std::make_shared<Throttler>(shared->server_settings.max_backup_bandwidth_for_server);
+        throttler = shared->backups_server_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_backup_bandwidth)
+    {
+        auto lock = getLock();
+        if (!backups_query_throttler)
+            backups_query_throttler = std::make_shared<Throttler>(query_settings.max_backup_bandwidth, throttler);
+        throttler = backups_query_throttler;
+    }
+
+    return throttler;
 }
 
 bool Context::hasDistributedDDL() const
@@ -2435,7 +2567,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper", getZooKeeperLog());
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
     else if (shared->zookeeper->expired())
     {
         Stopwatch watch;
@@ -2474,8 +2606,9 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
 {
     try
     {
+        const auto config_name = zkutil::getZooKeeperConfigName(getConfigRef());
         /// If our server is part of main Keeper cluster
-        if (checkZooKeeperConfigIsLocal(getConfigRef(), "zookeeper"))
+        if (config_name == "keeper_server" || checkZooKeeperConfigIsLocal(getConfigRef(), config_name))
         {
             LOG_DEBUG(shared->log, "Keeper server is participant of the main zookeeper cluster, will try to connect to it");
             getZooKeeper();
@@ -2681,7 +2814,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     bool server_started = isServerCompletelyStarted();
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper, getZooKeeperLog(), server_started);
+    reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -2706,7 +2839,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 
 bool Context::hasZooKeeper() const
 {
-    return getConfigRef().has("zookeeper");
+    return zkutil::hasZooKeeperConfig(getConfigRef());
 }
 
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
@@ -3429,6 +3562,9 @@ void Context::setApplicationType(ApplicationType type)
 {
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
+
+    if (type == ApplicationType::SERVER)
+        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
@@ -3885,11 +4021,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     if (shared->are_background_executors_initialized)
         return;
 
-    const auto & config = getConfigRef();
-
-    ServerSettings server_settings;
-    server_settings.loadSettingsFromConfig(config);
-
+    const ServerSettings & server_settings = shared->server_settings;
     size_t background_pool_size = server_settings.background_pool_size;
     auto background_merges_mutations_concurrency_ratio = server_settings.background_merges_mutations_concurrency_ratio;
     size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
@@ -4048,7 +4180,8 @@ ThreadPool & Context::getThreadPoolWriter() const
         auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
 
-        shared->threadpool_writer = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+        shared->threadpool_writer = std::make_unique<ThreadPool>(
+            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, pool_size, pool_size, queue_size);
     }
 
     return *shared->threadpool_writer;
@@ -4105,6 +4238,7 @@ ReadSettings Context::getReadSettings() const
     res.priority = settings.read_priority;
 
     res.remote_throttler = getRemoteReadThrottler();
+    res.local_throttler = getLocalReadThrottler();
 
     res.http_max_tries = settings.http_max_tries;
     res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
@@ -4114,6 +4248,14 @@ ReadSettings Context::getReadSettings() const
     res.mmap_cache = getMMappedFileCache().get();
 
     return res;
+}
+
+ReadSettings Context::getBackupReadSettings() const
+{
+    ReadSettings settings = getReadSettings();
+    settings.remote_throttler = getBackupsThrottler();
+    settings.local_throttler = getBackupsThrottler();
+    return settings;
 }
 
 WriteSettings Context::getWriteSettings() const
@@ -4127,6 +4269,7 @@ WriteSettings Context::getWriteSettings() const
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
+    res.local_throttler = getLocalWriteThrottler();
 
     return res;
 }
