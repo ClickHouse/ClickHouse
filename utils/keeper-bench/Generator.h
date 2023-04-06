@@ -137,4 +137,6 @@ private:
 };
 
 
+std::unique_ptr<IGenerator> constructGeneratorFromConfig(const std::string & config_path);
+
 std::unique_ptr<IGenerator> getGenerator(const std::string & name);

@@ -22,12 +22,18 @@ namespace CurrentMetrics
     extern const Metric LocalThreadActive;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 class Runner
 {
 public:
     Runner(
         size_t concurrency_,
         const std::string & generator_name,
+        const std::string & config_path,
         const Strings & hosts_strings_,
         double max_time_,
         double delay_,
@@ -36,7 +42,6 @@ public:
         : concurrency(concurrency_)
         , pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
         , hosts_strings(hosts_strings_)
-        , generator(getGenerator(generator_name))
         , max_time(max_time_)
         , delay(delay_)
         , continue_on_error(continue_on_error_)
@@ -44,6 +49,16 @@ public:
         , info(std::make_shared<Stats>())
         , queue(concurrency)
     {
+        if (!generator_name.empty() && !config_path.empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are defined. Please define only one of them");
+
+        if (generator_name.empty() && config_path.empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are empty. Please define one of them");
+
+        if (!generator_name.empty())
+            generator = getGenerator(generator_name);
+        else
+            generator = constructGeneratorFromConfig(config_path);
     }
 
     void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers);

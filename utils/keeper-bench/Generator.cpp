@@ -1,4 +1,5 @@
 #include "Generator.h"
+#include <Common/Config/ConfigProcessor.h>
 #include <random>
 #include <filesystem>
 
@@ -337,4 +338,11 @@ std::unique_ptr<IGenerator> getGenerator(const std::string & name)
     }
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", name);
+}
+
+std::unique_ptr<IGenerator> constructGeneratorFromConfig(const std::string & config_path)
+{
+    ConfigProcessor config_processor(config_path, true, false);
+    auto loaded_config = config_processor.loadConfig();
+    return nullptr;
 }
