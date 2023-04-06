@@ -1202,7 +1202,8 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                               "Unexpected packet from client (expected Hello, got {})", packet_type);
     }
 
     readStringBinary(client_name, *in);
@@ -1895,7 +1896,7 @@ void TCPHandler::sendData(const Block & block)
         {
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(UInt64(-1), *out);
+                writeVarUInt(VAR_UINT_MAX, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);

@@ -1128,7 +1128,7 @@ Default value: `2.latest`.
 
 Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
 
-Default value: `snappy`.
+Default value: `lz4`.
 
 ## Hive format settings {#hive-format-settings}
 
