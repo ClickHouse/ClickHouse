@@ -1276,7 +1276,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %k       | hour in 24h format (00-23)                              | 22         |
 | %l       | hour in 12h format (01-12)                              | 09         |
 | %m       | month as an integer number (01-12)                      | 01         |
-| %M       | full month name (January-December)                      | January    |
+| %M       | full month name (January-December), see (*) below       | January    |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
@@ -1294,6 +1294,8 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %Y       | Year                                                    | 2018       |
 | %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
+
+(*) In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
 
 **Example**
 
