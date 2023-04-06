@@ -607,3 +607,56 @@ def test_grant_current_grants():
     assert instance.query("SHOW GRANTS FOR C") == TSV(
         ["GRANT CREATE TABLE, CREATE VIEW ON test.* TO C"]
     )
+
+
+def test_grant_current_grants_with_partial_revoke():
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON *.* TO A")
+    instance.query("GRANT SELECT ON *.* TO A WITH GRANT OPTION")
+    instance.query("REVOKE SELECT ON test.* FROM A")
+    instance.query("GRANT SELECT ON test.table TO A WITH GRANT OPTION")
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT CREATE TABLE ON *.* TO A",
+            "GRANT SELECT ON *.* TO A WITH GRANT OPTION",
+            "REVOKE SELECT ON test.* FROM A",
+            "GRANT SELECT ON test.table TO A WITH GRANT OPTION",
+        ]
+    )
+
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS TO B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT ON *.* TO B",
+            "REVOKE SELECT ON test.* FROM B",
+            "GRANT SELECT ON test.table TO B",
+        ]
+    )
+
+
+def test_current_grants_override():
+    instance.query("CREATE USER A")
+    instance.query("GRANT SELECT ON *.* TO A WITH GRANT OPTION")
+    instance.query("REVOKE SELECT ON test.* FROM A")
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT SELECT ON *.* TO A WITH GRANT OPTION",
+            "REVOKE SELECT ON test.* FROM A",
+        ]
+    )
+
+    instance.query("CREATE USER B")
+    instance.query("GRANT SELECT ON test.table TO B")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        ["GRANT SELECT ON test.table TO B"]
+    )
+
+    instance.query("GRANT CURRENT GRANTS TO B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT ON *.* TO B",
+            "REVOKE SELECT ON test.* FROM B",
+            "GRANT SELECT ON test.table TO B",
+        ]
+    )
