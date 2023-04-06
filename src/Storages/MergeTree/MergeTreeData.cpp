@@ -4869,24 +4869,12 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-void MergeTreeData::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
-{
-    auto local_context = backup_entries_collector.getContext();
-
-    DataPartsVector data_parts;
-    if (partitions)
-        data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
-    else
-        data_parts = getVisibleDataPartsVector(local_context);
-
-    backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, local_context));
-}
-
 BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context)
 {
     BackupEntries backup_entries;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
     TableLockHolder table_lock;
+    ReadSettings read_settings = local_context->getBackupReadSettings();
 
     for (const auto & part : data_parts)
     {
@@ -4916,6 +4904,7 @@ BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, con
 
         BackupEntries backup_entries_from_part;
         part->getDataPartStorage().backup(
+            read_settings,
             part->checksums,
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
@@ -4927,6 +4916,7 @@ BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, con
         for (const auto & [projection_name, projection_part] : projection_parts)
         {
             projection_part->getDataPartStorage().backup(
+                read_settings,
                 projection_part->checksums,
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
@@ -6939,8 +6929,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     if (query_context->getClientInfo().collaborate_with_initiator)
         return QueryProcessingStage::Enum::FetchColumns;
 
-    if (query_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
-        && !query_context->getClientInfo().collaborate_with_initiator
+    if (query_context->canUseParallelReplicasOnInitiator()
         && to_stage >= QueryProcessingStage::WithMergeableState)
         return QueryProcessingStage::Enum::WithMergeableState;
 
