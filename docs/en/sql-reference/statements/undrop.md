@@ -8,7 +8,7 @@ sidebar_label: UNDROP
 Cancels the dropping of the table.
 
 Beginning with ClickHouse version 23.3 it is possible to UNDROP a table 
-within 8 minutes of issuing the DROP TABLE statement.  Dropped tables are listed in 
+within `database_atomic_delay_before_drop_table_sec` (8 minutes by default) of issuing the DROP TABLE statement.  Dropped tables are listed in 
 a system table called `system.dropped_tables`.
 
 :::note
