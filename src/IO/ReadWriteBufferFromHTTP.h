@@ -267,6 +267,8 @@ namespace detail
                     if (out_stream_callback)
                         out_stream_callback(stream_out);
 
+                    uint8_t* data = nullptr;
+
                     while (enet_host_service(client, &event, 3000) > 0)
                     {
                         switch (event.type)
@@ -274,7 +276,7 @@ namespace detail
                             case ENET_EVENT_TYPE_RECEIVE:
                                 // Receive packet from Service
                                 {
-                                    // auto data = event.packet->data;
+                                    data = event.packet->data;
                                     enet_packet_destroy(event.packet);
                                 }
                                 break;
@@ -283,10 +285,12 @@ namespace detail
                         }
                     }
 
-                    istr = receiveResponse(*sess, request, response, true);
-                    response.getCookies(cookies);
+                    std::string str_data = reinterpret_cast<char*>(data);
 
-                    content_encoding = response.get("Content-Encoding", "");
+                    istr->clear();
+
+                    istr->get(reinterpret_cast<char*>(data), str_data.size());
+
                     return istr;
                     #else
                     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Enet protocol was not enabled during build time");
