@@ -123,6 +123,12 @@ const std::vector<std::pair<std::string, std::string>> expected_and_query_pairs 
             + keyword("COMMENT ") + "'hello'",
         "CREATE TABLE name AS (SELECT *) COMMENT 'hello'"
     },
+
+    // ASTCreateUserQuery
+    {
+        keyword("CREATE USER ") + "user " + keyword("IDENTIFIED WITH plaintext_password BY ") + "'hello'",
+        "CREATE USER user IDENTIFIED WITH plaintext_password BY 'hello'"
+    }
 };
 
 
