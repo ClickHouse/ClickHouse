@@ -22,7 +22,7 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import NeedsDataType, PRInfo
 from commit_status_helper import (
-    get_commit,
+    post_commit_status,
     update_mergeable_check,
 )
 from ci_config import CI_CONFIG
@@ -274,12 +274,13 @@ def main():
 
     description = f"{ok_groups}/{total_groups} artifact groups are OK {addition}"
 
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(
-        context=build_check_name,
-        description=description,
-        state=summary_status,
-        target_url=url,
+    post_commit_status(
+        gh,
+        pr_info.sha,
+        build_check_name,
+        description,
+        summary_status,
+        url,
     )
 
     if summary_status == "error":

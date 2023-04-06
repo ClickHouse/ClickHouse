@@ -9,7 +9,11 @@ import time
 from typing import List, Tuple
 
 from ci_config import CI_CONFIG, BuildConfig
-from commit_status_helper import get_commit_filtered_statuses, get_commit
+from commit_status_helper import (
+    get_commit_filtered_statuses,
+    get_commit,
+    post_commit_status,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB,
@@ -248,8 +252,13 @@ def mark_failed_reports_pending(build_name: str, sha: str) -> None:
                     "Commit already have failed status for '%s', setting it to 'pending'",
                     report_status,
                 )
-                commit.create_status(
-                    "pending", status.url, "Set to pending on rerun", report_status
+                post_commit_status(
+                    gh,
+                    sha,
+                    report_status,
+                    "Set to pending on rerun",
+                    "pending",
+                    status.url,
                 )
     except:  # we do not care about any exception here
         logging.info("Failed to get or mark the reports status as pending, continue")

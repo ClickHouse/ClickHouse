@@ -20,9 +20,8 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    post_commit_status,
-    get_commit,
     override_status,
+    post_commit_status,
     post_commit_status_to_file,
     update_mergeable_check,
 )
@@ -283,13 +282,10 @@ def main():
     if run_changed_tests:
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
-            commit = get_commit(gh, pr_info.sha)
             state = override_status("success", check_name, validate_bugfix_check)
             if args.post_commit_status == "commit_status":
-                commit.create_status(
-                    context=check_name_with_group,
-                    description=NO_CHANGES_MSG,
-                    state=state,
+                post_commit_status(
+                    gh, pr_info.sha, check_name_with_group, NO_CHANGES_MSG, state, ""
                 )
             elif args.post_commit_status == "file":
                 post_commit_status_to_file(
