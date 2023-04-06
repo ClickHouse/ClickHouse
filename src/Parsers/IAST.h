@@ -258,7 +258,7 @@ public:
         };
         Hiliter createHiliter(const char * hilite_type) const;
         void writePossiblyHilited(std::string_view str, const char * hilite_type) const;
-        void writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias = false) const;
+        void writeIdentifierOrAlias(const String & name, bool hilite_as_identifier) const;
 
         FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_, FormatState & state_, FormatStateStacked stacked_state_) :
             ostr(ostr_), settings(settings_), state(state_), stacked_state(stacked_state_) {}

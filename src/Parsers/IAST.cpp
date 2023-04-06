@@ -350,9 +350,9 @@ void IAST::FormattingBuffer::writeStringLiteralWithMetacharacters(const String &
     }
 }
 
-void IAST::FormattingBuffer::writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias) const
+void IAST::FormattingBuffer::writeIdentifierOrAlias(const String & name, bool hilite_as_identifier) const
 {
-    const char * hilite_type = should_hilite_as_alias ? IAST::FormattingBuffer::hilite_alias : IAST::FormattingBuffer::hilite_identifier;
+    const char * hilite_type = hilite_as_identifier ? IAST::FormattingBuffer::hilite_identifier : IAST::FormattingBuffer::hilite_alias;
     Hiliter hiliter = createHiliter(hilite_type);
 
     switch (settings.identifier_quoting_style)
@@ -395,12 +395,12 @@ void IAST::FormattingBuffer::writeIdentifierOrAlias(const String & name, bool sh
 
 void IAST::FormattingBuffer::writeIdentifier(const String & name) const
 {
-    writeIdentifierOrAlias(name);
+    writeIdentifierOrAlias(name, true);
 }
 
 void IAST::FormattingBuffer::writeAlias(const String & name) const
 {
-    writeIdentifierOrAlias(name, true);
+    writeIdentifierOrAlias(name, false);
 }
 
 void IAST::FormattingBuffer::writeProbablyBackQuotedIdentifier(const String & name) const
