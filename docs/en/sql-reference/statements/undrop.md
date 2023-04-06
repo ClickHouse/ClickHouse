@@ -25,7 +25,7 @@ Also see [DROP TABLE](/docs/en/sql-reference/statements/drop.md)
 Syntax:
 
 ``` sql
-UNDROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 ```
 
 **Example**
