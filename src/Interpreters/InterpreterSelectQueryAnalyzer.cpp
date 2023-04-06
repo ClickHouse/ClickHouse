@@ -216,7 +216,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed());
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
 
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
