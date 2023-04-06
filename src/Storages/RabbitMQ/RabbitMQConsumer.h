@@ -84,6 +84,8 @@ public:
         cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty() || isConsumerStopped(); });
     }
 
+    void closeConnections();
+
 private:
     void subscribe();
     void iterateEventLoop();
