@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+message Message
+{
+    uint32 ipv4 = 1;
+    int32 date32 = 2;
+}
