@@ -140,15 +140,15 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
 
         size_t num_args = aggregate.argument_names.size();
 
-        DataTypes argumen_types;
-        argumen_types.reserve(num_args);
+        DataTypes argument_types;
+        argument_types.reserve(num_args);
 
         auto & candidates = it->second;
         bool found_match = false;
 
         for (size_t idx : candidates)
         {
-            argumen_types.clear();
+            argument_types.clear();
             const auto & candidate = info.aggregates[idx];
 
             /// Note: this check is a bit strict.
@@ -226,7 +226,7 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                     break;
                 }
 
-                argumen_types.push_back(query_node->result_type);
+                argument_types.push_back(query_node->result_type);
                 ++next_arg;
             }
 
@@ -234,7 +234,7 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
                 continue;
 
             found_match = true;
-            res.push_back({&candidate, std::move(argumen_types)});
+            res.push_back({&candidate, std::move(argument_types)});
             break;
         }
 
