@@ -1486,6 +1486,157 @@ namespace
         }
     };
 
+    class ProtobufSerializerDate32 : public ProtobufSerializerNumber<Int32>
+    {
+    public:
+        ProtobufSerializerDate32(
+            std::string_view column_name_,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerNumber<Int32>(column_name_, field_descriptor_, reader_or_writer_)
+        {
+            setFunctions();
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerDate32: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
+        }
+
+    private:
+        void setFunctions()
+        {
+            switch (field_typeid)
+            {
+                case FieldTypeId::TYPE_INT32:
+                case FieldTypeId::TYPE_SINT32:
+                case FieldTypeId::TYPE_UINT32:
+                case FieldTypeId::TYPE_INT64:
+                case FieldTypeId::TYPE_SINT64:
+                case FieldTypeId::TYPE_UINT64:
+                case FieldTypeId::TYPE_FIXED32:
+                case FieldTypeId::TYPE_SFIXED32:
+                case FieldTypeId::TYPE_FIXED64:
+                case FieldTypeId::TYPE_SFIXED64:
+                case FieldTypeId::TYPE_FLOAT:
+                case FieldTypeId::TYPE_DOUBLE:
+                    break; /// already set in ProtobufSerializerNumber<UInt16>::setFunctions().
+
+                case FieldTypeId::TYPE_STRING:
+                case FieldTypeId::TYPE_BYTES:
+                {
+                    write_function = [this](Int32 value)
+                    {
+                        dateToString(static_cast<ExtendedDayNum>(value), text_buffer);
+                        writeStr(text_buffer);
+                    };
+
+                    read_function = [this]() -> Int32
+                    {
+                        readStr(text_buffer);
+                        return stringToDate(text_buffer);
+                    };
+
+                    default_function = [this]() -> Int32 { return stringToDate(field_descriptor.default_value_string()); };
+                    break;
+                }
+
+                default:
+                    incompatibleColumnType("Date");
+            }
+        }
+
+        static void dateToString(ExtendedDayNum date, String & str)
+        {
+            WriteBufferFromString buf{str};
+            writeDateText(date, buf);
+        }
+
+        static ExtendedDayNum stringToDate(const String & str)
+        {
+            ExtendedDayNum date;
+            ReadBufferFromString buf{str};
+            readDateText(date, buf);
+            return date;
+        }
+    };
+
+    class ProtobufSerializerIPv4 : public ProtobufSerializerNumber<IPv4>
+    {
+    public:
+        ProtobufSerializerIPv4(
+            std::string_view column_name_,
+            const FieldDescriptor & field_descriptor_,
+            const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerNumber<IPv4>(column_name_, field_descriptor_, reader_or_writer_)
+        {
+            setFunctions();
+        }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerDate: column " << quoteString(column_name) << " -> field "
+                                     << quoteString(field_descriptor.full_name()) << " (" << field_descriptor.type_name() << ")\n";
+        }
+
+    private:
+        void setFunctions()
+        {
+            switch (field_typeid)
+            {
+                case FieldTypeId::TYPE_INT32:
+                case FieldTypeId::TYPE_SINT32:
+                case FieldTypeId::TYPE_UINT32:
+                case FieldTypeId::TYPE_INT64:
+                case FieldTypeId::TYPE_SINT64:
+                case FieldTypeId::TYPE_UINT64:
+                case FieldTypeId::TYPE_FIXED32:
+                case FieldTypeId::TYPE_SFIXED32:
+                case FieldTypeId::TYPE_FIXED64:
+                case FieldTypeId::TYPE_SFIXED64:
+                case FieldTypeId::TYPE_FLOAT:
+                case FieldTypeId::TYPE_DOUBLE:
+                    break; /// already set in ProtobufSerializerNumber<UInt16>::setFunctions().
+
+                case FieldTypeId::TYPE_STRING:
+                case FieldTypeId::TYPE_BYTES:
+                {
+                    write_function = [this](IPv4 value)
+                    {
+                        ipv4ToString(value, text_buffer);
+                        writeStr(text_buffer);
+                    };
+
+                    read_function = [this]() -> IPv4
+                    {
+                        readStr(text_buffer);
+                        return stringToIPv4(text_buffer);
+                    };
+
+                    default_function = [this]() -> IPv4 { return stringToIPv4(field_descriptor.default_value_string()); };
+                    break;
+                }
+
+                default:
+                    incompatibleColumnType("Date");
+            }
+        }
+
+        static void ipv4ToString(IPv4 value, String & str)
+        {
+            WriteBufferFromString buf{str};
+            writeIPv4Text(value, buf);
+        }
+
+        static IPv4 stringToIPv4(const String & str)
+        {
+            IPv4 value;
+            ReadBufferFromString buf{str};
+            readIPv4Text(value, buf);
+            return value;
+        }
+    };
 
     /// Serializes a ColumnVector<UInt32> containing datetimes to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
     class ProtobufSerializerDateTime : public ProtobufSerializerNumber<UInt32>
@@ -1725,8 +1876,6 @@ namespace
         std::function<IPv6()> default_function;
         String text_buffer;
     };
-
-    using ProtobufSerializerIPv4 = ProtobufSerializerNumber<IPv4>;
 
     using ProtobufSerializerInterval = ProtobufSerializerNumber<Int64>;
 
@@ -3345,7 +3494,7 @@ namespace
                 case TypeIndex::UInt256: return std::make_unique<ProtobufSerializerNumber<UInt256>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int8: return std::make_unique<ProtobufSerializerNumber<Int8>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int16: return std::make_unique<ProtobufSerializerNumber<Int16>>(column_name, field_descriptor, reader_or_writer);
-                case TypeIndex::Date32: return std::make_unique<ProtobufSerializerNumber<Int32>>(column_name, field_descriptor, reader_or_writer);
+                case TypeIndex::Date32: return std::make_unique<ProtobufSerializerDate32>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int32: return std::make_unique<ProtobufSerializerNumber<Int32>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int64: return std::make_unique<ProtobufSerializerNumber<Int64>>(column_name, field_descriptor, reader_or_writer);
                 case TypeIndex::Int128: return std::make_unique<ProtobufSerializerNumber<Int128>>(column_name, field_descriptor, reader_or_writer);
