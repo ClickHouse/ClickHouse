@@ -40,6 +40,7 @@
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ProfileEvents.h>
+#include "Processors/ResizeProcessor.h"
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -700,7 +701,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    const size_t max_num_streams)
 {
     if (use_table_fd)
     {
@@ -731,7 +732,8 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    if (num_streams > paths.size())
+    size_t num_streams = max_num_streams;
+    if (max_num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;
@@ -789,7 +791,14 @@ Pipe StorageFile::read(
             std::move(read_buffer)));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    Pipe pipe = Pipe::unitePipes(std::move(pipes));
+    /// parallelize output as much as possible
+    if (num_streams < max_num_streams)
+    {
+        pipe.addTransform(std::make_shared<ResizeProcessor>(pipe.getHeader(), num_streams, max_num_streams));
+    }
+
+    return pipe;
 }
 
 
