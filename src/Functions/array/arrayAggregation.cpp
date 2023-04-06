@@ -5,6 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -128,6 +131,30 @@ struct ArrayAggregateImpl
                 result = std::make_shared<DataTypeDecimal<DecimalReturnType>>(DecimalUtils::max_precision<DecimalReturnType>, scale);
 
                 return true;
+            }
+            else if constexpr (IsDataTypeDateOrDateTime<DataType> && (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min))
+            {
+                if constexpr (IsDataTypeDate<DataType>)
+                {
+                    result = std::make_shared<DataType>();
+
+                    return true;
+                }
+                else if constexpr (!IsDataTypeDecimal<DataType>)
+                {
+                    std::string timezone = getDateTimeTimezone(*expression_return);
+                    result = std::make_shared<DataType>(timezone);
+
+                    return true;
+                }
+                else
+                {
+                    std::string timezone = getDateTimeTimezone(*expression_return);
+                    UInt32 scale = getDecimalScale(*expression_return);
+                    result = std::make_shared<DataType>(scale, timezone);
+
+                    return true;
+                }
             }
 
             return false;
@@ -370,8 +397,8 @@ struct ArrayAggregateImpl
             executeType<Decimal32>(mapped, offsets, res) ||
             executeType<Decimal64>(mapped, offsets, res) ||
             executeType<Decimal128>(mapped, offsets, res) ||
-            executeType<Decimal256>(mapped, offsets, res))
-        {
+            executeType<Decimal256>(mapped, offsets, res) ||
+            executeType<DateTime64>(mapped, offsets, res))
             return res;
         }
         else
