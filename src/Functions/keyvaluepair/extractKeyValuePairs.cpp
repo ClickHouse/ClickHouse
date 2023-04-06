@@ -1,145 +1,150 @@
-#include <Functions/keyvaluepair/extractKeyValuePairs.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnMap.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/ArgumentExtractor.h>
 
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionFactory.h>
-
-
-namespace
-{
-
-using namespace DB;
-
-auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments)
-{
-    auto builder = KeyValuePairExtractorBuilder();
-
-    if (parsed_arguments.with_escaping.value_or(false))
-    {
-        builder.withEscaping();
-    }
-
-    if (parsed_arguments.key_value_delimiter)
-    {
-        builder.withKeyValueDelimiter(parsed_arguments.key_value_delimiter.value());
-    }
-
-    if (!parsed_arguments.pair_delimiters.empty())
-    {
-        builder.withItemDelimiters(parsed_arguments.pair_delimiters);
-    }
-
-    if (parsed_arguments.quoting_character)
-    {
-        builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
-    }
-
-    return builder.build();
-}
-
-ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor)
-{
-    auto offsets = ColumnUInt64::create();
-
-    auto keys = ColumnString::create();
-    auto values = ColumnString::create();
-
-    uint64_t offset = 0u;
-
-    for (auto i = 0u; i < data_column->size(); i++)
-    {
-        auto row = data_column->getDataAt(i).toView();
-
-        auto pairs_count = extractor->extract(row, keys, values);
-
-        offset += pairs_count;
-
-        offsets->insert(offset);
-    }
-
-    keys->validate();
-    values->validate();
-
-    ColumnPtr keys_ptr = std::move(keys);
-
-    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
-}
-
-
-}
-
 namespace DB
 {
 
-String ExtractKeyValuePairs::getName() const
+template <typename Name, bool WITH_ESCAPING>
+class ExtractKeyValuePairs : public IFunction
 {
-    return name;
-}
+    auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments) const
+    {
+        auto builder = KeyValuePairExtractorBuilder();
 
-FunctionPtr ExtractKeyValuePairs::create(ContextPtr)
+        if constexpr (WITH_ESCAPING)
+        {
+            builder.withEscaping();
+        }
+
+        if (parsed_arguments.key_value_delimiter)
+        {
+            builder.withKeyValueDelimiter(parsed_arguments.key_value_delimiter.value());
+        }
+
+        if (!parsed_arguments.pair_delimiters.empty())
+        {
+            builder.withItemDelimiters(parsed_arguments.pair_delimiters);
+        }
+
+        if (parsed_arguments.quoting_character)
+        {
+            builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
+        }
+
+        return builder.build();
+    }
+
+    ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor) const
+    {
+        auto offsets = ColumnUInt64::create();
+
+        auto keys = ColumnString::create();
+        auto values = ColumnString::create();
+
+        uint64_t offset = 0u;
+
+        for (auto i = 0u; i < data_column->size(); i++)
+        {
+            auto row = data_column->getDataAt(i).toView();
+
+            auto pairs_count = extractor->extract(row, keys, values);
+
+            offset += pairs_count;
+
+            offsets->insert(offset);
+        }
+
+        keys->validate();
+        values->validate();
+
+        ColumnPtr keys_ptr = std::move(keys);
+
+        return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
+    }
+
+public:
+    ExtractKeyValuePairs() = default;
+
+    static constexpr auto name = Name::name;
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<ExtractKeyValuePairs>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    {
+        auto parsed_arguments = ArgumentExtractor::extract(arguments);
+
+        auto extractor = getExtractor(parsed_arguments);
+
+        return extract(parsed_arguments.data_column, extractor);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+    }
+
+    bool isVariadic() const override
+    {
+        return true;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
+    {
+        return false;
+    }
+
+    std::size_t getNumberOfArguments() const override
+    {
+        return 0u;
+    }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        return {1, 2, 3, 4};
+    }
+};
+
+struct NameExtractKeyValuePairs
 {
-    return std::make_shared<ExtractKeyValuePairs>();
-}
+    static constexpr auto name = "extractKeyValuePairs";
+};
 
-DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes &) const
+struct NameExtractKeyValuePairsWithEscaping
 {
-    return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
-}
-
-bool ExtractKeyValuePairs::isVariadic() const
-{
-    return true;
-}
-
-bool ExtractKeyValuePairs::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const
-{
-    return false;
-}
-
-std::size_t ExtractKeyValuePairs::getNumberOfArguments() const
-{
-    return 0u;
-}
-
-ColumnNumbers ExtractKeyValuePairs::getArgumentsThatAreAlwaysConstant() const
-{
-    return {1, 2, 3, 4, 5};
-}
-
-ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
-{
-    auto parsed_arguments = ArgumentExtractor::extract(arguments);
-
-    auto extractor = getExtractor(parsed_arguments);
-
-    return extract(parsed_arguments.data_column, extractor);
-}
+    static constexpr auto name = "extractKeyValuePairsWithEscaping";
+};
 
 REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
-    factory.registerFunction<ExtractKeyValuePairs>(
+    factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairs, false>>(
         Documentation(
             R"(Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
 
             It can contain noise (e.g. log files). The key-value pair format to be interpreted should be specified via function arguments.
 
             A key-value pair consists of a key followed by a `key_value_delimiter` and a value. Quoted keys and values are also supported. Key value pairs must be separated by pair delimiters.
-            Escaping support can be turned on and off.
-
-            Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
-            Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
 
             **Syntax**
             ``` sql
-            extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [escaping_support])
+            extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
             ```
 
             **Arguments**
@@ -147,7 +152,6 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             - `key_value_delimiter` - Character to be used as delimiter between the key and the value. Defaults to `:`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
             - `pair_delimiters` - Set of character to be used as delimiters between pairs. Defaults to `\space`, `,` and `;`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
             - `quoting_character` - Character to be used as quoting character. Defaults to `"`. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-            - `escaping_support` - Turns escaping support on or off. Defaults to off. [Bool](../../sql-reference/data-types/boolean.md).
 
             **Returned values**
             - The extracted key-value pairs in a Map(String, String).
@@ -171,9 +175,9 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             **Single quote as quoting character**
             ``` sql
-            arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', 0) as kv
+            arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', 0) as kv
+            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
             Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
@@ -184,30 +188,39 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             **Escape sequences without escape sequences support**
             ``` sql
-            arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', 0) as kv
+            arthur :) select extractKeyValuePairs('age:\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', 0) as kv
+            SELECT extractKeyValuePairs('age:\\x0A\\n\\0') AS kv
 
-            Query id: 4aa4a519-d130-4b09-b555-9214f9416c01
+            Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
-            ┌─kv────────────────────────────────────────────────────┐
-            │ {'age':'\\x0A'}                                       │
-            └───────────────────────────────────────────────────────┘
-            ```
+            ┌─kv────────────────────┐
+            │ {'age':'\\x0A\\n\\0'} │
+            └───────────────────────┘
+            ```)")
+    );
+
+    factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairsWithEscaping, true>>(
+        Documentation(
+            R"(Same as `extractKeyValuePairs` but with escaping support.
+
+            Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
+            Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
+            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).\
 
             **Escape sequences with escape sequence support turned on**
             ``` sql
-            arthur :) select extractKeyValuePairs('age:\\x0A', ':', ',', '"', 1) as kv
+            arthur :) select extractKeyValuePairsWithEscaping('age:\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairs('age:\\x0A', ':', ',', '"', 1) as kv
+            SELECT extractKeyValuePairsWithEscaping('age:\\x0A\\n\\0') AS kv
 
-            Query id: 2c2044c6-3ca7-4300-a582-33b3192ad88d
+            Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
-            ┌─kv────────────────────────────────────────────────────┐
-            │ {'age':'\n'}                                          │
-            └───────────────────────────────────────────────────────┘
+            ┌─kv───────────────┐
+            │ {'age':'\n\n\0'} │
+            └──────────────────┘
             ```)")
-        );
+    );
 }
 
 }
