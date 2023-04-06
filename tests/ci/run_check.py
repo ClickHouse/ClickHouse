@@ -203,7 +203,7 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
     return description_error, category
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
@@ -295,3 +295,7 @@ if __name__ == "__main__":
         commit.create_status(
             context=NAME, description=description, state="pending", target_url=url
         )
+
+
+if __name__ == "__main__":
+    main()
