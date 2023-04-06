@@ -45,20 +45,11 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
 
     auto quoting_character = extractControlCharacter(arguments[3].column);
 
-    if (arguments.size() == 4u)
-    {
-        return ParsedArguments {
-            data_column,
-            key_value_delimiter,
-            pair_delimiters,
-            quoting_character,
-        };
-    }
-
-    auto with_escaping = extractBoolArgument(arguments[4].column);
-
     return ParsedArguments {
-        data_column, key_value_delimiter, pair_delimiters, quoting_character, with_escaping
+        data_column,
+        key_value_delimiter,
+        pair_delimiters,
+        quoting_character,
     };
 }
 
@@ -76,23 +67,6 @@ ArgumentExtractor::CharArgument ArgumentExtractor::extractControlCharacter(Colum
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Control character argument must either be empty or contain exactly 1 character");
-}
-
-ArgumentExtractor::BoolArgument ArgumentExtractor::extractBoolArgument(ColumnPtr column)
-{
-    if (const auto * escaping_support_column = checkAndGetColumnConst<ColumnUInt8>(column.get()))
-    {
-        if (escaping_support_column->empty())
-        {
-            return {};
-        }
-        else if (escaping_support_column->size() == 1u)
-        {
-            return escaping_support_column->getBool(0u);
-        }
-    }
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Boolean argument must either be empty or contain exactly 1 value");
 }
 
 }

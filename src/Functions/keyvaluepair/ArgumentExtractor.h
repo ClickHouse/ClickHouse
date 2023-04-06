@@ -18,7 +18,6 @@ class ArgumentExtractor
 public:
     using CharArgument = std::optional<char>;
     using VectorArgument = std::vector<char>;
-    using BoolArgument = std::optional<bool>;
 
     struct ParsedArguments
     {
@@ -27,7 +26,6 @@ public:
         CharArgument key_value_delimiter = {};
         VectorArgument pair_delimiters = {};
         CharArgument quoting_character = {};
-        BoolArgument with_escaping = {};
     };
 
 
@@ -35,7 +33,6 @@ public:
 
 private:
     static ArgumentExtractor::CharArgument extractControlCharacter(ColumnPtr column);
-    static ArgumentExtractor::BoolArgument extractBoolArgument(ColumnPtr column);
 };
 
 }
