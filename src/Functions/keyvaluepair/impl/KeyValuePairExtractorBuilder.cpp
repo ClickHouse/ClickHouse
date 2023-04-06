@@ -7,9 +7,9 @@
 namespace DB
 {
 
-KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withKeyValuePairDelimiter(char key_value_pair_delimiter_)
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withKeyValueDelimiter(char key_value_delimiter_)
 {
-    key_value_pair_delimiter = key_value_pair_delimiter_;
+    key_value_delimiter = key_value_delimiter_;
     return *this;
 }
 
@@ -55,14 +55,14 @@ auto makeStateHandler(const T && handler)
 
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithoutEscaping() const
 {
-    auto configuration = ConfigurationFactory::createWithoutEscaping(key_value_pair_delimiter, quoting_character, item_delimiters);
+    auto configuration = ConfigurationFactory::createWithoutEscaping(key_value_delimiter, quoting_character, item_delimiters);
 
     return makeStateHandler(NoEscapingStateHandler(configuration));
 }
 
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping() const
 {
-    auto configuration = ConfigurationFactory::createWithEscaping(key_value_pair_delimiter, quoting_character, item_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(key_value_delimiter, quoting_character, item_delimiters);
 
     return makeStateHandler(InlineEscapingStateHandler(configuration));
 }

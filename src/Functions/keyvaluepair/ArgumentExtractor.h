@@ -24,7 +24,7 @@ public:
     {
         ColumnPtr data_column;
 
-        CharArgument key_value_pair_delimiter = {};
+        CharArgument key_value_delimiter = {};
         VectorArgument pair_delimiters = {};
         CharArgument quoting_character = {};
         BoolArgument with_escaping = {};

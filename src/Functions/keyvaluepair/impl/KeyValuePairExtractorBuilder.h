@@ -12,7 +12,7 @@ class KeyValuePairExtractorBuilder
 {
 public:
 
-    KeyValuePairExtractorBuilder & withKeyValuePairDelimiter(char key_value_pair_delimiter_);
+    KeyValuePairExtractorBuilder & withKeyValueDelimiter(char key_value_delimiter_);
 
     KeyValuePairExtractorBuilder & withItemDelimiters(std::vector<char> item_delimiters_);
 
@@ -24,7 +24,7 @@ public:
 
 private:
     bool with_escaping = false;
-    char key_value_pair_delimiter = ':';
+    char key_value_delimiter = ':';
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
 
