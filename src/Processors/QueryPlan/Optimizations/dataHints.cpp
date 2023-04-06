@@ -56,29 +56,6 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
     return result;
 }
 
-void describeDataHint(const std::string& column, const DataHint& hint)
-{
-    if (!hint.lower_boundary && !hint.upper_boundary)
-    {
-        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "DataHint for column {} has lower_boundary: nullptr and upper_boundary: nullptr", column);
-        return;
-    }
-
-    if (!hint.lower_boundary)
-    {
-        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "DataHint for column {} has lower_boundary: nullptr and upper_boundary: {}", column, hint.upper_boundary->get<int>());
-        return;
-    }
-
-    if (!hint.upper_boundary)
-    {
-        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "DataHint for column {} has lower_boundary: {} and upper_boundary: nullptr", column, hint.lower_boundary->get<int>());
-        return;
-    }
-
-    LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "DataHint for column {} has lower_boundary: {} and upper_boundary: {}", column, hint.lower_boundary->get<int>(), hint.upper_boundary->get<int>());
-}
-
 }
 
 void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::Node & actions)
@@ -202,9 +179,6 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
 
     if (node_to_hints.contains(&actions))
         intersectDataHints(hints, node_to_hints[&actions]);
-
-    for (const auto & p : hints)
-        describeDataHint(p.first, p.second);
 }
 
 void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG & actions)

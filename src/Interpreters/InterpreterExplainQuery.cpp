@@ -453,7 +453,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()));
 
             if (settings.json)
             {
@@ -499,7 +499,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 }
 
                 auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context),
+                    QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()),
                     BuildQueryPipelineSettings::fromContext(context));
 
                 if (settings.graph)
@@ -543,11 +543,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             context = interpreter.getContext();
             // collect the selected marks, rows, parts during build query pipeline.
             plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
+                QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()),
                 BuildQueryPipelineSettings::fromContext(context));
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()));
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;
