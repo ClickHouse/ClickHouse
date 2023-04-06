@@ -69,7 +69,7 @@ SELECT
 -- invalid escape sequence, should be discarded
 -- expected output: {'valid_key':'valid_value'}
 WITH
-    extractKeyValuePairs('valid_key:valid_value key:invalid_val\\', ':', ' ', '"', 1) AS s_map,
+    extractKeyValuePairsWithEscaping('valid_key:valid_value key:invalid_val\\', ':', ' ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -162,7 +162,7 @@ SELECT
 -- NO ESCAPING TESTS
 -- expected output: {'age':'31','name':'neymar','nationality':'brazil','team':'psg'}
 WITH
-    extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil', ':', ', ', '"', 0) AS s_map,
+    extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil', ':', ', ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -175,7 +175,7 @@ SELECT
 -- special (not control) characters in the middle of elements
 -- expected output: {'age':'3!','name':'ney!mar','nationality':'br4z!l','t&am':'@psg'}
 WITH
-    extractKeyValuePairs('name:ney!mar, age:3! t&am:@psg,nationality:br4z!l', ':', ', ', '"', 0) AS s_map,
+    extractKeyValuePairs('name:ney!mar, age:3! t&am:@psg,nationality:br4z!l', ':', ', ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -188,7 +188,7 @@ SELECT
 -- non-standard escape characters (i.e not \n, \r, \t and etc), it should accept everything
 -- expected output: {'amount\\z':'$5\\h','currency':'\\$USD'}
 WITH
-    extractKeyValuePairs('currency:\$USD, amount\z:$5\h', ':', ', ', '"', 0) AS s_map,
+    extractKeyValuePairs('currency:\$USD, amount\z:$5\h', ':', ', ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -201,7 +201,7 @@ SELECT
 -- standard escape sequences, it should return it as it is
 -- expected output: {'key1':'header\nbody','key2':'start_of_text\tend_of_text'}
 WITH
-    extractKeyValuePairs('key1:header\nbody key2:start_of_text\tend_of_text', ':', ', ', '"', 0) AS s_map,
+    extractKeyValuePairs('key1:header\nbody key2:start_of_text\tend_of_text', ':', ', ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -216,7 +216,7 @@ SELECT
 -- simple quoting
 -- expected output: {'age':'31','name':'neymar','team':'psg'}
 WITH
-    extractKeyValuePairs('name:"neymar", "age":31 "team":"psg"', ':', ', ', '"', 0) AS s_map,
+    extractKeyValuePairs('name:"neymar", "age":31 "team":"psg"', ':', ', ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -229,7 +229,7 @@ SELECT
 -- empty values
 -- expected output: {'age':'','name':'','nationality':''}
 WITH
-    extractKeyValuePairs('name:"", age: , nationality:', ':', ', ', '"', 0) AS s_map,
+    extractKeyValuePairs('name:"", age: , nationality:', ':', ', ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -242,7 +242,7 @@ SELECT
 -- empty keys
 -- empty keys are not allowed, thus empty output is expected
 WITH
-    extractKeyValuePairs('"":abc, :def', ':', ', ', '"', 0) AS s_map,
+    extractKeyValuePairs('"":abc, :def', ':', ', ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -255,7 +255,7 @@ SELECT
 -- semi-colon as pair delimiter
 -- expected output: {'age':'31','name':'neymar','nationality':'brazil','team':'psg'}
 WITH
-    extractKeyValuePairs('name:neymar;age:31;team:psg;nationality:brazil', ':', ';', '"', 0) AS s_map,
+    extractKeyValuePairs('name:neymar;age:31;team:psg;nationality:brazil', ':', ';', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -268,7 +268,7 @@ SELECT
 -- both comma and semi-colon as pair delimiters
 -- expected output: {'age':'31','last_key':'last_value','name':'neymar','nationality':'brazil','team':'psg'}
 WITH
-    extractKeyValuePairs('name:neymar;age:31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '"', 0) AS s_map,
+    extractKeyValuePairs('name:neymar;age:31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -281,7 +281,7 @@ SELECT
 -- single quote as quoting character
 -- expected output: {'age':'31','last_key':'last_value','name':'neymar','nationality':'brazil','team':'psg'}
 WITH
-    extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', 0) AS s_map,
+    extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -296,7 +296,7 @@ SELECT
 -- cross parameter validation tests
 -- should fail because key value delimiter conflicts with pair delimiters
 WITH
-    extractKeyValuePairs('not_important', ':', ',:', '\'', 0) AS s_map,
+    extractKeyValuePairs('not_important', ':', ',:', '\'') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -308,7 +308,7 @@ SELECT
 
 -- should fail because key value delimiter conflicts with quoting characters
 WITH
-    extractKeyValuePairs('not_important', ':', ',', '\':', 0) AS s_map,
+    extractKeyValuePairs('not_important', ':', ',', '\':') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -320,7 +320,7 @@ SELECT
 
 -- should fail because pair delimiters conflicts with quoting characters
 WITH
-    extractKeyValuePairs('not_important', ':', ',', ',', 0) AS s_map,
+    extractKeyValuePairs('not_important', ':', ',', ',') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -332,7 +332,7 @@ SELECT
 
 -- should fail because pair delimiters can contain at most 8 characters
 WITH
-    extractKeyValuePairs('not_important', ':', '123456789', '\'', 0) AS s_map,
+    extractKeyValuePairs('not_important', ':', '123456789', '\'') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -344,7 +344,7 @@ SELECT
 
 -- should not fail because pair delimiters contains 8 characters, which is within the limit
 WITH
-    extractKeyValuePairs('not_important', ':', '12345678', '\'', 0) AS s_map,
+    extractKeyValuePairs('not_important', ':', '12345678', '\'') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
