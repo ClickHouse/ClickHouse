@@ -20,3 +20,8 @@ SELECT toTimeZone(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), 'Asia/Kolk
 SELECT toString(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'));
 SELECT toString(toTimeZone(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), 'Asia/Kolkata'));
 SELECT toString(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), 'Asia/Kolkata');
+
+SELECT toTimeZone(dt, tz) FROM (
+    SELECT toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul') AS dt, arrayJoin(['Asia/Kolkata', 'UTC']) AS tz
+); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT materialize('Asia/Kolkata') t, toTimeZone(toDateTime('2017-11-05 08:07:47', 'Asia/Istanbul'), t); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
