@@ -1264,7 +1264,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
-| %f       | fractional second from the fractional part of DateTime64 | 1234560   |
+| %f       | fractional second, see below (*)                        | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
@@ -1294,6 +1294,8 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %Y       | Year                                                    | 2018       |
 | %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
+
+(*) The behavior of `%f` is to print `000000` (six zeros) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0. Earlier versions of ClickHouse printed `0` in this case. The previous behavior can be restored using setting `formatdatetime_f_prints_single_zero = 1`.
 
 **Example**
 
