@@ -1,9 +1,10 @@
 cached_azure
 s3_cache_2
-s3_cache
 s3_cache_3
+s3_cache
 s3_cache_multi
 s3_cache_4
+cached_s3
 s3_cache_5
 s3_cache_small_segment_size
 local_cache
