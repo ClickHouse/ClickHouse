@@ -4,9 +4,11 @@
     <listen_host>0.0.0.0</listen_host>
     <listen_try>1</listen_try>
 
-    <!--
+    <!-- send logging to stdout for containers -->
     <logger>
-        <console>1</console>
+        <console>true</console>
+        <log remove="remove"/>
+        <errorlog remove="remove"/>
     </logger>
-    -->
+
 </clickhouse>
