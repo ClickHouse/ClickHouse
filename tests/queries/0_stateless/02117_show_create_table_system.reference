@@ -867,6 +867,7 @@ CREATE TABLE system.replicas
     `absolute_delay` UInt64,
     `total_replicas` UInt8,
     `active_replicas` UInt8,
+    `lost_part_count` UInt64,
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
     `replica_is_active` Map(String, UInt8)
