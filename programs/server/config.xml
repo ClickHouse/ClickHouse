@@ -141,6 +141,15 @@
       -->
     <http_port>8123</http_port>
 
+     <!-- Port that allows to download files from directory.
+          It is essentially used for completing HTTP-01 challenge and fetching
+          certificates from Let's Encrypt. (Should be equal to 80)
+      -->
+    <file_system>
+        <port>8124</port>
+        <base_directory>/etc/clickhouse-server/export</base_directory>
+    </file_system>
+
     <!-- Port for interaction by native protocol with:
          - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark);
          - clickhouse-server with other clickhouse-servers for distributed query processing;
@@ -1607,6 +1616,20 @@
         </rule>
     </http_handlers>
     -->
+    <!--
+    <http_handlers>
+        <rule>
+            <url>/files</url>
+            <handler>
+                <type>static</type>
+                <content_type>application/octet-stream</content_type>
+                <response_content>file:///../../../../../../home/lohmat/ClickHouse/README.md</response_content>
+            </handler>
+        </rule>
+    </http_handlers>
+    -->
+
+
 
     <send_crash_reports>
         <!-- Changing <enabled> to true allows sending crash reports to -->

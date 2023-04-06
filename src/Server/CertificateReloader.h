@@ -49,7 +49,7 @@ public:
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
-    /// Reload certificates
+    /// Callback for Let's Enrypt integration
     void reloadCertificates();
 
     /// A callback for OpenSSL
