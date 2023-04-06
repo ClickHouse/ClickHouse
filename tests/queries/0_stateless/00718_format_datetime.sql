@@ -29,7 +29,8 @@ SELECT formatDateTime(toDateTime('2018-01-01 00:33:44'), '%j'), formatDateTime(t
 SELECT formatDateTime(toDateTime('2000-12-31 00:33:44'), '%j'), formatDateTime(toDate32('2000-12-31'), '%j');
 SELECT formatDateTime(toDateTime('2000-12-31 00:33:44'), '%k'), formatDateTime(toDate32('2000-12-31'), '%k');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%m'), formatDateTime(toDate32('2018-01-02'), '%m');
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%M'), formatDateTime(toDate32('2018-01-02'), '%M');
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%M'), formatDateTime(toDate32('2018-01-02'), '%M') SETTINGS formatdatetime_parsedatetime_m_is_month_name = 1;
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%M'), formatDateTime(toDate32('2018-01-02'), '%M') SETTINGS formatdatetime_parsedatetime_m_is_month_name = 0;
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%n'), formatDateTime(toDate32('2018-01-02'), '%n');
 SELECT formatDateTime(toDateTime('2018-01-02 00:33:44'), '%p'), formatDateTime(toDateTime('2018-01-02'), '%p');
 SELECT formatDateTime(toDateTime('2018-01-02 11:33:44'), '%p');
