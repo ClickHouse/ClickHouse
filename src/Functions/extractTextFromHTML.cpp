@@ -70,7 +70,7 @@ namespace ErrorCodes
 namespace
 {
 
-bool startsWith(const char * s, const char * end, const std::string_view prefix)
+inline bool startsWith(const char * s, const char * end, const std::string_view prefix)
 {
     return s + prefix.length() < end && 0 == memcmp(s, prefix.data(), prefix.length());
 }
