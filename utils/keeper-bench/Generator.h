@@ -150,6 +150,23 @@ private:
     std::variant<std::string, NumberGetter> value;
 };
 
+struct PathGetter
+{
+    static PathGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
+
+    std::string getPath() const;
+    std::string description() const;
+
+    void initialize(Coordination::ZooKeeper & zookeeper);
+private:
+    std::vector<std::string> parent_paths;
+
+    bool initialized = false;
+
+    std::vector<std::string> paths;
+    mutable std::uniform_int_distribution<size_t> path_picker;
+};
+
 struct RequestGenerator
 {
     virtual ~RequestGenerator() = default;
@@ -159,10 +176,13 @@ struct RequestGenerator
     Coordination::ZooKeeperRequestPtr generate(const Coordination::ACLs & acls);
 
     std::string description();
+
+    void startup(Coordination::ZooKeeper & zookeeper);
 private:
     virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) = 0;
     virtual std::string descriptionImpl() = 0;
     virtual Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) = 0;
+    virtual void startupImpl(Coordination::ZooKeeper &) {}
 };
 
 using RequestGeneratorPtr = std::unique_ptr<RequestGenerator>;
@@ -174,8 +194,9 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
+    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
 
-    std::string path_prefix;
+    PathGetter parent_path;
     StringGetter name;
     std::optional<StringGetter> data;
 
@@ -186,6 +207,40 @@ private:
     std::unordered_set<std::string> paths_created;
 };
 
+struct SetRequestGenerator final : public RequestGenerator
+{
+private:
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    std::string descriptionImpl() override;
+    Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
+    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+
+    PathGetter path;
+    StringGetter data;
+};
+
+struct GetRequestGenerator final : public RequestGenerator
+{
+private:
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    std::string descriptionImpl() override;
+    Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
+    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+
+    PathGetter path;
+};
+
+struct ListRequestGenerator final : public RequestGenerator
+{
+private:
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    std::string descriptionImpl() override;
+    Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
+    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+
+    PathGetter path;
+};
+
 class Generator
 {
 public:
@@ -193,7 +248,6 @@ public:
 
     void startup(Coordination::ZooKeeper & zookeeper);
     Coordination::ZooKeeperRequestPtr generate();
-
 private:
     struct Node
     {

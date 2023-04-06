@@ -3,6 +3,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <random>
 #include <filesystem>
+#include <Poco/Util/AbstractConfiguration.h>
 
 using namespace Coordination;
 using namespace zkutil;
@@ -36,16 +37,6 @@ std::string generateRandomString(size_t length)
     return s;
 }
 }
-//
-//std::string generateRandomPath(const std::string & prefix, size_t length)
-//{
-//    return std::filesystem::path(prefix) / generateRandomString(length);
-//}
-//
-//std::string generateRandomData(size_t size)
-//{
-//    return generateRandomString(size);
-//}
 
 void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
 {
@@ -94,145 +85,6 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
     zookeeper.remove(path, -1, remove_callback);
     remove_future.get();
 }
-
-
-//void SetRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
-//{
-//    removeRecursive(zookeeper, path_prefix);
-//
-//    auto promise = std::make_shared<std::promise<void>>();
-//    auto future = promise->get_future();
-//    auto create_callback = [promise] (const CreateResponse & response)
-//    {
-//        if (response.error != Coordination::Error::ZOK)
-//            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-//        else
-//            promise->set_value();
-//    };
-//    zookeeper.create(path_prefix, "", false, false, default_acls, create_callback);
-//    future.get();
-//}
-//
-//ZooKeeperRequestPtr SetRequestGenerator::generate()
-//{
-//    auto request = std::make_shared<ZooKeeperSetRequest>();
-//    request->path = path_prefix;
-//    request->data = generateRandomData(data_size);
-//
-//    return request;
-//}
-//
-//void MixedRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
-//{
-//    for (auto & generator : generators)
-//        generator->startup(zookeeper);
-//}
-//
-//ZooKeeperRequestPtr MixedRequestGenerator::generate()
-//{
-//    pcg64 rng(randomSeed());
-//    std::uniform_int_distribution<size_t> distribution(0, generators.size() - 1);
-//
-//    return generators[distribution(rng)]->generate();
-//}
-//
-//void GetRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
-//{
-//    auto promise = std::make_shared<std::promise<void>>();
-//    auto future = promise->get_future();
-//    auto create_callback = [promise] (const CreateResponse & response)
-//    {
-//        if (response.error != Coordination::Error::ZOK)
-//            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-//        else
-//            promise->set_value();
-//    };
-//    zookeeper.create(path_prefix, "", false, false, default_acls, create_callback);
-//    future.get();
-//    size_t total_nodes = 1;
-//    if (num_nodes)
-//        total_nodes = *num_nodes;
-//
-//    for (size_t i = 0; i < total_nodes; ++i)
-//    {
-//        auto path = generateRandomPath(path_prefix, 5);
-//        while (std::find(paths_to_get.begin(), paths_to_get.end(), path) != paths_to_get.end())
-//            path = generateRandomPath(path_prefix, 5);
-//
-//        auto create_promise = std::make_shared<std::promise<void>>();
-//        auto create_future = create_promise->get_future();
-//        auto callback = [create_promise] (const CreateResponse & response)
-//        {
-//            if (response.error != Coordination::Error::ZOK)
-//                create_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-//            else
-//                create_promise->set_value();
-//        };
-//        std::string data;
-//        if (nodes_data_size)
-//            data = generateRandomString(*nodes_data_size);
-//
-//        zookeeper.create(path, data, false, false, default_acls, callback);
-//        create_future.get();
-//        paths_to_get.push_back(path);
-//    }
-//}
-//
-//Coordination::ZooKeeperRequestPtr GetRequestGenerator::generate()
-//{
-//    auto request = std::make_shared<ZooKeeperGetRequest>();
-//
-//    size_t path_index = distribution(rng);
-//    request->path = paths_to_get[path_index];
-//    return request;
-//}
-//
-//void ListRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
-//{
-//    auto promise = std::make_shared<std::promise<void>>();
-//    auto future = promise->get_future();
-//    auto create_callback = [promise] (const CreateResponse & response)
-//    {
-//        if (response.error != Coordination::Error::ZOK)
-//            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-//        else
-//            promise->set_value();
-//    };
-//    zookeeper.create(path_prefix, "", false, false, default_acls, create_callback);
-//    future.get();
-//
-//    size_t total_nodes = 1;
-//    if (num_nodes)
-//        total_nodes = *num_nodes;
-//
-//    size_t path_length = 5;
-//    if (paths_length)
-//        path_length = *paths_length;
-//
-//    for (size_t i = 0; i < total_nodes; ++i)
-//    {
-//        auto path = generateRandomPath(path_prefix, path_length);
-//
-//        auto create_promise = std::make_shared<std::promise<void>>();
-//        auto create_future = create_promise->get_future();
-//        auto callback = [create_promise] (const CreateResponse & response)
-//        {
-//            if (response.error != Coordination::Error::ZOK)
-//                create_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-//            else
-//                create_promise->set_value();
-//        };
-//        zookeeper.create(path, "", false, false, default_acls, callback);
-//        create_future.get();
-//    }
-//}
-//
-//Coordination::ZooKeeperRequestPtr ListRequestGenerator::generate()
-//{
-//    auto request = std::make_shared<ZooKeeperListRequest>();
-//    request->path = path_prefix;
-//    return request;
-//}
 
 std::unique_ptr<Generator> getGenerator(const std::string & name)
 {
@@ -287,13 +139,6 @@ std::unique_ptr<Generator> getGenerator(const std::string & name)
     //else if (name == "set_small_data")
     //{
     //    return std::make_unique<SetRequestGenerator>("/set_generator", 5);
-    //}
-    //else if (name == "mixed_small_data")
-    //{
-    //    std::vector<std::unique_ptr<IGenerator>> generators;
-    //    generators.push_back(std::make_unique<SetRequestGenerator>("/set_generator", 5));
-    //    generators.push_back(std::make_unique<GetRequestGenerator>("/get_generator", 10, 32));
-    //    return std::make_unique<MixedRequestGenerator>(std::move(generators));
     //}
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", name);
@@ -382,6 +227,99 @@ bool StringGetter::isRandom() const
     return std::holds_alternative<NumberGetter>(value);
 }
 
+PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+{
+    static constexpr std::string_view path_key_string = "path";
+
+    PathGetter path_getter;
+    Poco::Util::AbstractConfiguration::Keys path_keys;
+    config.keys(key, path_keys);
+
+    for (const auto & path_key : path_keys)
+    {
+        if (!path_key.starts_with(path_key_string))
+            continue;
+
+        const auto current_path_key_string = key + "." + path_key;
+        const auto children_of_key = current_path_key_string + ".children_of";
+        if (config.has(children_of_key))
+        {
+            auto parent_node = config.getString(children_of_key);
+            if (parent_node.empty() || parent_node[0] != '/')
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid path for request generator: '{}'", parent_node);
+            path_getter.parent_paths.push_back(std::move(parent_node));
+        }
+        else
+        {
+            auto path = config.getString(key + "." + path_key);
+
+            if (path.empty() || path[0] != '/')
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid path for request generator: '{}'", path);
+
+            path_getter.paths.push_back(std::move(path));
+        }
+    }
+
+    path_getter.path_picker = std::uniform_int_distribution<size_t>(0, path_getter.paths.size() - 1);
+    return path_getter;
+}
+
+void PathGetter::initialize(Coordination::ZooKeeper & zookeeper)
+{
+    for (const auto & parent_path : parent_paths)
+    {
+        auto list_promise = std::make_shared<std::promise<ListResponse>>();
+        auto list_future = list_promise->get_future();
+        auto callback = [list_promise] (const ListResponse & response)
+        {
+            if (response.error != Coordination::Error::ZOK)
+                list_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
+            else
+                list_promise->set_value(response);
+        };
+        zookeeper.list(parent_path, ListRequestType::ALL, std::move(callback), {});
+        auto list_response = list_future.get();
+
+        for (const auto & child : list_response.names)
+            paths.push_back(std::filesystem::path(parent_path) / child);
+    }
+
+    path_picker = std::uniform_int_distribution<size_t>(0, paths.size() - 1);
+    initialized = true;
+}
+
+std::string PathGetter::getPath() const
+{
+    if (!initialized)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "PathGetter is not initialized");
+
+    if (paths.size() == 1)
+        return paths[0];
+
+    static pcg64 rng(randomSeed());
+    return paths[path_picker(rng)];
+}
+
+std::string PathGetter::description() const
+{
+    std::string description;
+    for (const auto & path : parent_paths)
+    {
+        if (!description.empty())
+            description += ", ";
+        description += fmt::format("children of {}", path);
+    }
+
+    for (const auto & path : paths)
+    {
+        if (!description.empty())
+            description += ", ";
+        description += path;
+    }
+
+    return description;
+}
+
 void RequestGenerator::getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
     getFromConfigImpl(key, config);
@@ -397,6 +335,11 @@ Coordination::ZooKeeperRequestPtr RequestGenerator::generate(const Coordination:
     return generateImpl(acls);
 }
 
+void RequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
+{
+    startupImpl(zookeeper);
+}
+
 CreateRequestGenerator::CreateRequestGenerator()
     : rng(randomSeed())
     , remove_picker(0, 1.0)
@@ -404,12 +347,9 @@ CreateRequestGenerator::CreateRequestGenerator()
 
 void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
-    path_prefix = config.getString(key + ".path_prefix");
+    parent_path = PathGetter::fromConfig(key, config);
 
-    if (path_prefix.empty() || path_prefix[0] != '/')
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid path_prefix for Create request generator: '{}'", path_prefix);
-
-    name = StringGetter(NumberGetter::fromConfig(key + ".path_length", config, 5));
+    name = StringGetter(NumberGetter::fromConfig(key + ".name_length", config, 5));
 
     if (config.has(key + ".data"))
         data = StringGetter::fromConfig(key + ".data", config);
@@ -423,14 +363,19 @@ std::string CreateRequestGenerator::descriptionImpl()
         = data.has_value() ? fmt::format("data for created nodes: {}", data->description()) : "no data for created nodes";
     return fmt::format(
         "Create Request Generator\n"
-        "- path prefix for created nodes: {}\n"
+        "- parent path(s) for created nodes: {}\n"
         "- name for created nodes: {}\n"
         "- {}\n"
         "- remove factor: {}",
-        path_prefix,
+        parent_path.description(),
         name.description(),
         data_string,
         remove_factor);
+}
+
+void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+{
+    parent_path.initialize(zookeeper);
 }
 
 Coordination::ZooKeeperRequestPtr CreateRequestGenerator::generateImpl(const Coordination::ACLs & acls)
@@ -447,10 +392,10 @@ Coordination::ZooKeeperRequestPtr CreateRequestGenerator::generateImpl(const Coo
     auto request = std::make_shared<ZooKeeperCreateRequest>();
     request->acls = acls;
 
-    std::string path_candidate = std::filesystem::path(path_prefix) / name.getString();
+    std::string path_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
 
     while (paths_created.contains(path_candidate))
-        path_candidate = std::filesystem::path(path_prefix) / name.getString();
+        path_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
 
     paths_created.insert(path_candidate);
 
@@ -460,6 +405,86 @@ Coordination::ZooKeeperRequestPtr CreateRequestGenerator::generateImpl(const Coo
         request->data = data->getString();
 
     return request;
+}
+
+void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+{
+    path = PathGetter::fromConfig(key, config);
+
+    data = StringGetter::fromConfig(key + ".data", config);
+}
+
+std::string SetRequestGenerator::descriptionImpl()
+{
+    return fmt::format(
+        "Set Request Generator\n"
+        "- path(s) to set: {}\n"
+        "- data to set: {}",
+        path.description(),
+        data.description());
+}
+
+Coordination::ZooKeeperRequestPtr SetRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
+{
+    auto request = std::make_shared<ZooKeeperSetRequest>();
+    request->path = path.getPath();
+    request->data = data.getString();
+    return request;
+}
+
+void SetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+{
+    path.initialize(zookeeper);
+}
+
+void GetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+{
+    path = PathGetter::fromConfig(key, config);
+}
+
+std::string GetRequestGenerator::descriptionImpl()
+{
+    return fmt::format(
+        "Get Request Generator\n"
+        "- path(s) to get: {}",
+        path.description());
+}
+
+Coordination::ZooKeeperRequestPtr GetRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
+{
+    auto request = std::make_shared<ZooKeeperGetRequest>();
+    request->path = path.getPath();
+    return request;
+}
+
+void GetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+{
+    path.initialize(zookeeper);
+}
+
+void ListRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+{
+    path = PathGetter::fromConfig(key, config);
+}
+
+std::string ListRequestGenerator::descriptionImpl()
+{
+    return fmt::format(
+        "List Request Generator\n"
+        "- path(s) to get: {}",
+        path.description());
+}
+
+Coordination::ZooKeeperRequestPtr ListRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
+{
+    auto request = std::make_shared<ZooKeeperListRequest>();
+    request->path = path.getPath();
+    return request;
+}
+
+void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+{
+    path.initialize(zookeeper);
 }
 
 Generator::Generator(const Poco::Util::AbstractConfiguration & config)
@@ -499,6 +524,12 @@ Generator::Generator(const Poco::Util::AbstractConfiguration & config)
 
             if (key.starts_with("create"))
                 request_generator = std::make_unique<CreateRequestGenerator>();
+            else if (key.starts_with("set"))
+                request_generator = std::make_unique<SetRequestGenerator>();
+            else if (key.starts_with("get"))
+                request_generator = std::make_unique<GetRequestGenerator>();
+            else if (key.starts_with("list"))
+                request_generator = std::make_unique<ListRequestGenerator>();
 
             if (!request_generator)
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", key);
@@ -595,6 +626,12 @@ void Generator::startup(Coordination::ZooKeeper & zookeeper)
         node->createNode(zookeeper, "/", default_acls);
     }
     std::cout << "---- Created test data ----" << std::endl;
+
+
+    std::cout << "---- Initializing generators ----" << std::endl;
+
+    for (const auto & generator : request_generators)
+        generator->startup(zookeeper);
 }
 
 Coordination::ZooKeeperRequestPtr Generator::generate()
