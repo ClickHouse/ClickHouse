@@ -11,10 +11,16 @@ namespace DB
 BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const DiskPtr & disk_,
     const String & file_path_,
+    const ReadSettings & settings_,
     const std::optional<UInt64> & file_size_,
     const std::optional<UInt128> & checksum_,
     const std::shared_ptr<TemporaryFileOnDisk> & temporary_file_)
-    : disk(disk_), file_path(file_path_), file_size(file_size_), checksum(checksum_), temporary_file_on_disk(temporary_file_)
+    : disk(disk_)
+    , file_path(file_path_)
+    , settings(settings_)
+    , file_size(file_size_)
+    , checksum(checksum_)
+    , temporary_file_on_disk(temporary_file_)
 {
 }
 
@@ -30,7 +36,7 @@ UInt64 BackupEntryFromImmutableFile::getSize() const
 
 std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
 {
-    return disk->readFile(file_path);
+    return disk->readFile(file_path, settings);
 }
 
 
