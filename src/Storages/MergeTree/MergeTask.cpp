@@ -273,7 +273,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
 
-    ctx->tmp_disk = global_ctx->context->getTemporaryVolume()->getDisk();
+    ctx->tmp_disk = global_ctx->context->getGlobalTemporaryVolume()->getDisk();
 
     switch (global_ctx->chosen_merge_algorithm)
     {
