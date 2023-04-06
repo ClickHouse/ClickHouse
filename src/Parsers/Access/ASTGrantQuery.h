@@ -27,6 +27,7 @@ public:
     bool replace_access = false;
     bool replace_granted_roles = false;
     bool current_grants = false;
+    bool with_grant_option = false;
 
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
