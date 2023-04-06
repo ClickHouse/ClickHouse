@@ -49,6 +49,7 @@ public:
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
 
     void backup(
+        const ReadSettings & read_settings,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
