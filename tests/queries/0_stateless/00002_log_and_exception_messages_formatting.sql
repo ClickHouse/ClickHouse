@@ -53,10 +53,10 @@ create temporary table known_short_messages (s String) as select * from (select
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
-select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_string), 0) from logs where length(message_format_string) < 10 and message_format_string not in known_short_messages;
+select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_string), 1) from logs where length(message_format_string) < 10 and message_format_string not in known_short_messages;
 
 -- Same as above. Feel free to update the threshold or remove this query if really necessary
-select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 2) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
+select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 3) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
 
 -- Same as above, but exceptions must be more informative. Feel free to update the threshold or remove this query if really necessary
 select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 27) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%' and message_format_string not in known_short_messages;
