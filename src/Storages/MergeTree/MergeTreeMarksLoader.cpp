@@ -68,6 +68,11 @@ MarkInCompressedFile MergeTreeMarksLoader::getMark(size_t row_index, size_t colu
 {
     if (!marks)
     {
+        if (this->data_part_storage->is_part_outdated)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempting to read from outdated part. path : {}", data_part_storage->getFullPath());
+        }
+
         Stopwatch watch(CLOCK_MONOTONIC);
 
         if (future.valid())
@@ -196,6 +201,16 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
+            if (this->data_part_storage->is_part_outdated)
+            {
+                if (mark_cache)
+                {
+                    auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
+                    marks.reset();
+                    mark_cache->remove(key);
+                }
+                return nullptr;
+            }
             return loadMarks();
         },
         *load_marks_threadpool,

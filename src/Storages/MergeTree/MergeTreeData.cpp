@@ -3670,6 +3670,8 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
         if (isInMemoryPart(part) && getSettings()->in_memory_parts_enable_wal)
             getWriteAheadLog()->dropPart(part->name);
+
+        part->getDataPartStorage().is_part_outdated = true;
     }
 
     if (removed_active_part)
@@ -3834,6 +3836,7 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLo
     addPartContributionToColumnAndSecondaryIndexSizes(part);
     addPartContributionToDataVolume(part);
     modifyPartState(part, DataPartState::Active);
+    part->getDataPartStorage().is_part_outdated = false;
 }
 
 
