@@ -1144,6 +1144,19 @@ void Planner::buildPlanForQueryNode()
     collectSets(query_tree, *planner_context);
     collectTableExpressionData(query_tree, planner_context);
 
+    const auto & settings = query_context->getSettingsRef();
+
+    if (planner_context->getTableExpressionNodeToData().size() > 1
+        && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    {
+        LOG_WARNING(
+            &Poco::Logger::get("Planner"), "Joins are not supported with parallel replicas. Query will be executed without using them.");
+
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+        mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+    }
+
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
         select_query_info,

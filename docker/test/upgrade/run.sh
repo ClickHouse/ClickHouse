@@ -109,8 +109,7 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Install and start new server
 install_packages package_folder
-# Disable fault injections on start (we don't test them here, and it can lead to tons of requests in case of huge number of tables).
-export ZOOKEEPER_FAULT_INJECTION=0
+export ZOOKEEPER_FAULT_INJECTION=1
 configure
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \

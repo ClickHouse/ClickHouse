@@ -75,6 +75,32 @@ void ExpressionStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
+
+    if (!getDataStreamTraits().preserves_sorting)
+        return;
+
+    FindOriginalNodeForOutputName original_node_finder(actions_dag);
+    const auto & input_sort_description = getInputStreams().front().sort_description;
+    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
+    {
+        const auto & desc = input_sort_description[i];
+        String alias;
+        const auto & origin_column = desc.column_name;
+        for (const auto & column : output_stream->header)
+        {
+            const auto * original_node = original_node_finder.find(column.name);
+            if (original_node && original_node->result_name == origin_column)
+            {
+                alias = column.name;
+                break;
+            }
+        }
+
+        if (alias.empty())
+            return;
+
+        output_stream->sort_description[i].column_name = alias;
+    }
 }
 
 }
