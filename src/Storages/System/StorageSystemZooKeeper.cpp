@@ -333,11 +333,14 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
     }
     else if (function_name == "equals")
     {
-        if (!isPathNode(node.children.at(0)))
-            return;
+        const ActionsDAG::Node * value = nullptr;
 
-        auto value = node.children.at(1);
-        if (!value->column)
+        if (isPathNode(node.children.at(0)))
+            value = node.children.at(1);
+        else if (isPathNode(node.children.at(1)))
+            value = node.children.at(0);
+
+        if (!value || !value->column)
             return;
 
         if (!isString(removeNullable(removeLowCardinality(value->result_type))))
