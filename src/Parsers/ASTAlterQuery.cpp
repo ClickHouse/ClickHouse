@@ -615,13 +615,9 @@ void ASTAlterQuery::formatQueryImpl(FormattingBuffer out) const
 
     FormattingBuffer copy = out.copy().setNeedParens(false);
 
-    static_cast<ASTExpressionList *>(command_list)->formatImplMultiline(
-        out.copy().setNeedParens(false).setExpressionListAlwaysStartsOnNewLine());
-
-    if (out.isOneLine())
-        command_list->formatImpl(copy.setExpressionListPrependWhitespace());
-    else
-        command_list->as<ASTExpressionList &>().formatImplMultiline(out.setExpressionListAlwaysStartsOnNewLine());
+    out.isOneLine()
+        ? command_list->formatImpl(copy.setExpressionListPrependWhitespace())
+        : command_list->as<ASTExpressionList &>().formatImplMultiline(out.setExpressionListAlwaysStartsOnNewLine());
 }
 
 }
