@@ -625,7 +625,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
     if (global_context)
     {
         size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getTempDataOnDisk(), size_limit);
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
     }
 }
 
