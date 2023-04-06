@@ -1521,7 +1521,7 @@ namespace
                 case FieldTypeId::TYPE_SFIXED64:
                 case FieldTypeId::TYPE_FLOAT:
                 case FieldTypeId::TYPE_DOUBLE:
-                    break; /// already set in ProtobufSerializerNumber<UInt16>::setFunctions().
+                    break; /// already set in ProtobufSerializerNumber<Int32>::setFunctions().
 
                 case FieldTypeId::TYPE_STRING:
                 case FieldTypeId::TYPE_BYTES:
@@ -1597,7 +1597,7 @@ namespace
                 case FieldTypeId::TYPE_SFIXED64:
                 case FieldTypeId::TYPE_FLOAT:
                 case FieldTypeId::TYPE_DOUBLE:
-                    break; /// already set in ProtobufSerializerNumber<UInt16>::setFunctions().
+                    break; /// already set in ProtobufSerializerNumber<IPv4>::setFunctions().
 
                 case FieldTypeId::TYPE_STRING:
                 case FieldTypeId::TYPE_BYTES:
