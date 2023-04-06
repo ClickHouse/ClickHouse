@@ -47,9 +47,11 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
       *    hoodie.parquet.max.file.size option. Once a single Parquet file is too large, Hudi creates a second file group.
       *    Each file group is identified by File Id.
       */
-    Strings processMetadataFiles(const std::vector<String> & keys, const std::string & base_directory)
+    Strings processMetadataFiles(const Configuration & configuration)
     {
         auto * log = &Poco::Logger::get("HudiMetadataParser");
+
+        const auto keys = MetadataReadHelper::listFiles(configuration, "", Poco::toLower(configuration.format));
 
         using Partition = std::string;
         using FileID = std::string;
@@ -75,7 +77,7 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
             auto & file_info = data_files[partition][file_id];
             if (file_info.timestamp == 0 || file_info.timestamp < timestamp)
             {
-                file_info.key = key.substr(base_directory.size());
+                file_info.key = key;
                 file_info.timestamp = timestamp;
             }
         }
@@ -100,8 +102,7 @@ HudiMetadataParser<Configuration, MetadataReadHelper>::HudiMetadataParser() : im
 template <typename Configuration, typename MetadataReadHelper>
 Strings HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr)
 {
-    const Strings files = MetadataReadHelper::listFiles(configuration, "", Poco::toLower(configuration.format));
-    return impl->processMetadataFiles(files, configuration.getPath());
+    return impl->processMetadataFiles(configuration);
 }
 
 template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser();
