@@ -26,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 template <typename Configuration, typename MetadataReadHelper>
@@ -213,7 +212,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
      *         00000000000000000010.checkpoint.0000000003.0000000003.parquet
      *  TODO: Only (1) is supported, need to support (2).
      *
-     *  Such checkpoint files parquet data with the following contents:
+     *  Such checkpoint files parquet contain data with the following contents:
      *
      *  Row 1:
      *  ──────
@@ -233,11 +232,11 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
      *
      *  ...
      */
-    #define THROW_ARROW_NOT_OK(status)                                                      \
-        do                                                                                  \
-        {                                                                                   \
-            if (const ::arrow::Status & _s = (status); !_s.ok())                            \
-                throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS);\
+    #define THROW_ARROW_NOT_OK(status)                                    \
+        do                                                                \
+        {                                                                 \
+            if (const ::arrow::Status & _s = (status); !_s.ok())          \
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arrow error: {}", _s.ToString()); \
         } while (false)
 
     size_t getCheckpointIfExists(std::set<String> & result, const Configuration & configuration, ContextPtr context)
@@ -260,7 +259,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
         auto columns = ParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
-        columns.filter(NameSet{"add", "remove"});
+        columns.filterOut(NameSet{"add", "remove"});
         Block header;
         for (const auto & column : columns)
             header.insert({column.type->createColumn(), column.type, column.name});
@@ -293,7 +292,12 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
         const auto & res_columns = res.getColumns();
 
         if (res_columns.size() != 2)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of columns: {}", res_columns.size());
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected number of columns: {} (having: {}, expected: {})",
+                res_columns.size(), res.dumpStructure(), header.dumpStructure());
+        }
 
         /// Process `add` column.
         {

@@ -65,7 +65,7 @@ def get_spark():
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config(
             "spark.jars.packages",
-            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0",
+            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.12.0",
         )
         .config(
             "org.apache.spark.sql.hudi.catalog.HoodieCatalog",
@@ -302,6 +302,11 @@ def test_types(started_cluster):
 
     assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
         [
+            ["_hoodie_commit_time", "Nullable(String)"],
+            ["_hoodie_commit_seqno", "Nullable(String)"],
+            ["_hoodie_record_key", "Nullable(String)"],
+            ["_hoodie_partition_path", "Nullable(String)"],
+            ["_hoodie_file_name", "Nullable(String)"],
             ["a", "Nullable(Int32)"],
             ["b", "Nullable(String)"],
             ["c", "Nullable(Date32)"],
