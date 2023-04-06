@@ -1,15 +1,50 @@
 #include "Runner.h"
 
-namespace DB
-{
+#include <Common/Config/ConfigProcessor.h>
 
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
 }
 
-}
+Runner::Runner(
+        size_t concurrency_,
+        const std::string & generator_name,
+        const std::string & config_path,
+        const Strings & hosts_strings_,
+        double max_time_,
+        double delay_,
+        bool continue_on_error_,
+        size_t max_iterations_)
+        : concurrency(concurrency_)
+        , pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
+        , hosts_strings(hosts_strings_)
+        , max_time(max_time_)
+        , delay(delay_)
+        , continue_on_error(continue_on_error_)
+        , max_iterations(max_iterations_)
+        , info(std::make_shared<Stats>())
+        , queue(concurrency)
+    {
+        if (!generator_name.empty() && !config_path.empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are defined. Please define only one of them");
 
+        if (generator_name.empty() && config_path.empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are empty. Please define one of them");
+
+        if (!generator_name.empty())
+            generator = getGenerator(generator_name);
+        else
+        {
+            DB::ConfigProcessor config_processor(config_path, true, false);
+            auto loaded_config = config_processor.loadConfig();
+
+            generator = std::make_unique<Generator>(*loaded_config.configuration);
+        }
+
+        if (!generator)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to create generator");
+    }
 
 void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
 {

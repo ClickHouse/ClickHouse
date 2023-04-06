@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <pcg-random/pcg_random.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/randomSeed.h>
 
 
@@ -13,130 +14,203 @@ std::string generateRandomPath(const std::string & prefix, size_t length = 5);
 
 std::string generateRandomData(size_t size);
 
-class IGenerator
+//
+//class CreateRequestGenerator final : public IGenerator
+//{
+//public:
+//    explicit CreateRequestGenerator(
+//        std::string path_prefix_ = "/create_generator",
+//        std::optional<uint64_t> path_length_ = std::nullopt,
+//        std::optional<uint64_t> data_size_ = std::nullopt)
+//        : path_prefix(path_prefix_)
+//        , path_length(path_length_)
+//        , data_size(data_size_)
+//    {}
+//
+//    void startup(Coordination::ZooKeeper & zookeeper) override;
+//    Coordination::ZooKeeperRequestPtr generate() override;
+//
+//private:
+//    std::string path_prefix;
+//    std::optional<uint64_t> path_length;
+//    std::optional<uint64_t> data_size;
+//    std::unordered_set<std::string> paths_created;
+//};
+//
+//
+//class GetRequestGenerator final : public IGenerator
+//{
+//public:
+//    explicit GetRequestGenerator(
+//        std::string path_prefix_ = "/get_generator",
+//        std::optional<uint64_t> num_nodes_ = std::nullopt,
+//        std::optional<uint64_t> nodes_data_size_ = std::nullopt)
+//        : path_prefix(path_prefix_)
+//        , num_nodes(num_nodes_)
+//        , nodes_data_size(nodes_data_size_)
+//        , rng(randomSeed())
+//        , distribution(0, num_nodes ? *num_nodes - 1 : 0)
+//    {}
+//
+//    void startup(Coordination::ZooKeeper & zookeeper) override;
+//    Coordination::ZooKeeperRequestPtr generate() override;
+//
+//private:
+//    std::string path_prefix;
+//    std::optional<uint64_t> num_nodes;
+//    std::optional<uint64_t> nodes_data_size;
+//    std::vector<std::string> paths_to_get;
+//
+//    pcg64 rng;
+//    std::uniform_int_distribution<size_t> distribution;
+//};
+//
+//class ListRequestGenerator final : public IGenerator
+//{
+//public:
+//    explicit ListRequestGenerator(
+//        std::string path_prefix_ = "/list_generator",
+//        std::optional<uint64_t> num_nodes_ = std::nullopt,
+//        std::optional<uint64_t> paths_length_ = std::nullopt)
+//        : path_prefix(path_prefix_)
+//        , num_nodes(num_nodes_)
+//        , paths_length(paths_length_)
+//    {}
+//
+//    void startup(Coordination::ZooKeeper & zookeeper) override;
+//    Coordination::ZooKeeperRequestPtr generate() override;
+//
+//private:
+//    std::string path_prefix;
+//    std::optional<uint64_t> num_nodes;
+//    std::optional<uint64_t> paths_length;
+//};
+//
+//class SetRequestGenerator final : public IGenerator
+//{
+//public:
+//    explicit SetRequestGenerator(
+//        std::string path_prefix_ = "/set_generator",
+//        uint64_t data_size_ = 5)
+//        : path_prefix(path_prefix_)
+//        , data_size(data_size_)
+//    {}
+//
+//    void startup(Coordination::ZooKeeper & zookeeper) override;
+//    Coordination::ZooKeeperRequestPtr generate() override;
+//
+//private:
+//    std::string path_prefix;
+//    uint64_t data_size;
+//};
+//
+//class MixedRequestGenerator final : public IGenerator
+//{
+//public:
+//    explicit MixedRequestGenerator(std::vector<std::unique_ptr<IGenerator>> generators_)
+//        : generators(std::move(generators_))
+//    {}
+//
+//    void startup(Coordination::ZooKeeper & zookeeper) override;
+//    Coordination::ZooKeeperRequestPtr generate() override;
+//
+//private:
+//    std::vector<std::unique_ptr<IGenerator>> generators;
+//};
+
+struct NumberGetter
 {
-public:
-    IGenerator()
+    static NumberGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, std::optional<uint64_t> default_value = std::nullopt);
+    uint64_t getNumber() const;
+    std::string description() const;
+private:
+    struct NumberRange
     {
-        Coordination::ACL acl;
-        acl.permissions = Coordination::ACL::All;
-        acl.scheme = "world";
-        acl.id = "anyone";
-        default_acls.emplace_back(std::move(acl));
-    }
-    virtual void startup(Coordination::ZooKeeper & /*zookeeper*/) {}
-    virtual Coordination::ZooKeeperRequestPtr generate() = 0;
+        uint64_t min_value;
+        uint64_t max_value;
+    };
 
-    virtual ~IGenerator() = default;
-
-    Coordination::ACLs default_acls;
-
+    std::variant<uint64_t, NumberRange> value;
 };
 
-class CreateRequestGenerator final : public IGenerator
+struct StringGetter
 {
-public:
-    explicit CreateRequestGenerator(
-        std::string path_prefix_ = "/create_generator",
-        std::optional<uint64_t> path_length_ = std::nullopt,
-        std::optional<uint64_t> data_size_ = std::nullopt)
-        : path_prefix(path_prefix_)
-        , path_length(path_length_)
-        , data_size(data_size_)
+    explicit StringGetter(NumberGetter number_getter)
+        : value(std::move(number_getter))
     {}
 
-    void startup(Coordination::ZooKeeper & zookeeper) override;
-    Coordination::ZooKeeperRequestPtr generate() override;
+    StringGetter() = default;
 
+    static StringGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
+    void setString(std::string name);
+    std::string getString() const;
+    std::string description() const;
+    bool isRandom() const;
 private:
+    std::variant<std::string, NumberGetter> value;
+};
+
+struct RequestGenerator
+{
+    virtual ~RequestGenerator() = default;
+
+    void getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
+
+    Coordination::ZooKeeperRequestPtr generate(const Coordination::ACLs & acls);
+
+    std::string description();
+private:
+    virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) = 0;
+    virtual std::string descriptionImpl() = 0;
+    virtual Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) = 0;
+};
+
+using RequestGeneratorPtr = std::unique_ptr<RequestGenerator>;
+
+struct CreateRequestGenerator final : public RequestGenerator
+{
+    CreateRequestGenerator();
+private:
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    std::string descriptionImpl() override;
+    Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
+
     std::string path_prefix;
-    std::optional<uint64_t> path_length;
-    std::optional<uint64_t> data_size;
+    StringGetter name;
+    std::optional<StringGetter> data;
+
+    double remove_factor;
+    pcg64 rng;
+    std::uniform_real_distribution<double> remove_picker;
+
     std::unordered_set<std::string> paths_created;
 };
 
-
-class GetRequestGenerator final : public IGenerator
+class Generator
 {
 public:
-    explicit GetRequestGenerator(
-        std::string path_prefix_ = "/get_generator",
-        std::optional<uint64_t> num_nodes_ = std::nullopt,
-        std::optional<uint64_t> nodes_data_size_ = std::nullopt)
-        : path_prefix(path_prefix_)
-        , num_nodes(num_nodes_)
-        , nodes_data_size(nodes_data_size_)
-        , rng(randomSeed())
-        , distribution(0, num_nodes ? *num_nodes - 1 : 0)
-    {}
+    explicit Generator(const Poco::Util::AbstractConfiguration & config);
 
-    void startup(Coordination::ZooKeeper & zookeeper) override;
-    Coordination::ZooKeeperRequestPtr generate() override;
+    void startup(Coordination::ZooKeeper & zookeeper);
+    Coordination::ZooKeeperRequestPtr generate();
 
 private:
-    std::string path_prefix;
-    std::optional<uint64_t> num_nodes;
-    std::optional<uint64_t> nodes_data_size;
-    std::vector<std::string> paths_to_get;
+    struct Node
+    {
+        StringGetter name;
+        std::optional<StringGetter> data;
+        std::vector<std::shared_ptr<Node>> children;
 
-    pcg64 rng;
-    std::uniform_int_distribution<size_t> distribution;
+        void createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
+        void dumpTree(int level = 0) const;
+    };
+
+    static std::shared_ptr<Node> parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config);
+
+    std::uniform_int_distribution<size_t> request_picker;
+    std::vector<std::shared_ptr<Node>> root_nodes;
+    std::vector<RequestGeneratorPtr> request_generators;
+    Coordination::ACLs default_acls;
 };
 
-class ListRequestGenerator final : public IGenerator
-{
-public:
-    explicit ListRequestGenerator(
-        std::string path_prefix_ = "/list_generator",
-        std::optional<uint64_t> num_nodes_ = std::nullopt,
-        std::optional<uint64_t> paths_length_ = std::nullopt)
-        : path_prefix(path_prefix_)
-        , num_nodes(num_nodes_)
-        , paths_length(paths_length_)
-    {}
-
-    void startup(Coordination::ZooKeeper & zookeeper) override;
-    Coordination::ZooKeeperRequestPtr generate() override;
-
-private:
-    std::string path_prefix;
-    std::optional<uint64_t> num_nodes;
-    std::optional<uint64_t> paths_length;
-};
-
-class SetRequestGenerator final : public IGenerator
-{
-public:
-    explicit SetRequestGenerator(
-        std::string path_prefix_ = "/set_generator",
-        uint64_t data_size_ = 5)
-        : path_prefix(path_prefix_)
-        , data_size(data_size_)
-    {}
-
-    void startup(Coordination::ZooKeeper & zookeeper) override;
-    Coordination::ZooKeeperRequestPtr generate() override;
-
-private:
-    std::string path_prefix;
-    uint64_t data_size;
-};
-
-class MixedRequestGenerator final : public IGenerator
-{
-public:
-    explicit MixedRequestGenerator(std::vector<std::unique_ptr<IGenerator>> generators_)
-        : generators(std::move(generators_))
-    {}
-
-    void startup(Coordination::ZooKeeper & zookeeper) override;
-    Coordination::ZooKeeperRequestPtr generate() override;
-
-private:
-    std::vector<std::unique_ptr<IGenerator>> generators;
-};
-
-
-std::unique_ptr<IGenerator> constructGeneratorFromConfig(const std::string & config_path);
-
-std::unique_ptr<IGenerator> getGenerator(const std::string & name);
+std::unique_ptr<Generator> getGenerator(const std::string & name);
