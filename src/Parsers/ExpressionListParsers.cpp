@@ -125,21 +125,19 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-static bool parseOperator(IParser::Pos & pos, const char * op, Expected & expected)
+static bool parseOperator(IParser::Pos & pos, const std::string_view op, Expected & expected)
 {
-    if (isWordCharASCII(*op))
+    if (!op.empty() && isWordCharASCII(op.front()))
     {
         return ParserKeyword(op).ignore(pos, expected);
     }
-    else
+    else if (op.length() == pos->size() && 0 == memcmp(op.data(), pos->begin, pos->size()))
     {
-        if (strlen(op) == pos->size() && 0 == memcmp(op, pos->begin, pos->size()))
-        {
-            ++pos;
-            return true;
-        }
-        return false;
+        ++pos;
+        return true;
     }
+
+    return false;
 }
 
 enum class SubqueryFunctionType
@@ -781,9 +779,9 @@ protected:
 
 struct ParserExpressionImpl
 {
-    static std::vector<std::pair<const char *, Operator>> operators_table;
-    static std::vector<std::pair<const char *, Operator>> unary_operators_table;
-    static const char * overlapping_operators_to_skip[];
+    static std::vector<std::pair<std::string_view, Operator>> operators_table;
+    static std::vector<std::pair<std::string_view, Operator>> unary_operators_table;
+    static std::string_view overlapping_operators_to_skip[];
 
     static Operator finish_between_operator;
 
@@ -2253,7 +2251,6 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
-
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
@@ -2290,7 +2287,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 }
 
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_table({
+std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table({
         {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
         {"?",             Operator("",                2,  0, OperatorType::StartIf)},
         {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
@@ -2330,17 +2327,17 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_t
         {"IS NOT NULL",   Operator("isNotNull",       13, 1, OperatorType::IsNull)},
     });
 
-std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::unary_operators_table({
+std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table({
         {"NOT",           Operator("not",             5,  1)},
         {"-",             Operator("negate",          12, 1)}
     });
 
 Operator ParserExpressionImpl::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
 
-const char * ParserExpressionImpl::overlapping_operators_to_skip[] =
+std::string_view ParserExpressionImpl::overlapping_operators_to_skip[] =
 {
     "IN PARTITION",
-    nullptr
+    {}
 };
 
 bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected)
@@ -2585,8 +2582,8 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     ///
     /// 'IN PARTITION' here is not an 'IN' operator, so we should stop parsing immediately
     Expected stub;
-    for (const char ** it = overlapping_operators_to_skip; *it; ++it)
-        if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
+    for (const auto & it : overlapping_operators_to_skip)
+        if (ParserKeyword{it}.checkWithoutMoving(pos, stub))
             return Action::NONE;
 
     /// Try to find operators from 'operators_table'
