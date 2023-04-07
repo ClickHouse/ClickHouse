@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group)
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group)
 {
     chassert(thread_group);
 
@@ -59,7 +59,7 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    thread_group = ThreadGroupStatus::createForBackgroundProcess(context);
+    thread_group = ThreadGroup::createForBackgroundProcess(context);
 }
 
 MergeInfo MergeListElement::getInfo() const

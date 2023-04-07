@@ -270,14 +270,14 @@ Chain buildPushingToViewsChain(
         ASTPtr query;
         Chain out;
 
-        /// NOTE: ThreadGroupStatus always should have context attached,
+        /// NOTE: ThreadGroup always should have context attached,
         /// otherwise entry to the system.query_views_log will not be added
         /// (see ThreadStatus::logToQueryViewsLog())
-        ThreadGroupStatusPtr running_group;
+        ThreadGroupPtr running_group;
         if (current_thread)
             running_group = current_thread->getThreadGroup();
         if (!running_group)
-            running_group = std::make_shared<ThreadGroupStatus>(context);
+            running_group = std::make_shared<ThreadGroup>(context);
 
         /// We are creating a ThreadStatus per view to store its metrics individually
         /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
