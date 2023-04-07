@@ -228,7 +228,6 @@ void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, std:
 {
     auto caller = getCallerId();
     auto current_downloader = getDownloaderUnlocked(segment_lock);
-    LOG_TEST(log, "Downloader id: {}, caller id: {}", current_downloader, caller);
 
     if (caller != current_downloader)
     {
