@@ -2209,35 +2209,43 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Check that we could cover whole range
     for (PartDescriptionPtr & part_desc : parts_to_add)
     {
-        if (adding_parts_active_set.getContainingPart(part_desc->new_part_info).empty())
+        if (!adding_parts_active_set.getContainingPart(part_desc->new_part_info).empty())
+            continue;
+
+        MergeTreePartInfo covering_drop_range;
+        if (queue.isGoingToBeDropped(part_desc->new_part_info, &covering_drop_range))
         {
-            /// We should enqueue missing part for check, so it will be replaced with empty one (if needed)
-            /// and we will be able to execute this REPLACE_RANGE.
-            /// However, it's quite dangerous, because part may appear in source table.
-            /// So we enqueue it for check only if no replicas of source table have part either.
-            bool need_check = true;
-            if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
-            {
-                String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
-                if (!src_replica.empty())
-                {
-                    LOG_DEBUG(log, "Found part {} on replica {} of source table, will not check part {} required for {}",
-                              part_desc->src_part_name, src_replica, part_desc->new_part_name, entry.znode_name);
-                    need_check = false;
-                }
-            }
-
-            if (need_check)
-            {
-                LOG_DEBUG(log, "Will check part {} required for {}, because no replicas have it (including replicas of source table)",
-                          part_desc->new_part_name, entry.znode_name);
-                enqueuePartForCheck(part_desc->new_part_name);
-            }
-
-            throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
-                            "Not found part {} (or part covering it) neither source table neither remote replicas",
-                            part_desc->new_part_name);
+            LOG_WARNING(log, "Will not add part {} (while replacing {}) because it's going to be dropped (DROP_RANGE: {})",
+                        part_desc->new_part_name, entry_replace.drop_range_part_name, covering_drop_range.getPartNameForLogs());
+            continue;
         }
+
+        /// We should enqueue missing part for check, so it will be replaced with empty one (if needed)
+        /// and we will be able to execute this REPLACE_RANGE.
+        /// However, it's quite dangerous, because part may appear in source table.
+        /// So we enqueue it for check only if no replicas of source table have part either.
+        bool need_check = true;
+        if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
+        {
+            String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
+            if (!src_replica.empty())
+            {
+                LOG_DEBUG(log, "Found part {} on replica {} of source table, will not check part {} required for {}",
+                          part_desc->src_part_name, src_replica, part_desc->new_part_name, entry.znode_name);
+                need_check = false;
+            }
+        }
+
+        if (need_check)
+        {
+            LOG_DEBUG(log, "Will check part {} required for {}, because no replicas have it (including replicas of source table)",
+                      part_desc->new_part_name, entry.znode_name);
+            enqueuePartForCheck(part_desc->new_part_name);
+        }
+
+        throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
+                        "Not found part {} (or part covering it) neither source table neither remote replicas",
+                        part_desc->new_part_name);
     }
 
     /// Filter covered parts
