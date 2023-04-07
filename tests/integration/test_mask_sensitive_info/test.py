@@ -10,7 +10,7 @@ node = cluster.add_instance(
         "configs/named_collections.xml",
     ],
     user_configs=[
-        "configs/disable_check_dictionary_primary_key.xml"
+        "configs/disable_check_dictionary_primary_key.xml",
     ],
     with_zookeeper=True,
 )
