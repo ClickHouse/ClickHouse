@@ -1,8 +1,18 @@
 #!/bin/bash
 
-model_formatter="/home/natasha/MurfelClickHouse/build/programs/clickhouse-format";
-new_formatter="/home/natasha/copyClickHouse/build/programs/clickhouse-format";
-compare="/home/natasha/copyClickHouse/tests/a.out"
+# This script asserts that two versions of clickhouse-format format queries from 'tests/queries/0_stateless' in the same way.
+# All queries that are formatted differently will be printed to stdout.
+#
+# This script uses hilite_comparator in order to compare hilited queries, which cannot be compared byte-by-byte.
+#
+# An example use-case is to assert that a refactoring didn't affect query formatting.
+#
+# Build two versions of clickhouse-format and hilite_comparator before using the script:
+# cd build && ninja clickhouse-format format_comparator
+
+model_formatter=$1  # e.g. "ClickHouse/build/programs/clickhouse-format";
+new_formatter=$2  # e.g. "refactorClickHouse/build/programs/clickhouse-format";
+hilite_comparator=$3  # e.g. "refactorClickHouse/build/src/Parsers/HiliteComparator/hilite_comparator"
 
 # todo: uncomment oneline to test correct newlines as well
 flags="--oneline --hilite --query";
@@ -25,7 +35,7 @@ do
             echo "[ FAIL ] New clickhouse-format exited with non-null status";
         fi
 
-        $compare """$expected""" """$actual""";
+        $hilite_comparator """$expected""" """$actual""";
         if [ $? -ne 0 ]; then
             echo "[ FAIL ] Hilited queries do not match";
             echo "File: " "$queries_file";
