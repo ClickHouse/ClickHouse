@@ -244,10 +244,12 @@ Example of configuration:
             <database>system</database>
             <user>foo</user>
             <password>secret</password>
+            <secure>1</secure>
         </remote1>
     </named_collections>
 </clickhouse>
 ```
+`secure` is not needed for connection because of `remoteSecure`, but it can be used for dictionaries.
 
 ### Example of using named collections with the `remote`/`remoteSecure` functions
 

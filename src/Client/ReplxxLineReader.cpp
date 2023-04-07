@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <chrono>
 #include <cerrno>

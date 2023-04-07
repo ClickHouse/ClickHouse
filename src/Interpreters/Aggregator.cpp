@@ -24,6 +24,7 @@
 #include <Common/CacheBase.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/JSONBuilder.h>
@@ -59,6 +60,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric TemporaryFilesForAggregation;
+    extern const Metric AggregatorThreads;
+    extern const Metric AggregatorThreadsActive;
 }
 
 namespace DB
@@ -1000,6 +1003,13 @@ void Aggregator::mergeOnBlockSmall(
         result.key_sizes = key_sizes;
     }
 
+    if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
+    {
+        AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(place);
+        result.without_key = place;
+    }
+
     if (false) {} // NOLINT
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
@@ -1442,7 +1452,8 @@ void Aggregator::prepareAggregateInstructions(
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             /// Sparse columns without defaults may be handled incorrectly.
-            if (aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
+            if (aggregate_columns[i][j]->isSparse()
+                && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
 
             auto full_column = allow_sparse_arguments
@@ -2308,10 +2319,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     {
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
+                CurrentThread::detachFromGroupIfNotDetached();
         );
         if (thread_group)
-            CurrentThread::attachToIfDetached(thread_group);
+            CurrentThread::attachToGroupIfDetached(thread_group);
 
         BlocksList blocks;
         while (true)
@@ -2389,7 +2400,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     std::unique_ptr<ThreadPool> thread_pool;
     if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000  /// TODO Make a custom threshold.
         && data_variants.isTwoLevel())                      /// TODO Use the shared thread pool with the `merge` function.
-        thread_pool = std::make_unique<ThreadPool>(max_threads);
+        thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
 
     if (data_variants.without_key)
         blocks.emplace_back(prepareBlockAndFillWithoutKey(
@@ -2584,7 +2595,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     ManyAggregatedDataVariants & non_empty_data) const
 {
-    ThreadPool thread_pool{params.max_threads};
+    ThreadPool thread_pool{CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, params.max_threads};
 
     AggregatedDataVariantsPtr & res = non_empty_data[0];
 
@@ -2929,6 +2940,13 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
     }
 
+    if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
+    {
+        AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(place);
+        result.without_key = place;
+    }
+
     if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
         mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
 #define M(NAME, IS_TWO_LEVEL) \
@@ -3029,10 +3047,10 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
+                    CurrentThread::detachFromGroupIfNotDetached();
             );
             if (thread_group)
-                CurrentThread::attachToIfDetached(thread_group);
+                CurrentThread::attachToGroupIfDetached(thread_group);
 
             for (Block & block : bucket_to_blocks[bucket])
             {
@@ -3050,7 +3068,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         std::unique_ptr<ThreadPool> thread_pool;
         if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
-            thread_pool = std::make_unique<ThreadPool>(max_threads);
+            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)
         {
