@@ -128,9 +128,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
 bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
-    MemoryTrackerThreadSwitcherPtr switcher;
+    std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_mutate_entry);
+        switcher.emplace((*merge_mutate_entry)->thread_group);
 
     auto remove_processed_entry = [&] () -> bool
     {
