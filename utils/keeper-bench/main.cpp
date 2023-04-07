@@ -34,7 +34,6 @@ int main(int argc, char *argv[])
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                                         "produce help message")
-            ("generator",      value<std::string>()->default_value(""),                      "query to execute")
             ("config",         value<std::string>()->default_value(""),                      "yaml/xml file containing configuration")
             ("concurrency,c",  value<unsigned>(),                                            "number of parallel queries")
             ("report-delay,d", value<double>(),                                              "delay between intermediate reports in seconds (set 0 to disable reports)")
@@ -56,7 +55,6 @@ int main(int argc, char *argv[])
         }
 
         Runner runner(valueToOptional<unsigned>(options["concurrency"]),
-                      options["generator"].as<std::string>(),
                       options["config"].as<std::string>(),
                       options["hosts"].as<Strings>(),
                       valueToOptional<double>(options["time-limit"]),
