@@ -3,6 +3,7 @@
 
 #include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include "Common/ZooKeeper/ZooKeeperConstants.h"
+#include <Common/EventNotifier.h>
 #include <Common/Config/ConfigProcessor.h>
 
 namespace DB::ErrorCodes
@@ -11,22 +12,15 @@ namespace DB::ErrorCodes
 }
 
 Runner::Runner(
-        size_t concurrency_,
+        std::optional<size_t> concurrency_,
         const std::string & generator_name,
         const std::string & config_path,
         const Strings & hosts_strings_,
-        double max_time_,
-        double delay_,
-        bool continue_on_error_,
-        size_t max_iterations_)
-        : concurrency(concurrency_)
-        , pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
-        , max_time(max_time_)
-        , delay(delay_)
-        , continue_on_error(continue_on_error_)
-        , max_iterations(max_iterations_)
-        , info(std::make_shared<Stats>())
-        , queue(concurrency)
+        std::optional<double> max_time_,
+        std::optional<double> delay_,
+        std::optional<bool> continue_on_error_,
+        std::optional<size_t> max_iterations_)
+        : info(std::make_shared<Stats>())
 {
 
     DB::ConfigurationPtr config = nullptr;
@@ -39,7 +33,7 @@ Runner::Runner(
 
     if (!generator_name.empty())
     {
-        generator = getGenerator(generator_name);
+        //generator = getGenerator(generator_name);
 
         if (!generator)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to create generator");
@@ -49,7 +43,7 @@ Runner::Runner(
         if (!config)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No config file or generator name defined");
 
-        generator = std::make_unique<Generator>(*config);
+        generator.emplace(*config);
     }
 
     if (!hosts_strings_.empty())
@@ -64,6 +58,41 @@ Runner::Runner(
 
         parseHostsFromConfig(*config);
     }
+
+    std::cout << "---- Run options ---- " << std::endl;
+    if (concurrency_)
+        concurrency = *concurrency_;
+    else
+        concurrency = config->getUInt64("concurrency", 1);
+    std::cout << "Concurrency: " << concurrency << std::endl;
+
+    if (max_iterations_)
+        max_iterations = *max_iterations_;
+    else
+        max_iterations = config->getUInt64("iterations", 0);
+    std::cout << "Iterations: " << max_iterations << std::endl;
+
+    if (delay_)
+        delay = *delay_;
+    else
+        delay = config->getDouble("report_delay", 1);
+    std::cout << "Report delay: " << delay << std::endl;
+
+    if (max_time_)
+        max_time = *max_time_;
+    else
+        max_time = config->getDouble("timelimit", 1.0);
+    std::cout << "Time limit: " << max_time << std::endl;
+
+    if (continue_on_error_)
+        continue_on_error = *continue_on_error_;
+    else
+        continue_on_error = config->getBool("continue_on_error", 1.0);
+    std::cout << "Continue on error: " << continue_on_error << std::endl;
+    std::cout << "---- Run options ----\n" << std::endl;
+
+    pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency);
+    queue.emplace(concurrency);
 }
 
 void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -134,7 +163,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         while (!extracted)
         {
-            extracted = queue.tryPop(request, 100);
+            extracted = queue->tryPop(request, 100);
 
             if (shutdown
                 || (max_iterations && requests_executed >= max_iterations))
@@ -211,12 +240,12 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
     }
 }
 
-bool Runner::tryPushRequestInteractively(const Coordination::ZooKeeperRequestPtr & request, DB::InterruptListener & interrupt_listener)
+bool Runner::tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener)
 {
-    static std::unordered_map<Coordination::OpNum, size_t> counts;
-    static size_t i = 0;
-    
-    counts[request->getOpNum()]++;
+    //static std::unordered_map<Coordination::OpNum, size_t> counts;
+    //static size_t i = 0;
+    //
+    //counts[request->getOpNum()]++;
 
     //if (request->getOpNum() == Coordination::OpNum::Multi)
     //{
@@ -224,18 +253,18 @@ bool Runner::tryPushRequestInteractively(const Coordination::ZooKeeperRequestPtr
     //        counts[dynamic_cast<Coordination::ZooKeeperRequest &>(*multi_request).getOpNum()]++;
     //}
 
-    ++i;
-    if (i % 10000 == 0)
-    {
-        for (const auto & [op_num, count] : counts)
-            std::cout << fmt::format("{}: {}", op_num, count) << std::endl;
-    }
+    //++i;
+    //if (i % 10000 == 0)
+    //{
+    //    for (const auto & [op_num, count] : counts)
+    //        std::cout << fmt::format("{}: {}", op_num, count) << std::endl;
+    //}
 
     bool inserted = false;
 
     while (!inserted)
     {
-        inserted = queue.tryPush(request, 100);
+        inserted = queue->tryPush(std::move(request), 100);
 
         if (shutdown)
         {
@@ -281,13 +310,13 @@ void Runner::runBenchmark()
         for (size_t i = 0; i < concurrency; ++i)
         {
             auto thread_connections = connections;
-            pool.scheduleOrThrowOnError([this, connections = std::move(thread_connections)]() mutable { thread(connections); });
+            pool->scheduleOrThrowOnError([this, connections = std::move(thread_connections)]() mutable { thread(connections); });
         }
     }
     catch (...)
     {
         shutdown = true;
-        pool.wait();
+        pool->wait();
         throw;
     }
 
@@ -304,7 +333,7 @@ void Runner::runBenchmark()
         }
     }
 
-    pool.wait();
+    pool->wait();
     total_watch.stop();
 
     printNumberOfRequestsExecuted(requests_executed);
@@ -316,6 +345,8 @@ void Runner::runBenchmark()
 
 void Runner::createConnections()
 {
+    DB::EventNotifier::init();
+    std::cout << "---- Creating connections ---- " << std::endl;
     for (size_t connection_info_idx = 0; connection_info_idx < connection_infos.size(); ++connection_info_idx)
     {
         const auto & connection_info = connection_infos[connection_info_idx];
@@ -338,6 +369,7 @@ void Runner::createConnections()
             connections_to_info_map[connections.size() - 1] = connection_info_idx;
         }
     }
+    std::cout << "---- Done creating connections ----\n" << std::endl;
 }
 
 std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info)
@@ -366,3 +398,11 @@ std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections
     }
     return connections;
 }
+
+Runner::~Runner()
+{
+    queue->clearAndFinish();
+    shutdown = true;
+    pool->wait();
+}
+
