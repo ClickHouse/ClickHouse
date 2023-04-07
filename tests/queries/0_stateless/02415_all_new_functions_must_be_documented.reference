@@ -389,6 +389,7 @@ javaHashUTF16LE
 joinGet
 joinGetOrNull
 jumpConsistentHash
+kafkaMurmurHash
 kostikConsistentHash
 lcm
 least
