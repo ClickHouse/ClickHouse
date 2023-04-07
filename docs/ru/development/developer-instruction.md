@@ -41,7 +41,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Выполните в терминале:
 
-    git clone --recursive --shallow-submodules git@github.com:your_github_username/ClickHouse.git
+    git clone --shallow-submodules git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 Или (если вы хотите использовать sparse checkout для submodules):
