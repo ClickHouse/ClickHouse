@@ -9,11 +9,6 @@ class DateLUTImpl;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /** DateTime64 is same as DateTime, but it stores values as Int64 and has configurable sub-second part.
  *
  * `scale` determines number of decimal places for sub-second part of the DateTime64.
@@ -46,15 +41,7 @@ protected:
     SerializationPtr doGetDefaultSerialization() const override;
 };
 
-inline std::string getDateTimeTimezone(const IDataType & data_type)
-{
-    if (const auto * type = typeid_cast<const DataTypeDateTime *>(&data_type))
-        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
-    if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
-        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal scale from type {}", data_type.getName());
-}
+inline std::string getDateTimeTimezone(const IDataType & data_type);
 
 }
 

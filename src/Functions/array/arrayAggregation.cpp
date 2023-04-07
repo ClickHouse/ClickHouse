@@ -399,6 +399,7 @@ struct ArrayAggregateImpl
             executeType<Decimal128>(mapped, offsets, res) ||
             executeType<Decimal256>(mapped, offsets, res) ||
             executeType<DateTime64>(mapped, offsets, res))
+        {
             return res;
         }
         else
