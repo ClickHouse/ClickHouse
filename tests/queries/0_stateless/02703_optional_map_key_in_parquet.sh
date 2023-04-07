@@ -17,5 +17,5 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # }
 DATA_FILE=$CUR_DIR/data_parquet/optional_map_key.parquet
 
-$CLICKHOUSE_LOCAL -q "desc file('$DATA_FILE')"
-$CLICKHOUSE_LOCAL -q "select * from file('$DATA_FILE')"
+$CLICKHOUSE_LOCAL -q "desc file('$DATA_FILE', Parquet)"
+$CLICKHOUSE_LOCAL -q "select * from file('$DATA_FILE', Parquet)"
