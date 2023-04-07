@@ -21,6 +21,8 @@ class WriteBuffer;
 class ReplicatedMergeTreeQueue;
 struct MergeTreePartInfo;
 
+struct TableVersion;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -171,6 +173,8 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
+
+    std::shared_ptr<const TableVersion> table_version = nullptr;
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const

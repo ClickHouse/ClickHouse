@@ -16,7 +16,6 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
-
 class MergeTreeSink : public SinkToStorage
 {
 public:

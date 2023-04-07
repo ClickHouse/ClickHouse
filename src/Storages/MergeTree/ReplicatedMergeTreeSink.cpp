@@ -40,6 +40,96 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
+template <>
+TableVersionPtr ReplicatedMergeTreeSink::updateDeleteBitmapAndTableVersion(
+    MutableDataPartPtr & part,
+    const MergeTreePartInfo & part_info,
+    PrimaryIndex::DeletesMap & deletes_map,
+    const PrimaryIndex::DeletesKeys & deletes_keys)
+{
+    /// Note: delete bitmap located in the directory of data part(in same disk),
+    /// but table version always located in the first disk
+    auto current_version = storage.table_version->get();
+    auto new_table_version = std::make_unique<TableVersion>(*current_version);
+    new_table_version->version++;
+
+    if (!new_table_version->part_versions.insert({part_info, new_table_version->version}).second)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Insert new inserted part version into table version failed, this is a bug, new part name: {}",
+            part_info.getPartNameForLogs());
+    }
+
+    /// Generate delete bitmap for new part
+    auto new_delete_bitmap = std::make_shared<DeleteBitmap>(new_table_version->version);
+    if (auto it = deletes_map.find(part_info.min_block); it != deletes_map.end())
+    {
+        LOG_INFO(storage.log, "{} rows deleted for new inserted part {}", it->second.size(), part_info.getPartNameForLogs());
+        new_delete_bitmap->addDels(it->second);
+        deletes_map.erase(it);
+    }
+    new_delete_bitmap->serialize(part->getDataPartStoragePtr());
+    auto & delete_bitmap_cache = storage.delete_bitmap_cache;
+    delete_bitmap_cache->set({part_info, new_table_version->version}, new_delete_bitmap);
+
+    /// Update delete bitmap
+    /// Here find part info by min_block
+    for (const auto & [min_block, row_numbers] : deletes_map)
+    {
+        auto info = storage.findPartInfoByMinBlock(min_block);
+        auto update_part = storage.findPartByInfo(info);
+        if (!update_part)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Can not find part in data_parts_by_info, this is a bug, part name: {}",
+                info.getPartNameForLogs());
+        }
+        /// The part is do merging, add its deleted keys to delete buffer
+        if (storage.partIsAssignedToBackgroundOperation(update_part))
+        {
+            storage.delete_buffer->insertKeysByInfo(info, deletes_keys.at(min_block));
+            /// Here even if the part is merging, we still should update its delete bitmap,
+            /// such that even if the merge failed or abort due to too much deletes, the data
+            /// still consistent.
+            // continue;
+        }
+        const auto & part_version = current_version->part_versions.find(info);
+        if (part_version == current_version->part_versions.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find part versions in table version");
+        }
+
+        LOG_INFO(
+            storage.log,
+            "{} rows deleted for part {} when insert into part {}",
+            row_numbers.size(),
+            info.getPartNameForLogs(),
+            part_info.getPartNameForLogs());
+
+        IMergeTreeDataPart * mutable_part = const_cast<IMergeTreeDataPart *>(update_part.get());
+
+        auto bitmap = delete_bitmap_cache->getOrCreate(update_part, part_version->second);
+        auto new_bitmap = bitmap->addDelsAsNewVersion(new_table_version->version, row_numbers);
+        new_bitmap->serialize(mutable_part->getDataPartStoragePtr());
+
+        if (auto it = new_table_version->part_versions.find(info); it != new_table_version->part_versions.end())
+        {
+            it->second = new_table_version->version;
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Can not find old part version in table version, this is a bug, part name: {}",
+                info.getPartNameForLogs());
+        }
+        delete_bitmap_cache->set({info, new_table_version->version}, new_bitmap);
+    }
+    return new_table_version;
+}
+
 template<bool async_insert>
 struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
 {
@@ -544,7 +634,7 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false);
+            commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false, partition.write_state);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -587,7 +677,8 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         while (true)
         {
             partition.temp_part.finalize();
-            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false);
+            auto conflict_block_ids = commitPart(
+                zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false, partition.write_state);
             if (conflict_block_ids.empty())
                 break;
             ++retry_times;
@@ -631,13 +722,14 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData:
     }
 }
 
-template<bool async_insert>
+template <bool async_insert>
 std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const BlockIDsType & block_id,
     size_t replicas_num,
-    bool writing_existing_part)
+    bool writing_existing_part,
+    WriteStatePtr write_state)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -914,8 +1006,65 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
         try
         {
-            auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, lock);
+            if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+            {
+                std::lock_guard<std::mutex> write_merge_lock(storage.write_merge_lock);
+
+                auto partition_id = part->info.partition_id;
+                auto primary_index = storage.primary_index_cache->getOrCreate(partition_id, part->partition);
+
+                PrimaryIndex::DeletesMap deletes_map;
+                PrimaryIndex::DeletesKeys deletes_keys;
+
+                /// We should fist set it to UPDATE, then updating. Otherwise, if
+                /// query cancel or exception happened in update, the state become inconsistent
+                primary_index->setState(PrimaryIndex::State::UPDATED);
+                if (!storage.merging_params.version_column.empty())
+                {
+                    primary_index->update(
+                        part->info.min_block,
+                        write_state->key_column,
+                        write_state->version_column,
+                        write_state->delete_key_column,
+                        write_state->min_key_values,
+                        write_state->max_key_values,
+                        deletes_map,
+                        deletes_keys,
+                        context);
+                }
+                else
+                {
+                    primary_index->update(
+                        part->info.min_block,
+                        write_state->key_column,
+                        write_state->delete_key_column,
+                        write_state->min_key_values,
+                        write_state->max_key_values,
+                        deletes_map,
+                        deletes_keys,
+                        context);
+                }
+
+                /// Here should lock state_mutex to forbid insert entry into queue,
+                /// because it will obtain table version when insert merge entry into
+                /// queue and then we can check is is assigned to background actions.
+                auto state_lock = storage.queue.lockStateMutex();
+
+                auto new_table_version = updateDeleteBitmapAndTableVersion(part, part->info, deletes_map, deletes_keys);
+
+                auto lock = storage.lockParts();
+
+                renamed = storage.renameTempPartAndAdd(part, transaction, lock, std::move(new_table_version));
+
+                /// If add part failed, the primary_index can become INVALID
+                if (renamed)
+                    primary_index->setState(PrimaryIndex::State::VALID);
+            }
+            else
+            {
+                auto lock = storage.lockParts();
+                renamed = storage.renameTempPartAndAdd(part, transaction, lock);
+            }
         }
         catch (const Exception & e)
         {

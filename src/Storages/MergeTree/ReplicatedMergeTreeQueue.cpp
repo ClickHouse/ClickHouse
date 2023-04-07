@@ -260,6 +260,15 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
         removeCoveredPartsFromMutations(drop_part_name, /*remove_part = */ true, /*remove_covered_parts = */ true);
     }
 
+    /// We need table version to get related part version for merge and mutate
+    if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+    {
+        if (entry->type == LogEntry::MERGE_PARTS || entry->type == LogEntry::MUTATE_PART)
+        {
+            entry->table_version = storage.table_version->get();
+        }
+    }
+
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
     if (entry->getDropRange(format_version))
         queue.push_front(entry);
@@ -2057,6 +2066,11 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
 {
     return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
+}
+
+std::unique_lock<std::mutex> ReplicatedMergeTreeQueue::lockStateMutex()
+{
+    return std::unique_lock<std::mutex>(state_mutex);
 }
 
 ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(

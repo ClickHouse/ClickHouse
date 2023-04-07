@@ -7,8 +7,9 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
-
-namespace Poco { class Logger; }
+#include <Storages/MergeTree/Unique/PrimaryIndex.h>
+#include <Storages/MergeTree/Unique/TableVersion.h>
+#include <Storages/MergeTree/Unique/WriteState.h>
 
 namespace zkutil
 {
@@ -21,8 +22,9 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 /// ReplicatedMergeTreeSink will sink data to replicated merge tree with deduplication.
 /// The template argument "async_insert" indicates whether this sink serves for async inserts.
@@ -92,7 +94,8 @@ private:
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
         size_t replicas_num,
-        bool writing_existing_part);
+        bool writing_existing_part,
+        WriteStatePtr write_state = nullptr);
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
@@ -135,6 +138,12 @@ private:
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
     void finishDelayedChunk(const ZooKeeperWithFaultInjectionPtr & zookeeper);
+
+    TableVersionPtr updateDeleteBitmapAndTableVersion(
+        MutableDataPartPtr & part,
+        const MergeTreePartInfo & part_info,
+        PrimaryIndex::DeletesMap & deletes_map,
+        const PrimaryIndex::DeletesKeys & deletes_keys);
 };
 
 using ReplicatedMergeTreeSinkWithAsyncDeduplicate = ReplicatedMergeTreeSinkImpl<true>;

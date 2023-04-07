@@ -477,6 +477,8 @@ public:
     /// this case race condition is possible.
     QueueLocks lockQueue();
 
+    std::unique_lock<std::mutex> lockStateMutex();
+
     /// Can be called only on data parts loading.
     /// We need loaded queue to create GET_PART entry for broken (or missing) part,
     /// but queue is not loaded yet on data parts loading.
