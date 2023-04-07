@@ -108,22 +108,22 @@ inline __m128i mm_is_in(__m128i bytes, const char * symbols, size_t num_chars)
     return accumulator;
 }
 
-inline std::vector<__m128i> mm_is_in_prepare(const char * symbols, size_t num_chars)
+inline std::array<__m128i, 16u> mm_is_in_prepare(const char * symbols, size_t num_chars)
 {
-    std::vector<__m128i> result;
-    result.reserve(num_chars);
+    std::array<__m128i, 16u> result {};
 
     for (size_t i = 0; i < num_chars; ++i)
     {
-        result.emplace_back(_mm_set1_epi8(symbols[i]));
+        result[i] = _mm_set1_epi8(symbols[i]);
     }
 
     return result;
 }
 
-inline __m128i mm_is_in_execute(__m128i bytes, const std::vector<__m128i> & needles)
+inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & needles)
 {
     __m128i accumulator = _mm_setzero_si128();
+
     for (const auto & needle : needles)
     {
         __m128i eq = _mm_cmpeq_epi8(bytes, needle);
