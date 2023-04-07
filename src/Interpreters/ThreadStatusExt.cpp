@@ -115,6 +115,24 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group)
+{
+    chassert(thread_group);
+
+    /// might be nullptr
+    prev_thread_group = CurrentThread::getGroup();
+
+    CurrentThread::detachFromGroupIfNotDetached();
+    CurrentThread::attachToGroup(thread_group);
+}
+
+ThreadGroupSwitcher::~ThreadGroupSwitcher()
+{
+    CurrentThread::detachFromGroupIfNotDetached();
+    if (prev_thread_group)
+        CurrentThread::attachToGroup(prev_thread_group);
+}
+
 void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
 {
     if (!thread_group)

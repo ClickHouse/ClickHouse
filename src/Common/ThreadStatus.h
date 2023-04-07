@@ -41,7 +41,6 @@ class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
-class ThreadGroupSwitcher;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -119,6 +118,21 @@ private:
     /// Set of all thread ids which has been attached to the group
     std::unordered_set<UInt64> thread_ids;
 };
+
+/**
+ * Since merge is executed with multiple threads, this class
+ * switches the parent MemoryTracker as part of the thread group to account all the memory used.
+ */
+class ThreadGroupSwitcher : private boost::noncopyable
+{
+public:
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group);
+    ~ThreadGroupSwitcher();
+
+private:
+    ThreadGroupPtr prev_thread_group;
+};
+
 
 /**
  * We use **constinit** here to tell the compiler the current_thread variable is initialized.
