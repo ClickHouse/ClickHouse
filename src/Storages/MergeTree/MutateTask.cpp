@@ -1677,6 +1677,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("max_threads", 1);
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
+    context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
 
     MutationHelpers::splitMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
 
