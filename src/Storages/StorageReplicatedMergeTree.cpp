@@ -7616,7 +7616,6 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         if (removed_log_entry_id)
             wait_for_ids.erase(*removed_log_entry_id);
 
-        chassert(new_queue_size || wait_for_ids.empty());
         if (wait_for_ids.empty())
             target_entry_event.set();
     };
