@@ -34,14 +34,14 @@ class Runner
 {
 public:
     Runner(
-        size_t concurrency_,
+        std::optional<size_t> concurrency_,
         const std::string & generator_name,
         const std::string & config_path,
         const Strings & hosts_strings_,
-        double max_time_,
-        double delay_,
-        bool continue_on_error_,
-        size_t max_iterations_);
+        std::optional<double> max_time_,
+        std::optional<double> delay_,
+        std::optional<bool> continue_on_error_,
+        std::optional<size_t> max_iterations_);
 
     void thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers);
 
@@ -50,19 +50,19 @@ public:
         std::cerr << "Requests executed: " << num << ".\n";
     }
 
-    bool tryPushRequestInteractively(const Coordination::ZooKeeperRequestPtr & request, DB::InterruptListener & interrupt_listener);
+    bool tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener);
 
     void runBenchmark();
 
-
+    ~Runner();
 private:
     void parseHostsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     size_t concurrency = 1;
 
-    ThreadPool pool;
+    std::optional<ThreadPool> pool;
 
-    std::unique_ptr<Generator> generator;
+    std::optional<Generator> generator;
     double max_time = 0;
     double delay = 1;
     bool continue_on_error = false;
@@ -78,7 +78,7 @@ private:
     std::mutex mutex;
 
     using Queue = ConcurrentBoundedQueue<Coordination::ZooKeeperRequestPtr>;
-    Queue queue;
+    std::optional<Queue> queue;
 
     struct ConnectionInfo
     {

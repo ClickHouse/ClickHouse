@@ -591,7 +591,7 @@ std::string ListRequestGenerator::descriptionImpl()
 
 Coordination::ZooKeeperRequestPtr ListRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
-    auto request = std::make_shared<ZooKeeperListRequest>();
+    auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path.getPath();
     return request;
 }
@@ -655,6 +655,7 @@ Generator::Generator(const Poco::Util::AbstractConfiguration & config)
 
     static const std::string generator_key = "generator";
 
+    std::cout << "---- Parsing  setup ---- " << std::endl;
     static const std::string setup_key = generator_key + ".setup";
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(setup_key, keys);
@@ -664,16 +665,18 @@ Generator::Generator(const Poco::Util::AbstractConfiguration & config)
         {
             const auto & node = root_nodes.emplace_back(parseNode(setup_key + "." + key, config));
 
-            std::cout << "---- Will create tree ----" << std::endl;
+            std::cout << "Tree to create:" << std::endl;
             node->dumpTree();
+            std::cout << std::endl;
         }
     }
+    std::cout << "---- Done parsing data setup ----\n" << std::endl;
 
-    std::cout << "\n---- Collecting request generators ----" << std::endl;
+    std::cout << "---- Collecting request generators ----" << std::endl;
     static const std::string requests_key = generator_key + ".requests";
     request_getter = RequestGetter::fromConfig(requests_key, config);
     std::cout << request_getter.description() << std::endl;
-    std::cout << "---- Done collecting request generators ----" << std::endl;
+    std::cout << "---- Done collecting request generators ----\n" << std::endl;
 }
 
 std::shared_ptr<Generator::Node> Generator::parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config)
@@ -741,7 +744,7 @@ void Generator::Node::createNode(Coordination::ZooKeeper & zookeeper, const std:
 
 void Generator::startup(Coordination::ZooKeeper & zookeeper)
 {
-    std::cout << "\n---- Creating test data ----" << std::endl;
+    std::cout << "---- Creating test data ----" << std::endl;
     for (const auto & node : root_nodes)
     {
         auto node_name = node->name.getString();
@@ -753,7 +756,7 @@ void Generator::startup(Coordination::ZooKeeper & zookeeper)
 
         node->createNode(zookeeper, "/", default_acls);
     }
-    std::cout << "---- Created test data ----" << std::endl;
+    std::cout << "---- Created test data ----\n" << std::endl;
 
     std::cout << "---- Initializing generators ----" << std::endl;
 
