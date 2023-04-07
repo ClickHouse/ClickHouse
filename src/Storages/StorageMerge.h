@@ -159,6 +159,10 @@ private:
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
+    /// Store read plan for each child table.
+    /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
+    std::vector<QueryPlan> child_plans;
+
     SelectQueryInfo query_info;
     ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;

@@ -5,6 +5,7 @@
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <base/StringRef.h>
 
 #include <boost/noncopyable.hpp>
@@ -40,7 +41,7 @@ class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
-class MemoryTrackerThreadSwitcher;
+class ThreadGroupSwitcher;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -104,6 +105,8 @@ public:
 
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupStatusPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+
+    static ThreadGroupStatusPtr createForBackgroundProcess(ContextPtr storage_context);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     void linkThread(UInt64 thread_it);
@@ -176,12 +179,6 @@ private:
     bool performance_counters_finalized = false;
 
     String query_id_from_query_context;
-    /// Requires access to query_id.
-    friend class MemoryTrackerThreadSwitcher;
-    void setQueryId(const String & query_id_)
-    {
-        query_id_from_query_context = query_id_;
-    }
 
     struct TimePoint
     {
@@ -202,6 +199,8 @@ private:
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> taskstats;
+    Stopwatch stopwatch{CLOCK_MONOTONIC_COARSE};
+    UInt64 last_performance_counters_update_time = 0;
 
     /// See setInternalThread()
     bool internal_thread = false;
@@ -265,6 +264,7 @@ public:
 
     /// Update several ProfileEvents counters
     void updatePerformanceCounters();
+    void updatePerformanceCountersIfNeeded();
 
     /// Update ProfileEvents and dumps info to system.query_thread_log
     void finalizePerformanceCounters();
