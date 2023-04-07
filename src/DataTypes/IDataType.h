@@ -577,12 +577,13 @@ template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 
+template <> inline constexpr bool IsDataTypeDate<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeDate<DataTypeDate32> = true;
+
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
-template <> inline constexpr bool IsDataTypeDate<DataTypeDateTime> = true;
-template <> inline constexpr bool IsDataTypeDate<DataTypeDateTime64> = true;
 
 template <typename T>
 class DataTypeEnum;
