@@ -23,7 +23,8 @@ CREATE DICTIONARY dictdb_01042.dict
 PRIMARY KEY x
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table' DB 'dictdb_01042' UPDATE_FIELD 'insert_time'))
 LAYOUT(FLAT())
-LIFETIME(1);
+LIFETIME(1)
+SETTINGS(check_dictionary_primary_key = 0);
 EOF
 
 $CLICKHOUSE_CLIENT --query "SELECT '12 -> ', dictGetInt64('dictdb_01042.dict', 'y', toUInt64(12))"

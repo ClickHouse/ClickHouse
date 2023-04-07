@@ -156,6 +156,7 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     ))
     {}
     LIFETIME(MIN 1 MAX 3)
+    SETTINGS(check_dictionary_primary_key = 0)
     """.format(
             name, name, layout
         )
@@ -398,6 +399,7 @@ def test_dictionary_with_where(started_cluster):
     ))
     LAYOUT(FLAT())
     LIFETIME(MIN 1 MAX 3)
+    SETTINGS(check_dictionary_primary_key = 0)
     """
     )
 
