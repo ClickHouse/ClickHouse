@@ -30,10 +30,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
+#include <Storages/StorageKeeperMap.h>
 
 namespace DB
 {
@@ -661,7 +663,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
+    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -928,7 +930,16 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     for (const auto & table_id : tables_to_create)
     {
         auto table_name = table_id.getTableName();
-        auto create_query_string = table_name_to_metadata[table_name];
+        auto metadata_it = table_name_to_metadata.find(table_name);
+        if (metadata_it == table_name_to_metadata.end())
+        {
+            /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
+            LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
+                        "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
+            continue;
+        }
+
+        const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
             assert(create_query_string == readMetadataFile(table_name));
@@ -1378,17 +1389,30 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (query_context->getClientInfo().is_replicated_database_internal)
         return false;
 
+    /// we never replicate KeeperMap operations for some types of queries because it doesn't make sense
+    const auto is_keeper_map_table = [&](const ASTPtr & ast)
+    {
+        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+        return table->as<StorageKeeperMap>() != nullptr;
+    };
+
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
-    {
-        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
-    }
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter() && !is_keeper_map_table(query_ptr);
 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
     {
-        return drop->table.get();
+        if (drop->table.get())
+            return drop->kind != ASTDropQuery::Truncate || !is_keeper_map_table(query_ptr);
+
+        return false;
     }
+
+    if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
+        return !is_keeper_map_table(query_ptr);
 
     return true;
 }

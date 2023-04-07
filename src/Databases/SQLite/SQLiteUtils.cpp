@@ -24,7 +24,7 @@ void processSQLiteError(const String & message, bool throw_on_error)
         LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), fmt::runtime(message));
 }
 
-String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool throw_on_error)
+String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
 {
     if (fs::path(path).is_relative())
         return fs::absolute(fs::path(user_files_path) / path).lexically_normal();
@@ -32,7 +32,7 @@ String validateSQLiteDatabasePath(const String & path, const String & user_files
     String absolute_path = fs::absolute(path).lexically_normal();
     String absolute_user_files_path = fs::absolute(user_files_path).lexically_normal();
 
-    if (!absolute_path.starts_with(absolute_user_files_path))
+    if (need_check && !absolute_path.starts_with(absolute_user_files_path))
     {
         processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
         return "";
@@ -42,8 +42,11 @@ String validateSQLiteDatabasePath(const String & path, const String & user_files
 
 SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_error)
 {
+    // If run in Local mode, no need for path checking.
+    bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
+
     auto user_files_path = context->getUserFilesPath();
-    auto database_path = validateSQLiteDatabasePath(path, user_files_path, throw_on_error);
+    auto database_path = validateSQLiteDatabasePath(path, user_files_path, need_check, throw_on_error);
 
     /// For attach database there is no throw mode.
     if (database_path.empty())

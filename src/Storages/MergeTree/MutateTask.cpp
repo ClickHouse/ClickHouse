@@ -651,6 +651,12 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
+    if (!source_part->getSerializationInfos().empty()
+        && new_part->getSerializationInfos().empty())
+    {
+        rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
+    }
+
     return rename_vector;
 }
 
@@ -905,14 +911,12 @@ public:
             if (projection.type == ProjectionDescription::Type::Aggregate)
                 projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
-            const Settings & settings = ctx->context->getSettingsRef();
-
             LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
             auto tmp_part_merge_task = ctx->mutator->mergePartsToTemporaryPart(
                 projection_future_part,
                 projection.metadata,
                 ctx->mutate_entry,
-                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part, settings),
+                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part, ctx->context),
                 *ctx->holder,
                 ctx->time_of_mutation,
                 ctx->context,
