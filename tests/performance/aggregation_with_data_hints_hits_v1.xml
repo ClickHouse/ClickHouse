@@ -1,6 +1,6 @@
 <test>
-    <query><![CDATA[SELECT RegionID, AVG(LENGTH(Title)), AVG(LENGTH(URL)), COUNT(DISTINCT RegionID) FROM datasets.hits_v1 WHERE RegionID >= 4 AND RegionID <= 259 GROUP BY RegionID]]></query>
-    <query><![CDATA[SELECT RegionID, AVG(LENGTH(Title)), AVG(LENGTH(URL)), AVG(RegionID) FROM datasets.hits_v1 WHERE RegionID >= 5 AND RegionID <= 605 GROUP BY RegionID]]></query>
-    <query><![CDATA[SELECT EventDate, RegionID, AVG(LENGTH(Title)), MIN(EventDate), AVG(RegionID) FROM datasets.hits_v1 WHERE RegionID >= 4 AND RegionID <= 255 AND EventDate BETWEEN toDate('2014-03-11') AND toDate('2014-03-21') GROUP BY EventDate, RegionID]]></query>
-    <query>SELECT EventDate, AVG(LENGTH(Title)) FROM datasets.hits_v1 WHERE EventDate BETWEEN toDate('2014-03-17') AND toDate('2014-03-23') GROUP BY EventDate</query>
+    <query><![CDATA[SELECT RegionID, AVG(LENGTH(Title)), AVG(LENGTH(URL)), COUNT(DISTINCT RegionID) FROM hits_10m_single WHERE RegionID >= 4 AND RegionID <= 259 GROUP BY RegionID]]></query>
+    <query><![CDATA[SELECT RegionID, AVG(LENGTH(Title)), AVG(LENGTH(URL)), AVG(RegionID) FROM hits_10m_single WHERE RegionID >= 5 AND RegionID <= 605 GROUP BY RegionID]]></query>
+    <query><![CDATA[SELECT EventDate, RegionID, AVG(LENGTH(Title)), MIN(EventDate), AVG(RegionID) FROM hits_10m_single WHERE RegionID >= 4 AND RegionID <= 255 AND EventDate BETWEEN toDate('2014-03-11') AND toDate('2014-03-21') GROUP BY EventDate, RegionID]]></query>
+    <query>SELECT EventDate, AVG(LENGTH(Title)) FROM hits_10m_single WHERE EventDate BETWEEN toDate('2014-03-17') AND toDate('2014-03-23') GROUP BY EventDate</query>
 </test>
