@@ -8,3 +8,4 @@ target_link_libraries(hilite_comparator PRIVATE dbms)
 
 clickhouse_add_executable(hilite_comparator_main hilite_comparator_main.cpp)
 target_link_libraries(hilite_comparator_main PRIVATE hilite_comparator)
+target_link_libraries(hilite_comparator_main PRIVATE dbms)
