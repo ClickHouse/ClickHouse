@@ -13,7 +13,6 @@ namespace DB::ErrorCodes
 
 Runner::Runner(
         std::optional<size_t> concurrency_,
-        const std::string & generator_name,
         const std::string & config_path,
         const Strings & hosts_strings_,
         std::optional<double> max_time_,
@@ -23,28 +22,10 @@ Runner::Runner(
         : info(std::make_shared<Stats>())
 {
 
-    DB::ConfigurationPtr config = nullptr;
+    DB::ConfigProcessor config_processor(config_path, true, false);
+    auto config = config_processor.loadConfig().configuration;
 
-    if (!config_path.empty())
-    {
-        DB::ConfigProcessor config_processor(config_path, true, false);
-        config = config_processor.loadConfig().configuration;
-    }
-
-    if (!generator_name.empty())
-    {
-        //generator = getGenerator(generator_name);
-
-        if (!generator)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to create generator");
-    }
-    else
-    {
-        if (!config)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No config file or generator name defined");
-
-        generator.emplace(*config);
-    }
+    generator.emplace(*config);
 
     if (!hosts_strings_.empty())
     {
@@ -60,34 +41,38 @@ Runner::Runner(
     }
 
     std::cout << "---- Run options ---- " << std::endl;
+    static constexpr uint64_t DEFAULT_CONCURRENCY = 1;
     if (concurrency_)
         concurrency = *concurrency_;
     else
-        concurrency = config->getUInt64("concurrency", 1);
+        concurrency = config->getUInt64("concurrency", DEFAULT_CONCURRENCY);
     std::cout << "Concurrency: " << concurrency << std::endl;
 
+    static constexpr uint64_t DEFAULT_ITERATIONS = 0;
     if (max_iterations_)
         max_iterations = *max_iterations_;
     else
-        max_iterations = config->getUInt64("iterations", 0);
+        max_iterations = config->getUInt64("iterations", DEFAULT_ITERATIONS);
     std::cout << "Iterations: " << max_iterations << std::endl;
 
+    static constexpr double DEFAULT_DELAY = 1.0;
     if (delay_)
         delay = *delay_;
     else
-        delay = config->getDouble("report_delay", 1);
+        delay = config->getDouble("report_delay", DEFAULT_DELAY);
     std::cout << "Report delay: " << delay << std::endl;
 
+    static constexpr double DEFAULT_TIME_LIMIT = 1.0;
     if (max_time_)
         max_time = *max_time_;
     else
-        max_time = config->getDouble("timelimit", 1.0);
+        max_time = config->getDouble("timelimit", DEFAULT_TIME_LIMIT);
     std::cout << "Time limit: " << max_time << std::endl;
 
     if (continue_on_error_)
         continue_on_error = *continue_on_error_;
     else
-        continue_on_error = config->getBool("continue_on_error", 1.0);
+        continue_on_error = config->getBool("continue_on_error", false);
     std::cout << "Continue on error: " << continue_on_error << std::endl;
     std::cout << "---- Run options ----\n" << std::endl;
 

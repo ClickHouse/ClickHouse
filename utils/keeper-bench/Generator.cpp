@@ -87,64 +87,6 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
     remove_future.get();
 }
 
-std::unique_ptr<Generator> getGenerator(const std::string & name)
-{
-    //if (name == "create_no_data")
-    //{
-    //    return std::make_unique<CreateRequestGenerator>();
-    //}
-    //else if (name == "create_small_data")
-    //{
-    //    return std::make_unique<CreateRequestGenerator>("/create_generator", 5, 32);
-    //}
-    //else if (name == "create_medium_data")
-    //{
-    //    return std::make_unique<CreateRequestGenerator>("/create_generator", 5, 1024);
-    //}
-    //else if (name == "create_big_data")
-    //{
-    //    return std::make_unique<CreateRequestGenerator>("/create_generator", 5, 512 * 1024);
-    //}
-    //else if (name == "get_no_data")
-    //{
-    //    return std::make_unique<GetRequestGenerator>("/get_generator", 10, 0);
-    //}
-    //else if (name == "get_small_data")
-    //{
-    //    return std::make_unique<GetRequestGenerator>("/get_generator", 10, 32);
-    //}
-    //else if (name == "get_medium_data")
-    //{
-    //    return std::make_unique<GetRequestGenerator>("/get_generator", 10, 1024);
-    //}
-    //else if (name == "get_big_data")
-    //{
-    //    return std::make_unique<GetRequestGenerator>("/get_generator", 10, 512 * 1024);
-    //}
-    //else if (name == "list_no_nodes")
-    //{
-    //    return std::make_unique<ListRequestGenerator>("/list_generator", 0, 1);
-    //}
-    //else if (name == "list_few_nodes")
-    //{
-    //    return std::make_unique<ListRequestGenerator>("/list_generator", 10, 5);
-    //}
-    //else if (name == "list_medium_nodes")
-    //{
-    //    return std::make_unique<ListRequestGenerator>("/list_generator", 1000, 5);
-    //}
-    //else if (name == "list_a_lot_nodes")
-    //{
-    //    return std::make_unique<ListRequestGenerator>("/list_generator", 100000, 5);
-    //}
-    //else if (name == "set_small_data")
-    //{
-    //    return std::make_unique<SetRequestGenerator>("/set_generator", 5);
-    //}
-
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", name);
-}
-
 NumberGetter
 NumberGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, std::optional<uint64_t> default_value)
 {
@@ -320,6 +262,10 @@ std::string PathGetter::description() const
 
     return description;
 }
+
+RequestGetter::RequestGetter(std::vector<RequestGeneratorPtr> request_generators_)
+    : request_generators(std::move(request_generators_))
+{}
 
 RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, bool for_multi)
 {
@@ -658,7 +604,7 @@ Generator::Generator(const Poco::Util::AbstractConfiguration & config)
 
     static const std::string generator_key = "generator";
 
-    std::cout << "---- Parsing  setup ---- " << std::endl;
+    std::cout << "---- Parsing setup ---- " << std::endl;
     static const std::string setup_key = generator_key + ".setup";
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(setup_key, keys);

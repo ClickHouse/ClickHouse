@@ -35,7 +35,6 @@ class Runner
 public:
     Runner(
         std::optional<size_t> concurrency_,
-        const std::string & generator_name,
         const std::string & config_path,
         const Strings & hosts_strings_,
         std::optional<double> max_time_,
