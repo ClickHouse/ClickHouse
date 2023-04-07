@@ -105,20 +105,20 @@ void ASTInsertQuery::formatImpl(FormattingBuffer out) const
     ///     SETTINGS max_threads=1
     ///     VALUES
     ///
-    if (select)
-    {
+    const auto put_delimiter = [this, &out]() {
         if (settings_ast)
             out.nlOrWs();
         else
             out.ostr << ' ';
+    };
+    if (select)
+    {
+        put_delimiter();
         select->formatImpl(out);
     }
     else if (watch)
     {
-        if (settings_ast)
-            out.nlOrWs();
-        else
-            out.ostr << ' ';
+        put_delimiter();
         watch->formatImpl(out);
     }
 
@@ -126,19 +126,13 @@ void ASTInsertQuery::formatImpl(FormattingBuffer out) const
     {
         if (!format.empty())
         {
-            if (settings_ast)
-                out.nlOrWs();
-            else
-                out.ostr << ' ';
+            put_delimiter();
             out.writeKeyword("FORMAT ");
             out.ostr << format;
         }
         else if (!infile)
         {
-            if (settings_ast)
-                out.nlOrWs();
-            else
-                out.ostr << ' ';
+            put_delimiter();
             out.writeKeyword("VALUES");
         }
     }
