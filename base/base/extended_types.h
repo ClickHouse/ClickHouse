@@ -103,3 +103,5 @@ template <> struct is_big_int<UInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_big_int_v = is_big_int<T>::value;
+
+template <class T> concept is_extended_int = is_big_int_v<T>;
