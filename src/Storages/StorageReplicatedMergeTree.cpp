@@ -5966,6 +5966,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
     /// NOTE: consider convert to UInt64
     res.parts_to_check = static_cast<UInt32>(part_check_thread.size());
 
+    res.zookeeper_name = zookeeper_name;
     res.zookeeper_path = zookeeper_path;
     res.replica_name = replica_name;
     res.replica_path = replica_path;
