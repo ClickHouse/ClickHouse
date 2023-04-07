@@ -468,23 +468,26 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
     if (config.has(key + ".data"))
         data = StringGetter::fromConfig(key + ".data", config);
 
-    remove_factor = config.getDouble(key + ".remove_factor", 0.0);
+    if (config.has(key + ".remove_factor"))
+        remove_factor = config.getDouble(key + ".remove_factor");
 }
 
 std::string CreateRequestGenerator::descriptionImpl()
 {
     std::string data_string
         = data.has_value() ? fmt::format("data for created nodes: {}", data->description()) : "no data for created nodes";
+    std::string remove_factor_string
+        = remove_factor.has_value() ? fmt::format("- remove factor: {}", *remove_factor) : "- without removes";
     return fmt::format(
         "Create Request Generator\n"
         "- parent path(s) for created nodes: {}\n"
         "- name for created nodes: {}\n"
         "- {}\n"
-        "- remove factor: {}",
+        "{}",
         parent_path.description(),
         name.description(),
         data_string,
-        remove_factor);
+        remove_factor_string);
 }
 
 void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
@@ -494,7 +497,7 @@ void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
 
 Coordination::ZooKeeperRequestPtr CreateRequestGenerator::generateImpl(const Coordination::ACLs & acls)
 {
-    if (!paths_created.empty() && remove_picker(rng) < remove_factor)
+    if (remove_factor.has_value() && !paths_created.empty() && remove_picker(rng) < *remove_factor)
     {
         auto request = std::make_shared<ZooKeeperRemoveRequest>();
         auto it = paths_created.begin();
@@ -766,4 +769,16 @@ void Generator::startup(Coordination::ZooKeeper & zookeeper)
 Coordination::ZooKeeperRequestPtr Generator::generate()
 {
     return request_getter.getRequestGenerator()->generate(default_acls);
+}
+
+void Generator::cleanup(Coordination::ZooKeeper & zookeeper)
+{
+    std::cout << "---- Cleaning up test data ----" << std::endl;
+    for (const auto & node : root_nodes)
+    {
+        auto node_name = node->name.getString();
+        std::string root_path = std::filesystem::path("/") / node_name;
+        std::cout << "Cleaning up " << root_path << std::endl;
+        removeRecursive(zookeeper, root_path);
+    }
 }

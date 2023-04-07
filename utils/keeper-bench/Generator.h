@@ -204,7 +204,7 @@ private:
     StringGetter name;
     std::optional<StringGetter> data;
 
-    double remove_factor;
+    std::optional<double> remove_factor;
     pcg64 rng;
     std::uniform_real_distribution<double> remove_picker;
 
@@ -278,6 +278,8 @@ public:
 
     void startup(Coordination::ZooKeeper & zookeeper);
     Coordination::ZooKeeperRequestPtr generate();
+    void cleanup(Coordination::ZooKeeper & zookeeper);
+
 private:
     struct Node
     {

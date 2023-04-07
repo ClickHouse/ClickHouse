@@ -177,9 +177,35 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
         auto promise = std::make_shared<std::promise<size_t>>();
         auto future = promise->get_future();
-        Coordination::ResponseCallback callback = [promise](const Coordination::Response & response)
+        Coordination::ResponseCallback callback = [&request, promise](const Coordination::Response & response)
         {
-            if (response.error != Coordination::Error::ZOK)
+            bool set_exception = true;
+
+            if (response.error == Coordination::Error::ZOK)
+            {
+                set_exception = false;
+            }
+            else if (response.error == Coordination::Error::ZNONODE)
+            {
+                /// remove can fail with ZNONODE because of different order of execution
+                /// of generated create and remove requests 
+                /// this is okay for concurrent runs
+                if (dynamic_cast<const Coordination::ZooKeeperRemoveResponse *>(&response))
+                    set_exception = false;
+                else if (const auto * multi_response = dynamic_cast<const Coordination::ZooKeeperMultiResponse *>(&response))
+                {
+                    const auto & responses = multi_response->responses;
+                    size_t i = 0;
+                    while (responses[i]->error != Coordination::Error::ZNONODE)
+                        ++i;
+
+                    const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*request);
+                    if (dynamic_cast<const Coordination::ZooKeeperRemoveRequest *>(&*multi_request.requests[i]))
+                        set_exception = false;
+                }
+            }
+
+            if (set_exception)
                 promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
             else
                 promise->set_value(response.bytesSize());
@@ -404,5 +430,6 @@ Runner::~Runner()
     queue->clearAndFinish();
     shutdown = true;
     pool->wait();
+    generator->cleanup(*connections[0]);
 }
 
