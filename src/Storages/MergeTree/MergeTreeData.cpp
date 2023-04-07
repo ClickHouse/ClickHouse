@@ -43,8 +43,11 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/S3Common.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -54,6 +57,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -86,6 +90,7 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include <fmt/core.h>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 
@@ -454,6 +459,7 @@ void MergeTreeData::checkProperties(
             "{} is greater than the sorting key length: {}", primary_key_size, sorting_key_size);
 
     NameSet primary_key_columns_set;
+    bool allow_suspicious_indices = getSettings()->allow_suspicious_indices;
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
@@ -467,7 +473,7 @@ void MergeTreeData::checkProperties(
                                 "Primary key must be a prefix of the sorting key, "
                                 "but the column in the position {} is {}", i, sorting_key_column +", not " + pk_column);
 
-            if (!primary_key_columns_set.emplace(pk_column).second)
+            if (!primary_key_columns_set.emplace(pk_column).second && !allow_suspicious_indices && !attach)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key contains duplicate columns");
 
         }
@@ -530,6 +536,12 @@ void MergeTreeData::checkProperties(
 
         for (const auto & index : new_metadata.secondary_indices)
         {
+            if (!allow_suspicious_indices && !attach)
+            {
+                const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
+                checkSuspiciousIndices(index_ast->expr->as<const ASTFunction &>());
+            }
+
             MergeTreeIndexFactory::instance().validate(index, attach);
 
             if (indices_names.find(index.name) != indices_names.end())
@@ -987,6 +999,20 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
             res += part->rows_count;
     }
     return res;
+}
+
+void MergeTreeData::checkSuspiciousIndices(const ASTFunction & index_function) const
+{
+    NameSet index_key_set;
+    for (const auto & child : index_function.arguments->children)
+    {
+        const auto & tree_hash = child->getTreeHash();
+        const String key = toString(tree_hash.first);
+
+        if (!index_key_set.emplace(key).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Primary key or secondary indices contains duplicate expressios");
+    }
 }
 
 
@@ -2976,10 +3002,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             }
         }
 
-        if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
+        if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax");
+            bool allow_suspicious_indices = getSettings()->allow_suspicious_indices;
+            if (!allow_suspicious_indices)
+            {
+                const auto * alter_ast = command.ast->as<ASTAlterCommand>();
+                checkSuspiciousIndices(alter_ast->order_by->as<ASTFunction &>());
+            }
+
+            if (!is_custom_partitioned)
+              throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                              "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax");
         }
         if (command.type == AlterCommand::MODIFY_TTL && !is_custom_partitioned)
         {
