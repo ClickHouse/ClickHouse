@@ -220,6 +220,7 @@ bool RemoteFSHandler::receivePacket()
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
+    return true;
 }
 
 void RemoteFSHandler::sendHello()
