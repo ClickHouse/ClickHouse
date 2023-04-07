@@ -93,7 +93,7 @@ FileSegment::State FileSegment::state() const
 
 void FileSegment::setDownloadState(State state)
 {
-    LOG_TEST(log, "Updated state from {} to {}", stateToString(download_state), stateToString(state));
+    // LOG_TEST(log, "Updated state from {} to {}", stateToString(download_state), stateToString(state));
     download_state = state;
 }
 
@@ -220,7 +220,7 @@ void FileSegment::resetDownloader()
 
 void FileSegment::resetDownloaderUnlocked(std::unique_lock<std::mutex> & /* segment_lock */)
 {
-    LOG_TEST(log, "Resetting downloader from {}", downloader_id);
+    // LOG_TEST(log, "Resetting downloader from {}", downloader_id);
     downloader_id.clear();
 }
 
