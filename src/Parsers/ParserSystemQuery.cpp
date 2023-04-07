@@ -159,6 +159,14 @@ enum class SystemQueryTargetType
     if (!ParserStringLiteral{}.parse(pos, ast, expected))
         return false;
     res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (ParserKeyword{"FROM SHARD"}.ignore(pos, expected))
+    {
+        if (!ParserStringLiteral{}.parse(pos, ast, expected))
+            return false;
+        res->shard = ast->as<ASTLiteral &>().value.safeGet<String>();
+    }
+
     if (ParserKeyword{"FROM"}.ignore(pos, expected))
     {
         // way 1. parse replica database
