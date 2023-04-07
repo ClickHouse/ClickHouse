@@ -1244,7 +1244,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        new_query->IAST::format(buf, IAST::FormatSettings{.always_quote_identifiers = true});
+        new_query->IAST::format(buf, {.always_quote_identifiers = true});
         new_query_str = buf.str();
     }
 

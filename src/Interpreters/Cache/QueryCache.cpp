@@ -142,7 +142,7 @@ bool QueryCache::Key::operator==(const Key & other) const
 String QueryCache::Key::queryStringFromAst() const
 {
     WriteBufferFromOwnString buf;
-    ast->format(buf, IAST::FormatSettings{.show_secrets = false});
+    ast->format(buf, {.show_secrets = false});
     return buf.str();
 }
 
