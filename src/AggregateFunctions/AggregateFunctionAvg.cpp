@@ -15,9 +15,8 @@ namespace ErrorCodes
 
 namespace
 {
-bool allowType(const DataTypePtr& type) noexcept
+constexpr bool allowType(WhichDataType t)
 {
-    const WhichDataType t(type);
     return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
 }
 
@@ -28,7 +27,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
 
     const DataTypePtr& data_type = argument_types[0];
 
-    if (!allowType(data_type))
+    if (!allowType(*data_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
             data_type->getName(), name);
 
