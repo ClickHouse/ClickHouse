@@ -230,6 +230,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
      *  metaData: (NULL,NULL,NULL,(NULL,{}),NULL,[],{},NULL)
      *  protocol: (NULL,NULL)
      *
+     * We need to check only `add` column, `remove` column does not have intersections with `add` column.
      *  ...
      */
     #define THROW_ARROW_NOT_OK(status)                                    \
@@ -282,7 +283,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
             format_settings.parquet.import_nested,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
-            format_settings.parquet.case_insensitive_column_matching);
+            /* case_insensitive_column_matching */false);
 
         Chunk res;
         std::shared_ptr<arrow::Table> table;
@@ -299,35 +300,18 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
                 res_columns.size(), res.dumpStructure(), header.dumpStructure());
         }
 
-        /// Process `add` column.
+        const auto * tuple_column = assert_cast<const ColumnTuple *>(res_columns[0].get());
+        const auto & nullable_column = assert_cast<const ColumnNullable &>(tuple_column->getColumn(0));
+        const auto & path_column = assert_cast<const ColumnString &>(nullable_column.getNestedColumn());
+        for (size_t i = 0; i < path_column.size(); ++i)
         {
-            const auto * tuple_column = assert_cast<const ColumnTuple *>(res_columns[0].get());
-            const auto & nullable_column = assert_cast<const ColumnNullable &>(tuple_column->getColumn(0));
-            const auto & path_column = assert_cast<const ColumnString &>(nullable_column.getNestedColumn());
-            for (size_t i = 0; i < path_column.size(); ++i)
-            {
-                const auto filename = String(path_column.getDataAt(i));
-                if (filename.empty())
-                    continue;
-                LOG_TEST(log, "Adding {}", filename);
-                const auto [_, inserted] = result.insert(fs::path(configuration.getPath()) / filename);
-                if (!inserted)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", filename);
-            }
-        }
-        /// Process `remove` column.
-        {
-            const auto * tuple_column = assert_cast<const ColumnTuple *>(res_columns[1].get());
-            const auto & nullable_column = assert_cast<const ColumnNullable &>(tuple_column->getColumn(0));
-            const auto & path_column = assert_cast<const ColumnString &>(nullable_column.getNestedColumn());
-            for (size_t i = 0; i < path_column.size(); ++i)
-            {
-                const auto filename = String(path_column.getDataAt(i));
-                if (filename.empty())
-                    continue;
-                LOG_TEST(log, "Removing {}", filename);
-                result.erase(fs::path(configuration.getPath()) / filename);
-            }
+            const auto filename = String(path_column.getDataAt(i));
+            if (filename.empty())
+                continue;
+            LOG_TEST(log, "Adding {}", filename);
+            const auto [_, inserted] = result.insert(fs::path(configuration.getPath()) / filename);
+            if (!inserted)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", filename);
         }
 
         return version;
