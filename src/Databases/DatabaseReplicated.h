@@ -55,6 +55,7 @@ public:
     String getShardName() const { return shard_name; }
     String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
+    static String getFullReplicaName(const String & shard, const String & replica);
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
     const String & getZooKeeperPath() const { return zookeeper_path; }
@@ -77,7 +78,9 @@ public:
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
-    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name);
+    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica);
+
+    std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
