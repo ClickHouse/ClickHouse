@@ -20,11 +20,6 @@
 
 #include "config.h"
 
-#if USE_ODBC
-#    include <Poco/Data/ODBC/Connector.h>
-#endif
-
-
 namespace DB
 {
 
