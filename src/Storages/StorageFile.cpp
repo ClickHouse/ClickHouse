@@ -792,12 +792,13 @@ Pipe StorageFile::read(
     }
 
     Pipe pipe = Pipe::unitePipes(std::move(pipes));
-    /// parallelize output as much as possible
-    if (num_streams < max_num_streams)
+    /// Parallelize output as much as possible
+    /// Note: number of streams can be 0 if paths is empty
+    ///       It happens if globs in file(path, ...) expands to empty set i.e. no files to process
+    if (num_streams > 0 && num_streams < max_num_streams)
     {
         pipe.addTransform(std::make_shared<ResizeProcessor>(pipe.getHeader(), num_streams, max_num_streams));
     }
-
     return pipe;
 }
 
