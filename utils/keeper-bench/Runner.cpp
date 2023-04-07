@@ -1,5 +1,8 @@
 #include "Runner.h"
+#include <Poco/Util/AbstractConfiguration.h>
 
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/Config/ConfigProcessor.h>
 
 namespace DB::ErrorCodes
@@ -18,33 +21,96 @@ Runner::Runner(
         size_t max_iterations_)
         : concurrency(concurrency_)
         , pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
-        , hosts_strings(hosts_strings_)
         , max_time(max_time_)
         , delay(delay_)
         , continue_on_error(continue_on_error_)
         , max_iterations(max_iterations_)
         , info(std::make_shared<Stats>())
         , queue(concurrency)
+{
+
+    DB::ConfigurationPtr config = nullptr;
+
+    if (!config_path.empty())
     {
-        if (!generator_name.empty() && !config_path.empty())
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are defined. Please define only one of them");
+        DB::ConfigProcessor config_processor(config_path, true, false);
+        config = config_processor.loadConfig().configuration;
+    }
 
-        if (generator_name.empty() && config_path.empty())
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Both generator name and generator config path are empty. Please define one of them");
-
-        if (!generator_name.empty())
-            generator = getGenerator(generator_name);
-        else
-        {
-            DB::ConfigProcessor config_processor(config_path, true, false);
-            auto loaded_config = config_processor.loadConfig();
-
-            generator = std::make_unique<Generator>(*loaded_config.configuration);
-        }
+    if (!generator_name.empty())
+    {
+        generator = getGenerator(generator_name);
 
         if (!generator)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to create generator");
     }
+    else
+    {
+        if (!config)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No config file or generator name defined");
+
+        generator = std::make_unique<Generator>(*config);
+    }
+
+    if (!hosts_strings_.empty())
+    {
+        for (const auto & host : hosts_strings_)
+            connection_infos.push_back({.host = host});
+    }
+    else
+    {
+        if (!config)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No config file or hosts defined");
+
+        parseHostsFromConfig(*config);
+    }
+}
+
+void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    ConnectionInfo default_connection_info;
+
+    const auto fill_connection_details = [&](const std::string & key, auto & connection_info)
+    {
+        if (config.has(key + ".secure"))
+            connection_info.secure = config.getBool(key + ".secure");
+
+        if (config.has(key + ".session_timeout_ms"))
+            connection_info.session_timeout_ms = config.getInt(key + ".session_timeout_ms");
+
+        if (config.has(key + ".operation_timeout_ms"))
+            connection_info.operation_timeout_ms = config.getInt(key + ".operation_timeout_ms");
+
+        if (config.has(key + ".connection_timeout_ms"))
+            connection_info.connection_timeout_ms = config.getInt(key + ".connection_timeout_ms");
+    };
+
+    fill_connection_details("connections", default_connection_info);
+
+    Poco::Util::AbstractConfiguration::Keys connections_keys;
+    config.keys("connections", connections_keys);
+
+    for (const auto & key : connections_keys)
+    {
+        std::string connection_key = "connections." + key;
+        auto connection_info = default_connection_info;
+        if (key.starts_with("host"))
+        {
+            connection_info.host = config.getString(connection_key);
+            connection_infos.push_back(std::move(connection_info));
+        }
+        else if (key.starts_with("connection") && key != "connection_timeout_ms")
+        {
+            connection_info.host = config.getString(connection_key + ".host");
+            if (config.has(connection_key + ".sessions"))
+                connection_info.sessions = config.getUInt64(connection_key + ".sessions");
+
+            fill_connection_details(connection_key, connection_info);
+
+            connection_infos.push_back(std::move(connection_info));
+        }
+    }
+}
 
 void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
 {
@@ -130,7 +196,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
                 {
                     try
                     {
-                        zookeepers = getConnections();
+                        zookeepers = refreshConnections();
                         break;
                     }
                     catch (...)
@@ -147,6 +213,24 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
 bool Runner::tryPushRequestInteractively(const Coordination::ZooKeeperRequestPtr & request, DB::InterruptListener & interrupt_listener)
 {
+    static std::unordered_map<Coordination::OpNum, size_t> counts;
+    static size_t i = 0;
+    
+    counts[request->getOpNum()]++;
+
+    //if (request->getOpNum() == Coordination::OpNum::Multi)
+    //{
+    //    for (const auto & multi_request : dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request).requests)
+    //        counts[dynamic_cast<Coordination::ZooKeeperRequest &>(*multi_request).getOpNum()]++;
+    //}
+
+    ++i;
+    if (i % 10000 == 0)
+    {
+        for (const auto & [op_num, count] : counts)
+            std::cout << fmt::format("{}: {}", op_num, count) << std::endl;
+    }
+
     bool inserted = false;
 
     while (!inserted)
@@ -187,17 +271,17 @@ bool Runner::tryPushRequestInteractively(const Coordination::ZooKeeperRequestPtr
 
 void Runner::runBenchmark()
 {
-    auto aux_connections = getConnections();
+    createConnections();
 
     std::cerr << "Preparing to run\n";
-    generator->startup(*aux_connections[0]);
+    generator->startup(*connections[0]);
     std::cerr << "Prepared\n";
     try
     {
-        auto connections = getConnections();
         for (size_t i = 0; i < concurrency; ++i)
         {
-            pool.scheduleOrThrowOnError([this, connections]() mutable { thread(connections); });
+            auto thread_connections = connections;
+            pool.scheduleOrThrowOnError([this, connections = std::move(thread_connections)]() mutable { thread(connections); });
         }
     }
     catch (...)
@@ -230,21 +314,55 @@ void Runner::runBenchmark()
 }
 
 
-std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::getConnections()
+void Runner::createConnections()
 {
-    std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers;
-    for (const auto & host_string : hosts_strings)
+    for (size_t connection_info_idx = 0; connection_info_idx < connection_infos.size(); ++connection_info_idx)
     {
-        Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{host_string}, false};
-        std::vector<Coordination::ZooKeeper::Node> nodes;
-        nodes.push_back(node);
-        zkutil::ZooKeeperArgs args;
-        args.session_timeout_ms = 30000;
-        args.connection_timeout_ms = 1000;
-        args.operation_timeout_ms = 10000;
-        zookeepers.emplace_back(std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr));
+        const auto & connection_info = connection_infos[connection_info_idx];
+        std::cout << fmt::format("Creating {} session(s) for:\n"
+                                 "- host: {}\n"
+                                 "- secure: {}\n"
+                                 "- session timeout: {}ms\n"
+                                 "- operation timeout: {}ms\n"
+                                 "- connection timeout: {}ms",
+                                 connection_info.sessions,
+                                 connection_info.host,
+                                 connection_info.secure,
+                                 connection_info.session_timeout_ms,
+                                 connection_info.operation_timeout_ms,
+                                 connection_info.connection_timeout_ms) << std::endl;
+
+        for (size_t session = 0; session < connection_info.sessions; ++session)
+        {
+            connections.emplace_back(getConnection(connection_info));
+            connections_to_info_map[connections.size() - 1] = connection_info_idx;
+        }
     }
+}
 
+std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info)
+{
+    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, connection_info.secure};
+    std::vector<Coordination::ZooKeeper::Node> nodes;
+    nodes.push_back(node);
+    zkutil::ZooKeeperArgs args;
+    args.session_timeout_ms = connection_info.session_timeout_ms;
+    args.connection_timeout_ms = connection_info.operation_timeout_ms;
+    args.operation_timeout_ms = connection_info.connection_timeout_ms;
+    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+}
 
-    return zookeepers;
+std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections()
+{
+    std::lock_guard lock(connection_mutex);
+    for (size_t connection_idx = 0; connection_idx < connections.size(); ++connection_idx)
+    {
+        auto & connection = connections[connection_idx];
+        if (connection->isExpired())
+        {
+            const auto & connection_info = connection_infos[connections_to_info_map[connection_idx]];
+            connection = getConnection(connection_info);
+        }
+    }
+    return connections;
 }

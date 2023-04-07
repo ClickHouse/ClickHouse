@@ -1,4 +1,5 @@
 #pragma once
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include "Generator.h"
 #include <Common/ZooKeeper/IKeeper.h>
@@ -12,6 +13,7 @@
 #include <Common/CurrentMetrics.h>
 
 #include <Core/Types.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include "Stats.h"
 
 using Ports = std::vector<UInt16>;
@@ -54,11 +56,12 @@ public:
 
 
 private:
+    void parseHostsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     size_t concurrency = 1;
 
     ThreadPool pool;
-    Strings hosts_strings;
+
     std::unique_ptr<Generator> generator;
     double max_time = 0;
     double delay = 1;
@@ -77,5 +80,24 @@ private:
     using Queue = ConcurrentBoundedQueue<Coordination::ZooKeeperRequestPtr>;
     Queue queue;
 
-    std::vector<std::shared_ptr<Coordination::ZooKeeper>> getConnections();
+    struct ConnectionInfo
+    {
+        std::string host;
+
+        bool secure = false;
+        int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
+        int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
+        int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
+
+        size_t sessions = 1;
+    };
+
+    std::mutex connection_mutex;
+    std::vector<ConnectionInfo> connection_infos;
+    std::vector<std::shared_ptr<Coordination::ZooKeeper>> connections;
+    std::unordered_map<size_t, size_t> connections_to_info_map;
+
+    void createConnections();
+    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info);
+    std::vector<std::shared_ptr<Coordination::ZooKeeper>> refreshConnections();
 };

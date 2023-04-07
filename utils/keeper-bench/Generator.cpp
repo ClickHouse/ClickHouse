@@ -1,5 +1,6 @@
 #include "Generator.h"
 #include "Common/Exception.h"
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include <Common/Config/ConfigProcessor.h>
 #include <random>
 #include <filesystem>
@@ -320,14 +321,122 @@ std::string PathGetter::description() const
     return description;
 }
 
+RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, bool for_multi)
+{
+    RequestGetter request_getter;
+
+    Poco::Util::AbstractConfiguration::Keys generator_keys;
+    config.keys(key, generator_keys);
+
+    bool use_weights = false;
+    size_t weight_sum = 0;
+    auto & generators = request_getter.request_generators;
+    for (const auto & generator_key : generator_keys)
+    {
+        RequestGeneratorPtr request_generator;
+
+        if (generator_key.starts_with("create"))
+            request_generator = std::make_unique<CreateRequestGenerator>();
+        else if (generator_key.starts_with("set"))
+            request_generator = std::make_unique<SetRequestGenerator>();
+        else if (generator_key.starts_with("get"))
+            request_generator = std::make_unique<GetRequestGenerator>();
+        else if (generator_key.starts_with("list"))
+            request_generator = std::make_unique<ListRequestGenerator>();
+        else if (generator_key.starts_with("multi"))
+        {
+            if (for_multi)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Nested multi requests are not allowed");
+            request_generator = std::make_unique<MultiRequestGenerator>();
+        }
+        else
+        {
+            if (for_multi)
+                continue;
+
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown generator {}", key + "." + generator_key);
+        }
+
+        request_generator->getFromConfig(key + "." + generator_key, config);
+
+        auto weight = request_generator->getWeight();
+        use_weights |= weight != 1;
+        weight_sum += weight;
+        
+        generators.push_back(std::move(request_generator));
+    }
+
+    if (generators.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No request generators found in config for key '{}'", key);
+
+
+    size_t max_value = use_weights ? weight_sum - 1 : generators.size() - 1;
+    request_getter.request_generator_picker = std::uniform_int_distribution<size_t>(0, max_value);
+
+    /// construct weight vector
+    if (use_weights)
+    {
+        auto & weights = request_getter.weights;
+        weights.reserve(generators.size());
+        weights.push_back(generators[0]->getWeight() - 1);
+
+        for (size_t i = 1; i < generators.size(); ++i)
+            weights.push_back(weights.back() + generators[i]->getWeight());
+    }
+
+    return request_getter;
+}
+
+RequestGeneratorPtr RequestGetter::getRequestGenerator() const
+{
+    static pcg64 rng(randomSeed());
+
+    auto random_number = request_generator_picker(rng);
+
+    if (weights.empty())
+        return request_generators[random_number];
+
+    for (size_t i = 0; i < request_generators.size(); ++i)
+    {
+        if (random_number <= weights[i])
+            return request_generators[i];
+    }
+
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid number generated: {}", random_number);
+}
+
+std::string RequestGetter::description() const
+{
+    std::string guard(30, '-');
+    std::string description = guard;
+
+    for (const auto & request_generator : request_generators)
+        description += fmt::format("\n{}\n", request_generator->description());
+    return description + guard;
+}
+
+void RequestGetter::startup(Coordination::ZooKeeper & zookeeper)
+{
+    for (const auto & request_generator : request_generators)
+        request_generator->startup(zookeeper);
+}
+
+const std::vector<RequestGeneratorPtr> & RequestGetter::requestGenerators() const
+{
+    return request_generators;
+}
+
 void RequestGenerator::getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
+    if (config.has(key + ".weight"))
+        weight = config.getUInt64(key + ".weight");
     getFromConfigImpl(key, config);
 }
 
 std::string RequestGenerator::description()
 {
-    return descriptionImpl();
+    std::string weight_string = weight == 1 ? "" : fmt::format("\n- weight: {}", weight);
+    return fmt::format("{}{}", descriptionImpl(), weight_string);
 }
 
 Coordination::ZooKeeperRequestPtr RequestGenerator::generate(const Coordination::ACLs & acls)
@@ -338,6 +447,11 @@ Coordination::ZooKeeperRequestPtr RequestGenerator::generate(const Coordination:
 void RequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
 {
     startupImpl(zookeeper);
+}
+
+size_t RequestGenerator::getWeight() const
+{
+    return weight;
 }
 
 CreateRequestGenerator::CreateRequestGenerator()
@@ -487,6 +601,50 @@ void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
     path.initialize(zookeeper);
 }
 
+void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.has(key + ".size"))
+        size = NumberGetter::fromConfig(key + ".size", config);
+
+    request_getter = RequestGetter::fromConfig(key, config, /*for_multi*/ true);
+};
+
+std::string MultiRequestGenerator::descriptionImpl()
+{
+    std::string size_string = size.has_value() ? fmt::format("- number of requests: {}\n", size->description()) : "";
+    return fmt::format(
+        "Multi Request Generator\n"
+        "{}"
+        "- requests:\n{}",
+        size_string,
+        request_getter.description());
+}
+
+Coordination::ZooKeeperRequestPtr MultiRequestGenerator::generateImpl(const Coordination::ACLs & acls)
+{
+    Coordination::Requests ops;
+
+    if (size)
+    {
+        auto request_count = size->getNumber(); 
+
+        for (size_t i = 0; i < request_count; ++i)
+            ops.push_back(request_getter.getRequestGenerator()->generate(acls));
+    }
+    else
+    {
+        for (const auto & request_generator : request_getter.requestGenerators())
+            ops.push_back(request_generator->generate(acls));
+    }
+
+    return std::make_shared<ZooKeeperMultiRequest>(ops, acls);
+}
+
+void MultiRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+{
+    request_getter.startup(zookeeper);
+}
+
 Generator::Generator(const Poco::Util::AbstractConfiguration & config)
 {
     Coordination::ACL acl;
@@ -497,55 +655,25 @@ Generator::Generator(const Poco::Util::AbstractConfiguration & config)
 
     static const std::string generator_key = "generator";
 
+    static const std::string setup_key = generator_key + ".setup";
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(setup_key, keys);
+    for (const auto & key : keys)
     {
-        static const std::string setup_key = generator_key + ".setup";
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(setup_key, keys);
-        for (const auto & key : keys)
+        if (key.starts_with("node"))
         {
-            if (key.starts_with("node"))
-            {
-                const auto & node = root_nodes.emplace_back(parseNode(setup_key + "." + key, config));
+            const auto & node = root_nodes.emplace_back(parseNode(setup_key + "." + key, config));
 
-                std::cout << "---- Will create tree ----" << std::endl;
-                node->dumpTree();
-            }
+            std::cout << "---- Will create tree ----" << std::endl;
+            node->dumpTree();
         }
     }
-    {
-        static const std::string requests_key = generator_key + ".requests";
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(requests_key, keys);
 
-        std::cout << "\n---- Collecting request generators ----" << std::endl;
-        for (const auto & key : keys)
-        {
-            RequestGeneratorPtr request_generator;
-
-            if (key.starts_with("create"))
-                request_generator = std::make_unique<CreateRequestGenerator>();
-            else if (key.starts_with("set"))
-                request_generator = std::make_unique<SetRequestGenerator>();
-            else if (key.starts_with("get"))
-                request_generator = std::make_unique<GetRequestGenerator>();
-            else if (key.starts_with("list"))
-                request_generator = std::make_unique<ListRequestGenerator>();
-
-            if (!request_generator)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", key);
-
-            request_generator->getFromConfig(requests_key + "." + key, config);
-
-            std::cout << fmt::format("\n{}\n", request_generator->description()) << std::endl;
-            request_generators.push_back(std::move(request_generator));
-        }
-
-        if (request_generators.empty())
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "No request generators found in config");
-        std::cout << "---- Done collecting request generators ----" << std::endl;
-    }
-
-    request_picker = std::uniform_int_distribution<size_t>(0, request_generators.size() - 1);
+    std::cout << "\n---- Collecting request generators ----" << std::endl;
+    static const std::string requests_key = generator_key + ".requests";
+    request_getter = RequestGetter::fromConfig(requests_key, config);
+    std::cout << request_getter.description() << std::endl;
+    std::cout << "---- Done collecting request generators ----" << std::endl;
 }
 
 std::shared_ptr<Generator::Node> Generator::parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config)
@@ -627,15 +755,12 @@ void Generator::startup(Coordination::ZooKeeper & zookeeper)
     }
     std::cout << "---- Created test data ----" << std::endl;
 
-
     std::cout << "---- Initializing generators ----" << std::endl;
 
-    for (const auto & generator : request_generators)
-        generator->startup(zookeeper);
+    request_getter.startup(zookeeper);
 }
 
 Coordination::ZooKeeperRequestPtr Generator::generate()
 {
-    static pcg64 rng(randomSeed());
-    return request_generators[request_picker(rng)]->generate(default_acls);
+    return request_getter.getRequestGenerator()->generate(default_acls);
 }

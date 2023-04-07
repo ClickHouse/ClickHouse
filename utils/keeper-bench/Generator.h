@@ -178,14 +178,18 @@ struct RequestGenerator
     std::string description();
 
     void startup(Coordination::ZooKeeper & zookeeper);
+
+    size_t getWeight() const;
 private:
     virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) = 0;
     virtual std::string descriptionImpl() = 0;
     virtual Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) = 0;
     virtual void startupImpl(Coordination::ZooKeeper &) {}
+
+    size_t weight = 1;
 };
 
-using RequestGeneratorPtr = std::unique_ptr<RequestGenerator>;
+using RequestGeneratorPtr = std::shared_ptr<RequestGenerator>;
 
 struct CreateRequestGenerator final : public RequestGenerator
 {
@@ -241,6 +245,32 @@ private:
     PathGetter path;
 };
 
+struct RequestGetter
+{
+    static RequestGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, bool for_multi = false);
+
+    RequestGeneratorPtr getRequestGenerator() const;
+    std::string description() const;
+    void startup(Coordination::ZooKeeper & zookeeper);
+    const std::vector<RequestGeneratorPtr> & requestGenerators() const;
+private:
+    std::vector<RequestGeneratorPtr> request_generators;
+    std::vector<size_t> weights;
+    mutable std::uniform_int_distribution<size_t> request_generator_picker;
+};
+
+struct MultiRequestGenerator final : public RequestGenerator
+{
+private:
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    std::string descriptionImpl() override;
+    Coordination::ZooKeeperRequestPtr generateImpl(const Coordination::ACLs & acls) override;
+    void startupImpl(Coordination::ZooKeeper & zookeeper) override;
+
+    std::optional<NumberGetter> size;
+    RequestGetter request_getter;
+};
+
 class Generator
 {
 public:
@@ -263,7 +293,7 @@ private:
 
     std::uniform_int_distribution<size_t> request_picker;
     std::vector<std::shared_ptr<Node>> root_nodes;
-    std::vector<RequestGeneratorPtr> request_generators;
+    RequestGetter request_getter;
     Coordination::ACLs default_acls;
 };
 
