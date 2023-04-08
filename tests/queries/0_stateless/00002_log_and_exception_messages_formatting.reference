@@ -10,6 +10,6 @@ noisy Info messages	0.05
 noisy Warning messages	0.01
 noisy Error messages	0.02
 no Fatal messages	0
-number of too noisy messages	5
+number of too noisy messages	3
 number of noisy messages	10
 incorrect patterns	15

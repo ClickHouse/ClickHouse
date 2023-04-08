@@ -331,7 +331,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                         ///                           ^
                         ///                           file_offset_of_buffer_end
 
-                        LOG_TEST(log, "Predownload. File segment info: {}", file_segment->getInfoForLog());
+                        // LOG_TEST(log, "Predownload. File segment info: {}", file_segment->getInfoForLog());
                         chassert(file_offset_of_buffer_end > file_segment->getCurrentWriteOffset());
                         bytes_to_predownload = file_offset_of_buffer_end - file_segment->getCurrentWriteOffset();
                         chassert(bytes_to_predownload < file_segment->range().size());
@@ -387,12 +387,12 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_se
     chassert(file_segment->range() == range);
     chassert(file_offset_of_buffer_end >= range.left && file_offset_of_buffer_end <= range.right);
 
-    LOG_TEST(
-        log,
-        "Current file segment: {}, read type: {}, current file offset: {}",
-        range.toString(),
-        toString(read_type),
-        file_offset_of_buffer_end);
+    // LOG_TEST(
+    //     log,
+    //     "Current file segment: {}, read type: {}, current file offset: {}",
+    //     range.toString(),
+    //     toString(read_type),
+    //     file_offset_of_buffer_end);
 
     read_buffer_for_file_segment->setReadUntilPosition(range.right + 1); /// [..., range.right]
 
@@ -469,7 +469,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_se
 
 bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 {
-    LOG_TEST(log, "Completed segment: {}", (*current_file_segment_it)->range().toString());
+    // LOG_TEST(log, "Completed segment: {}", (*current_file_segment_it)->range().toString());
 
     if (enable_logging)
         appendFilesystemCacheLog((*current_file_segment_it)->range(), read_type);
@@ -588,7 +588,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
             bool continue_predownload = file_segment->reserve(current_predownload_size);
             if (continue_predownload)
             {
-                LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
+                // LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
 
                 chassert(file_segment->getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
 
@@ -817,6 +817,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     chassert(!internal_buffer.empty());
+    chassert(internal_buffer.size() == settings.remote_fs_buffer_size);
 
     swap(*implementation_buffer);
 
@@ -956,27 +957,27 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     chassert(!file_segment->isDownloader());
 
-    LOG_TEST(
-        log,
-        "Key: {}. Returning with {} bytes (actually read: {}), buffer position: {} (offset: {}, predownloaded: {}), "
-        "buffer available: {}, current range: {}, current offset: {}, file segment state: {}, "
-        "current write offset: {}, read_type: {}, reading until position: {}, started with offset: {}, "
-        "remaining ranges: {}",
-        getHexUIntLowercase(cache_key),
-        working_buffer.size(),
-        size,
-        getPosition(),
-        offset(),
-        needed_to_predownload,
-        available(),
-        current_read_range.toString(),
-        file_offset_of_buffer_end,
-        FileSegment::stateToString(file_segment->state()),
-        file_segment->getCurrentWriteOffset(),
-        toString(read_type),
-        read_until_position,
-        first_offset,
-        file_segments_holder->toString());
+    // LOG_TEST(
+    //     log,
+    //     "Key: {}. Returning with {} bytes (actually read: {}), buffer position: {} (offset: {}, predownloaded: {}), "
+    //     "buffer available: {}, current range: {}, current offset: {}, file segment state: {}, "
+    //     "current write offset: {}, read_type: {}, reading until position: {}, started with offset: {}, "
+    //     "remaining ranges: {}",
+    //     getHexUIntLowercase(cache_key),
+    //     working_buffer.size(),
+    //     size,
+    //     getPosition(),
+    //     offset(),
+    //     needed_to_predownload,
+    //     available(),
+    //     current_read_range.toString(),
+    //     file_offset_of_buffer_end,
+    //     FileSegment::stateToString(file_segment->state()),
+    //     file_segment->getCurrentWriteOffset(),
+    //     toString(read_type),
+    //     read_until_position,
+    //     first_offset,
+    //     file_segments_holder->toString());
 
     if (size == 0 && file_offset_of_buffer_end < read_until_position)
     {
