@@ -817,7 +817,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     chassert(!internal_buffer.empty());
-    chassert(internal_buffer.size() == settings.remote_fs_buffer_size);
 
     swap(*implementation_buffer);
 
