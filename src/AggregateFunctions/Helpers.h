@@ -130,6 +130,8 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
