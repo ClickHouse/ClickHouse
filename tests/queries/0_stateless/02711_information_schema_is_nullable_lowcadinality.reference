@@ -1,0 +1,3 @@
+low_card_nullable_name	LowCardinality(Nullable(String))	1
+name	String	0
+nullable_name	Nullable(String)	1
