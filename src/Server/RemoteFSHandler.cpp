@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int UNKNOWN_DISK;
     extern const int POCO_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
@@ -74,7 +75,8 @@ namespace ErrorCodes
 
 enum {
     Hello = 0,
-    Ping = 1
+    Ping = 1,
+    Error = 255
 };
 
 
@@ -133,14 +135,19 @@ void RemoteFSHandler::run()
         receiveHello();
         sendHello();
     }
-    catch (const Exception & e) /// Typical for an incorrect username, password, or address.
+    catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
             LOG_INFO(log, "Client has gone away.");
             return;
         }
-
+        if (e.code() == ErrorCodes::UNKNOWN_DISK)
+        {
+            LOG_TRACE(log, "Got error {}", e.message());
+            sendError(e.message());
+            return;
+        }
         throw;
     }
 
@@ -200,10 +207,14 @@ void RemoteFSHandler::receiveHello()
     UInt64 packet_type = 0;
 
     readVarUInt(packet_type, *in);
+    LOG_TRACE(log, "Received hello");
     if (packet_type != Hello)
     {
         throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
     }
+    std::string disk_name;
+    readStringBinary(disk_name, *in);
+    disk = server.context()->getDisk(disk_name);
 }
 
 bool RemoteFSHandler::receivePacket()
@@ -213,16 +224,24 @@ bool RemoteFSHandler::receivePacket()
 
     switch (packet_type)
     {
-        case Ping:
-            sendPing();
-            break;
         case Hello:
-            sendHello();
-            break;
+            receiveUnexpectedHello();
+        case Ping:
+            writeVarUInt(Ping, *out);
+            out->next();
+            return false;
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
-    return true;
+}
+
+void RemoteFSHandler::receiveUnexpectedHello()
+{
+    String skip_string;
+
+    readStringBinary(skip_string, *in);
+
+    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
 
 void RemoteFSHandler::sendHello()
@@ -231,9 +250,11 @@ void RemoteFSHandler::sendHello()
     out->next();
 }
 
-void RemoteFSHandler::sendPing()
+
+void RemoteFSHandler::sendError(std::string errorMsg) 
 {
-    writeVarUInt(Ping, *out);
+    writeVarUInt(Error, *out);
+    writeStringBinary(errorMsg, *out);
     out->next();
 }
 

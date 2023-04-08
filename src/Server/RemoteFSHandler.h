@@ -75,12 +75,15 @@ private:
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
 
+    DiskPtr disk;
+
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     void receiveHello();
     bool receivePacket();
+    [[noreturn]] void receiveUnexpectedHello();
 
     void sendHello();
-    void sendPing();
+    void sendError(std::string errorMsg);
 };
 }

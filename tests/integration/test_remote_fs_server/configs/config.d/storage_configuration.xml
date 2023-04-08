@@ -1,0 +1,12 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <default>
+                <keep_free_space_bytes>1024</keep_free_space_bytes>
+            </default>
+            <client_disk>
+                <path>/client_disk/</path>
+            </client_disk>
+        </disks>
+    </storage_configuration>
+</clickhouse>
