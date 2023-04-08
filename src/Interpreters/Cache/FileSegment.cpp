@@ -524,7 +524,7 @@ void FileSegment::completePartAndResetDownloaderUnlocked(std::unique_lock<std::m
     resetDownloadingStateUnlocked(segment_lock);
     resetDownloaderUnlocked(segment_lock);
 
-    LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(segment_lock));
+    /// LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(segment_lock));
     cv.notify_all();
 }
 
