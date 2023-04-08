@@ -477,6 +477,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         static_cast<uint64_t>(data_settings->replicated_max_parallel_fetches_for_host));
 
     #if USE_ENET
+    LOG_INFO(log, "ENET");
     in->setProtocol("enet");
     #endif
 

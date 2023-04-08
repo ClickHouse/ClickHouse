@@ -108,7 +108,11 @@ namespace detail
             std::optional<size_t> begin;
             std::optional<size_t> end;
         };
+        #if USE_ENET
+        std::string protocol = "enet";
+        #else
         std::string protocol = "tcp";
+        #endif
 
         void setProtocol(std::string protocol_)
         {
