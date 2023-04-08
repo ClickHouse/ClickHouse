@@ -2,6 +2,8 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 

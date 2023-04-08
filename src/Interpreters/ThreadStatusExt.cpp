@@ -19,6 +19,7 @@
 #include <Common/setThreadName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
