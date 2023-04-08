@@ -217,6 +217,8 @@ bool RemoteFSHandler::receivePacket()
             sendPing();
             break;
         case Hello:
+            sendHello();
+            break;
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
