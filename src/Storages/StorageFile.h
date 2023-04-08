@@ -3,7 +3,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 
-#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
