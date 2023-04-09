@@ -797,7 +797,7 @@ Pipe StorageFile::read(
     ///       It happens if globs in file(path, ...) expands to empty set i.e. no files to process
     if (num_streams > 0 && num_streams < max_num_streams)
     {
-        pipe.addTransform(std::make_shared<ResizeProcessor>(pipe.getHeader(), num_streams, max_num_streams));
+        pipe.resize(max_num_streams);
     }
     return pipe;
 }
