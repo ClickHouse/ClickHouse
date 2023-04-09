@@ -8877,7 +8877,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             if (zookeeper->tryGet(lost_part_count_path, lost_part_count_str, &lost_part_count_stat))
             {
                 UInt64 lost_part_count = lost_part_count_str.empty() ? 0 : parse<UInt64>(lost_part_count_str);
-                ops.emplace_back(zkutil::makeSetRequest(lost_part_count_path, fmt::format("{}", lost_part_count + 1), lost_part_count_stat.version));
+                ops.emplace_back(zkutil::makeSetRequest(lost_part_count_path, toString(lost_part_count + 1), lost_part_count_stat.version));
             }
             else
             {
