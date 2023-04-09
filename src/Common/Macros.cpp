@@ -1,8 +1,9 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
+#include <Core/ServerUUID.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -104,6 +105,15 @@ String Macros::expand(const String & s,
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Macro 'uuid' should not be inside another macro");
             res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
+        }
+        else if (macro_name == "server_uuid")
+        {
+            auto uuid = ServerUUID::get();
+            if (UUIDHelpers::Nil == uuid)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Macro {server_uuid} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
+            res += toString(uuid);
+            info.expanded_other = true;
         }
         else if (info.shard && macro_name == "shard")
         {
