@@ -80,7 +80,8 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     void receiveHello();
-    bool receivePacket();
+    void receivePacket();
+    void receivePath(std::string &path);
     [[noreturn]] void receiveUnexpectedHello();
 
     void sendHello();

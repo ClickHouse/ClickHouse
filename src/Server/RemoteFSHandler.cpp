@@ -76,6 +76,36 @@ namespace ErrorCodes
 enum {
     Hello = 0,
     Ping = 1,
+    GetTotalSpace = 2,
+    GetAvailableSpace = 3,
+    GetUnreservedSpace = 4,
+    Exists = 5, // OK
+    IsFile = 6, // OK
+    IsDirectory = 7, // OK
+    GetFileSize = 8,
+    CreateDirectory = 9, // OK
+    CreateDirectories = 10, // OK
+    ClearDirectory = 11,
+    MoveDirectory = 12,
+    IterateDirectory = 13, // ---------- HARD ----------
+    CreateFile = 14, // OK
+    MoveFile = 15,
+    ReplaceFile = 16, 
+    Copy = 17,
+    CopyDirectoryContent = 18,
+    ListFiles = 19,
+    ReadFile = 20, // ---------- HARD ----------
+    WriteFile = 21, // ---------- HARD ----------
+    RemoveFile = 22,
+    RemoveFileIfExists = 23,
+    RemoveDirectory = 24,
+    RemoveRecursive = 25,
+    SetLastModified = 26,
+    GetLastModified = 27,
+    GetLastChanged = 28,
+    SetReadOnly = 29,
+    CreateHardLink = 30,
+    TruncateFile = 31,
     Error = 255
 };
 
@@ -176,11 +206,11 @@ void RemoteFSHandler::run()
 
         try
         {
-            if (!receivePacket())
-                continue;
+            receivePacket();
         }
         catch (...)
         {
+            sendError(getCurrentExceptionMessage(false));
             throw;
         }
     }
@@ -217,10 +247,15 @@ void RemoteFSHandler::receiveHello()
     disk = server.context()->getDisk(disk_name);
 }
 
-bool RemoteFSHandler::receivePacket()
+void RemoteFSHandler::receivePacket()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
+
+    LOG_TRACE(log, "Received {}", packet_type);
+
+    std::string path;
+    bool boolRes;
 
     switch (packet_type)
     {
@@ -229,10 +264,55 @@ bool RemoteFSHandler::receivePacket()
         case Ping:
             writeVarUInt(Ping, *out);
             out->next();
-            return false;
+            break;
+        case Exists:
+            receivePath(path);
+            boolRes = disk->exists(path);
+            writeVarUInt(Exists, *out);
+            writeBoolText(boolRes, *out);
+            out->next();
+            break;
+        case IsFile:
+            receivePath(path);
+            boolRes = disk->isFile(path);
+            writeVarUInt(IsFile, *out);
+            writeBoolText(boolRes, *out);
+            out->next();
+            break;
+        case IsDirectory:
+            receivePath(path);
+            boolRes = disk->isDirectory(path);
+            writeVarUInt(IsDirectory, *out);
+            writeBoolText(boolRes, *out);
+            out->next();
+            break;
+        case CreateDirectory:
+            receivePath(path);
+            disk->createDirectory(path);
+            writeVarUInt(CreateDirectory, *out);
+            out->next();
+            break;
+        case CreateDirectories:
+            receivePath(path);
+            disk->createDirectories(path);
+            writeVarUInt(CreateDirectories, *out);
+            out->next();
+            break;
+        case CreateFile:
+            receivePath(path);
+            disk->createFile(path);
+            writeVarUInt(CreateFile, *out);
+            out->next();
+            break;
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
+}
+
+void RemoteFSHandler::receivePath(std::string &path)
+{
+    readStringBinary(path, *in);
+    LOG_TRACE(log, "Received path {}", path);
 }
 
 void RemoteFSHandler::receiveUnexpectedHello()
