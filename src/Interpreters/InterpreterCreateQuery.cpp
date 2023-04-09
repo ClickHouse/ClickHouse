@@ -30,6 +30,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageMerge.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -1399,20 +1401,23 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
     }
 
-    std::unordered_set<std::string_view> all_columns;
-    all_columns.reserve(properties.columns.size());
-
-    for (const auto & column : properties.columns)
-        all_columns.emplace(column.name);
-
-    auto reserved_columns = res->getVirtuals().getNames();
-    for (const auto & column : reserved_columns)
+    if (!create.attach && !typeid_cast<StorageDistributed *>(res.get()) && !typeid_cast<StorageMerge *>(res.get()))
     {
-        if (all_columns.contains(column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Cannot create table with column '{}' for engine {} because it "
-                            "is reserved for internal usage",
-                            column, res->getName());
+        std::unordered_set<std::string_view> all_columns;
+        all_columns.reserve(properties.columns.size());
+
+        for (const auto & column : properties.columns)
+            all_columns.emplace(column.name);
+
+        auto reserved_columns = res->getVirtuals().getNames();
+        for (const auto & column : reserved_columns)
+        {
+            if (all_columns.contains(column))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Cannot create table with column '{}' for engine {} because it "
+                                "is reserved for internal usage",
+                                column, res->getName());
+        }
     }
 
     if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
