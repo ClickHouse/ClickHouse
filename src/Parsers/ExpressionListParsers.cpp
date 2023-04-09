@@ -779,6 +779,41 @@ protected:
 };
 
 
+struct ParserExpressionImpl
+{
+    static std::vector<std::pair<const char *, Operator>> operators_table;
+    static std::vector<std::pair<const char *, Operator>> unary_operators_table;
+    static const char * overlapping_operators_to_skip[];
+
+    static Operator finish_between_operator;
+
+    ParserCompoundIdentifier identifier_parser{false, true};
+    ParserNumber number_parser;
+    ParserAsterisk asterisk_parser;
+    ParserLiteral literal_parser;
+    ParserTupleOfLiterals tuple_literal_parser;
+    ParserArrayOfLiterals array_literal_parser;
+    ParserSubstitution substitution_parser;
+    ParserMySQLGlobalVariable mysql_global_variable_parser;
+
+    ParserKeyword any_parser{"ANY"};
+    ParserKeyword all_parser{"ALL"};
+
+    // Recursion
+    ParserQualifiedAsterisk qualified_asterisk_parser;
+    ParserColumnsMatcher columns_matcher_parser;
+    ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
+    ParserSubquery subquery_parser;
+
+    bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
+
+    using Layers = std::vector<std::unique_ptr<Layer>>;
+
+    Action tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
+    Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
+};
+
+
 class ExpressionLayer : public Layer
 {
 public:
@@ -801,7 +836,7 @@ public:
         return Layer::getResultImpl(node);
     }
 
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & /*action*/) override
     {
         if (pos->type == TokenType::Comma)
         {
@@ -814,27 +849,40 @@ public:
             ///  - SELECT a, b, c, FROM table
             ///  - SELECT 1,
 
-            /// For this purpose we eliminate the following cases:
+            /// For this purpose we need to eliminate the following cases:
             ///  1. WITH 1 AS from SELECT 2, from
             ///  2. SELECT to, from FROM table
             ///  3. SELECT to, from AS alias FROM table
-            ///  4. SELECT to, from + to FROM table
+            ///  4. SELECT to, from + to, from IN [1,2,3], FROM table
 
+            Expected test_expected;
             auto test_pos = pos;
             ++test_pos;
 
+            /// End of query
             if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
             {
-                if (!ParserKeyword("FROM").ignore(test_pos, expected))
+                /// If we can't parse FROM then return
+                if (!ParserKeyword("FROM").ignore(test_pos, test_expected))
                     return true;
 
-                if (ParserKeyword("FROM").ignore(test_pos, expected))
+                /// If we parse a second FROM then the first one was a name of a column
+                if (ParserKeyword("FROM").ignore(test_pos, test_expected))
                     return true;
 
-                if (ParserAlias(false).ignore(test_pos, expected))
+                /// If we parse an explicit alias to FROM, then it was a name of a column
+                if (ParserAlias(false).ignore(test_pos, test_expected))
                     return true;
 
-                if (!ParserIdentifier(true).ignore(test_pos, expected))
+                /// If we parse an operator after FROM then it was a name of a column
+                auto cur_op = ParserExpressionImpl::operators_table.begin();
+                for (; cur_op != ParserExpressionImpl::operators_table.end(); ++cur_op)
+                {
+                    if (parseOperator(test_pos, cur_op->first, test_expected))
+                        break;
+                }
+
+                if (cur_op != ParserExpressionImpl::operators_table.end())
                     return true;
             }
 
@@ -2204,40 +2252,6 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
     return true;
 }
-
-struct ParserExpressionImpl
-{
-    static std::vector<std::pair<const char *, Operator>> operators_table;
-    static std::vector<std::pair<const char *, Operator>> unary_operators_table;
-    static const char * overlapping_operators_to_skip[];
-
-    static Operator finish_between_operator;
-
-    ParserCompoundIdentifier identifier_parser{false, true};
-    ParserNumber number_parser;
-    ParserAsterisk asterisk_parser;
-    ParserLiteral literal_parser;
-    ParserTupleOfLiterals tuple_literal_parser;
-    ParserArrayOfLiterals array_literal_parser;
-    ParserSubstitution substitution_parser;
-    ParserMySQLGlobalVariable mysql_global_variable_parser;
-
-    ParserKeyword any_parser{"ANY"};
-    ParserKeyword all_parser{"ALL"};
-
-    // Recursion
-    ParserQualifiedAsterisk qualified_asterisk_parser;
-    ParserColumnsMatcher columns_matcher_parser;
-    ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
-    ParserSubquery subquery_parser;
-
-    bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
-
-    using Layers = std::vector<std::unique_ptr<Layer>>;
-
-    Action tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
-    Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
-};
 
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
