@@ -226,6 +226,17 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 Concatenates string representations of values listed in the array with the separator. `separator` is an optional parameter: a constant string, set to an empty string by default.
 Returns the string.
 
+**Example**
+
+``` sql
+SELECT arrayStringConcat(['12/05/2021', '12:50:00'], ' ') AS DateString;
+```
+```text
+┌─DateString──────────┐
+│ 12/05/2021 12:50:00 │
+└─────────────────────┘
+```
+
 ## alphaTokens(s[, max_substrings]), splitByAlpha(s[, max_substrings])
 
 Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an array of substrings.

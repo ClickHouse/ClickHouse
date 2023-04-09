@@ -1122,6 +1122,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
     :::note "Предупреждение"
     Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
     :::
+
 ## max_query_size {#settings-max_query_size}
 
 Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
@@ -2517,68 +2518,27 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
-Задает количество потоков для выполнения фонового сброса данных в таблицах с движком [Buffer](../../engines/table-engines/special/buffer.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_buffer_flush_schedule_pool_size).
 
 ## background_move_pool_size {#background_move_pool_size}
 
-Задает количество потоков для фоновых перемещений кусков между дисками. Работает для таблиц с движком [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 8.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_move_pool_size).
 
 ## background_schedule_pool_size {#background_schedule_pool_size}
 
-Задает количество потоков для выполнения фоновых задач. Работает для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц, стримов в [Kafka](../../engines/table-engines/integrations/kafka.md) и обновления IP адресов у записей во внутреннем [DNS кеше](../server-configuration-parameters/settings.md#server-settings-dns-cache-update-period). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 128.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_schedule_pool_size).
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Задает количество потоков для скачивания кусков данных для [реплицируемых](../../engines/table-engines/mergetree-family/replication.md) таблиц. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе. Для использования в продакшене с частыми небольшими вставками или медленным кластером ZooKeeper рекомендуется использовать значение по умолчанию.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 8.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_fetches_pool_size).
 
 ## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
 
-Задает количество потоков для выполнения фоновых задач. Работает для таблиц с движком [Distributed](../../engines/table-engines/special/distributed.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_distributed_schedule_pool_size).
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Задает количество потоков для фонового потокового вывода сообщений. Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
-
-**Смотрите также**
-
--   Движок [Kafka](../../engines/table-engines/integrations/kafka.md#kafka).
--   Движок [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine).
+Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
@@ -3388,6 +3348,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 │ 109 │
 └─────┘
 ```
+
 ## http_connection_timeout {#http_connection_timeout}
 
 Тайм-аут для HTTP-соединения (в секундах).
@@ -4084,3 +4045,32 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
 
 Значение по умолчанию: `''`.
+
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
+Если установлено значение `true` и пользователь хочет прервать запрос (например, с помощью `Ctrl+C` на клиенте), то запрос продолжает выполнение только для данных, которые уже были считаны из таблицы. После этого он вернет частичный результат запроса для той части таблицы, которая была прочитана. Чтобы полностью остановить выполнение запроса без частичного результата, пользователь должен отправить 2 запроса отмены.
+
+**Пример с выключенной настройкой при нажатии Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000)
+
+Cancelling query.
+Ok.
+Query was cancelled.
+
+0 rows in set. Elapsed: 1.334 sec. Processed 52.65 million rows, 421.23 MB (39.48 million rows/s., 315.85 MB/s.)
+```
+
+**Пример с включенной настройкой при нажатии Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_cancel=true
+
+┌──────sum(number)─┐
+│ 1355411451286266 │
+└──────────────────┘
+
+1 row in set. Elapsed: 1.331 sec. Processed 52.13 million rows, 417.05 MB (39.17 million rows/s., 313.33 MB/s.)
+```
+
+Возможные значения:: `true`, `false`
+
+Значение по умолчанию: `false`

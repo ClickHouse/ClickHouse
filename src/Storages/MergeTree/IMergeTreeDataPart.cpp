@@ -34,6 +34,8 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
 
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+
 
 namespace CurrentMetrics
 {
@@ -880,7 +882,7 @@ void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSetti
         }
         catch (...)
         {
-            tryLogCurrentException("DataPartStorageOnDiskFull");
+            tryLogCurrentException("IMergeTreeDataPart");
         }
 
         throw;
@@ -1524,6 +1526,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     {
         size_t file_size = getDataPartStorage().getFileSize(TXN_VERSION_METADATA_FILE_NAME);
         auto buf = getDataPartStorage().readFile(TXN_VERSION_METADATA_FILE_NAME, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+
+        /// FIXME https://github.com/ClickHouse/ClickHouse/issues/48465
+        if (dynamic_cast<CachedOnDiskReadBufferFromFile *>(buf.get()))
+            return true;
 
         readStringUntilEOF(content, *buf);
         ReadBufferFromString str_buf{content};
