@@ -41,7 +41,7 @@ protected:
     SerializationPtr doGetDefaultSerialization() const override;
 };
 
-inline std::string getDateTimeTimezone(const IDataType & data_type);
+std::string getDateTimeTimezone(const IDataType & data_type);
 
 }
 

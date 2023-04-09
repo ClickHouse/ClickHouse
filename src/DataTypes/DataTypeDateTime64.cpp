@@ -57,14 +57,14 @@ SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
     return std::make_shared<SerializationDateTime64>(scale, *this);
 }
 
-inline std::string getDateTimeTimezone(const IDataType & data_type)
+std::string getDateTimeTimezone(const IDataType & data_type)
 {
     if (const auto * type = typeid_cast<const DataTypeDateTime *>(&data_type))
         return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
     if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
         return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal scale from type {}", data_type.getName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get time zone from type {}", data_type.getName());
 }
 
 }
