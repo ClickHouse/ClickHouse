@@ -18,12 +18,14 @@ Group=clickhouse
 Restart=always
 RestartSec=30
 # Since ClickHouse is systemd aware default 1m30sec may not be enough
-TimeoutStartSec=inifinity
+TimeoutStartSec=0
 # %p is resolved to the systemd unit name
 RuntimeDirectory=%p 
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=%t/%p/%p.pid
 # Minus means that this file is optional.
 EnvironmentFile=-/etc/default/%p
+# Bring back /etc/default/clickhouse for backward compatibility
+EnvironmentFile=-/etc/default/clickhouse
 LimitCORE=infinity
 LimitNOFILE=500000
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE CAP_NET_BIND_SERVICE

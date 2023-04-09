@@ -1,7 +1,7 @@
 SELECT
     t1.*,
     t2.*,
-    'world',
+    'world' AS constant,
     isConstant('world')
 FROM
 (
@@ -19,7 +19,7 @@ LEFT JOIN
 SELECT
     t1.*,
     t2.*,
-    123,
+    123 AS constant,
     isConstant('world')
 FROM
 (

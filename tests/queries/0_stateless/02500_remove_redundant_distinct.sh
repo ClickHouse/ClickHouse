@@ -256,3 +256,7 @@ FROM
     GROUP BY a WITH TOTALS
 )"
 run_query "$query"
+
+echo "-- DISTINCT COUNT() with GROUP BY => do _not_ remove DISTINCT"
+query="select distinct count() from numbers(10) group by number"
+run_query "$query"

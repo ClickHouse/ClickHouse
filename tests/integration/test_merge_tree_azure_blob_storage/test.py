@@ -96,8 +96,11 @@ def test_read_after_cache_is_wiped(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
 
-    values = "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
-
+    # We insert into different partitions, so do it separately to avoid
+    # test flakyness when retrying the query in case of retriable exception.
+    values = "('2021-11-13',3,'hello')"
+    azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
+    values = "('2021-11-14',4,'heyo')"
     azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
 
     # Wipe cache
@@ -108,8 +111,10 @@ def test_read_after_cache_is_wiped(cluster):
 
     # After cache is populated again, only .bin files should be accessed from Blob Storage.
     assert (
-        azure_query(node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values")
-        == values
+        azure_query(
+            node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values"
+        ).strip()
+        == "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
     )
 
 
