@@ -145,9 +145,9 @@
       -->
     <http_port>8123</http_port>
 
-     <!-- Port that allows to download files from directory.
+     <!-- Setting that allows to download files from directory.
           It is essentially used for completing HTTP-01 challenge and fetching
-          certificates from Let's Encrypt. (Should be equal to 80)
+          certificates from Let's Encrypt. (Port should be equal to 80)
       -->
     <file_system>
         <port>8124</port>
