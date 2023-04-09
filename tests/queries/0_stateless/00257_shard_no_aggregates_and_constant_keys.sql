@@ -1,6 +1,7 @@
 -- Tags: shard
 
-set enable_positional_arguments=0;
+set allow_experimental_analyzer = 1;
+set enable_positional_arguments = 0;
 
 select 40 as z from (select * from system.numbers limit 3) group by z;
 select 41 as z from remote('127.0.0.{2,3}', system.one) group by z;

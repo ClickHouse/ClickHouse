@@ -19,8 +19,8 @@ Kafka lets you:
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1],
+    name2 [type2],
     ...
 ) ENGINE = Kafka()
 SETTINGS
@@ -102,7 +102,7 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
@@ -112,6 +112,10 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 ```
 
 </details>
+
+:::info
+The Kafka table engine doesn't support columns with [default value](../../../sql-reference/statements/create/table.md#default_value). If you need columns with default value, you can add them at materialized view level (see below).
+:::
 
 ## Description {#description}
 
@@ -255,4 +259,4 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+-   [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)

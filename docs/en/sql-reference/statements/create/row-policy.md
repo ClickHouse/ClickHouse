@@ -5,9 +5,9 @@ sidebar_label: ROW POLICY
 title: "CREATE ROW POLICY"
 ---
 
-Creates a [row policy](../../../operations/access-rights.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
+Creates a [row policy](../../../guides/sre/user-management/index.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
-:::warning    
+:::tip
 Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
 :::
 
@@ -31,7 +31,7 @@ In the section `TO` you can provide a list of users and roles this policy should
 
 Keyword `ALL` means all the ClickHouse users including current user. Keyword `ALL EXCEPT` allow to exclude some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-:::note    
+:::note
 If there are no row policies defined for a table then any user can `SELECT` all the row from the table. Defining one or more row policies for the table makes the access to the table depending on the row policies no matter if those row policies are defined for the current user or not. For example, the following policy
 
 `CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`

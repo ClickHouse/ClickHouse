@@ -211,9 +211,14 @@ public:
     void flush()
     {
         auto * file_buffer = tryGetFileBuffer();
-        /// Fsync file system if needed
-        if (file_buffer && log_file_settings.force_sync)
-            file_buffer->sync();
+        if (file_buffer)
+        {
+            /// Fsync file system if needed
+            if (log_file_settings.force_sync)
+                file_buffer->sync();
+            else
+                file_buffer->next();
+        }
     }
 
     uint64_t getStartIndex() const

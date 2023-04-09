@@ -18,6 +18,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/copyData.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -213,7 +214,7 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (local_context->canUseParallelReplicasOnInitiator())
+    if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
         auto table_id = getStorageID();
 
@@ -223,8 +224,12 @@ void StorageMergeTree::read(
 
         auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
 
-        Block header =
-            InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        Block header;
+
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
+        else
+            header = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
         ClusterProxy::SelectStreamFactory select_stream_factory =
             ClusterProxy::SelectStreamFactory(
@@ -240,10 +245,12 @@ void StorageMergeTree::read(
     }
     else
     {
+        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
+
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
             local_context, max_block_size, num_streams,
-            processed_stage, nullptr, /*enable_parallel_reading*/local_context->canUseParallelReplicasOnFollower()))
+            processed_stage, nullptr, enable_parallel_reading))
             query_plan = std::move(*plan);
     }
 
@@ -732,7 +739,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
-        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
     }
 
@@ -1306,7 +1313,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
-        std::lock_guard<std::mutex> lock(currently_processing_in_background_mutex);
+        std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.size() <= finished_mutations_to_keep)
             return 0;
@@ -2075,10 +2082,10 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
 
     Int64 min_data_version = std::numeric_limits<Int64>::max();
     for (const auto & data_part : data_parts)
-        min_data_version = std::min(min_data_version, data_part->info.getDataVersion());
+        min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
 
     backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, local_context));
-    backup_entries_collector.addBackupEntries(backupMutations(min_data_version + 1, data_path_in_backup));
+    backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
 }
 
 
