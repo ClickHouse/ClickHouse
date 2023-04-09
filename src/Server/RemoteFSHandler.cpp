@@ -74,39 +74,39 @@ namespace ErrorCodes
 }
 
 enum {
-    Hello = 0,
-    Ping = 1,
+    Hello = 0,                  // OK
+    Ping = 1,                   // OK
     GetTotalSpace = 2,
     GetAvailableSpace = 3,
     GetUnreservedSpace = 4,
-    Exists = 5, // OK
-    IsFile = 6, // OK
-    IsDirectory = 7, // OK
-    GetFileSize = 8,
-    CreateDirectory = 9, // OK
-    CreateDirectories = 10, // OK
+    Exists = 5,                 // OK
+    IsFile = 6,                 // OK
+    IsDirectory = 7,            // OK
+    GetFileSize = 8,                        // Not now
+    CreateDirectory = 9,        // OK
+    CreateDirectories = 10,     // OK
     ClearDirectory = 11,
     MoveDirectory = 12,
-    IterateDirectory = 13, // ---------- HARD ----------
-    CreateFile = 14, // OK
+    IterateDirectory = 13,      // ---------- HARD ----------
+    CreateFile = 14,            // OK
     MoveFile = 15,
     ReplaceFile = 16, 
-    Copy = 17,
+    Copy = 17,                              // Not now
     CopyDirectoryContent = 18,
     ListFiles = 19,
-    ReadFile = 20, // ---------- HARD ----------
-    WriteFile = 21, // ---------- HARD ----------
+    ReadFile = 20,              // ---------- HARD ----------
+    WriteFile = 21,             // ---------- HARD ----------
     RemoveFile = 22,
     RemoveFileIfExists = 23,
     RemoveDirectory = 24,
     RemoveRecursive = 25,
     SetLastModified = 26,
     GetLastModified = 27,
-    GetLastChanged = 28,
-    SetReadOnly = 29,
+    GetLastChanged = 28,                    // Not now
+    SetReadOnly = 29,                       // Not now
     CreateHardLink = 30,
-    TruncateFile = 31,
-    Error = 255
+    TruncateFile = 31,                      // Not now
+    Error = 255                 // OK
 };
 
 
