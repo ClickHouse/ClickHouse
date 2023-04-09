@@ -1,0 +1,13 @@
+select soundex('');
+select soundex('12345');
+select soundex('341Jons54326ton');
+select soundex('A2222222');
+select soundex('Fairdale');
+select soundex('Faredale');
+select soundex('Jon1s2o3n');
+select soundex('Jonson');
+select soundex('Jonston');
+select soundex('M\acDonald22321');
+select soundex('MacDonald');
+select soundex('S3344mith0000');
+select soundex('Smith');
