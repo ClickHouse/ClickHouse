@@ -9,7 +9,6 @@ enum class KQLFunctionValue : uint16_t
 {
     none,
     timespan,
-    //  datetime,
     ago,
     datetime_add,
     datetime_part,

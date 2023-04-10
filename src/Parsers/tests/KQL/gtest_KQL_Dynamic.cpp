@@ -34,7 +34,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_DynamicExactMatch, ParserTest,
             "print output = array_index_of(dynamic(['John', 'Denver', 'Bob', 'Marley']), 'Marley')",
             "SELECT indexOf(['John', 'Denver', 'Bob', 'Marley'], 'Marley') - 1 AS output"
         },
-        
         {
             "print output = array_length(dynamic([1, 2, 3]))",
             "SELECT length([1, 2, 3]) AS output"
