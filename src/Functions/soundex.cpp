@@ -16,15 +16,15 @@ struct SoundexImpl
     /* :::::::::::::::::::::::::: */
     static constexpr auto soundex_map = "01230120022455012623010202";
 
-    static char get_scode(const char ** ptr, const char * in_end)
+    static char getScode(const char * &ptr, const char * in_end)
     {
-        while (*ptr < in_end && !std::isalpha(**ptr))
+        while (ptr < in_end && !std::isalpha(*ptr))
         {
-            (*ptr)++;
+            (ptr)++;
         }
-        if (*ptr == in_end)
+        if (ptr == in_end)
             return 0;
-        return soundex_map[std::toupper(**ptr) - 'A'];
+        return soundex_map[std::toupper(*ptr) - 'A'];
     }
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
@@ -41,11 +41,11 @@ struct SoundexImpl
         {
             *out_char_data++ = std::toupper(*in_cur);
         }
-        char last_ch = get_scode(&in_cur, in_end);
+        char last_ch = getScode(in_cur, in_end);
 
         char ch;
         in_cur++;
-        while (in_cur < in_end && out_char_data < out_end && (ch = get_scode(&in_cur, in_end)) != 0)
+        while (in_cur < in_end && out_char_data < out_end && (ch = getScode(in_cur, in_end)) != 0)
         {
             if (in_cur == in_end)
             {
@@ -68,7 +68,7 @@ struct SoundexImpl
 
 REGISTER_FUNCTION(Soundex)
 {
-    factory.registerFunction<FunctionStringHashFixedString<SoundexImpl>>();
+    factory.registerFunction<FunctionStringHashFixedString<SoundexImpl>>({}, FunctionFactory::CaseInsensitive);
 }
 
 
