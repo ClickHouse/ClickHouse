@@ -18,79 +18,80 @@
 #define Foundation_DigestStream_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/BufferedStreamBuf.h"
-#include "Poco/DigestEngine.h"
 #include <istream>
 #include <ostream>
+#include "Poco/BufferedStreamBuf.h"
+#include "Poco/DigestEngine.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API DigestBuf: public BufferedStreamBuf
-	/// This streambuf computes a digest of all data going
-	/// through it.
+class Foundation_API DigestBuf : public BufferedStreamBuf
+/// This streambuf computes a digest of all data going
+/// through it.
 {
 public:
-	DigestBuf(DigestEngine& eng);
-	DigestBuf(DigestEngine& eng, std::istream& istr);
-	DigestBuf(DigestEngine& eng, std::ostream& ostr);
-	~DigestBuf();	
-	int readFromDevice(char* buffer, std::streamsize length);
-	int writeToDevice(const char* buffer, std::streamsize length);
-	void close();
+    DigestBuf(DigestEngine & eng);
+    DigestBuf(DigestEngine & eng, std::istream & istr);
+    DigestBuf(DigestEngine & eng, std::ostream & ostr);
+    ~DigestBuf();
+    int readFromDevice(char * buffer, std::streamsize length);
+    int writeToDevice(const char * buffer, std::streamsize length);
+    void close();
 
 private:
-	DigestEngine& _eng;
-	std::istream* _pIstr;
-	std::ostream* _pOstr;
-	static const int BUFFER_SIZE;
+    DigestEngine & _eng;
+    std::istream * _pIstr;
+    std::ostream * _pOstr;
+    static const int BUFFER_SIZE;
 };
 
 
-class Foundation_API DigestIOS: public virtual std::ios
-	/// The base class for DigestInputStream and DigestOutputStream.
-	///
-	/// This class is needed to ensure the correct initialization
-	/// order of the stream buffer and base classes.
+class Foundation_API DigestIOS : public virtual std::ios
+/// The base class for DigestInputStream and DigestOutputStream.
+///
+/// This class is needed to ensure the correct initialization
+/// order of the stream buffer and base classes.
 {
 public:
-	DigestIOS(DigestEngine& eng);
-	DigestIOS(DigestEngine& eng, std::istream& istr);
-	DigestIOS(DigestEngine& eng, std::ostream& ostr);
-	~DigestIOS();
-	DigestBuf* rdbuf();
+    DigestIOS(DigestEngine & eng);
+    DigestIOS(DigestEngine & eng, std::istream & istr);
+    DigestIOS(DigestEngine & eng, std::ostream & ostr);
+    ~DigestIOS();
+    DigestBuf * rdbuf();
 
 protected:
-	DigestBuf _buf;
+    DigestBuf _buf;
 };
 
 
-class Foundation_API DigestInputStream: public DigestIOS, public std::istream
-	/// This istream computes a digest of
-	/// all the data passing through it,
-	/// using a DigestEngine.
+class Foundation_API DigestInputStream : public DigestIOS, public std::istream
+/// This istream computes a digest of
+/// all the data passing through it,
+/// using a DigestEngine.
 {
 public:
-	DigestInputStream(DigestEngine& eng, std::istream& istr);
-	~DigestInputStream();
+    DigestInputStream(DigestEngine & eng, std::istream & istr);
+    ~DigestInputStream();
 };
 
 
-class Foundation_API DigestOutputStream: public DigestIOS, public std::ostream
-	/// This ostream computes a digest of
-	/// all the data passing through it,
-	/// using a DigestEngine.
-	/// To ensure that all data has been incorporated
-	/// into the digest, call close() or flush() before 
-	/// you obtain the digest from the digest engine.
+class Foundation_API DigestOutputStream : public DigestIOS, public std::ostream
+/// This ostream computes a digest of
+/// all the data passing through it,
+/// using a DigestEngine.
+/// To ensure that all data has been incorporated
+/// into the digest, call close() or flush() before
+/// you obtain the digest from the digest engine.
 {
 public:
-	DigestOutputStream(DigestEngine& eng);
-	DigestOutputStream(DigestEngine& eng, std::ostream& ostr);
-	~DigestOutputStream();
-	void close();
+    DigestOutputStream(DigestEngine & eng);
+    DigestOutputStream(DigestEngine & eng, std::ostream & ostr);
+    ~DigestOutputStream();
+    void close();
 };
 
 

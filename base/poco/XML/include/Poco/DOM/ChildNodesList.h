@@ -18,38 +18,41 @@
 #define DOM_ChildNodesList_INCLUDED
 
 
-#include "Poco/XML/XML.h"
 #include "Poco/DOM/NodeList.h"
+#include "Poco/XML/XML.h"
 
 
-namespace Poco {
-namespace XML {
-
-
-class XML_API ChildNodesList: public NodeList
-	// This implementation of NodeList is returned
-	// by Node::getChildNodes().
+namespace Poco
 {
-public:
-	Node* item(unsigned long index) const;
-	unsigned long length() const;
-
-	void autoRelease();
-
-protected:
-	ChildNodesList(const Node* pParent);
-	~ChildNodesList();
-	
-private:
-	ChildNodesList();
-
-	const Node* _pParent;
-	
-	friend class AbstractNode;
-};
+namespace XML
+{
 
 
-} } // namespace Poco::XML
+    class XML_API ChildNodesList : public NodeList
+    // This implementation of NodeList is returned
+    // by Node::getChildNodes().
+    {
+    public:
+        Node * item(unsigned long index) const;
+        unsigned long length() const;
+
+        void autoRelease();
+
+    protected:
+        ChildNodesList(const Node * pParent);
+        ~ChildNodesList();
+
+    private:
+        ChildNodesList();
+
+        const Node * _pParent;
+
+        friend class AbstractNode;
+    };
+
+
+}
+} // namespace Poco::XML
 
 
 #endif // DOM_ChildNodesList_INCLUDED

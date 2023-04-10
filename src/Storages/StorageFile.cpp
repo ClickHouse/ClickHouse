@@ -3,7 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ReadFromStorageProgress.h>
 
@@ -368,8 +368,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         if (paths.empty())
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
 
-        auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
-        return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
+        return ColumnsDescription(DistributedAsyncInsertSource(paths[0]).getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
@@ -597,7 +596,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
+                        pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }

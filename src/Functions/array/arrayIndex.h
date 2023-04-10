@@ -390,8 +390,9 @@ public:
         {
             if (!array_type && !map_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array or map.",
-                    getName());
+                    "First argument for function {} must be an array or map. Actual {}",
+                    getName(),
+                    first_argument_type->getName());
 
             inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
         }
@@ -399,8 +400,9 @@ public:
         {
             if (!array_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array.",
-                    getName());
+                    "First argument for function {} must be an array. Actual {}",
+                    getName(),
+                    first_argument_type->getName());
 
             inner_type = array_type->getNestedType();
         }

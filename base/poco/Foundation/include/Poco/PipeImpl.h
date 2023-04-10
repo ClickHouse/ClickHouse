@@ -21,16 +21,10 @@
 #include "Poco/Foundation.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#if defined(_WIN32_WCE)
-#include "PipeImpl_DUMMY.h"
+#if   defined(POCO_OS_FAMILY_UNIX)
+#    include "Poco/PipeImpl_POSIX.h"
 #else
-#include "Poco/PipeImpl_WIN32.h"
-#endif
-#elif defined(POCO_OS_FAMILY_UNIX)
-#include "Poco/PipeImpl_POSIX.h"
-#else
-#include "Poco/PipeImpl_DUMMY.h"
+#    include "Poco/PipeImpl_DUMMY.h"
 #endif
 
 

@@ -9,7 +9,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/SipHash.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -131,6 +131,7 @@ TEST_F(FileCacheTest, get)
     auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
@@ -398,8 +399,8 @@ TEST_F(FileCacheTest, get)
                 auto query_context_1 = DB::Context::createCopy(getContext().context);
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
+                chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
 
                 auto holder_2 = cache.getOrSet(key, 25, 5, {}); /// Get [25, 29] once again.
                 auto segments_2 = fromHolder(holder_2);
@@ -467,8 +468,8 @@ TEST_F(FileCacheTest, get)
                 auto query_context_1 = DB::Context::createCopy(getContext().context);
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
+                chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
 
                 auto holder_2 = cache.getOrSet(key, 3, 23, {}); /// Get [3, 25] once again
                 auto segments_2 = fromHolder(*holder);
@@ -561,7 +562,7 @@ TEST_F(FileCacheTest, writeBuffer)
     DB::FileCache cache(cache_base_path, settings);
     cache.initialize();
 
-    auto write_to_cache = [&cache](const String & key, const Strings & data)
+    auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
     {
         CreateFileSegmentSettings segment_settings;
         segment_settings.kind = FileSegmentKind::Temporary;
@@ -571,14 +572,31 @@ TEST_F(FileCacheTest, writeBuffer)
         EXPECT_EQ(holder.file_segments.size(), 1);
         auto & segment = holder.file_segments.front();
         WriteBufferToFileSegment out(segment.get());
+        std::list<std::thread> threads;
+        std::mutex mu;
         for (const auto & s : data)
-            out.write(s.data(), s.size());
+        {
+            /// Write from diffetent threads to check
+            /// that no assertions inside cache related to downloaderId are triggered
+            threads.emplace_back([&]
+            {
+                std::unique_lock lock(mu);
+                out.write(s.data(), s.size());
+                /// test different buffering scenarios
+                if (flush)
+                {
+                    out.next();
+                }
+            });
+        }
+        for (auto & t : threads)
+            t.join();
         return holder;
     };
 
     std::vector<fs::path> file_segment_paths;
     {
-        auto holder = write_to_cache("key1", {"abc", "defg"});
+        auto holder = write_to_cache("key1", {"abc", "defg"}, false);
         file_segment_paths.emplace_back(holder.file_segments.front()->getPathInLocalCache());
 
         ASSERT_EQ(fs::file_size(file_segment_paths.back()), 7);
@@ -586,7 +604,7 @@ TEST_F(FileCacheTest, writeBuffer)
         ASSERT_EQ(cache.getUsedCacheSize(), 7);
 
         {
-            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"});
+            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"}, true);
             file_segment_paths.emplace_back(holder2.file_segments.front()->getPathInLocalCache());
 
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);

@@ -544,7 +544,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
     if (!found && need_remove_from_zk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
-    notifySubscribers(queue_size, entry->znode_name);
+    notifySubscribers(queue_size, &(entry->znode_name));
 
     if (!need_remove_from_zk)
         return;
@@ -1107,8 +1107,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     zkutil::ZooKeeperPtr zookeeper,
     const MergeTreePartInfo & part_info,
-    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
-    const String & fetch_entry_znode)
+    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry)
 {
     /// TODO is it possible to simplify it?
     Queue to_wait;
@@ -1122,50 +1121,36 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
         && covering_entry->replace_range_entry->columns_version < 0;
     [[maybe_unused]] bool called_for_broken_part = !covering_entry;
-    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part || !fetch_entry_znode.empty());
-
-    auto is_simple_part_producing_op = [](const ReplicatedMergeTreeLogEntryData & data)
-    {
-        return data.type == LogEntry::GET_PART ||
-               data.type == LogEntry::ATTACH_PART ||
-               data.type == LogEntry::MERGE_PARTS ||
-               data.type == LogEntry::MUTATE_PART;
-    };
+    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
-        /// Skipping currently processing entry
-        if (!fetch_entry_znode.empty() && (*it)->znode_name == fetch_entry_znode)
-        {
-            ++it;
-            continue;
-        }
-
-        bool is_simple_producing_op = is_simple_part_producing_op(**it);
-
+        auto type = (*it)->type;
+        bool is_simple_producing_op = type == LogEntry::GET_PART ||
+                                      type == LogEntry::ATTACH_PART ||
+                                      type == LogEntry::MERGE_PARTS ||
+                                      type == LogEntry::MUTATE_PART;
         bool simple_op_covered = is_simple_producing_op && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version));
         bool replace_range_covered = covering_entry && checkReplaceRangeCanBeRemoved(part_info, *it, *covering_entry);
         if (simple_op_covered || replace_range_covered)
         {
+            const String & znode_name = (*it)->znode_name;
+
             if ((*it)->currently_executing)
-            {
-                bool is_covered_by_simple_op = covering_entry && is_simple_part_producing_op(*covering_entry);
-                bool is_fetching_covering_part = !fetch_entry_znode.empty();
-                if (is_covered_by_simple_op || is_fetching_covering_part)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove covered entry {} producing parts {}, it's a bug",
-                                    (*it)->znode_name, fmt::join((*it)->getVirtualPartNames(format_version), ", "));
                 to_wait.push_back(*it);
-            }
-            auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / (*it)->znode_name);
+
+            auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / znode_name);
             if (code != Coordination::Error::ZOK)
-                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / (*it)->znode_name).string(), Coordination::errorMessage(code));
+                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / znode_name).string(), Coordination::errorMessage(code));
 
             updateStateOnQueueEntryRemoval(
                 *it, /* is_successful = */ false,
                 min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
 
-            (*it)->removed_by_other_entry = true;
+            LogEntryPtr removing_entry = std::move(*it);   /// Make it live a bit longer
+            removing_entry->removed_by_other_entry = true;
             it = queue.erase(it);
+            notifySubscribers(queue.size(), &znode_name);
             ++removed_entries;
         }
         else
@@ -1248,7 +1233,9 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
 
         constexpr auto fmt_string = "Not executing log entry {} for part {} "
                                     "because it is not disjoint with part {} that is currently executing.";
-        LOG_TEST(LogToStr(out_reason, log), fmt_string, entry.znode_name, new_part_name, future_part_elem.first);
+
+        /// This message can be too noisy, do not print it more than once per second
+        LOG_TEST(LogToStr(out_reason, LogFrequencyLimiter(log, 5)), fmt_string, entry.znode_name, new_part_name, future_part_elem.first);
         return true;
     }
 
@@ -1387,6 +1374,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             {
                 constexpr auto fmt_string = "Not executing merge/mutation for the part {}, waiting for {} to execute it and will fetch after.";
                 out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, replica_to_execute_merge);
+                LOG_TEST(log, fmt_string, entry.new_part_name, replica_to_execute_merge);
                 return false;
             }
         }
@@ -1439,7 +1427,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {}"
                                         " because source parts size ({}) is greater than the current maximum ({}).";
-            LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name,
+            LOG_DEBUG(LogToStr(out_postpone_reason, LogFrequencyLimiter(log, 5)), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name,
                       ReadableSize(sum_parts_size_in_bytes), ReadableSize(max_source_parts_size));
 
             return false;
@@ -2332,7 +2320,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
         return false;
     }
 
-    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    std::lock_guard lock(queue.state_mutex);
 
     /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
     /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
@@ -2350,7 +2338,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
 
 bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const
 {
-    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    std::lock_guard lock(queue.state_mutex);
     for (const auto & entry : queue.queue)
     {
         if (entry->type != ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
@@ -2473,28 +2461,58 @@ bool ReplicatedMergeTreeMergePredicate::isGoingToBeDropped(const MergeTreePartIn
 
 String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & part_name) const
 {
-    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    std::lock_guard lock(queue.state_mutex);
     return queue.virtual_parts.getContainingPart(MergeTreePartInfo::fromPartName(part_name, queue.format_version));
 }
 
 
 ReplicatedMergeTreeQueue::SubscriberHandler
-ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
+ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
+                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode)
 {
-    std::lock_guard lock(state_mutex);
-    std::unordered_set<String> result;
-    result.reserve(queue.size());
-    for (const auto & entry : queue)
-        result.insert(entry->znode_name);
-
+    std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
+
+    if (sync_mode != SyncReplicaMode::PULL)
+    {
+        /// We must get the list of entries to wait atomically with adding the callback
+        bool lightweight_entries_only = sync_mode == SyncReplicaMode::LIGHTWEIGHT;
+        static constexpr std::array lightweight_entries =
+        {
+            LogEntry::GET_PART,
+            LogEntry::ATTACH_PART,
+            LogEntry::DROP_RANGE,
+            LogEntry::REPLACE_RANGE,
+            LogEntry::DROP_PART
+        };
+        out_entry_names.reserve(queue.size());
+        for (const auto & entry : queue)
+        {
+            if (!lightweight_entries_only
+                || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
+                out_entry_names.insert(entry->znode_name);
+        }
+        LOG_TEST(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
+    }
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
-    /// Notify queue size & log entry ids to avoid waiting for removed entries
-    (*it)(result.size(), result, std::nullopt);
+    /// Atomically notify about current size
+    (*it)(queue.size(), nullptr);
 
     return SubscriberHandler(it, *this);
+}
+
+void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
+{
+    size_t queue_size;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        queue_size = queue.size();
+    }
+    std::lock_guard lock_subscribers(subscribers_mutex);
+    for (auto & subscriber_callback : subscribers)
+        subscriber_callback(queue_size, nullptr);
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
@@ -2503,16 +2521,11 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const String * removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size, {}, removed_log_entry_id);
-}
-
-ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
-{
-    notifySubscribers(0, std::nullopt);
+        subscriber_callback(new_queue_size, removed_log_entry_id);
 }
 
 String padIndex(Int64 index)

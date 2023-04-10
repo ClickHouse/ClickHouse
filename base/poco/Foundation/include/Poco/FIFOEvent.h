@@ -18,42 +18,34 @@
 #define Foundation_FIFOEvent_INCLUDED
 
 
+#include "Poco/AbstractDelegate.h"
 #include "Poco/AbstractEvent.h"
 #include "Poco/FIFOStrategy.h"
-#include "Poco/AbstractDelegate.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 //@ deprecated
-template <class TArgs, class TMutex = FastMutex> 
-class FIFOEvent: public AbstractEvent < 
-	TArgs, 
-	FIFOStrategy<TArgs, AbstractDelegate<TArgs> >,
-	AbstractDelegate<TArgs>,
-	TMutex
->
-	/// A FIFOEvent uses internally a FIFOStrategy which guarantees
-	/// that delegates are invoked in the order they were added to
-	/// the event.
-	///
-	/// Note that as of release 1.4.2, this is the default behavior
-	/// implemented by BasicEvent, so this class is provided
-	/// for backwards compatibility only.
+template <class TArgs, class TMutex = FastMutex>
+class FIFOEvent : public AbstractEvent<TArgs, FIFOStrategy<TArgs, AbstractDelegate<TArgs>>, AbstractDelegate<TArgs>, TMutex>
+/// A FIFOEvent uses internally a FIFOStrategy which guarantees
+/// that delegates are invoked in the order they were added to
+/// the event.
+///
+/// Note that as of release 1.4.2, this is the default behavior
+/// implemented by BasicEvent, so this class is provided
+/// for backwards compatibility only.
 {
 public:
-	FIFOEvent()
-	{
-	}
+    FIFOEvent() { }
 
-	~FIFOEvent()
-	{
-	}
+    ~FIFOEvent() { }
 
 private:
-	FIFOEvent(const FIFOEvent& e);
-	FIFOEvent& operator = (const FIFOEvent& e);
+    FIFOEvent(const FIFOEvent & e);
+    FIFOEvent & operator=(const FIFOEvent & e);
 };
 
 

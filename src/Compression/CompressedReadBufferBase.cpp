@@ -6,7 +6,7 @@
 #include <city.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>

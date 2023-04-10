@@ -67,16 +67,6 @@ struct S3Settings
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
 
-        /// If this is set to false then `S3::getObjectSize()` will use `GetObjectAttributes` request instead of `HeadObject`.
-        /// Details: `HeadObject` request never returns a response body (even if there is an error) however
-        /// if the request was sent without specifying a region in the endpoint (i.e. for example "https://test.s3.amazonaws.com/mydata.csv"
-        /// instead of "https://test.s3-us-west-2.amazonaws.com/mydata.csv") then that response body is one of the main ways to determine
-        /// the correct region and try to repeat the request again with the correct region.
-        /// For any other request type (`GetObject`, `ListObjects`, etc.) AWS SDK does that because they have response bodies, but for `HeadObject`
-        /// there is no response body so this way doesn't work. That's why it's better to use `GetObjectAttributes` requests sometimes.
-        /// See https://github.com/aws/aws-sdk-cpp/issues/1558 and also the function S3ErrorMarshaller::ExtractRegion() for more information.
-        bool allow_head_object_request = true;
-
         bool throw_on_zero_files_match = false;
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
