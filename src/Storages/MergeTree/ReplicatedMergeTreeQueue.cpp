@@ -1147,7 +1147,8 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
                 *it, /* is_successful = */ false,
                 min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
 
-            (*it)->removed_by_other_entry = true;
+            LogEntryPtr removing_entry = std::move(*it);   /// Make it live a bit longer
+            removing_entry->removed_by_other_entry = true;
             it = queue.erase(it);
             notifySubscribers(queue.size(), &znode_name);
             ++removed_entries;
@@ -2491,6 +2492,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
                 || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
                 out_entry_names.insert(entry->znode_name);
         }
+        LOG_TEST(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
     }
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
