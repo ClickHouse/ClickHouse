@@ -118,7 +118,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
-/** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
+/** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
   * And additional documentation for each method, where special cases are described in detail.
   *
   * Each node in query must be resolved. For each query tree node resolved state is specific.
@@ -159,7 +159,7 @@ namespace ErrorCodes
   *
   * TODO: This does not supported properly before, because matchers could not be resolved from aliases.
   *
-  * Identifiers are resolved with following resules:
+  * Identifiers are resolved with following rules:
   * Resolution starts with current scope.
   * 1. Try to resolve identifier from expression scope arguments. Lambda expression arguments are greatest priority.
   * 2. Try to resolve identifier from aliases.
