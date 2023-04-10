@@ -460,7 +460,7 @@ Possible values:
 
 Changes the behaviour of join operations with `ANY` strictness.
 
-:::warning
+:::note
 This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
 :::
 
@@ -550,7 +550,7 @@ Default value: 64.
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-:::warning
+:::note
 Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
 :::
 
@@ -942,7 +942,7 @@ Higher values will lead to higher memory usage.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-:::warning
+:::note
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
@@ -960,7 +960,7 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-:::warning
+:::note
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
@@ -987,6 +987,16 @@ Default value: 1000.
 The interval in microseconds for checking whether request execution has been canceled and sending the progress.
 
 Default value: 100,000 (checks for cancelling and sends the progress ten times per second).
+
+## idle_connection_timeout {#idle_connection_timeout}
+
+Timeout to close idle TCP connections after specified number of seconds.
+
+Possible values:
+
+-   Positive integer (0 - close immediatly, after 0 seconds).
+
+Default value: 3600.
 
 ## connect_timeout, receive_timeout, send_timeout {#connect-timeout-receive-timeout-send-timeout}
 
@@ -1247,7 +1257,7 @@ Possible values:
 
 Default value: 1.
 
-:::warning
+:::note
 Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
 If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
 If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
@@ -1277,7 +1287,7 @@ Default value: `1`.
 
 This options will produce different results depending on the settings used.
 
-:::warning
+:::note
 This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
 :::
 
@@ -1425,6 +1435,28 @@ Possible values:
 
 Default value: `0`
 
+## query_cache_compress_entries {#query-cache-compress-entries}
+
+Compress entries in the [query cache](../query-cache.md). Lessens the memory consumption of the query cache at the cost of slower inserts into / reads from it.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`
+
+## query_cache_squash_partial_results {#query-cache-squash-partial-results}
+
+Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`
+
 ## query_cache_ttl {#query-cache-ttl}
 
 After this time in seconds entries in the [query cache](../query-cache.md) become stale.
@@ -1542,6 +1574,7 @@ For the replicated tables by default the only 100 of the most recent blocks for 
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
 
 ## Asynchronous Insert settings
+
 ### async_insert {#async-insert}
 
 Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
@@ -1635,6 +1668,7 @@ Possible values:
 -   0 — Timeout disabled.
 
 Default value: `0`.
+
 ### async_insert_deduplicate {#settings-async-insert-deduplicate}
 
 Enables or disables insert deduplication of `ASYNC INSERT` (for Replicated\* tables).
@@ -2186,7 +2220,7 @@ Default value: 0.
 This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
 :::
 
-:::warning
+:::note
 You should not rely on automatic batch splitting, since this may hurt performance.
 :::
 
@@ -2194,7 +2228,7 @@ You should not rely on automatic batch splitting, since this may hurt performanc
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
-:::warning
+:::note
 To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
 :::
 
@@ -2439,43 +2473,19 @@ Default value: `1`.
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
-Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_buffer_flush_schedule_pool_size).
 
 ## background_move_pool_size {#background_move_pool_size}
 
-Sets the number of threads performing background moves of data parts for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes)-engine tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 8.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_move_pool_size).
 
 ## background_schedule_pool_size {#background_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md/#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 128.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_schedule_pool_size).
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster it is recommended to use default value.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 8.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_fetches_pool_size).
 
 ## always_fetch_merged_part {#always_fetch_merged_part}
 
@@ -2496,28 +2506,11 @@ Default value: 0.
 
 ## background_distributed_schedule_pool_size {#background_distributed_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [distributed](../../engines/table-engines/special/distributed.md) sends. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_distributed_schedule_pool_size).
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Sets the number of threads performing background tasks for message streaming. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: 16.
-
-**See Also**
-
--   [Kafka](../../engines/table-engines/integrations/kafka.md/#kafka) engine.
--   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md/#rabbitmq-engine) engine.
+That setting was moved to the [server configuration parameters](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
 
 ## validate_polygons {#validate_polygons}
 
@@ -2759,7 +2752,7 @@ Default value: `120` seconds.
 
 ## cast_keep_nullable {#cast_keep_nullable}
 
-Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) operations.
+Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md/#castx-t) operations.
 
 When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
@@ -2858,11 +2851,11 @@ Possible values:
 
 Default value: `0`.
 
-:::warning
+:::note
 Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
 :::
 
-:::warning
+:::note
 Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
 :::
 
@@ -2999,7 +2992,7 @@ It can be useful when merges are CPU bounded not IO bounded (performing heavy da
 
 ## max_final_threads {#max-final-threads}
 
-Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md/#select-from-final) modifier.
+Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 Possible values:
 
@@ -3094,19 +3087,9 @@ Possible values:
 
 Default value: `0`.
 
-## s3_truncate_on_insert 
+## s3_truncate_on_insert
 
-Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists. 
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## hdfs_truncate_on_insert 
-
-Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists. 
+Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3114,11 +3097,21 @@ Possible values:
 
 Default value: `0`.
 
-## engine_file_allow_create_multiple_files 
+## hdfs_truncate_on_insert
+
+Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## engine_file_allow_create_multiple_files
 
 Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
 
-`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc. 
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3126,11 +3119,11 @@ Possible values:
 
 Default value: `0`.
 
-## s3_create_new_file_on_insert 
+## s3_create_new_file_on_insert
 
 Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
 
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3142,7 +3135,7 @@ Default value: `0`.
 
 Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
 
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3438,7 +3431,7 @@ Default value: `throw`.
 
 ## flatten_nested {#flatten-nested}
 
-Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/index.md) columns.
 
 Possible values:
 
@@ -3753,7 +3746,7 @@ Default value: `1`.
 
 ## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
 
-Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md/#select-from-final) modifier.
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
 
@@ -3770,7 +3763,7 @@ Default value: `0`.
 
 ## optimize_using_constraints
 
-Use [constraints](../../sql-reference/statements/create/table#constraints) for query optimization. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md#constraints) for query optimization. The default is `false`.
 
 Possible values:
 
@@ -3778,7 +3771,7 @@ Possible values:
 
 ## optimize_append_index
 
-Use [constraints](../../sql-reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md#constraints) in order to append index condition. The default is `false`.
 
 Possible values:
 
@@ -3786,7 +3779,7 @@ Possible values:
 
 ## optimize_substitute_columns
 
-Use [constraints](../../sql-reference/statements/create/table#constraints) for column substitution. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md#constraints) for column substitution. The default is `false`.
 
 Possible values:
 
@@ -3984,7 +3977,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 
 ## final {#final}
 
-Automatically applies [FINAL](../../sql-reference/statements/select/from/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from/#final-modifier) is applicable, including joined tables and tables in sub-queries, and 
+Automatically applies [FINAL](../../sql-reference/statements/select/from.md#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from.md#final-modifier) is applicable, including joined tables and tables in sub-queries, and
 distributed tables.
 
 Possible values:
@@ -4030,7 +4023,7 @@ SELECT * FROM test;
 
 ## asterisk_include_materialized_columns {#asterisk_include_materialized_columns}
 
-Include [MATERIALIZED](../../sql-reference/statements/create/table/#materialized) columns for wildcard query (`SELECT *`).
+Include [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) columns for wildcard query (`SELECT *`).
 
 Possible values:
 
@@ -4041,7 +4034,7 @@ Default value: `0`.
 
 ## asterisk_include_alias_columns {#asterisk_include_alias_columns}
 
-Include [ALIAS](../../sql-reference/statements/create/table/#alias) columns for wildcard query (`SELECT *`).
+Include [ALIAS](../../sql-reference/statements/create/table.md#alias) columns for wildcard query (`SELECT *`).
 
 Possible values:
 
@@ -4050,8 +4043,8 @@ Possible values:
 
 Default value: `0`.
 
-## stop_reading_on_first_cancel {#stop_reading_on_first_cancel}
-When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterward, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
+When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterwards, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
 
 **Example without setting on Ctrl+C**
 ```sql
@@ -4066,7 +4059,7 @@ Query was cancelled.
 
 **Example with setting on Ctrl+C**
 ```sql
-SELECT sum(number) FROM numbers(10000000000) SETTINGS stop_reading_on_first_cancel=true
+SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_cancel=true
 
 ┌──────sum(number)─┐
 │ 1355411451286266 │
@@ -4078,3 +4071,44 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS stop_reading_on_first_canc
 Possible values: `true`, `false`
 
 Default value: `false`
+## function_json_value_return_type_allow_nullable
+
+Control whether allow to return `NULL` when value is not exist for JSON_VALUE function.
+
+```sql
+SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
+
+┌─JSON_VALUE('{"hello":"world"}', '$.b')─┐
+│ ᴺᵁᴸᴸ                                   │
+└────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+Possible values:
+
+-   true — Allow.
+-   false — Disallow.
+
+Default value: `false`.
+
+## function_json_value_return_type_allow_complex
+
+Control whether allow to return complex type (such as: struct, array, map) for json_value function.
+
+```sql
+SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true
+
+┌─JSON_VALUE('{"hello":{"world":"!"}}', '$.hello')─┐
+│ {"world":"!"}                                    │
+└──────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+Possible values:
+
+-   true — Allow.
+-   false — Disallow.
+
+Default value: `false`.

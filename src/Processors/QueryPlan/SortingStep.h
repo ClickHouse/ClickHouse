@@ -55,7 +55,9 @@ public:
         const DataStream & input_stream,
         SortDescription sort_description_,
         size_t max_block_size_,
-        UInt64 limit_ = 0);
+        UInt64 limit_ = 0,
+        bool always_read_till_end_ = false
+    );
 
     String getName() const override { return "Sorting"; }
 
@@ -102,6 +104,7 @@ private:
     SortDescription prefix_description;
     const SortDescription result_description;
     UInt64 limit;
+    bool always_read_till_end = false;
 
     Settings sort_settings;
 

@@ -50,6 +50,11 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
+#if USE_SSL
+#   include <Poco/Net/SecureStreamSocket.h>
+#   include <Poco/Net/SecureStreamSocketImpl.h>
+#endif
+
 #include "Core/Protocol.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
@@ -501,6 +506,7 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
+            last_sent_snapshots.clear();
             thread_trace_context.reset();
         }
         catch (const Exception & e)
@@ -1196,7 +1202,8 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                               "Unexpected packet from client (expected Hello, got {})", packet_type);
     }
 
     readStringBinary(client_name, *in);
@@ -1230,6 +1237,22 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     auto & client_info = session->getClientInfo();
+
+#if USE_SSL
+    /// Authentication with SSL user certificate
+    if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
+    {
+        Poco::Net::SecureStreamSocket secure_socket(socket());
+        if (secure_socket.havePeerCertificate())
+        {
+            session->authenticate(
+                SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                getClientAddress(client_info));
+            return;
+        }
+    }
+#endif
+
     session->authenticate(user, password, getClientAddress(client_info));
 }
 
@@ -1796,14 +1819,14 @@ void TCPHandler::decreaseCancellationStatus(const std::string & log_message)
 {
     auto prev_status = magic_enum::enum_name(state.cancellation_status);
 
-    bool stop_reading_on_first_cancel = false;
+    bool partial_result_on_first_cancel = false;
     if (query_context)
     {
         const auto & settings = query_context->getSettingsRef();
-        stop_reading_on_first_cancel = settings.stop_reading_on_first_cancel;
+        partial_result_on_first_cancel = settings.partial_result_on_first_cancel;
     }
 
-    if (stop_reading_on_first_cancel && state.cancellation_status == CancellationStatus::NOT_CANCELLED)
+    if (partial_result_on_first_cancel && state.cancellation_status == CancellationStatus::NOT_CANCELLED)
     {
         state.cancellation_status = CancellationStatus::READ_CANCELLED;
     }
@@ -1873,7 +1896,7 @@ void TCPHandler::sendData(const Block & block)
         {
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(UInt64(-1), *out);
+                writeVarUInt(VAR_UINT_MAX, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);

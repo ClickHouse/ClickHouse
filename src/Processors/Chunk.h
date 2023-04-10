@@ -108,6 +108,7 @@ public:
     std::string dumpStructure() const;
 
     void append(const Chunk & chunk);
+    void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
 
     void changePartialResultStatus(bool has_partial_result_) { has_partial_result = has_partial_result_; }
     bool hasPartialResult() const { return has_partial_result; }

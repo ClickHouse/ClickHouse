@@ -21,7 +21,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Poco/URIStreamFactory.h>
-#include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
 #include "config.h"
@@ -159,6 +158,8 @@ namespace detail
 
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
+            else if (method == Poco::Net::HTTPRequest::HTTP_POST)
+                request.setContentLength(0);    /// No callback - no body
 
             for (auto & [header, value] : http_header_entries)
                 request.set(header, value);
