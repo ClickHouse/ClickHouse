@@ -102,7 +102,10 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     else
         literal = temp_column[0];
 
-    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
+    if (typeid_cast<const DataTypeString *>(&data_type))
+        ast = std::make_shared<ASTLiteral>(literal);
+    else
+        ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);
