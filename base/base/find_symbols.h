@@ -65,7 +65,7 @@ struct SearchSymbols
 
 namespace detail
 {
-template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); }
+template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); } // NOLINT(misc-redundant-expression)
 
 static bool is_in(char c, const char * symbols, size_t num_chars)
 {

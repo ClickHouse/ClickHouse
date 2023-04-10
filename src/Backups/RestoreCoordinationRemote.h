@@ -2,6 +2,7 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Backups/WithRetries.h>
 
 
 namespace DB
@@ -11,14 +12,24 @@ namespace DB
 class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationRemote(const String & root_zookeeper_path_, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
+    using RestoreKeeperSettings = WithRetries::KeeperSettings;
+
+    RestoreCoordinationRemote(
+        zkutil::GetZooKeeper get_zookeeper_,
+        const String & root_zookeeper_path_,
+        const RestoreKeeperSettings & keeper_settings_,
+        const String & restore_uuid_,
+        const Strings & all_hosts_,
+        const String & current_host_,
+        bool is_internal_);
+
     ~RestoreCoordinationRemote() override;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    void setStage(const String & current_host, const String & new_stage, const String & message) override;
-    void setError(const String & current_host, const Exception & exception) override;
-    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
-    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
+    void setStage(const String & new_stage, const String & message) override;
+    void setError(const Exception & exception) override;
+    Strings waitForStage(const String & stage_to_wait) override;
+    Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -38,22 +49,26 @@ public:
     bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
 
 private:
-    zkutil::ZooKeeperPtr getZooKeeper() const;
     void createRootNodes();
     void removeAllNodes();
 
     class ReplicatedDatabasesMetadataSync;
 
-    const String root_zookeeper_path;
-    const String zookeeper_path;
-    const String restore_uuid;
+    /// get_zookeeper will provide a zookeeper client without any fault injection
     const zkutil::GetZooKeeper get_zookeeper;
+    const String root_zookeeper_path;
+    const RestoreKeeperSettings keeper_settings;
+    const String restore_uuid;
+    const String zookeeper_path;
+    const Strings all_hosts;
+    const String current_host;
+    const size_t current_host_index;
     const bool is_internal;
+    Poco::Logger * const log;
 
+    mutable WithRetries with_retries;
     std::optional<BackupCoordinationStageSync> stage_sync;
-
     mutable std::mutex mutex;
-    mutable zkutil::ZooKeeperPtr zookeeper;
 };
 
 }

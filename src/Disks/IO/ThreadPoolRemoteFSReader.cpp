@@ -1,6 +1,7 @@
 #include "ThreadPoolRemoteFSReader.h"
 
 #include "config.h"
+#include <Common/ThreadPool_fwd.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -14,6 +15,7 @@
 #include <base/getThreadId.h>
 
 #include <future>
+#include <memory>
 
 
 namespace ProfileEvents
@@ -26,6 +28,8 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric RemoteRead;
+    extern const Metric ThreadPoolRemoteFSReaderThreads;
+    extern const Metric ThreadPoolRemoteFSReaderThreadsActive;
 }
 
 namespace DB
@@ -60,7 +64,7 @@ IAsynchronousReader::Result RemoteFSFileDescriptor::readInto(char * data, size_t
 
 
 ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queue_size_)
-    : pool(pool_size, pool_size, queue_size_)
+    : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolRemoteFSReaderThreads, CurrentMetrics::ThreadPoolRemoteFSReaderThreadsActive, pool_size, pool_size, queue_size_))
 {
 }
 
@@ -90,7 +94,12 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, result.size);
 
         return Result{ .size = result.size, .offset = result.offset, .execution_watch = std::move(watch) };
-    }, pool, "VFSRead", request.priority);
+    }, *pool, "VFSRead", request.priority);
+}
+
+void ThreadPoolRemoteFSReader::wait()
+{
+    pool->wait();
 }
 
 }
