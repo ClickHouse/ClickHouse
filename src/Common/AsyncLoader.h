@@ -95,7 +95,7 @@ private:
 
     std::function<void(const LoadJob & self)> func;
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::condition_variable finished;
     bool is_finished = false;
     std::exception_ptr exception;
@@ -129,7 +129,7 @@ private:
         ssize_t priority = 0;
         size_t dependencies_left = 0;
         UInt64 ready_seqno = 0; // zero means that job is not in ready queue
-        LoadJobSet dependent_jobs; // TODO(serxa): clean it on remove jobs
+        LoadJobSet dependent_jobs;
 
         ReadyKey key() const
         {
@@ -206,6 +206,7 @@ public:
         , pool(metric_threads, metric_active_threads, max_threads)
     {}
 
+    // Start workers to execute scheduled load jobs
     void start()
     {
         std::unique_lock lock{mutex};
@@ -214,10 +215,24 @@ public:
             spawn(lock);
     }
 
+    // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
+    void wait()
+    {
+        pool.wait();
+    }
+
+    // Wait for currently executing jobs to finish, but do not run any other pending jobs.
+    // Not finished jobs are left in pending state:
+    //  - they can be resumed by calling start() again;
+    //  - or canceled using ~Task() or remove() later.
     void stop()
     {
-        std::unique_lock lock{mutex};
-        is_stopping = true;
+        {
+            std::unique_lock lock{mutex};
+            is_running = false;
+            // NOTE: there is no need to notify because workers never wait
+        }
+        pool.wait();
     }
 
     [[nodiscard]] Task schedule(LoadJobSet && jobs, ssize_t priority = 0)
@@ -244,7 +259,7 @@ public:
             NOEXCEPT_SCOPE({
                 ALLOW_ALLOCATIONS_IN_SCOPE;
                 scheduled_jobs.emplace(job, Info{.priority = priority});
-            )};
+            });
             job->priority.store(priority); // Set user-facing priority
         }
 
@@ -302,12 +317,12 @@ public:
             else if (auto info = scheduled_jobs.find(job); info != scheduled_jobs.end())
             {
                 if (info->second.dependencies_left > 0) // Job is not ready yet
-                    canceled(job);
+                    canceled(job, lock);
                 else if (info->second.ready_seqno) // Job is enqueued in ready queue
                 {
                     ready_queue.erase(info->second.key());
                     info->second.ready_seqno = 0;
-                    canceled(job);
+                    canceled(job, lock);
                 }
                 else // Job is currently executing
                 {
@@ -321,16 +336,16 @@ public:
     }
 
 private:
-    void canceled(const LoadJobPtr & job, std::unique_lock<std::mutex> &)
+    void canceled(const LoadJobPtr & job, std::unique_lock<std::mutex> & lock)
     {
         std::exception_ptr e;
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
             e = std::make_exception_ptr(
-                Exception(ASYNC_LOAD_CANCELED,
+                Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
                     "Load job '{}' canceled",
                     job->name));
-        )};
+        });
         failed(job, e, lock);
     }
 
@@ -349,7 +364,7 @@ private:
                 enqueue(dep_info, dep, lock);
         }
 
-        finish(job);
+        finish(job, lock);
     }
 
     void failed(const LoadJobPtr & job, std::exception_ptr exception_from_job, std::unique_lock<std::mutex> & lock)
@@ -368,7 +383,7 @@ private:
             NOEXCEPT_SCOPE({
                 ALLOW_ALLOCATIONS_IN_SCOPE;
                 e = std::make_exception_ptr(
-                    Exception(ASYNC_LOAD_DEPENDENCY_FAILED,
+                    Exception(ErrorCodes::ASYNC_LOAD_DEPENDENCY_FAILED,
                         "Load job '{}' -> {}",
                         dep->name,
                         getExceptionMessage(exception_from_job, /* with_stack_trace = */ false)));
@@ -378,11 +393,11 @@ private:
 
         // Clean dependency graph edges
         for (const auto & dep : job->dependencies)
-            if (auto dep_info = scheduled_jobs.find(dep); info != scheduled_jobs.end())
+            if (auto dep_info = scheduled_jobs.find(dep); dep_info != scheduled_jobs.end())
                 dep_info->second.dependent_jobs.erase(job);
 
         // Job became finished
-        finish(job);
+        finish(job, lock);
     }
 
     void finish(const LoadJobPtr & job, std::unique_lock<std::mutex> &)
@@ -391,7 +406,7 @@ private:
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
             finished_jobs.insert(job);
-        )};
+        });
     }
 
     void prioritize(const LoadJobPtr & job, ssize_t new_priority, std::unique_lock<std::mutex> & lock)
@@ -430,7 +445,7 @@ private:
             ready_queue.emplace(info.key(), job);
         });
 
-        if (is_running && workers < max_threads) // TODO(serxa): Can we make max_thread changeable in runtime
+        if (is_running && workers < max_threads) // TODO(serxa): Can we make max_thread changeable in runtime?
             spawn(lock);
     }
 
@@ -450,7 +465,7 @@ private:
 
         LoadJobPtr job;
         std::exception_ptr exception_from_job;
-        while (true) { // TODO(serxa): shutdown
+        while (true) {
 
             /// This is inside the loop to also reset previous thread names set inside the jobs
             setThreadName("AsyncLoader");
@@ -463,6 +478,9 @@ private:
                     failed(job, exception_from_job, lock);
                 else if (job)
                     loaded(job, lock);
+
+                if (!is_running)
+                    return;
 
                 if (ready_queue.empty())
                 {
@@ -489,7 +507,7 @@ private:
                 NOEXCEPT_SCOPE({
                     ALLOW_ALLOCATIONS_IN_SCOPE;
                     exception_from_job = std::make_exception_ptr(
-                        Exception(ASYNC_LOAD_FAILED,
+                        Exception(ErrorCodes::ASYNC_LOAD_FAILED,
                             "Load job '{}' failed: {}",
                             job->name,
                             getCurrentExceptionMessage(/* with_stacktrace = */ true)));
@@ -500,7 +518,6 @@ private:
 
     std::mutex mutex;
     bool is_running = false;
-    bool is_stopping = false;
 
     // Full set of scheduled pending jobs along with scheduling info
     std::unordered_map<LoadJobPtr, Info> scheduled_jobs;
@@ -520,37 +537,5 @@ private:
     size_t workers = 0;
     ThreadPool pool;
 };
-
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace CurrentMetrics
-{
-    extern const Metric TablesLoaderThreads;
-    extern const Metric TablesLoaderThreadsActive;
-}
-
-namespace DB
-{
-
-void test()
-{
-    AsyncLoader loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, 2);
-
-    auto job_func = [] (const LoadJob & self) {
-        std::cout << self.name << " done with priority " << self.priority << std::endl;
-    };
-
-    auto job1 = makeLoadJob({}, "job1", job_func);
-    auto job2 = makeLoadJob({ job1 }, "job2", job_func);
-    auto task1 = loader.schedule({ job1, job2 });
-
-    auto job3 = makeLoadJob({ job2 }, "job3", job_func);
-    auto job4 = makeLoadJob({ job2 }, "job4", job_func);
-    auto task2 = loader.schedule({ job3, job4 });
-    auto job5 = makeLoadJob({ job3, job4 }, "job5", job_func);
-    task2.merge(loader.schedule({ job5 }, -1));
-}
 
 }
