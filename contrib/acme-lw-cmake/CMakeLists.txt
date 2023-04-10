@@ -10,7 +10,7 @@ set(CMAKE_REQUIRED_LIBRARIES OpenSSL::Crypto)
 
 add_library(_acme-lw ${SRCS})
 
-target_include_directories(_acme-lw SYSTEM BEFORE PUBLIC "${ACME_SOURCE_DIR}/../internal" "${CURL_INCLUDE_DIR}" "${OPENSSL_INCLUDE_DIR}")
+target_include_directories(_acme-lw SYSTEM BEFORE PUBLIC "${ACME_SOURCE_DIR}" "${ACME_SOURCE_DIR}/../internal" "${OPENSSL_INCLUDE_DIR}")
 target_link_libraries(_acme-lw PUBLIC OpenSSL::Crypto OpenSSL::SSL)
 
 add_library(ch_contrib::acme-lw ALIAS _acme-lw)
