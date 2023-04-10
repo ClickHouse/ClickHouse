@@ -38,14 +38,16 @@ public:
         : columns(std::move(other.columns))
         , num_rows(other.num_rows)
         , chunk_info(std::move(other.chunk_info))
+        , has_partial_result(other.has_partial_result)
     {
         other.num_rows = 0;
+        other.has_partial_result = false;
     }
 
-    Chunk(Columns columns_, UInt64 num_rows_);
-    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
-    Chunk(MutableColumns columns_, UInt64 num_rows_);
-    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
+    Chunk(Columns columns_, UInt64 num_rows_, bool has_partial_result_ = false);
+    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, bool has_partial_result_ = false);
+    Chunk(MutableColumns columns_, UInt64 num_rows_, bool has_partial_result_ = false);
+    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, bool has_partial_result_ = false);
 
     Chunk & operator=(const Chunk & other) = delete;
     Chunk & operator=(Chunk && other) noexcept
@@ -54,6 +56,8 @@ public:
         chunk_info = std::move(other.chunk_info);
         num_rows = other.num_rows;
         other.num_rows = 0;
+        has_partial_result = other.has_partial_result;
+        other.has_partial_result = false;
         return *this;
     }
 
@@ -64,6 +68,7 @@ public:
         columns.swap(other.columns);
         chunk_info.swap(other.chunk_info);
         std::swap(num_rows, other.num_rows);
+        std::swap(has_partial_result, other.has_partial_result);
     }
 
     void clear()
@@ -71,6 +76,7 @@ public:
         num_rows = 0;
         columns.clear();
         chunk_info.reset();
+        has_partial_result = false;
     }
 
     const Columns & getColumns() const { return columns; }
@@ -103,10 +109,14 @@ public:
 
     void append(const Chunk & chunk);
 
+    void changePartialResultStatus(bool has_partial_result_) { has_partial_result = has_partial_result_; }
+    bool hasPartialResult() const { return has_partial_result; }
+
 private:
     Columns columns;
     UInt64 num_rows = 0;
     ChunkInfoPtr chunk_info;
+    bool has_partial_result = false;
 
     void checkNumRowsIsConsistent();
 };

@@ -85,13 +85,18 @@ MergeSortingTransform::MergeSortingTransform(
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     TemporaryDataOnDiskPtr tmp_data_,
-    size_t min_free_disk_space_)
+    size_t min_free_disk_space_,
+    UInt64 partial_result_limit_,
+    UInt64 partial_result_duration_ms_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
+    , partial_result_limit(partial_result_limit_)
+    , partial_result_duration_ms(partial_result_duration_ms_)
+    , watch(CLOCK_MONOTONIC)
 {
 }
 
@@ -122,6 +127,35 @@ Processors MergeSortingTransform::expandPipeline()
         static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
 
     return std::move(processors);
+}
+
+void MergeSortingTransform::updatePartialResult()
+{
+    /// Sort all input data
+    remerge();
+    /// Add a copy of the first `partial_result_limit` rows to a generated_chunk
+    /// to send it as a partial result in the next prepare stage
+    auto generated_columns = chunks[0].cloneEmptyColumns();
+    size_t total_rows = 0;
+    for (const auto & merged_chunk : chunks)
+    {
+        size_t rows = std::min(merged_chunk.getNumRows(), partial_result_limit - total_rows);
+        if (rows == 0)
+            break;
+
+        for (size_t position = 0; position < generated_columns.size(); ++position)
+        {
+            auto column = merged_chunk.getColumns()[position];
+            generated_columns[position]->insertRangeFrom(*column, 0, rows);
+        }
+
+        total_rows += rows;
+    }
+
+    generated_chunk.setColumns(std::move(generated_columns), total_rows);
+    generated_chunk.setChunkInfo(chunks[0].getChunkInfo());
+    generated_chunk.changePartialResultStatus(true /*is_chunk_partial*/);
+    enrichChunkWithConstants(generated_chunk);
 }
 
 void MergeSortingTransform::consume(Chunk chunk)
@@ -157,6 +191,12 @@ void MergeSortingTransform::consume(Chunk chunk)
         && sum_bytes_in_blocks > max_bytes_before_remerge)
     {
         remerge();
+    }
+
+    if (partial_result_duration_ms && partial_result_duration_ms < watch.elapsedMilliseconds() && !chunks.empty())
+    {
+        updatePartialResult();
+        watch.restart();
     }
 
     /** If too many of them and if external sorting is enabled,

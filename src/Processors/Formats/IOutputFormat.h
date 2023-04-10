@@ -102,6 +102,8 @@ public:
         }
     }
 
+    void clearLastLines(size_t lines_number);
+
 protected:
     friend class ParallelFormattingOutputFormat;
 
