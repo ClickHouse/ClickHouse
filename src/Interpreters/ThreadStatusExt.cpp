@@ -505,6 +505,11 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
     if (!views_log)
         return;
 
+    if (CurrentThread::getGroup()->QueryViewsLogUpdated)
+        return;
+    else
+        CurrentThread::getGroup()->QueryViewsLogUpdated = true;
+
     QueryViewsLogElement element;
 
     element.event_time = timeInSeconds(vinfo.runtime_stats->event_time);

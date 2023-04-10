@@ -98,6 +98,8 @@ public:
         return shared_data;
     }
 
+    bool QueryViewsLogUpdated = false;
+
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
