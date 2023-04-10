@@ -56,7 +56,7 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto args = function->arguments->children;
 
-    if (args.size() < 3)
+    if (args.size() < 3 || args[2]->as<ASTSetQuery>())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{}' requires minimum 3 arguments: script_name, format, structure, [input_query...]",
             getName());
