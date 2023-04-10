@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int OPENSSL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 namespace
 {
@@ -39,7 +40,7 @@ namespace
         if (query.expect_password)
         {
             if (!context)
-                throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot get necessary parameters without context");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get necessary parameters without context");
 
             String value = checkAndGetLiteralArgument<String>(query.children[0], "password");
 
@@ -83,8 +84,8 @@ namespace
                 value.append(salt);
                 auth_data.setSalt(salt);
     #else
-                throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
     #endif
             }
 
