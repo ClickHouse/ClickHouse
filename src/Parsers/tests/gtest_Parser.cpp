@@ -261,7 +261,7 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",
-            "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
+            "CREATE USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
             "CREATE USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",
@@ -269,7 +269,7 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         },
         {
             "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'",
-            "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '[A-Za-z0-9]{64}' SALT '[A-Za-z0-9]{64}'"
+            "ALTER USER user1 IDENTIFIED WITH sha256_password BY 'qwe123'"
         },
         {
             "ALTER USER user1 IDENTIFIED WITH sha256_hash BY '7A37B85C8918EAC19A9089C0FA5A2AB4DCE3F90528DCDEEC108B23DDF3607B99' SALT 'salt'",

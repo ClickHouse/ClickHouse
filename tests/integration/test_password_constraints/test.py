@@ -47,5 +47,5 @@ def test_complexity_rules(start_cluster):
 def test_default_password_type(start_cluster):
     node2.query("CREATE USER u1 IDENTIFIED BY 'pwd'")
 
-    required_type = "DOUBLE_SHA1_PASSWORD"
+    required_type = "double_sha1_password"
     assert required_type in node2.query("SHOW CREATE USER u1")
