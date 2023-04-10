@@ -5,7 +5,6 @@
     <profiles>
         <!-- Default settings. -->
         <default>
-            <load_balancing>random</load_balancing>
         </default>
 
         <!-- Profile that allows only read queries. -->

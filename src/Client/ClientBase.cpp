@@ -328,8 +328,7 @@ void ClientBase::setupSignalHandler()
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
-    ParserQuery parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
-    ParserKQLStatement kql_parser(end, global_context->getSettings().allow_settings_after_format_in_insert);
+    std::unique_ptr<IParserBase> parser;
     ASTPtr res;
 
     const auto & settings = global_context->getSettingsRef();
@@ -350,10 +349,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (is_interactive || ignore_error)
     {
         String message;
-        if (dialect == Dialect::kusto)
-             res = tryParseQuery(kql_parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (!res)
         {
@@ -363,10 +359,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     }
     else
     {
-        if (dialect == Dialect::kusto)
-            res = parseQueryAndMovePosition(kql_parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-        else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
     if (is_interactive)
@@ -2174,8 +2167,20 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
 bool ClientBase::processQueryText(const String & text)
 {
-    if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+    auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+
+    if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
+
+    if (trimmed_input.starts_with("\\i"))
+    {
+        size_t skip_prefix_size = std::strlen("\\i");
+        auto file_name = trim(
+            trimmed_input.substr(skip_prefix_size, trimmed_input.size() - skip_prefix_size),
+            [](char c) { return isWhitespaceASCII(c); });
+
+        return processMultiQueryFromFile(file_name);
+    }
 
     if (!is_multiquery)
     {
@@ -2449,6 +2454,17 @@ void ClientBase::runInteractive()
 }
 
 
+bool ClientBase::processMultiQueryFromFile(const String & file_name)
+{
+    String queries_from_file;
+
+    ReadBufferFromFile in(file_name);
+    readStringUntilEOF(queries_from_file, in);
+
+    return executeMultiQuery(queries_from_file);
+}
+
+
 void ClientBase::runNonInteractive()
 {
     if (delayed_interactive)
@@ -2456,23 +2472,13 @@ void ClientBase::runNonInteractive()
 
     if (!queries_files.empty())
     {
-        auto process_multi_query_from_file = [&](const String & file)
-        {
-            String queries_from_file;
-
-            ReadBufferFromFile in(file);
-            readStringUntilEOF(queries_from_file, in);
-
-            return executeMultiQuery(queries_from_file);
-        };
-
         for (const auto & queries_file : queries_files)
         {
             for (const auto & interleave_file : interleave_queries_files)
-                if (!process_multi_query_from_file(interleave_file))
+                if (!processMultiQueryFromFile(interleave_file))
                     return;
 
-            if (!process_multi_query_from_file(queries_file))
+            if (!processMultiQueryFromFile(queries_file))
                 return;
         }
 

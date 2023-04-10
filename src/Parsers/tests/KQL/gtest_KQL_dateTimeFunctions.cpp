@@ -69,7 +69,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Datetime, ParserTest,
         {
             "print ago(2d)",
             "SELECT now64(9, 'UTC') - 172800"
-        },  
+        },
         {
             "print endofday(datetime(2017-01-01 10:10:17), -1)",
             "SELECT (toDateTime(toStartOfDay(parseDateTime64BestEffortOrNull('2017-01-01 10:10:17', 9, 'UTC')), 9, 'UTC') + toIntervalDay(-1 + 1)) - toIntervalMicrosecond(1)"
