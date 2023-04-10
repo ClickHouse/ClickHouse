@@ -9,6 +9,8 @@ namespace DB
 struct Settings;
 
 class AggregateFunctionFactory;
+void registerAggregateFunctionSessionDuration(AggregateFunctionFactory &);
+
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);
 void registerAggregateFunctionAvgWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionCount(AggregateFunctionFactory &);
@@ -70,6 +72,8 @@ void registerAggregateFunctions()
 {
     {
         auto & factory = AggregateFunctionFactory::instance();
+
+        registerAggregateFunctionSessionDuration(factory);
 
         registerAggregateFunctionAvg(factory);
         registerAggregateFunctionAvgWeighted(factory);
