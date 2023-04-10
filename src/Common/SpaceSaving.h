@@ -51,6 +51,9 @@ struct SpaceSavingArena<StringRef>
 {
     StringRef emplace(StringRef key)
     {
+        if (!key.data)
+            return key;
+
         return copyStringInArena(arena, key);
     }
 
