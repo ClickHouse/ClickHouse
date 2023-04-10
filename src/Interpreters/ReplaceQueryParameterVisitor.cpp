@@ -103,6 +103,9 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     else
         literal = temp_column[0];
 
+    /// If it's a String, substitute it in the form of a string literal without CAST
+    /// to enable substitutions in simple queries that don't support expressions
+    /// (such as CREATE USER).
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         ast = std::make_shared<ASTLiteral>(literal);
     else
