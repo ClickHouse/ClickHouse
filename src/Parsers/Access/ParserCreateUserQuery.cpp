@@ -116,7 +116,7 @@ namespace
                 }
             }
 
-            /// If authentication type is not specied, then the default password type is used
+            /// If authentication type is not specified, then the default password type is used
             if (!type)
                 expect_password = true;
 

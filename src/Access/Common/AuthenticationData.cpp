@@ -5,12 +5,7 @@
 #include <base/types.h>
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <Common/hex.h>
-#if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#     include <openssl/err.h>
-#endif
+
 
 namespace DB
 {
@@ -20,7 +15,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int OPENSSL_ERROR;
 }
 
 
