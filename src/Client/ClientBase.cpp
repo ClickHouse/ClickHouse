@@ -33,6 +33,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -349,16 +350,6 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     else
     {
         res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
-    }
-
-    /// We need to change the auth_data before the query will be formatted
-    if (const auto * create_user_query = res->as<ASTCreateUserQuery>())
-    {
-        if (create_user_query->auth_data->getType() == AuthenticationType::NO_PASSWORD && create_user_query->temporary_password)
-        {
-            AuthenticationType default_password_type = global_context->getAccessControl().getDefaultPasswordType();
-            create_user_query->auth_data = AuthenticationData::makePasswordAuthenticationData(default_password_type, create_user_query->temporary_password.value());
-        }
     }
 
     if (is_interactive)
@@ -804,13 +795,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// But for asynchronous inserts we don't extract data, because it's needed
     /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
     const auto * insert = parsed_query->as<ASTInsertQuery>();
-    /// In the case of a CREATE USER query, we should serialize the parsed AST to send
-    /// the hash of the password, if applicable, to the server instead of the actual password.
-    const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>();
     if (insert && isSyncInsertWithData(*insert, global_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
-    else if (create_user_query)
-        query_to_execute = serializeAST(*parsed_query);
     else
         query_to_execute = full_query;
 
@@ -1602,10 +1588,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && create_user_query->temporary_password)
+        if (!create_user_query->attach && create_user_query->auth_data)
         {
-            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password.value());
-            create_user_query->temporary_password.reset();
+            if (const auto * auth_data = create_user_query->auth_data->as<ASTAuthenticationData>())
+                auth_data->checkPasswordComplexityRules(global_context);
         }
     }
 
@@ -1826,12 +1812,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
     }
 
-    /// In the case of a CREATE USER query, we should serialize the parsed AST to send
-    /// the hash of the password, if applicable, to the server instead of the actual password.
-    if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
-        query_to_execute = serializeAST(*parsed_query);
-    else
-        query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
+    query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
 
     // Try to include the trailing comment with test hints. It is just
     // a guess for now, because we don't yet know where the query ends

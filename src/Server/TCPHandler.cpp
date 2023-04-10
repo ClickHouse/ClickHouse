@@ -1283,12 +1283,6 @@ void TCPHandler::sendHello()
             writeStringBinary(exception_message, *out);
         }
     }
-    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_DEFAULT_PASSWORD_TYPE)
-    {
-        auto default_password_type = server.context()->getAccessControl().getDefaultPasswordType();
-        auto default_password_type_uint = static_cast<UInt64>(default_password_type);
-        writeVarUInt(default_password_type_uint, *out);
-    }
 
     out->next();
 }

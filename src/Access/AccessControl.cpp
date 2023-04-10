@@ -661,15 +661,7 @@ void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)
     else if (type_ == "sha256")
         default_password_type = AuthenticationType::SHA256_PASSWORD;
     else
-        throw Exception("Unknown password type in 'default_password_type' in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-}
-
-void AccessControl::setDefaultPasswordType(const AuthenticationType & type_)
-{
-    if (type_ < AuthenticationType::MAX)
-        default_password_type = type_;
-    else
-        default_password_type = AuthenticationType::SHA256_PASSWORD;
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown password type in 'default_password_type' in config");
 }
 
 AuthenticationType AccessControl::getDefaultPasswordType() const
