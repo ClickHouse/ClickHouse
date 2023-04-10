@@ -3,7 +3,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
-#include "Core/Types.h"
 
 #include <DataTypes/getLeastSupertype.h>
 
