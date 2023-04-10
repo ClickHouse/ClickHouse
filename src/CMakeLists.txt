@@ -668,7 +668,7 @@ if (TARGET ch_contrib::prometheus_protobufs)
 endif()
 
 if (TARGET ch_contrib::acme-lw)
-    dbms_target_include_directories(PUBLIC ch_contrib::acme-lw)
+    dbms_target_link_libraries(PUBLIC ch_contrib::acme-lw)
 endif()
 
 if (TARGET ch_rust::skim)
