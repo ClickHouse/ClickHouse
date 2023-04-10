@@ -37,8 +37,6 @@ struct SoundexImpl
     {
         length = 4
     };
-    /* ABCDEFGHIJKLMNOPQRSTUVWXYZ */
-    /* :::::::::::::::::::::::::: */
     static constexpr auto soundex_map = "01230120022455012623010202";
 
     static char getScode(const char *& ptr, const char * in_end)
