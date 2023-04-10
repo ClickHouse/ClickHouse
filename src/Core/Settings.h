@@ -283,7 +283,7 @@ class IColumn;
     \
     M(Bool, final, false, "Query with the FINAL modifier by default. If the engine does not support final, it does not have any effect. On queries with multiple tables final is applied only on those that support it. It also works on distributed tables", 0) \
     \
-    M(Bool, stop_reading_on_first_cancel, false, "Allows query to return a partial result after cancel.", 0) \
+    M(Bool, partial_result_on_first_cancel, false, "Allows query to return a partial result after cancel.", 0) \
     \
     M(Milliseconds, partial_result_update_duration_ms, 0, "Duration of time in milliseconds between real-time updates of result table sent to the client during query execution.", 0) \
     M(UInt64, max_rows_in_partial_result, 10, "Max rows displayed to user after each real-time update of output table during query execution.", 0) \
