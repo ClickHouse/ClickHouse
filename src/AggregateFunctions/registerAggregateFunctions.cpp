@@ -188,5 +188,4 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorMap(factory);
     }
 }
-
 }
