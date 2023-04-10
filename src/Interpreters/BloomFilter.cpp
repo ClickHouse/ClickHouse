@@ -25,9 +25,9 @@ BloomFilterParameters::BloomFilterParameters(size_t filter_size_, size_t filter_
     : filter_size(filter_size_), filter_hashes(filter_hashes_), seed(seed_)
 {
     if (filter_size == 0)
-        throw Exception("The size of bloom filter cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of bloom filter cannot be zero");
     if (filter_hashes == 0)
-        throw Exception("The number of hash functions for bloom filter cannot be zero", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of hash functions for bloom filter cannot be zero");
     if (filter_size > MAX_BLOOM_FILTER_SIZE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of bloom filter cannot be more than {}", MAX_BLOOM_FILTER_SIZE);
 }
@@ -121,7 +121,7 @@ DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
         if (!typeid_cast<const DataTypeArray *>(array_type->getNestedType().get()))
             return getPrimitiveType(array_type->getNestedType());
         else
-            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
     }
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))

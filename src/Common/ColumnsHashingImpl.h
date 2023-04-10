@@ -6,7 +6,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -140,7 +139,7 @@ public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 
-template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false>
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>
 class HashMethodBase
 {
 public:
@@ -154,6 +153,19 @@ public:
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return emplaceImpl(key_holder, data);
     }
@@ -161,6 +173,16 @@ public:
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&data.getNullKeyData(), data.hasNullKeyData(), 0);
+                else
+                    return FindResult(data.hasNullKeyData(), 0);
+            }
+        }
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return findKeyImpl(keyHolderGetKey(key_holder), data);
     }
@@ -172,10 +194,25 @@ public:
         return data.hash(keyHolderGetKey(key_holder));
     }
 
+    ALWAYS_INLINE bool isNullAt(size_t row) const
+    {
+        if constexpr (nullable)
+        {
+            return null_map->getBool(row);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
 protected:
     Cache cache;
+    const IColumn * null_map = nullptr;
+    bool has_null_data = false;
 
-    HashMethodBase()
+    /// column argument only for nullable column
+    explicit HashMethodBase(const IColumn * column = nullptr)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -187,6 +224,11 @@ protected:
             }
             else
                 cache.value = Value();
+        }
+        if constexpr (nullable)
+        {
+
+            null_map = &checkAndGetColumn<ColumnNullable>(column)->getNullMapColumn();
         }
     }
 
@@ -293,7 +335,6 @@ protected:
     }
 };
 
-
 template <typename T>
 struct MappedCache : public PaddedPODArray<T> {};
 
@@ -379,8 +420,7 @@ protected:
 
     KeysNullMap<Key> createBitmap(size_t) const
     {
-        throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
-                        " is forbidden", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling createBitmap() for non-nullable keys is forbidden");
     }
 
 private:

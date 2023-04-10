@@ -198,7 +198,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , join_algorithm(JoinAlgorithm::HASH)
+        , join_algorithm(JoinAlgorithm::DEFAULT)
     {
         clauses.emplace_back().key_names_right = key_names_right;
         table_join.kind = kind;
@@ -209,7 +209,7 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getTemporaryVolume() { return tmp_volume; }
+    VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
@@ -329,10 +329,12 @@ public:
 
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { getOnlyClause().key_names_right = keys; }
+    void setLeftKeys(const Names & keys) { getOnlyClause().key_names_left = keys; }
 
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+    void setRename(const String & from, const String & to);
 
     void resetKeys();
     void resetToCross();

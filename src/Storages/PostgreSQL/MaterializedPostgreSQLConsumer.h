@@ -72,11 +72,10 @@ public:
             const String & start_lsn,
             size_t max_block_size_,
             bool schema_as_a_part_of_table_name_,
-            bool allow_automatic_update_,
             StorageInfos storages_,
             const String & name_for_logger);
 
-    bool consume(std::vector<std::pair<Int32, String>> & skipped_tables);
+    bool consume();
 
     /// Called from reloadFromSnapshot by replication handler. This method is needed to move a table back into synchronization
     /// process if it was skipped due to schema changes.
@@ -89,9 +88,6 @@ public:
     void setSetting(const SettingChange & setting);
 
 private:
-    /// Read approximarely up to max_block_size changes from WAL.
-    bool readFromReplicationSlot();
-
     void syncTables();
 
     void updateLsn();
@@ -150,8 +146,6 @@ private:
     size_t max_block_size;
 
     bool schema_as_a_part_of_table_name;
-
-    bool allow_automatic_update;
 
     String table_to_insert;
 

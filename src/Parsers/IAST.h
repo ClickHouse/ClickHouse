@@ -48,12 +48,12 @@ public:
 
     virtual void appendColumnName(WriteBuffer &) const
     {
-        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
     }
 
     virtual void appendColumnNameWithoutAlias(WriteBuffer &) const
     {
-        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
     }
 
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
@@ -65,7 +65,7 @@ public:
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {}", getColumnName());
     }
 
     /** Get the text that identifies this element. */
@@ -119,7 +119,7 @@ public:
 
         T * casted = dynamic_cast<T *>(child.get());
         if (!casted)
-            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         children.push_back(child);
         field = casted;
@@ -129,11 +129,11 @@ public:
     void replace(T * & field, const ASTPtr & child)
     {
         if (!child)
-            throw Exception("Trying to replace AST subtree with nullptr", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
 
         T * casted = dynamic_cast<T *>(child.get());
         if (!casted)
-            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         for (ASTPtr & current_child : children)
         {
@@ -145,7 +145,7 @@ public:
             }
         }
 
-        throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
     }
 
     template <typename T>
@@ -169,10 +169,20 @@ public:
         });
 
         if (child == children.end())
-            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
 
         children.erase(child);
         field = nullptr;
+    }
+
+    /// After changing one of `children` elements, update the corresponding member pointer if needed.
+    void updatePointerToChild(void * old_ptr, void * new_ptr)
+    {
+        forEachPointerToChild([old_ptr, new_ptr](void ** ptr) mutable
+        {
+            if (*ptr == old_ptr)
+                *ptr = new_ptr;
+        });
     }
 
     /// Convert to a string.
@@ -198,7 +208,8 @@ public:
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
+            show_secrets(other.show_secrets)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
@@ -237,7 +248,7 @@ public:
 
     virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        throw Exception("Unknown element in AST: " + getID(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
 
     // A simple way to add some user-readable context to an error message.
@@ -253,16 +264,33 @@ public:
     enum class QueryKind : uint8_t
     {
         None = 0,
-        Alter,
+        Select,
+        Insert,
+        Delete,
         Create,
         Drop,
-        Grant,
-        Insert,
+        Undrop,
         Rename,
+        Optimize,
+        Check,
+        Alter,
+        Grant,
         Revoke,
-        SelectIntersectExcept,
-        Select,
         System,
+        Set,
+        Use,
+        Show,
+        Exists,
+        Describe,
+        Explain,
+        Backup,
+        Restore,
+        KillQuery,
+        ExternalDDL,
+        Begin,
+        Commit,
+        Rollback,
+        SetTransactionSnapshot,
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
@@ -278,6 +306,10 @@ public:
 
 protected:
     bool childrenHaveSecretParts() const;
+
+    /// Some AST classes have naked pointers to children elements as members.
+    /// This method allows to iterate over them.
+    virtual void forEachPointerToChild(std::function<void(void**)>) {}
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;

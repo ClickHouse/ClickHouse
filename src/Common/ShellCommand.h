@@ -27,18 +27,18 @@ namespace DB
 class ShellCommand final
 {
 public:
-
     ~ShellCommand();
 
     struct DestructorStrategy final
     {
-        explicit DestructorStrategy(bool terminate_in_destructor_, size_t wait_for_normal_exit_before_termination_seconds_ = 0)
-            : terminate_in_destructor(terminate_in_destructor_)
+        explicit DestructorStrategy(bool terminate_in_destructor_, int termination_signal_, size_t wait_for_normal_exit_before_termination_seconds_ = 0)
+            : terminate_in_destructor(terminate_in_destructor_), termination_signal(termination_signal_)
             , wait_for_normal_exit_before_termination_seconds(wait_for_normal_exit_before_termination_seconds_)
         {
         }
 
         bool terminate_in_destructor;
+        int termination_signal;
 
         /// If terminate in destructor is true, command will wait until send SIGTERM signal to created process
         size_t wait_for_normal_exit_before_termination_seconds = 0;
@@ -64,7 +64,7 @@ public:
 
         bool pipe_stdin_only = false;
 
-        DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false);
+        DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
     };
 
     /// Run the command using /bin/sh -c.

@@ -15,9 +15,6 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </disk_s3>
-            <disk_memory>
-                <type>memory</type>
-            </disk_memory>
             <disk_encrypted>
                 <type>encrypted</type>
                 <disk>disk_s3</disk>

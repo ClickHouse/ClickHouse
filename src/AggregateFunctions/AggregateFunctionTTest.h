@@ -46,7 +46,7 @@ private:
     Float64 confidence_level;
 public:
     AggregateFunctionTTest(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params, createResultType(!params.empty()))
     {
         if (!params.empty())
         {
@@ -71,9 +71,9 @@ public:
         return Data::name;
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(bool need_confidence_interval_)
     {
-        if (need_confidence_interval)
+        if (need_confidence_interval_)
         {
             DataTypes types
             {

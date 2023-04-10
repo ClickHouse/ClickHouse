@@ -6,6 +6,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -13,11 +14,17 @@ namespace DB
 namespace
 {
 
-class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitor<NormalizeCountVariantsVisitor>
+class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>
 {
 public:
-    static void visitImpl(QueryTreeNodePtr & node)
+    using Base = InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>;
+    using Base::Base;
+
+    void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_normalize_count_variants)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || (function_node->getFunctionName() != "count" && function_node->getFunctionName() != "sum"))
             return;
@@ -48,20 +55,18 @@ public:
 private:
     static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
     {
-        auto function_result_type = function_node.getResultType();
-
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
 
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 
 }
 
-void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    NormalizeCountVariantsVisitor visitor;
+    NormalizeCountVariantsVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 

@@ -107,7 +107,7 @@ public:
         if (it == sessions.end())
         {
             if (throw_if_not_found)
-                throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
+                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
             /// Create a new session from current context.
             auto context = Context::createCopy(global_context);
@@ -129,7 +129,7 @@ public:
             LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
-                throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
+                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
             return {session, false};
         }
     }
@@ -138,6 +138,26 @@ public:
     {
         std::unique_lock lock(mutex);
         scheduleCloseSession(session, lock);
+    }
+
+    void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
+    {
+        std::unique_lock lock(mutex);
+        scheduleCloseSession(*session_data, lock);
+        session_data = nullptr;
+
+        Key key{user_id, session_id};
+        auto it = sessions.find(key);
+        if (it == sessions.end())
+        {
+            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, user_id);
+            return;
+        }
+
+        if (!it->second.unique())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot close session {} with refcount {}", session_id, it->second.use_count());
+
+        sessions.erase(it);
     }
 
 private:
@@ -311,7 +331,7 @@ void Session::authenticate(const String & user_name, const String & password, co
 void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_)
 {
     if (session_context)
-        throw Exception("If there is a session context it must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
 
     auto address = address_;
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
@@ -362,11 +382,11 @@ const ClientInfo & Session::getClientInfo() const
 ContextMutablePtr Session::makeSessionContext()
 {
     if (session_context)
-        throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context already exists");
     if (query_context_created)
-        throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
     LOG_DEBUG(log, "{} Creating session context with user_id: {}",
             toString(auth_id), toString(*user_id));
@@ -394,11 +414,11 @@ ContextMutablePtr Session::makeSessionContext()
 ContextMutablePtr Session::makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_)
 {
     if (session_context)
-        throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context already exists");
     if (query_context_created)
-        throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
     LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
             toString(auth_id), session_name_, toString(*user_id));
@@ -408,7 +428,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     std::shared_ptr<NamedSessionData> new_named_session;
     bool new_named_session_created = false;
     std::tie(new_named_session, new_named_session_created)
-        = NamedSessionsStorage::instance().acquireSession(global_context, user_id.value_or(UUID{}), session_name_, timeout_, session_check_);
+        = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
     auto new_session_context = new_named_session->context;
     new_session_context->makeSessionContext();
@@ -453,7 +473,7 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
 ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
     bool from_session_context = static_cast<bool>(session_context);
@@ -531,6 +551,18 @@ void Session::releaseSessionID()
         return;
     named_session->release();
     named_session = nullptr;
+}
+
+void Session::closeSession(const String & session_id)
+{
+    if (!user_id)   /// User was not authenticated
+        return;
+
+    /// named_session may be not set due to an early exception
+    if (!named_session)
+        return;
+
+    NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
 }
 
 }

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Common/VariableContext.h>
-#include "base/types.h"
+#include <base/types.h>
+#include <base/strong_typedef.h>
 #include <atomic>
 #include <memory>
 #include <cstddef>
@@ -14,7 +15,7 @@
 namespace ProfileEvents
 {
     /// Event identifier (index in array).
-    using Event = size_t;
+    using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
     using Increment = Int64;
     using Counter = std::atomic<Count>;
@@ -54,6 +55,7 @@ namespace ProfileEvents
         }
 
         void increment(Event event, Count amount = 1);
+        void incrementNoTrace(Event event, Count amount = 1);
 
         struct Snapshot
         {
@@ -104,6 +106,10 @@ namespace ProfileEvents
 
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
+
+    /// The same as above but ignores value of setting 'trace_profile_events'
+    /// and never sends profile event to trace log.
+    void incrementNoTrace(Event event, Count amount = 1);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);

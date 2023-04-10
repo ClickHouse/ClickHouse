@@ -5,12 +5,13 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from os import path as p
 from time import sleep
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import github
 
 # explicit reimport
 # pylint: disable=useless-import-alias
+from github.AuthenticatedUser import AuthenticatedUser
 from github.GithubException import (
     RateLimitExceededException as RateLimitExceededException,
 )
@@ -30,9 +31,13 @@ Issues = List[Issue]
 
 
 class GitHub(github.Github):
-    def __init__(self, *args, **kwargs):
-        # Define meta attribute
+    def __init__(self, *args, create_cache_dir=True, **kwargs):
+        # Define meta attribute and apply setter logic
         self._cache_path = Path(CACHE_PATH)
+        if create_cache_dir:
+            self.cache_path = self.cache_path
+        if not kwargs.get("per_page"):
+            kwargs["per_page"] = 100
         # And set Path
         super().__init__(*args, **kwargs)
         self._retries = 0
@@ -153,7 +158,7 @@ class GitHub(github.Github):
 
     def get_user_cached(
         self, login: str, obj_updated_at: Optional[datetime] = None
-    ) -> NamedUser:
+    ) -> Union[AuthenticatedUser, NamedUser]:
         cache_file = self.cache_path / f"user-{login}.pickle"
 
         if cache_file.is_file():

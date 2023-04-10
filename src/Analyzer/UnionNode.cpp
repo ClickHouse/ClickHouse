@@ -3,8 +3,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
-#include <Core/NamesAndTypes.h>
-
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -18,8 +16,11 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/NamesAndTypes.h>
 
 #include <DataTypes/getLeastSupertype.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
@@ -33,8 +34,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-UnionNode::UnionNode(SelectUnionMode union_mode_)
+UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
     : IQueryTreeNode(children_size)
+    , context(std::move(context_))
     , union_mode(union_mode_)
 {
     if (union_mode == SelectUnionMode::UNION_DEFAULT ||
@@ -129,7 +131,7 @@ void UnionNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
 {
-    auto result_union_node = std::make_shared<UnionNode>(union_mode);
+    auto result_union_node = std::make_shared<UnionNode>(context, union_mode);
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
@@ -138,13 +140,23 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     return result_union_node;
 }
 
-ASTPtr UnionNode::toASTImpl() const
+ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
     select_with_union_query->is_normalized = true;
-    select_with_union_query->children.push_back(getQueriesNode()->toAST());
+    select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+    if (is_subquery)
+    {
+        auto subquery = std::make_shared<ASTSubquery>();
+
+        subquery->cte_name = cte_name;
+        subquery->children.push_back(std::move(select_with_union_query));
+
+        return subquery;
+    }
 
     return select_with_union_query;
 }

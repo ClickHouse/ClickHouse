@@ -39,6 +39,8 @@ _GITHUB_JOB_URL = ""
 def GITHUB_JOB_ID() -> str:
     global _GITHUB_JOB_ID
     global _GITHUB_JOB_URL
+    if GITHUB_RUN_ID == "0":
+        _GITHUB_JOB_ID = "0"
     if _GITHUB_JOB_ID:
         return _GITHUB_JOB_ID
     jobs = []

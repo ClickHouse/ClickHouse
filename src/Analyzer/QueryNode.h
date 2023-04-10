@@ -10,6 +10,8 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
+#include <Interpreters/Context_fwd.h>
+
 namespace DB
 {
 
@@ -61,7 +63,41 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class QueryNode final : public IQueryTreeNode
 {
 public:
-    explicit QueryNode();
+    /// Construct query node with context and changed settings
+    explicit QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_);
+
+    /// Construct query node with context
+    explicit QueryNode(ContextMutablePtr context_);
+
+    /// Get context
+    ContextPtr getContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    const ContextMutablePtr & getMutableContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    ContextMutablePtr & getMutableContext()
+    {
+        return context;
+    }
+
+    /// Returns true if query node has settings changes, false otherwise
+    bool hasSettingsChanges() const
+    {
+        return !settings_changes.empty();
+    }
+
+    /// Get query node settings changes
+    const SettingsChanges & getSettingsChanges() const
+    {
+        return settings_changes;
+    }
 
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
@@ -513,24 +549,6 @@ public:
         return children[offset_child_index];
     }
 
-    /// Returns true if query node has settings changes specified, false otherwise
-    bool hasSettingsChanges() const
-    {
-        return !settings_changes.empty();
-    }
-
-    /// Get query node settings changes
-    const SettingsChanges & getSettingsChanges() const
-    {
-        return settings_changes;
-    }
-
-    /// Set query node settings changes value
-    void setSettingsChanges(SettingsChanges settings_changes_value)
-    {
-        settings_changes = std::move(settings_changes_value);
-    }
-
     /// Get query node projection columns
     const NamesAndTypes & getProjectionColumns() const
     {
@@ -557,7 +575,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;
@@ -572,6 +590,7 @@ private:
 
     std::string cte_name;
     NamesAndTypes projection_columns;
+    ContextMutablePtr context;
     SettingsChanges settings_changes;
 
     static constexpr size_t with_child_index = 0;

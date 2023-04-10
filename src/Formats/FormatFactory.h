@@ -15,6 +15,7 @@
 #include <memory>
 #include <unordered_map>
 
+
 namespace DB
 {
 
@@ -30,9 +31,9 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 
 class IInputFormat;
 class IOutputFormat;
+class IRowOutputFormat;
 
 struct RowInputFormatParams;
-struct RowOutputFormatParams;
 
 class ISchemaReader;
 class IExternalSchemaReader;
@@ -41,6 +42,7 @@ using ExternalSchemaReaderPtr = std::shared_ptr<IExternalSchemaReader>;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 
 template <typename Allocator>
 struct Memory;
@@ -56,10 +58,6 @@ FormatSettings getFormatSettings(ContextPtr context, const T & settings);
 class FormatFactory final : private boost::noncopyable
 {
 public:
-    /// This callback allows to perform some additional actions after reading a single row.
-    /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
-    using ReadCallback = std::function<void()>;
-
     /** Fast reading data from buffer and save result to memory.
       * Reads at least `min_bytes` and some more until the end of the chunk, depends on the format.
       * If `max_rows` is non-zero the function also stops after reading the `max_rows` number of rows
@@ -72,12 +70,6 @@ public:
         size_t min_bytes,
         size_t max_rows)>;
 
-    /// This callback allows to perform some additional actions after writing a single row.
-    /// It's initial purpose was to flush Kafka message for each row.
-    using WriteCallback = std::function<void(
-        const Columns & columns,
-        size_t row)>;
-
 private:
     using InputCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
@@ -88,7 +80,6 @@ private:
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
     /// Some input formats can have non trivial readPrefix() and readSuffix(),
@@ -153,7 +144,6 @@ public:
         WriteBuffer & buf,
         const Block & sample,
         ContextPtr context,
-        WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
@@ -161,7 +151,6 @@ public:
         WriteBuffer & buf,
         const Block & sample,
         ContextPtr context,
-        WriteCallback callback = {},
         const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
 
     String getContentType(

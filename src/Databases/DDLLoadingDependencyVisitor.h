@@ -23,7 +23,8 @@ class DDLMatcherBase
 {
 public:
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
-    static ssize_t getPositionOfTableNameArgument(const ASTFunction & function);
+    static ssize_t getPositionOfTableNameArgumentToVisit(const ASTFunction & function);
+    static ssize_t getPositionOfTableNameArgumentToEvaluate(const ASTFunction & function);
 };
 
 /// Visits ASTCreateQuery and extracts the names of all tables which should be loaded before a specified table.

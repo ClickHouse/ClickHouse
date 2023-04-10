@@ -61,7 +61,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t current_columns_number = columns_number++;
+        size_t current_columns_number = columns_number.fetch_add(1, std::memory_order_relaxed);
         return ColumnUInt64::create(input_rows_count, current_columns_number);
     }
 };

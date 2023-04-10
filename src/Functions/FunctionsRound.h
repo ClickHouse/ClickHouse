@@ -414,8 +414,7 @@ public:
             case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
             case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
             default:
-                throw Exception("Unexpected 'scale' parameter passed to function",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'scale' parameter passed to function");
         }
     }
 };
@@ -539,14 +538,14 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if ((arguments.empty()) || (arguments.size() > 2))
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
+                getName(), arguments.size());
 
         for (const auto & type : arguments)
             if (!isNumber(type))
-                throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arguments[0]->getName(), getName());
 
         return arguments[0];
     }
@@ -557,17 +556,17 @@ public:
         {
             const IColumn & scale_column = *arguments[1].column;
             if (!isColumnConst(scale_column))
-                throw Exception("Scale argument for rounding functions must be constant", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument for rounding functions must be constant");
 
             Field scale_field = assert_cast<const ColumnConst &>(scale_column).getField();
             if (scale_field.getType() != Field::Types::UInt64
                 && scale_field.getType() != Field::Types::Int64)
-                throw Exception("Scale argument for rounding functions must have integer type", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument for rounding functions must have integer type");
 
             Int64 scale64 = scale_field.get<Int64>();
             if (scale64 > std::numeric_limits<Scale>::max()
                 || scale64 < std::numeric_limits<Scale>::min())
-                throw Exception("Scale argument for rounding function is too large", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale argument for rounding function is too large");
 
             return scale64;
         }
@@ -603,13 +602,12 @@ public:
 
         if constexpr (rounding_mode == RoundingMode::Round)
             if (0 != fesetround(FE_TONEAREST))
-                throw Exception("Cannot set floating point rounding mode", ErrorCodes::CANNOT_SET_ROUNDING_MODE);
+                throw Exception(ErrorCodes::CANNOT_SET_ROUNDING_MODE, "Cannot set floating point rounding mode");
 #endif
 
         if (!callOnIndexAndDataType<void>(column.type->getTypeId(), call))
         {
-            throw Exception("Illegal column " + column.name + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", column.name, getName());
         }
 
         return res;
@@ -649,22 +647,22 @@ public:
         const DataTypePtr & type_x = arguments[0];
 
         if (!isNumber(type_x))
-            throw Exception{"Unsupported type " + type_x->getName()
-                            + " of first argument of function " + getName()
-                            + ", must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Unsupported type {} of first argument of function {}, must be numeric type.",
+                            type_x->getName(), getName());
 
         const DataTypeArray * type_arr = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
         if (!type_arr)
-            throw Exception{"Second argument of function " + getName()
-                            + ", must be array of boundaries to round to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second argument of function {}, must be array of boundaries to round to.", getName());
 
         const auto type_arr_nested = type_arr->getNestedType();
 
         if (!isNumber(type_arr_nested))
         {
-            throw Exception{"Elements of array of second argument of function " + getName()
-                            + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Elements of array of second argument of function {} must be numeric type.", getName());
         }
         return getLeastSupertype(DataTypes{type_x, type_arr_nested});
     }
@@ -691,7 +689,7 @@ public:
         auto boundaries = typeid_cast<const ColumnConst &>(*array_column).getValue<Array>();
         size_t num_boundaries = boundaries.size();
         if (!num_boundaries)
-            throw Exception("Empty array is illegal for boundaries in " + getName() + " function", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty array is illegal for boundaries in {} function", getName());
 
         if (!executeNum<UInt8>(in, out, boundaries)
             && !executeNum<UInt16>(in, out, boundaries)
@@ -705,9 +703,10 @@ public:
             && !executeNum<Float64>(in, out, boundaries)
             && !executeDecimal<Decimal32>(in, out, boundaries)
             && !executeDecimal<Decimal64>(in, out, boundaries)
-            && !executeDecimal<Decimal128>(in, out, boundaries))
+            && !executeDecimal<Decimal128>(in, out, boundaries)
+            && !executeDecimal<Decimal256>(in, out, boundaries))
         {
-            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }
 
         return column_result;

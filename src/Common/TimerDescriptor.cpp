@@ -1,12 +1,11 @@
 #if defined(OS_LINUX)
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 
 #include <sys/timerfd.h>
 #include <fcntl.h>
 #include <unistd.h>
-
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -38,7 +37,10 @@ TimerDescriptor::~TimerDescriptor()
 {
     /// Do not check for result cause cannot throw exception.
     if (timer_fd != -1)
-        close(timer_fd);
+    {
+        int err = close(timer_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 void TimerDescriptor::reset() const
@@ -72,8 +74,6 @@ void TimerDescriptor::drain() const
 
             if (errno != EINTR)
                 throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
-            else
-                LOG_TEST(&Poco::Logger::get("TimerDescriptor"), "EINTR");
         }
     }
 }

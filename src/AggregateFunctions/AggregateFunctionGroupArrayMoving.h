@@ -32,6 +32,9 @@ namespace ErrorCodes
 template <typename T>
 struct MovingData
 {
+    /// For easy serialization.
+    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+
     using Accumulator = T;
 
     /// Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
@@ -93,12 +96,15 @@ public:
     using ColumnResult = ColumnVectorOrDecimal<ResultT>;
 
     explicit MovingImpl(const DataTypePtr & data_type_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, {})
+        : IAggregateFunctionDataHelper<Data, MovingImpl<T, LimitNumElements, Data>>({data_type_}, {}, createResultType(data_type_))
         , window_size(window_size_) {}
 
     String getName() const override { return Data::name; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(getReturnTypeElement()); }
+    static DataTypePtr createResultType(const DataTypePtr & argument)
+    {
+        return std::make_shared<DataTypeArray>(getReturnTypeElement(argument));
+    }
 
     void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -138,7 +144,8 @@ public:
         readVarUInt(size, buf);
 
         if (unlikely(size > AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE);
 
         if (size > 0)
         {
@@ -183,14 +190,14 @@ public:
     }
 
 private:
-    auto getReturnTypeElement() const
+    static auto getReturnTypeElement(const DataTypePtr & argument)
     {
         if constexpr (!is_decimal<ResultT>)
             return std::make_shared<DataTypeNumber<ResultT>>();
         else
         {
             using Res = DataTypeDecimal<ResultT>;
-            return std::make_shared<Res>(Res::maxPrecision(), getDecimalScale(*this->argument_types.at(0)));
+            return std::make_shared<Res>(Res::maxPrecision(), getDecimalScale(*argument));
         }
     }
 };

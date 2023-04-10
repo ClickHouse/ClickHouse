@@ -1,15 +1,18 @@
 #include <Backups/BackupIO_File.h>
+#include <Disks/IDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+
 
 namespace fs = std::filesystem;
 
 
 namespace DB
 {
-BackupReaderFile::BackupReaderFile(const String & path_) : path(path_)
+BackupReaderFile::BackupReaderFile(const String & path_) : path(path_), log(&Poco::Logger::get("BackupReaderFile"))
 {
 }
 
@@ -30,7 +33,25 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
     return createReadBufferFromFileBase(path / file_name, {});
 }
 
-BackupWriterFile::BackupWriterFile(const String & path_) : path(path_)
+void BackupReaderFile::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                      WriteMode write_mode, const WriteSettings & write_settings)
+{
+    if (destination_disk->getDataSourceDescription() == getDataSourceDescription())
+    {
+        /// Use more optimal way.
+        LOG_TRACE(log, "Copying {}/{} to disk {} locally", path, file_name, destination_disk->getName());
+        fs::copy(path / file_name, fullPath(destination_disk, destination_path), fs::copy_options::overwrite_existing);
+        return;
+    }
+
+    LOG_TRACE(log, "Copying {}/{} to disk {} through buffers", path, file_name, destination_disk->getName());
+    IBackupReader::copyFileToDisk(path / file_name, size, destination_disk, destination_path, write_mode, write_settings);
+}
+
+
+BackupWriterFile::BackupWriterFile(const String & path_, const ContextPtr & context_)
+    : IBackupWriter(context_)
+    , path(path_)
 {
 }
 
@@ -70,6 +91,13 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
     auto file_path = path / file_name;
     fs::create_directories(file_path.parent_path());
     return std::make_unique<WriteBufferFromFile>(file_path);
+}
+
+void BackupWriterFile::removeFile(const String & file_name)
+{
+    fs::remove(path / file_name);
+    if (fs::is_directory(path) && fs::is_empty(path))
+        fs::remove(path);
 }
 
 void BackupWriterFile::removeFiles(const Strings & file_names)
@@ -118,17 +146,24 @@ bool BackupWriterFile::supportNativeCopy(DataSourceDescription data_source_descr
     return data_source_description == getDataSourceDescription();
 }
 
-void BackupWriterFile::copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to)
+void BackupWriterFile::copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
 {
-    auto file_path = path / file_name_to;
-    fs::create_directories(file_path.parent_path());
     std::string abs_source_path;
-    if (from_disk)
-        abs_source_path = fullPath(from_disk, file_name_from);
+    if (src_disk)
+        abs_source_path = fullPath(src_disk, src_file_name);
     else
-        abs_source_path = fs::absolute(file_name_from);
+        abs_source_path = fs::absolute(src_file_name);
 
-    fs::copy(abs_source_path, file_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    if (has_throttling || (src_offset != 0) || (src_size != fs::file_size(abs_source_path)))
+    {
+        auto create_read_buffer = [this, abs_source_path] { return createReadBufferFromFileBase(abs_source_path, read_settings); };
+        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
+        return;
+    }
+
+    auto file_path = path / dest_file_name;
+    fs::create_directories(file_path.parent_path());
+    fs::copy(abs_source_path, file_path, fs::copy_options::overwrite_existing);
 }
 
 }

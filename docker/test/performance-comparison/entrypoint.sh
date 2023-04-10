@@ -6,11 +6,7 @@ export CHPC_CHECK_START_TIMESTAMP
 
 S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
 BUILD_NAME=${BUILD_NAME:-package_release}
-
-COMMON_BUILD_PREFIX="/clickhouse_build_check"
-if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
-    COMMON_BUILD_PREFIX=""
-fi
+export S3_URL BUILD_NAME
 
 # Sometimes AWS responde with DNS error and it's impossible to retry it with
 # current curl version options.
@@ -66,10 +62,9 @@ function find_reference_sha
         # test all of them.
         unset found
         declare -a urls_to_try=(
-            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/$BUILD_NAME/performance.tgz"
-            # FIXME: the following link is left there for backward compatibility.
-            # We should remove it after 2022-11-01
-            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz"
+            "$S3_URL/PRs/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tgz"
         )
         for path in "${urls_to_try[@]}"
         do
@@ -94,13 +89,18 @@ chmod 777 workspace output
 cd workspace
 
 # Download the package for the version we are going to test.
-if curl_with_retry "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tgz"
-then
-    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/$BUILD_NAME/performance.tgz"
-fi
+# A temporary solution for migrating into PRs directory
+for prefix in "$S3_URL/PRs" "$S3_URL";
+do
+    if curl_with_retry "$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
+    then
+        right_path="$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
+        break
+    fi
+done
 
 mkdir right
-wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 -zxv
+wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 --zstd --extract --verbose
 
 # Find reference revision if not specified explicitly
 if [ "$REF_SHA" == "" ]; then find_reference_sha; fi

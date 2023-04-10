@@ -45,7 +45,7 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
@@ -306,5 +306,3 @@ select * FROM UAct
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

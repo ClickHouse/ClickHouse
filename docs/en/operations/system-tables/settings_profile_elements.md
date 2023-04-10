@@ -29,5 +29,3 @@ Columns:
 -    `readonly` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges))) — Profile that allows only read queries.
 
 -    `inherit_profile` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — A parent profile for this setting profile. `NULL` if not set. Setting profile will inherit all the settings' values and constraints (`min`, `max`, `readonly`) from its parent profiles.
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings_profile_elements) <!--hide-->

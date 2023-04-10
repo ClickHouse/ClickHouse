@@ -60,7 +60,7 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-:::warning
+:::note
 By now these variables are stubs and don't correspond to anything.
 :::
 
@@ -148,5 +148,3 @@ SELECT * FROM mysql_db.mysql_table
 │      3 │     4 │
 └────────┴───────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->

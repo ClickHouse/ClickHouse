@@ -64,14 +64,14 @@ private:
 
 public:
     AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params, std::make_shared<DataTypeArray>(arguments[0]))
         , type(argument_types[0])
         , serialization(type->getDefaultSerialization())
     {
         if (!params.empty())
         {
             if (params.size() > 2)
-                throw Exception("Aggregate function " + getName() + " requires at most two parameters.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at most two parameters.", getName());
 
             default_value = params[0];
 
@@ -79,12 +79,13 @@ public:
             {
                 length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
                 if (length_to_resize > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
-                    throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                    "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
             }
         }
 
         if (!isUnsignedInteger(arguments[1]))
-            throw Exception("Second argument of aggregate function " + getName() + " must be unsigned integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of aggregate function {} must be unsigned integer.", getName());
 
         if (default_value.isNull())
             default_value = type->getDefault();
@@ -92,19 +93,15 @@ public:
         {
             Field converted = convertFieldToType(default_value, *type);
             if (converted.isNull())
-                throw Exception("Cannot convert parameter of aggregate function " + getName() + " (" + applyVisitor(FieldVisitorToString(), default_value) + ")"
-                    " to type " + type->getName() + " to be used as default value in array", ErrorCodes::CANNOT_CONVERT_TYPE);
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert parameter of aggregate function {} ({}) "
+                                "to type {} to be used as default value in array",
+                                getName(), applyVisitor(FieldVisitorToString(), default_value), type->getName());
 
             default_value = converted;
         }
     }
 
     String getName() const override { return "groupArrayInsertAt"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(type);
-    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -118,9 +115,9 @@ public:
             return;
 
         if (position >= AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
-            throw Exception("Too large array size: position argument (" + toString(position) + ")"
-                " is greater or equals to limit (" + toString(AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE) + ")",
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: "
+                "position argument ({}) is greater or equals to limit ({})",
+                position, AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
 
         Array & arr = data(place).value;
 
@@ -171,7 +168,8 @@ public:
         readVarUInt(size, buf);
 
         if (size > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
 
         Array & arr = data(place).value;
 

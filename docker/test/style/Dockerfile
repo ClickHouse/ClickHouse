@@ -11,13 +11,14 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     aspell \
     curl \
     git \
+    file \
     libxml2-utils \
     moreutils \
     python3-fuzzywuzzy \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install black==22.8.0 boto3 codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2 \
+    && pip3 install black==23.1.0 boto3 codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2 \
     && apt-get clean \
     && rm -rf /root/.cache/pip
 

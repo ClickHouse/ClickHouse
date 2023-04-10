@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-import sys
 import json
+import sys
 import time
 from collections import namedtuple
+from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 import boto3  # type: ignore
@@ -53,6 +54,32 @@ def get_access_token(jwt_token: str, installation_id: int) -> str:
     return data["token"]  # type: ignore
 
 
+@dataclass
+class CachedToken:
+    time: int
+    value: str
+
+
+cached_token = CachedToken(0, "")
+
+
+def get_cached_access_token() -> str:
+    if time.time() - 500 < cached_token.time:
+        return cached_token.value
+    private_key, app_id = get_key_and_app_from_aws()
+    payload = {
+        "iat": int(time.time()) - 60,
+        "exp": int(time.time()) + (10 * 60),
+        "iss": app_id,
+    }
+
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    installation_id = get_installation_id(encoded_jwt)
+    cached_token.time = int(time.time())
+    cached_token.value = get_access_token(encoded_jwt, installation_id)
+    return cached_token.value
+
+
 RunnerDescription = namedtuple(
     "RunnerDescription", ["id", "name", "tags", "offline", "busy"]
 )
@@ -64,19 +91,25 @@ def list_runners(access_token: str) -> RunnerDescriptions:
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
+    per_page = 100
     response = requests.get(
-        "https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100",
+        f"https://api.github.com/orgs/ClickHouse/actions/runners?per_page={per_page}",
         headers=headers,
     )
     response.raise_for_status()
     data = response.json()
     total_runners = data["total_count"]
+    print("Expected total runners", total_runners)
     runners = data["runners"]
 
-    total_pages = int(total_runners / 100 + 1)
+    # round to 0 for 0, 1 for 1..100, but to 2 for 101..200
+    total_pages = (total_runners - 1) // per_page + 1
+
+    print("Total pages", total_pages)
     for i in range(2, total_pages + 1):
         response = requests.get(
-            f"https://api.github.com/orgs/ClickHouse/actions/runners?page={i}&per_page=100",
+            "https://api.github.com/orgs/ClickHouse/actions/runners"
+            f"?page={i}&per_page={per_page}",
             headers=headers,
         )
         response.raise_for_status()
@@ -95,6 +128,7 @@ def list_runners(access_token: str) -> RunnerDescriptions:
             busy=runner["busy"],
         )
         result.append(desc)
+
     return result
 
 
@@ -125,46 +159,22 @@ def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
     return instances_by_zone
 
 
-def delete_runner(access_token: str, runner: RunnerDescription) -> bool:
-    headers = {
-        "Authorization": f"token {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-    response = requests.delete(
-        f"https://api.github.com/orgs/ClickHouse/actions/runners/{runner.id}",
-        headers=headers,
-    )
-    response.raise_for_status()
-    print(
-        f"Response code deleting {runner.name} with id {runner.id} is {response.status_code}"
-    )
-    return bool(response.status_code == 204)
-
-
-def main(
-    github_secret_key: str, github_app_id: int, event: dict
-) -> Dict[str, List[str]]:
+def main(access_token: str, event: dict) -> Dict[str, List[str]]:
     print("Got event", json.dumps(event, sort_keys=True, indent=4))
     to_kill_by_zone = how_many_instances_to_kill(event)
     instances_by_zone = get_candidates_to_be_killed(event)
 
-    payload = {
-        "iat": int(time.time()) - 60,
-        "exp": int(time.time()) + (10 * 60),
-        "iss": github_app_id,
-    }
-
-    encoded_jwt = jwt.encode(payload, github_secret_key, algorithm="RS256")
-    installation_id = get_installation_id(encoded_jwt)
-    access_token = get_access_token(encoded_jwt, installation_id)
-
     runners = list_runners(access_token)
+    # We used to delete potential hosts to terminate from GitHub runners pool,
+    # but the documentation states:
+    # --- Returning an instance first in the response data does not guarantee its termination
+    # so they will be cleaned out by ci_runners_metrics_lambda eventually
 
-    to_delete_runners = []
     instances_to_kill = []
+    total_to_kill = 0
     for zone, num_to_kill in to_kill_by_zone.items():
         candidates = instances_by_zone[zone]
+        total_to_kill += num_to_kill
         if num_to_kill > len(candidates):
             raise Exception(
                 f"Required to kill {num_to_kill}, but have only {len(candidates)} candidates in AV {zone}"
@@ -199,30 +209,35 @@ def main(
             print(
                 f"Checked all candidates for av {zone}, get to delete {len(delete_for_av)}, but still cannot get required {num_to_kill}"
             )
-        to_delete_runners += delete_for_av
+
+        instances_to_kill += [runner.name for runner in delete_for_av]
+
+    if len(instances_to_kill) < total_to_kill:
+        print(f"Check other hosts from the same ASG {event['AutoScalingGroupName']}")
+        client = boto3.client("autoscaling")
+        as_groups = client.describe_auto_scaling_groups(
+            AutoScalingGroupNames=[event["AutoScalingGroupName"]]
+        )
+        assert len(as_groups["AutoScalingGroups"]) == 1
+        asg = as_groups["AutoScalingGroups"][0]
+        for instance in asg["Instances"]:
+            for runner in runners:
+                if runner.name == instance["InstanceId"] and not runner.busy:
+                    print(f"Runner {runner.name} is not busy and can be deleted")
+                    instances_to_kill.append(runner.name)
+
+            if total_to_kill <= len(instances_to_kill):
+                print("Got enough instances to kill")
+                break
 
     print("Got instances to kill: ", ", ".join(instances_to_kill))
-    print(
-        "Going to delete runners:",
-        ", ".join([runner.name for runner in to_delete_runners]),
-    )
-    for runner in to_delete_runners:
-        if delete_runner(access_token, runner):
-            print(
-                f"Runner with name {runner.name} and id {runner.id} successfuly deleted from github"
-            )
-            instances_to_kill.append(runner.name)
-        else:
-            print(f"Cannot delete {runner.name} from github")
-
     response = {"InstanceIDs": instances_to_kill}
     print(response)
     return response
 
 
 def handler(event: dict, context: Any) -> Dict[str, List[str]]:
-    private_key, app_id = get_key_and_app_from_aws()
-    return main(private_key, app_id, event)
+    return main(get_cached_access_token(), event)
 
 
 if __name__ == "__main__":
@@ -299,4 +314,14 @@ if __name__ == "__main__":
         "Cause": "SCALE_IN",
     }
 
-    main(private_key, args.app_id, sample_event)
+    payload = {
+        "iat": int(time.time()) - 60,
+        "exp": int(time.time()) + (10 * 60),
+        "iss": args.app_id,
+    }
+
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    installation_id = get_installation_id(encoded_jwt)
+    access_token = get_access_token(encoded_jwt, args.app_id)
+
+    main(access_token, sample_event)

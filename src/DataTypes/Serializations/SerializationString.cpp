@@ -14,6 +14,8 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <base/unit.h>
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -157,6 +159,14 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         UInt64 size;
         readVarUInt(size, istr);
+
+        static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
+        if (size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large string size: {}. The maximum is: {}.",
+                size,
+                max_string_size);
 
         offset += size + 1;
         offsets.push_back(offset);
@@ -311,13 +321,20 @@ void SerializationString::serializeTextJSON(const IColumn & column, size_t row_n
 
 void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
+    if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
+    {
+        String field;
+        readJSONObjectPossiblyInvalid(field, istr);
+        ReadBufferFromString buf(field);
+        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+    }
+    else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
         readJSONField(field, istr);
         Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatText(tmp, buf))
+        if (tryReadFloatText(tmp, buf) && buf.eof())
             read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);

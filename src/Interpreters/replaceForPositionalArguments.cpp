@@ -33,7 +33,7 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
     auto pos = ast_literal->value.get<UInt64>();
     if (!pos || pos > columns.size())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Positional argument out of bounds: {} (exprected in range [1, {}]",
+                "Positional argument out of bounds: {} (expected in range [1, {}]",
                         pos, columns.size());
 
     const auto & column = columns[--pos];

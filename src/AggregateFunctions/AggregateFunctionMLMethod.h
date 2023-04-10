@@ -149,9 +149,11 @@ public:
 class Momentum : public IWeightsUpdater
 {
 public:
-    Momentum() = default;
 
-    explicit Momentum(Float64 alpha_) : alpha(alpha_) {}
+    explicit Momentum(size_t num_params, Float64 alpha_ = 0.1) : alpha(alpha_)
+    {
+        accumulated_gradient.resize(num_params + 1, 0);
+    }
 
     void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
@@ -170,9 +172,10 @@ private:
 class Nesterov : public IWeightsUpdater
 {
 public:
-    Nesterov() = default;
-
-    explicit Nesterov(Float64 alpha_) : alpha(alpha_) {}
+    explicit Nesterov(size_t num_params, Float64 alpha_ = 0.9) : alpha(alpha_)
+    {
+        accumulated_gradient.resize(num_params + 1, 0);
+    }
 
     void addToBatch(
         std::vector<Float64> & batch_gradient,
@@ -201,10 +204,14 @@ private:
 class Adam : public IWeightsUpdater
 {
 public:
-    Adam()
+    Adam(size_t num_params)
     {
         beta1_powered = beta1;
         beta2_powered = beta2;
+
+
+        average_gradient.resize(num_params + 1, 0);
+        average_squared_gradient.resize(num_params + 1, 0);
     }
 
     void addToBatch(
@@ -309,7 +316,7 @@ public:
         UInt64 batch_size_,
         const DataTypes & arguments_types,
         const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params, createResultType())
         , param_num(param_num_)
         , learning_rate(learning_rate_)
         , l2_reg_coef(l2_reg_coef_)
@@ -319,8 +326,7 @@ public:
     {
     }
 
-    /// This function is called when SELECT linearRegression(...) is called
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
@@ -339,13 +345,13 @@ public:
         if (weights_updater_name == "SGD")
             new_weights_updater = std::make_shared<StochasticGradientDescent>();
         else if (weights_updater_name == "Momentum")
-            new_weights_updater = std::make_shared<Momentum>();
+            new_weights_updater = std::make_shared<Momentum>(param_num);
         else if (weights_updater_name == "Nesterov")
-            new_weights_updater = std::make_shared<Nesterov>();
+            new_weights_updater = std::make_shared<Nesterov>(param_num);
         else if (weights_updater_name == "Adam")
-            new_weights_updater = std::make_shared<Adam>();
+            new_weights_updater = std::make_shared<Adam>(param_num);
         else
-            throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal name of weights updater (should have been checked earlier)");
 
         new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gradient_computer, new_weights_updater);
     }
@@ -370,16 +376,15 @@ public:
         ContextPtr context) const override
     {
         if (arguments.size() != param_num + 1)
-            throw Exception(
-                "Predict got incorrect number of arguments. Got: " + std::to_string(arguments.size())
-                    + ". Required: " + std::to_string(param_num + 1),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Predict got incorrect number of arguments. Got: {}. Required: {}",
+                arguments.size(), param_num + 1);
 
         /// This cast might be correct because column type is based on getReturnTypeToPredict.
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
-            throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cast of column of predictions is incorrect. "
+                            "getReturnTypeToPredict must return same value as it is casted to");
 
         this->data(place).predict(column->getData(), arguments, offset, limit, context);
     }
