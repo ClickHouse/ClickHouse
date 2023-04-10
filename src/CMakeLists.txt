@@ -398,6 +398,7 @@ target_link_libraries(clickhouse_common_io
             ch_contrib::cityhash
             ch_contrib::re2
             ch_contrib::zlib
+            ch_contrib::acme-lw
             pcg_random
             Poco::Foundation
 )
@@ -682,6 +683,10 @@ endif()
 
 if (TARGET ch_contrib::prometheus_protobufs)
     target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
+endif()
+
+if (TARGET ch_contrib::acme-lw)
+    dbms_target_include_directories(PUBLIC ch_contrib::acme-lw)
 endif()
 
 if (TARGET ch_rust::skim)
