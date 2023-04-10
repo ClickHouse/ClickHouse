@@ -111,9 +111,9 @@ bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
     else if (part == "DAYOFYEAR")
         format = "%j";
     else if (part == "HOUR")
-        format = "%I";
+        format = "%H";
     else if (part == "MINUTE")
-        format = "%M";
+        format = "%i";
     else if (part == "SECOND")
         format = "%S";
     else
@@ -312,9 +312,9 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
             else if (arg == "s" || arg == "ss")
                 formatspecifier = formatspecifier + "%S";
             else if (arg == "m" || arg == "mm")
-                formatspecifier = formatspecifier + "%M";
+                formatspecifier = formatspecifier + "%i";
             else if (arg == "h" || arg == "hh")
-                formatspecifier = formatspecifier + "%I";
+                formatspecifier = formatspecifier + "%h";
             else if (arg == "H" || arg == "HH")
                 formatspecifier = formatspecifier + "%H";
             else if (arg == "d")
@@ -396,13 +396,13 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
             if (arg == "s" || arg == "ss")
                 formatspecifier = formatspecifier + "%S";
             else if (arg == "m" || arg == "mm")
-                formatspecifier = formatspecifier + "%M";
+                formatspecifier = formatspecifier + "%i";
             else if (arg == "h" || arg == "hh")
             {
                 if (is_hour_zero) //To handle the CH limit for 12hr format(01-12). If not handled , 1.00:00:00 returned as 1.12:00:00(in 12 hr format)
-                    formatspecifier = formatspecifier + "%H";
+                    formatspecifier = formatspecifier + "%h";
                 else
-                    formatspecifier = formatspecifier + "%I";
+                    formatspecifier = formatspecifier + "%H";
             }
             else if (arg == "H" || arg == "HH")
                 formatspecifier = formatspecifier + "%H";
