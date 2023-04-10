@@ -4,7 +4,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-SCHEMADIR=$CURDIR/format_schemas
+
 
 $CLICKHOUSE_LOCAL <<END
     SELECT * FROM format(JSONEachRow, 'x Bool', '{"x": 1}');
