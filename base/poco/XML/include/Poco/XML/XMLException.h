@@ -18,20 +18,23 @@
 #define XML_XMLException_INCLUDED
 
 
-#include "Poco/XML/XML.h"
 #include "Poco/Exception.h"
+#include "Poco/XML/XML.h"
 
 
-namespace Poco {
-namespace XML {
+namespace Poco
+{
+namespace XML
+{
 
 
-POCO_DECLARE_EXCEPTION(XML_API, XMLException, Poco::RuntimeException)
-	/// The base class for all XML-related exceptions like SAXException
-	/// and DOMException.
+    POCO_DECLARE_EXCEPTION(XML_API, XMLException, Poco::RuntimeException)
+    /// The base class for all XML-related exceptions like SAXException
+    /// and DOMException.
 
 
-} } // namespace Poco::XML
+}
+} // namespace Poco::XML
 
 
 #endif // XML_XMLException_INCLUDED

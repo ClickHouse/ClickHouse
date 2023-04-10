@@ -180,9 +180,14 @@ public:
                     size_t offset = 0;
                     for (size_t i = 0; i < size; ++i)
                     {
-                        memcpy(&vec_res[i],
-                            &data_from[offset],
-                            std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
+                        if constexpr (std::endian::native == std::endian::little)
+                            memcpy(&vec_res[i],
+                                &data_from[offset],
+                                std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
+                        else
+                            reverseMemcpy(&vec_res[i],
+                                &data_from[offset],
+                                std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
                         offset = offsets_from[i];
                     }
 

@@ -4,6 +4,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadPool.h>
 #include <chrono>
 
 
@@ -149,8 +150,9 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 }
 
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char *thread_name_)
     : tasks_metric(tasks_metric_)
+    , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
 {
     LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size_);
@@ -159,7 +161,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
     for (auto & thread : threads)
         thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
 
-    delayed_thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { delayExecutionThreadFunction(); });
+    delayed_thread = std::make_unique<ThreadFromGlobalPoolNoTracingContextPropagation>([this] { delayExecutionThreadFunction(); });
 }
 
 
@@ -177,6 +179,8 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
     threads.resize(new_threads_count);
     for (size_t i = old_threads_count; i < new_threads_count; ++i)
         threads[i] = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
+
+    size_metric.changeTo(new_threads_count);
 }
 
 
@@ -195,7 +199,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         delayed_tasks_cond_var.notify_all();
 
         LOG_TRACE(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
-        delayed_thread.join();
+        delayed_thread->join();
 
         for (auto & thread : threads)
             thread.join();
@@ -252,35 +256,9 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
-scope_guard BackgroundSchedulePool::attachToThreadGroup()
-{
-    scope_guard guard = [&]()
-        {
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        };
-
-    std::lock_guard lock(delayed_tasks_mutex);
-
-    if (thread_group)
-    {
-        /// Put all threads to one thread pool
-        CurrentThread::attachTo(thread_group);
-    }
-    else
-    {
-        CurrentThread::initializeQuery();
-        thread_group = CurrentThread::getGroup();
-    }
-    return guard;
-}
-
-
 void BackgroundSchedulePool::threadFunction()
 {
     setThreadName(thread_name.c_str());
-
-    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {
@@ -310,8 +288,6 @@ void BackgroundSchedulePool::threadFunction()
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName((thread_name + "/D").c_str());
-
-    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {

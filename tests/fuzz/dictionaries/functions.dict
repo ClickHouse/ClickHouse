@@ -334,6 +334,8 @@
 "wordShingleSimHash"
 "arrayCumSum"
 "arraySort"
+"arrayPartialSort"
+"arrayPartialReverseSort"
 "dumpColumnStructure"
 "multiSearchFirstIndex"
 "arrayReverseSplit"

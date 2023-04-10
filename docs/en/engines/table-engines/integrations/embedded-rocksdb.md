@@ -84,3 +84,39 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
     </tables>
 </rocksdb>
 ```
+
+## Supported operations {#table_engine-EmbeddedRocksDB-supported-operations}
+
+### Inserts
+
+When new rows are inserted into `EmbeddedRocksDB`, if the key already exists, the value will be updated, otherwise a new key is created.
+
+Example:
+
+```sql
+INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
+```
+
+### Deletes
+
+Rows can be deleted using `DELETE` query or `TRUNCATE`. 
+
+```sql
+DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE test;
+```
+
+### Updates
+
+Values can be updated using the `ALTER TABLE` query. The primary key cannot be updated.
+
+```sql
+ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```

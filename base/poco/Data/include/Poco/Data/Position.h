@@ -21,55 +21,59 @@
 #include "Poco/Data/Limit.h"
 
 
-namespace Poco {
-namespace Data {
-
-
-class Data_API Position
-	/// Utility class wrapping unsigned integer. Used to
-	/// indicate the recordset position in batch SQL statements.
+namespace Poco
 {
-public:
-	Position(Poco::UInt32 value);
-		/// Creates the Position.
-
-	~Position();
-		/// Destroys the Position.
-
-	Poco::UInt32 value() const;
-		/// Returns the position value.
-	
-private:
-	Position();
-
-	Poco::UInt32 _value;
-};
-
-
-///
-/// inlines
-///
-inline Poco::UInt32 Position::value() const 
-{ 
-	return _value; 
-}
-
-
-namespace Keywords {
-
-
-template <typename T>
-inline Position from(const T& value)
-	/// Convenience function for creation of position.
+namespace Data
 {
-	return Position(value);
+
+
+    class Data_API Position
+    /// Utility class wrapping unsigned integer. Used to
+    /// indicate the recordset position in batch SQL statements.
+    {
+    public:
+        Position(Poco::UInt32 value);
+        /// Creates the Position.
+
+        ~Position();
+        /// Destroys the Position.
+
+        Poco::UInt32 value() const;
+        /// Returns the position value.
+
+    private:
+        Position();
+
+        Poco::UInt32 _value;
+    };
+
+
+    ///
+    /// inlines
+    ///
+    inline Poco::UInt32 Position::value() const
+    {
+        return _value;
+    }
+
+
+    namespace Keywords
+    {
+
+
+        template <typename T>
+        inline Position from(const T & value)
+        /// Convenience function for creation of position.
+        {
+            return Position(value);
+        }
+
+
+    } // namespace Keywords
+
+
 }
-
-
-} // namespace Keywords
-
-
-} } // namespace Poco::Data
+} // namespace Poco::Data
 
 
 #endif // Data_Position_INCLUDED

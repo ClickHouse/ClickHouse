@@ -24,11 +24,11 @@ NATSProducer::NATSProducer(
     const String & subject_,
     std::atomic<bool> & shutdown_called_,
     Poco::Logger * log_)
-    : connection(configuration_, log_)
+    : AsynchronousMessageProducer(log_)
+    , connection(configuration_, log_)
     , subject(subject_)
     , shutdown_called(shutdown_called_)
     , payloads(BATCH)
-    , log(log_)
 {
 }
 

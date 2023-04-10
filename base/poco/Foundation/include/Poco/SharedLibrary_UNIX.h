@@ -22,32 +22,33 @@
 #include "Poco/Mutex.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API SharedLibraryImpl
 {
 protected:
-	enum Flags
-	{
-		SHLIB_GLOBAL_IMPL = 1,
-		SHLIB_LOCAL_IMPL  = 2
-	};
+    enum Flags
+    {
+        SHLIB_GLOBAL_IMPL = 1,
+        SHLIB_LOCAL_IMPL = 2
+    };
 
-	SharedLibraryImpl();
-	~SharedLibraryImpl();
-	void loadImpl(const std::string& path, int flags);
-	void unloadImpl();
-	bool isLoadedImpl() const;
-	void* findSymbolImpl(const std::string& name);
-	const std::string& getPathImpl() const;
-	static std::string suffixImpl();
-	static bool setSearchPathImpl(const std::string& path);
+    SharedLibraryImpl();
+    ~SharedLibraryImpl();
+    void loadImpl(const std::string & path, int flags);
+    void unloadImpl();
+    bool isLoadedImpl() const;
+    void * findSymbolImpl(const std::string & name);
+    const std::string & getPathImpl() const;
+    static std::string suffixImpl();
+    static bool setSearchPathImpl(const std::string & path);
 
 private:
-	std::string _path;
-	void* _handle;
-	static FastMutex _mutex;
+    std::string _path;
+    void * _handle;
+    static FastMutex _mutex;
 };
 
 

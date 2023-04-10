@@ -10,12 +10,20 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/CurrentMetrics.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskObjectStorageAsyncThreads;
+    extern const Metric DiskObjectStorageAsyncThreadsActive;
+}
+
 
 namespace DB
 {
@@ -38,7 +46,8 @@ class AsyncThreadPoolExecutor : public Executor
 public:
     AsyncThreadPoolExecutor(const String & name_, int thread_pool_size)
         : name(name_)
-        , pool(ThreadPool(thread_pool_size)) {}
+        , pool(CurrentMetrics::DiskObjectStorageAsyncThreads, CurrentMetrics::DiskObjectStorageAsyncThreadsActive, thread_pool_size)
+    {}
 
     std::future<void> execute(std::function<void()> task) override
     {
@@ -575,6 +584,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
         object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
 
     return result;
+}
+
+void DiskObjectStorage::writeFileUsingCustomWriteObject(
+    const String & path,
+    WriteMode mode,
+    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+        custom_write_object_function)
+{
+    LOG_TEST(log, "Write file: {}", path);
+    auto transaction = createObjectStorageTransaction();
+    return transaction->writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
 }
 
 void DiskObjectStorage::applyNewSettings(

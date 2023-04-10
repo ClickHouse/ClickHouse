@@ -18,181 +18,152 @@
 #define Foundation_MetaObject_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/Exception.h"
-#include "Poco/SingletonHolder.h"
 #include <set>
+#include "Poco/Exception.h"
+#include "Poco/Foundation.h"
+#include "Poco/SingletonHolder.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 template <class B>
 class AbstractMetaObject
-	/// A MetaObject stores some information
-	/// about a C++ class. The MetaObject class
-	/// is used by the Manifest class.
-	/// AbstractMetaObject is a common base class
-	/// for all MetaObject in a rooted class hierarchy.
-	/// A MetaObject can also be used as an object
-	/// factory for its class.
+/// A MetaObject stores some information
+/// about a C++ class. The MetaObject class
+/// is used by the Manifest class.
+/// AbstractMetaObject is a common base class
+/// for all MetaObject in a rooted class hierarchy.
+/// A MetaObject can also be used as an object
+/// factory for its class.
 {
 public:
-	AbstractMetaObject(const char* name): _name(name)
-	{
-	}
+    AbstractMetaObject(const char * name) : _name(name) { }
 
-	virtual ~AbstractMetaObject()
-	{
-		for (typename ObjectSet::iterator it = _deleteSet.begin(); it != _deleteSet.end(); ++it)
-		{
-			delete *it;
-		}
-	}
+    virtual ~AbstractMetaObject()
+    {
+        for (typename ObjectSet::iterator it = _deleteSet.begin(); it != _deleteSet.end(); ++it)
+        {
+            delete *it;
+        }
+    }
 
-	const char* name() const
-	{
-		return _name;
-	}
+    const char * name() const { return _name; }
 
-	virtual B* create() const = 0;
-		/// Create a new instance of a class.
-		/// Cannot be used for singletons.
-		
-	virtual B& instance() const = 0;
-		/// Returns a reference to the only instance
-		/// of the class. Used for singletons only.
+    virtual B * create() const = 0;
+    /// Create a new instance of a class.
+    /// Cannot be used for singletons.
 
-	virtual bool canCreate() const = 0;
-		/// Returns true iff the create method can be used
-		/// to create instances of the class.
-		/// Returns false if the class is a singleton.
+    virtual B & instance() const = 0;
+    /// Returns a reference to the only instance
+    /// of the class. Used for singletons only.
 
-	virtual void destroy(B* pObject) const
-		/// If pObject was owned by meta object, the
-		/// ownership of the deleted object is removed
-		/// and the object is deleted.
-	{
-		typename ObjectSet::iterator it = _deleteSet.find(pObject);
-		
-		if (it != _deleteSet.end())
-		{
-			_deleteSet.erase(pObject);
-			delete pObject;
-		}
-	}
+    virtual bool canCreate() const = 0;
+    /// Returns true iff the create method can be used
+    /// to create instances of the class.
+    /// Returns false if the class is a singleton.
 
-	B* autoDelete(B* pObject) const
-		/// Give ownership of pObject to the meta object.
-		/// The meta object will delete all objects it owns
-		/// when it is destroyed.
-		///
-		/// Returns pObject.
-	{
-		if (this->canCreate()) // guard against singleton
-		{
-			poco_check_ptr (pObject);
-			_deleteSet.insert(pObject);
-		}
-		else throw InvalidAccessException("Cannot take ownership of", this->name());
+    virtual void destroy(B * pObject) const
+    /// If pObject was owned by meta object, the
+    /// ownership of the deleted object is removed
+    /// and the object is deleted.
+    {
+        typename ObjectSet::iterator it = _deleteSet.find(pObject);
 
-		return pObject;
-	}
+        if (it != _deleteSet.end())
+        {
+            _deleteSet.erase(pObject);
+            delete pObject;
+        }
+    }
 
-	virtual bool isAutoDelete(B* pObject) const
-		/// Returns true if the object is owned
-		/// by meta object.
-		///
-		/// Overloaded in MetaSingleton - returns true
-		/// if the class is a singleton.
-	{
-		return _deleteSet.find(pObject) != _deleteSet.end();
-	}
+    B * autoDelete(B * pObject) const
+    /// Give ownership of pObject to the meta object.
+    /// The meta object will delete all objects it owns
+    /// when it is destroyed.
+    ///
+    /// Returns pObject.
+    {
+        if (this->canCreate()) // guard against singleton
+        {
+            poco_check_ptr(pObject);
+            _deleteSet.insert(pObject);
+        }
+        else
+            throw InvalidAccessException("Cannot take ownership of", this->name());
+
+        return pObject;
+    }
+
+    virtual bool isAutoDelete(B * pObject) const
+    /// Returns true if the object is owned
+    /// by meta object.
+    ///
+    /// Overloaded in MetaSingleton - returns true
+    /// if the class is a singleton.
+    {
+        return _deleteSet.find(pObject) != _deleteSet.end();
+    }
 
 private:
-	AbstractMetaObject();
-	AbstractMetaObject(const AbstractMetaObject&);
-	AbstractMetaObject& operator = (const AbstractMetaObject&);
+    AbstractMetaObject();
+    AbstractMetaObject(const AbstractMetaObject &);
+    AbstractMetaObject & operator=(const AbstractMetaObject &);
 
-	typedef std::set<B*> ObjectSet;
-	
-	const char* _name;
-	mutable ObjectSet _deleteSet;
+    typedef std::set<B *> ObjectSet;
+
+    const char * _name;
+    mutable ObjectSet _deleteSet;
 };
 
 
 template <class C, class B>
-class MetaObject: public AbstractMetaObject<B>
-	/// A MetaObject stores some information
-	/// about a C++ class. The MetaObject class
-	/// is used by the Manifest class.
-	/// A MetaObject can also be used as an object
-	/// factory for its class.
+class MetaObject : public AbstractMetaObject<B>
+/// A MetaObject stores some information
+/// about a C++ class. The MetaObject class
+/// is used by the Manifest class.
+/// A MetaObject can also be used as an object
+/// factory for its class.
 {
 public:
-	MetaObject(const char* name): AbstractMetaObject<B>(name)
-	{
-	}
+    MetaObject(const char * name) : AbstractMetaObject<B>(name) { }
 
-	~MetaObject()
-	{
-	}
+    ~MetaObject() { }
 
-	B* create() const
-	{
-		return new C;
-	}
-	
-	B& instance() const
-	{
-		throw InvalidAccessException("Not a singleton. Use create() to create instances of", this->name());
-	}
-	
-	bool canCreate() const
-	{
-		return true;
-	}
+    B * create() const { return new C; }
+
+    B & instance() const { throw InvalidAccessException("Not a singleton. Use create() to create instances of", this->name()); }
+
+    bool canCreate() const { return true; }
 };
 
 
-template <class C, class B> 
-class MetaSingleton: public AbstractMetaObject<B> 
-	/// A SingletonMetaObject disables the create() method
-	/// and instead offers an instance() method to access
-	/// the single instance of its class. 
-{ 
-public: 
-	MetaSingleton(const char* name): AbstractMetaObject<B>(name) 
-	{
-	}
-	
-	~MetaSingleton() 
-	{
-	}
-	
-	B* create() const
-	{
-		throw InvalidAccessException("Cannot create instances of a singleton class. Use instance() to obtain a", this->name());
-	}
-	
-	bool canCreate() const
-	{
-		return false;
-	}
+template <class C, class B>
+class MetaSingleton : public AbstractMetaObject<B>
+/// A SingletonMetaObject disables the create() method
+/// and instead offers an instance() method to access
+/// the single instance of its class.
+{
+public:
+    MetaSingleton(const char * name) : AbstractMetaObject<B>(name) { }
 
-	B& instance() const
-	{
-		return *_object.get();
-	}
+    ~MetaSingleton() { }
 
-	bool isAutoDelete(B* /*pObject*/) const
-	{
-		return true;
-	}
+    B * create() const
+    {
+        throw InvalidAccessException("Cannot create instances of a singleton class. Use instance() to obtain a", this->name());
+    }
 
-private: 
-	mutable SingletonHolder<C> _object; 
-}; 
+    bool canCreate() const { return false; }
+
+    B & instance() const { return *_object.get(); }
+
+    bool isAutoDelete(B * /*pObject*/) const { return true; }
+
+private:
+    mutable SingletonHolder<C> _object;
+};
 
 
 } // namespace Poco

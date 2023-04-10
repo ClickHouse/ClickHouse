@@ -126,6 +126,12 @@ elseif (ARCH_PPC64LE)
         "${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S"
     )
+elseif (ARCH_S390X)
+    set (SRCS_CONTEXT ${SRCS_CONTEXT}
+        "${LIBRARY_DIR}/libs/context/src/asm/jump_s390x_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/make_s390x_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/ontop_s390x_sysv_elf_gas.S"
+    )
 elseif (ARCH_RISCV64)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_riscv64_sysv_elf_gas.S"

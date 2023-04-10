@@ -126,7 +126,7 @@ private:
     std::atomic<bool> shutdown_called = false;
 
     // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & conf);
+    void updateConfiguration(cppkafka::Configuration & kafka_config);
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
 

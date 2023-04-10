@@ -83,9 +83,13 @@ Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`
 
 ### String
 
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. It means that you can use the sequences `\'`and`\\`. The value will have the [String](../sql-reference/data-types/string.md) type.
+String literals must be enclosed in single quotes, double quotes are not supported.
+Escaping works either
 
-In string literals, you need to escape at least `'` and `\`. Single quotes can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
+-   using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
+-   using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
+
+In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
 
 ### Compound
 
@@ -130,18 +134,20 @@ Result:
 
 ## Defining and Using Query Parameters
 
-Query parameters can be defined using the syntax `param_name=value`, where `name` is the name of the parameter. Parameters can by defined using the `SET` command, or from the command-line using `--param`.
+Query parameters allow you to write generic queries that contain abstract placeholders instead of concrete identifiers. When a query with query parameters is executed, all placeholders are resolved and replaced by the actual query parameter values.
 
-To retrieve a query parameter, you specify the name of the parameter along with its data type surrounded by curly braces:
+There are two way to define a query parameter:
+
+- use the `SET param_<name>=<value>` command
+- use `--param_<name>='<value>'` as an argument to `clickhouse-client` on the command line. `<name>` is the name of the query parameter and `<value>` is its value
+
+A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
+
+For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each with a different data type:
 
 ```sql
-{name:datatype}
-```
-
-For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each of a different data type:
-
-```sql
-SET param_a = 13, param_b = 'str';
+SET param_a = 13;
+SET param_b = 'str';
 SET param_c = '2022-08-04 18:30:53';
 SET param_d = {'10': [11, 12], '13': [14, 15]}';
 
@@ -158,7 +164,7 @@ Result:
 13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
 ```
 
-If you are using `clickhouse-client`, the parameters are specified as `--param_name=value`. For example, the following parameter has the name `message` and it is being retrieved as a `String`:
+If you are using `clickhouse-client`, the parameters are specified as `--param_name=value`. For example, the following parameter has the name `message` and it is retrieved as a `String`:
 
 ```sql
 clickhouse-client --param_message='hello' --query="SELECT {message: String}"
@@ -177,6 +183,9 @@ SET param_mytablename = "uk_price_paid";
 SELECT * FROM {mytablename:Identifier};
 ```
 
+:::note
+Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries. They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
+:::
 
 ## Functions
 

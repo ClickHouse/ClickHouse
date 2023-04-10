@@ -92,12 +92,65 @@
 
         .chart div { position: absolute; }
 
-        .inputs { font-size: 14pt; }
+        .inputs {
+            height: auto;
+            width: 100%;
+
+            font-size: 14pt;
+
+            display: flex;
+            flex-flow: column nowrap;
+            justify-content: center;
+        }
+
+        .inputs.unconnected {
+            height: 100vh;
+        }
+        .unconnected #params {
+            display: flex;
+            flex-flow: column nowrap;
+            justify-content: center;
+            align-items: center;
+        }
+        .unconnected #connection-params {
+            width: 50%;
+
+            display: flex;
+            flex-flow: column nowrap;
+        }
+        .unconnected #url {
+            width: 100%;
+        }
+        #user {
+            margin-right: 0.25rem;
+            width: 50%;
+        }
+        #password {
+            width: 49.5%;
+        }
+        .unconnected input {
+            margin-bottom: 5px;
+        }
+
+        #username-password {
+            width: 100%;
+
+            display: flex;
+            flex-flow: row nowrap;  
+        }
+
+        .inputs #chart-params {
+            display: block;
+        }
+
+        .inputs.unconnected #chart-params {
+            display: none;
+        }
 
         #connection-params {
             margin-bottom: 0.5rem;
             display: grid;
-            grid-template-columns: auto 15% 15%;
+            grid-template-columns: 69.77% 30%;
             column-gap: 0.25rem;
         }
 
@@ -223,6 +276,10 @@
             color: var(--chart-button-hover-color);
         }
 
+        .disabled {
+            opacity: 0.5;
+        }
+
         .query-editor {
             display: none;
             grid-template-columns: auto fit-content(10%);
@@ -286,16 +343,18 @@
     </style>
 </head>
 <body>
-<div class="inputs">
+<div class="inputs unconnected">
     <form id="params">
         <div id="connection-params">
             <input spellcheck="false" id="url" type="text" value="" placeholder="URL" />
-            <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
-            <input spellcheck="false" id="password" type="password" placeholder="password" />
+            <div id="username-password">
+                <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
+                <input spellcheck="false" id="password" type="password" placeholder="password" />
+            </div>
         </div>
         <div>
-            <input id="reload" type="button" value="Reload" style="display: none;">
-            <input id="add" type="button" value="Add chart">
+            <input id="reload" type="button" value="Reload">
+            <input id="add" type="button" value="Add chart" style="display: none;">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
             <div id="chart-params"></div>
         </div>
@@ -845,7 +904,7 @@ async function draw(idx, chart, url_params, query) {
         error_div.firstChild.data = error;
         title_div.style.display = 'none';
         error_div.style.display = 'block';
-        return;
+        return false;
     } else {
         error_div.firstChild.data = '';
         error_div.style.display = 'none';
@@ -886,6 +945,7 @@ async function draw(idx, chart, url_params, query) {
     /// Set title
     const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
     chart.querySelector('.title').firstChild.data = title;
+    return true
 }
 
 function showAuthError(message) {
@@ -902,8 +962,6 @@ function showAuthError(message) {
 function hideAuthError() {
     const charts = document.querySelector('#charts');
     charts.style.display = 'flex';
-    const add = document.querySelector('#add');
-    add.style.display = 'block';
 
     const authError = document.querySelector('#auth-error');
     authError.textContent = '';
@@ -924,9 +982,20 @@ async function drawAll() {
             if (!firstLoad) {
                 showAuthError(e.message);
             }
+            return false;
         });
-    })).then(() => {
-        firstLoad = false;
+    })).then((results) => {
+        if (firstLoad) {
+            firstLoad = false;
+        } else {
+            enableReloadButton();
+        }
+        if (!results.includes(false)) {
+            const element = document.querySelector('.inputs');
+            element.classList.remove('unconnected');
+            const add = document.querySelector('#add');
+            add.style.display = 'block';
+        }
     })
 }
 
@@ -941,11 +1010,25 @@ function resize() {
 
 new ResizeObserver(resize).observe(document.body);
 
+function disableReloadButton() {
+    const reloadButton = document.getElementById('reload')
+    reloadButton.value = 'Reloading...'
+    reloadButton.disabled = true
+    reloadButton.classList.add('disabled')
+}
+
+function enableReloadButton() {
+    const reloadButton = document.getElementById('reload')
+    reloadButton.value = 'Reload'
+    reloadButton.disabled = false
+    reloadButton.classList.remove('disabled')
+}
+
 function reloadAll() {
     updateParams();
     drawAll();
     saveState();
-    document.getElementById('reload').style.display = 'none';
+    disableReloadButton()
 }
 
 document.getElementById('params').onsubmit = function(event) {
