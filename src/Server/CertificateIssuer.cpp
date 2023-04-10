@@ -16,7 +16,8 @@ void CertificateIssuer::UpdateCertificates(const LetsEncryptConfigurationData & 
 
 void CertificateIssuer::UpdateCertificatesIfNeeded(const Poco::Util::AbstractConfiguration & config){
     if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
-        //TODO: Проверить что если серты есть и не устарели, то не перезапрашивать
+        //TODO: Проверить что если серты есть и не устарели, то не перезапрашивать.
+        // Иначе будешь перезапрашивать серты при каждом ребуте
         UpdateCertificates(LetsEncryptConfigurationData(config), [](){});
 }
 
