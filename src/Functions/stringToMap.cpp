@@ -46,7 +46,7 @@ public:
     {
         size_t num_arguments = arguments.size();
 
-        if (num_arguments < 1 || num_arguments > 3) 
+        if (num_arguments < 1 || num_arguments > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
                             "passed {}, should be 1, 2 or 3", getName(), num_arguments);
         if (!isStringOrFixedString(arguments[0]))
@@ -59,8 +59,8 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                             arguments[2]->getName(), getName());
 
-        DataTypePtr string_type = std::make_shared<DataTypeString>(); 
-        DataTypePtr string_type_nullable = std::make_shared<DataTypeNullable>(string_type); 
+        DataTypePtr string_type = std::make_shared<DataTypeString>();
+        DataTypePtr string_type_nullable = std::make_shared<DataTypeNullable>(string_type);
         DataTypes key_value_type{string_type, string_type_nullable};
 
         return std::make_shared<DataTypeMap>(key_value_type);
@@ -84,8 +84,9 @@ public:
             MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
 
             ColumnUInt8::MutablePtr values_null_map = ColumnUInt8::create();
-            
+
             ColumnString::Offset curr_res_offset = 0, curr_in_offset = 0;
+
             for (size_t i = 0; i < size; ++i)
             {
                 const char * pos_in = reinterpret_cast<const char *>(&in_vec[curr_in_offset]);
@@ -94,12 +95,12 @@ public:
                 const char * pos_delim = nullptr;
                 std::vector<String> key_value_pairs;
                 // splitting the string into key-value pairs
-                while (pos_delim != pos_in_end) 
+                while (pos_delim != pos_in_end)
                 {
                     pos_delim = reinterpret_cast<const char *>(strchr(pos_in, pair_delim));
                     if (!pos_delim)
                         pos_delim = pos_in_end;
-            
+
                     key_value_pairs.emplace_back(pos_in, pos_delim);
                     pos_in = pos_delim + 1;
                 }
@@ -109,13 +110,13 @@ public:
                     const char * begin = key_value_pairs[pair].c_str();
                     const char * end = begin + key_value_pairs[pair].size();
                     const char * delim = reinterpret_cast<const char *>(strchr(begin, key_value_delim));
-                    if (delim) 
+                    if (delim)
                     {
                         keys_data->insertData(begin, delim - begin);
                         values_data->insertData(delim + 1, end - delim - 1);
                         values_null_map->insert(false);
-                    } 
-                    else 
+                    }
+                    else
                     {
                         keys_data->insertData(begin, end - begin);
                         values_data->insertData(begin, 1);
@@ -170,12 +171,12 @@ public:
                 std::vector<String> key_value_pairs;
                 const char * curr_pos = pos_in;
                 // splitting the string into key-value pairs
-                while (pos_delim != pos_in_end) 
+                while (pos_delim != pos_in_end)
                 {
                     pos_delim = reinterpret_cast<const char *>(strchr(curr_pos, pair_delim));
                     if (!pos_delim)
                         pos_delim = pos_in_end;
-            
+
                     key_value_pairs.emplace_back(curr_pos, pos_delim);
                     curr_pos = pos_delim + 1;
                 }
@@ -185,13 +186,13 @@ public:
                     const char * begin = key_value_pairs[pair].c_str();
                     const char * end = begin + key_value_pairs[pair].size();
                     const char * delim = reinterpret_cast<const char *>(strchr(begin, key_value_delim));
-                    if (delim) 
+                    if (delim)
                     {
                         keys_data->insertData(begin, delim - begin);
                         values_data->insertData(delim + 1, end - delim - 1);
                         values_null_map->insert(false);
-                    } 
-                    else 
+                    }
+                    else
                     {
                         keys_data->insertData(begin, end - begin);
                         values_data->insertData(begin, 1);
@@ -228,37 +229,37 @@ public:
         char pair_delim = ',',
              key_value_delim = ':';
 
-        if (num_arguments >= 2) 
+        if (num_arguments >= 2)
         {
             const auto * column_const_pair_delim = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
             if(!column_const_pair_delim)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Pair delimiter needs to be a constant in function {}", getName());
 
             auto pair_delim_value = column_const_pair_delim->getValue<String>();
 
             if(pair_delim_value.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Illegal pair delimiter for function {}. Must be exactly one byte.", getName());
-            
-            pair_delim = pair_delim_value[0];
-        } 
 
-        if (num_arguments == 3) 
+            pair_delim = pair_delim_value[0];
+        }
+
+        if (num_arguments == 3)
         {
             const auto * column_const_key_value_delim = checkAndGetColumn<ColumnConst>(arguments[2].column.get());
             if(!column_const_key_value_delim)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Key-Value delimiter needs to be a constant in function {}", getName());
 
             auto key_value_delim_value = column_const_key_value_delim->getValue<String>();
-            
+
             if(key_value_delim_value.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Illegal key-value delimiter for function {}. Must be exactly one byte.", getName());
-        
+
             key_value_delim = key_value_delim_value[0];
-        }        
+        }
 
         if (tryExecuteFixedString(column, res_column, pair_delim, key_value_delim) || tryExecuteString(column, res_column, pair_delim, key_value_delim))
             return res_column;
