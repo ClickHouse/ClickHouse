@@ -61,8 +61,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     }
     else if (s_show.ignore(pos, expected))
     {
+        auto old_expected = expected;
         if (!s_create.ignore(pos, expected))
-            return false;
+            expected = old_expected;
 
         if (s_database.ignore(pos, expected))
         {
