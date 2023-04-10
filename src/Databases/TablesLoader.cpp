@@ -8,7 +8,14 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 #include <numeric>
+
+namespace CurrentMetrics
+{
+    extern const Metric TablesLoaderThreads;
+    extern const Metric TablesLoaderThreadsActive;
+}
 
 namespace DB
 {
@@ -31,12 +38,13 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 }
 
 TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_)
-: global_context(global_context_)
-, databases(std::move(databases_))
-, strictness_mode(strictness_mode_)
-, referential_dependencies("ReferentialDeps")
-, loading_dependencies("LoadingDeps")
-, all_loading_dependencies("LoadingDeps")
+    : global_context(global_context_)
+    , databases(std::move(databases_))
+    , strictness_mode(strictness_mode_)
+    , referential_dependencies("ReferentialDeps")
+    , loading_dependencies("LoadingDeps")
+    , all_loading_dependencies("LoadingDeps")
+    , pool(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive)
 {
     metadata.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("TablesLoader");

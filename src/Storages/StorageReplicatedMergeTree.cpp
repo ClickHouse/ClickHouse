@@ -2209,35 +2209,43 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Check that we could cover whole range
     for (PartDescriptionPtr & part_desc : parts_to_add)
     {
-        if (adding_parts_active_set.getContainingPart(part_desc->new_part_info).empty())
+        if (!adding_parts_active_set.getContainingPart(part_desc->new_part_info).empty())
+            continue;
+
+        MergeTreePartInfo covering_drop_range;
+        if (queue.isGoingToBeDropped(part_desc->new_part_info, &covering_drop_range))
         {
-            /// We should enqueue missing part for check, so it will be replaced with empty one (if needed)
-            /// and we will be able to execute this REPLACE_RANGE.
-            /// However, it's quite dangerous, because part may appear in source table.
-            /// So we enqueue it for check only if no replicas of source table have part either.
-            bool need_check = true;
-            if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
-            {
-                String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
-                if (!src_replica.empty())
-                {
-                    LOG_DEBUG(log, "Found part {} on replica {} of source table, will not check part {} required for {}",
-                              part_desc->src_part_name, src_replica, part_desc->new_part_name, entry.znode_name);
-                    need_check = false;
-                }
-            }
-
-            if (need_check)
-            {
-                LOG_DEBUG(log, "Will check part {} required for {}, because no replicas have it (including replicas of source table)",
-                          part_desc->new_part_name, entry.znode_name);
-                enqueuePartForCheck(part_desc->new_part_name);
-            }
-
-            throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
-                            "Not found part {} (or part covering it) neither source table neither remote replicas",
-                            part_desc->new_part_name);
+            LOG_WARNING(log, "Will not add part {} (while replacing {}) because it's going to be dropped (DROP_RANGE: {})",
+                        part_desc->new_part_name, entry_replace.drop_range_part_name, covering_drop_range.getPartNameForLogs());
+            continue;
         }
+
+        /// We should enqueue missing part for check, so it will be replaced with empty one (if needed)
+        /// and we will be able to execute this REPLACE_RANGE.
+        /// However, it's quite dangerous, because part may appear in source table.
+        /// So we enqueue it for check only if no replicas of source table have part either.
+        bool need_check = true;
+        if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
+        {
+            String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
+            if (!src_replica.empty())
+            {
+                LOG_DEBUG(log, "Found part {} on replica {} of source table, will not check part {} required for {}",
+                          part_desc->src_part_name, src_replica, part_desc->new_part_name, entry.znode_name);
+                need_check = false;
+            }
+        }
+
+        if (need_check)
+        {
+            LOG_DEBUG(log, "Will check part {} required for {}, because no replicas have it (including replicas of source table)",
+                      part_desc->new_part_name, entry.znode_name);
+            enqueuePartForCheck(part_desc->new_part_name);
+        }
+
+        throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
+                        "Not found part {} (or part covering it) neither source table neither remote replicas",
+                        part_desc->new_part_name);
     }
 
     /// Filter covered parts
@@ -2752,7 +2760,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             const String & entry_name = entry_info.parsed_entry->znode_name;
             const auto & entry_type = entry_info.parsed_entry->type;
 
-            if (should_ignore_log_entry(created_get_parts, part_name, fmt::format("Not copying {} {} ", entry_name, entry_type)))
+            if (should_ignore_log_entry(created_get_parts, part_name, fmt::format("Not copying {} {}", entry_name, entry_type)))
                 continue;
 
             if (entry_info.parsed_entry->type == LogEntry::GET_PART)
@@ -3534,7 +3542,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
         time_t part_create_time = 0;
         Coordination::Stat stat;
-        if (zookeeper->exists(part_path, &stat))
+        bool exists_in_zookeeper = zookeeper->exists(part_path, &stat);
+        if (exists_in_zookeeper)
         {
             /// Update version of /is_lost node to avoid race condition with cloneReplica(...).
             /// cloneReplica(...) expects that if some entry was executed, then its new_part_name is added to /parts,
@@ -3547,13 +3556,6 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             part_create_time = stat.ctime / 1000;
             getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
         }
-
-
-        LogEntryPtr log_entry = std::make_shared<LogEntry>();
-        log_entry->type = LogEntry::GET_PART;
-        log_entry->create_time = part_create_time;
-        log_entry->source_replica = "";
-        log_entry->new_part_name = part_name;
 
         if (!storage_init)
         {
@@ -3570,12 +3572,24 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{broken_part_info.partition_id});
             if (merge_pred.isGoingToBeDropped(broken_part_info))
             {
-                LOG_INFO(log, "Broken part {} is covered by drop range, don't need to fetch it", part_name);
+                LOG_INFO(log, "Broken part {} is covered by drop range, don't need to fetch it, removing it from ZooKeeper", part_name);
+
+                /// But we have to remove it from ZooKeeper because broken parts are not removed from ZK during Outdated parts cleanup
+                /// There's a chance that DROP_RANGE will remove it, but only if it was not already removed by cleanup thread
+                if (exists_in_zookeeper)
+                    removePartsFromZooKeeperWithRetries({part_name});
                 return;
             }
+
             /// Check that our version of log (and queue) is the most fresh. Otherwise don't create new entry fetch entry.
             ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", merge_pred.getVersion()));
         }
+
+        LogEntryPtr log_entry = std::make_shared<LogEntry>();
+        log_entry->type = LogEntry::GET_PART;
+        log_entry->create_time = part_create_time;
+        log_entry->source_replica = "";
+        log_entry->new_part_name = part_name;
 
         ops.emplace_back(zkutil::makeCreateRequest(
             fs::path(replica_path) / "queue/queue-", log_entry->toString(),
@@ -4409,6 +4423,7 @@ void StorageReplicatedMergeTree::partialShutdown()
 
     partial_shutdown_called = true;
     partial_shutdown_event.set();
+    queue.notifySubscribersOnPartialShutdown();
     replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
@@ -7572,53 +7587,54 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
 }
 
-bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict)
+bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode)
 {
-    Stopwatch watch;
-
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+
+    if (sync_mode == SyncReplicaMode::PULL)
+        return true;
+
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
     background_operations_assignee.trigger();
 
     std::unordered_set<String> wait_for_ids;
-    bool set_ids_to_wait = true;
+    bool was_interrupted = false;
 
     Poco::Event target_entry_event;
-    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait, strict]
-        (size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
+    auto callback = [this, &target_entry_event, &wait_for_ids, &was_interrupted, sync_mode]
+        (size_t new_queue_size, const String * removed_log_entry_id)
     {
-        if (strict)
+        if (partial_shutdown_called)
         {
-            /// In strict mode we wait for queue to become empty
+            was_interrupted = true;
+            target_entry_event.set();
+            return;
+        }
+
+        if (sync_mode == SyncReplicaMode::STRICT)
+        {
+            /// Wait for queue to become empty
             if (new_queue_size == 0)
                 target_entry_event.set();
             return;
         }
 
-        if (set_ids_to_wait)
-        {
-            wait_for_ids = log_entry_ids;
-            set_ids_to_wait = false;
-        }
+        if (removed_log_entry_id)
+            wait_for_ids.erase(*removed_log_entry_id);
 
-        if (removed_log_entry_id.has_value())
-            wait_for_ids.erase(removed_log_entry_id.value());
-
-        if (wait_for_ids.empty() || new_queue_size == 0)
+        if (wait_for_ids.empty())
             target_entry_event.set();
     };
-    const auto handler = queue.addSubscriber(std::move(callback));
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode);
 
-    while (!target_entry_event.tryWait(50))
-    {
-        if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
-            return false;
+    if (!target_entry_event.tryWait(max_wait_milliseconds))
+        return false;
 
-        if (partial_shutdown_called)
-            throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
-    }
+    if (was_interrupted)
+        throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+
     return true;
 }
 

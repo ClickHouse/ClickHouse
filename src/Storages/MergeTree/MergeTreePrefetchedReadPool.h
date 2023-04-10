@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <IO/AsyncReadCounters.h>
+#include <boost/heap/priority_queue.hpp>
 #include <queue>
 
 namespace DB

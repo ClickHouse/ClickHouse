@@ -165,7 +165,8 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
     readVarUInt(size, buf);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size.");
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
 
     v.resize(size);
     for (size_t i = 0; i < size; ++i)
