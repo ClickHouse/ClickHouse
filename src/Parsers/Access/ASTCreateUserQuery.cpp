@@ -236,21 +236,4 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
         formatGrantees(*grantees, format);
 }
 
-bool ASTCreateUserQuery::hasSecretParts() const
-{
-    if (auth_data)
-    {
-        /// Default password type is used hence has secret part
-        if (!auth_data->type)
-            return true;
-
-        auto auth_type = *(auth_data->type);
-        if ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
-            || (auth_type == AuthenticationType::SHA256_PASSWORD)
-            || (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD))
-            return true;
-    }
-    return childrenHaveSecretParts();
-}
-
 }

@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -69,7 +70,7 @@ TEST_P(ParserTest, parseQuery)
             {
                 if (input_text.starts_with("ATTACH"))
                 {
-                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt();
+                    auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
                     EXPECT_TRUE(std::regex_match(salt, std::regex(expected_ast)));
                 }
                 else

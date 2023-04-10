@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Access/Common/AuthenticationData.h>
-#include <Interpreters/Context_fwd.h>
 #include <optional>
 
 
@@ -21,9 +20,10 @@ public:
         return clone;
     }
 
-    static std::shared_ptr<ASTAuthenticationData> makeASTAuthenticationData(AuthenticationData auth_data);
-    AuthenticationData makeAuthenticationData(ContextPtr context, bool check_password_rules) const;
-    void checkPasswordComplexityRules(ContextPtr context) const;
+    bool hasSecretParts() const override;
+
+    std::optional<String> getPassword() const;
+    std::optional<String> getSalt() const;
 
     /// If type is empty we use the default password type.
     /// AuthenticationType::NO_PASSWORD is specified explicitly.

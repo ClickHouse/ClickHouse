@@ -1614,7 +1614,12 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (!create_user_query->attach && create_user_query->auth_data)
         {
             if (const auto * auth_data = create_user_query->auth_data->as<ASTAuthenticationData>())
-                auth_data->checkPasswordComplexityRules(global_context);
+            {
+                auto password = auth_data->getPassword();
+
+                if (password)
+                    global_context->getAccessControl().checkPasswordComplexityRules(*password);
+            }
         }
     }
 
