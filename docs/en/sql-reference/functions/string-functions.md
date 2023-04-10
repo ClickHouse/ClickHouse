@@ -1268,7 +1268,7 @@ Same as `extractKeyValuePairs` but with escaping support.
 
 Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
 Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).\
+`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
 
 **Escape sequences with escape sequence support turned on**
 ``` sql
