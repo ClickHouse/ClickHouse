@@ -10,13 +10,15 @@ namespace DB
 struct SoundexImpl
 {
     static constexpr auto name = "soundex";
-    static constexpr size_t length = 4;
-    // enum { length = 4 };
+    enum
+    {
+        length = 4
+    };
     /* ABCDEFGHIJKLMNOPQRSTUVWXYZ */
     /* :::::::::::::::::::::::::: */
     static constexpr auto soundex_map = "01230120022455012623010202";
 
-    static char getScode(const char * &ptr, const char * in_end)
+    static char getScode(const char *& ptr, const char * in_end)
     {
         while (ptr < in_end && !std::isalpha(*ptr))
         {
@@ -68,7 +70,8 @@ struct SoundexImpl
 
 REGISTER_FUNCTION(Soundex)
 {
-    factory.registerFunction<FunctionStringHashFixedString<SoundexImpl>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionStringHashFixedString<SoundexImpl>>(
+        Documentation{"Returns soundex code of a string."}, FunctionFactory::CaseInsensitive);
 }
 
 
