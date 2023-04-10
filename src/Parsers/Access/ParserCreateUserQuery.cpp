@@ -167,10 +167,11 @@ namespace
             auth_data->expect_kerberos_realm = expect_kerberos_realm;
             auth_data->expect_common_names = expect_common_names;
 
-            auth_data->children.push_back(value);
+            if (value)
+                auth_data->children.push_back(std::move(value));
 
             if (parsed_salt)
-                auth_data->children.push_back(parsed_salt);
+                auth_data->children.push_back(std::move(parsed_salt));
 
             return true;
         });

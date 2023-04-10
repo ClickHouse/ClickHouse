@@ -10,17 +10,126 @@
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <boost/range/algorithm/copy.hpp>
 
+#include "config.h"
+
+#if USE_SSL
+#     include <openssl/crypto.h>
+#     include <openssl/rand.h>
+#     include <openssl/err.h>
+#endif
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int OPENSSL_ERROR;
 }
 namespace
 {
+    AuthenticationData makeAuthenticationData(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
+    {
+        if (query.type && *query.type == AuthenticationType::NO_PASSWORD)
+            return AuthenticationData();
+
+        if (query.expect_password)
+        {
+            if (!context)
+                throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot get necessary parameters without context");
+
+            String value = checkAndGetLiteralArgument<String>(query.children[0], "password");
+
+            const auto & access_control = context->getAccessControl();
+            AuthenticationType default_password_type = access_control.getDefaultPasswordType();
+
+            /// NOTE: We will also extract bcrypt workfactor from access_control
+
+            AuthenticationType current_type;
+
+            if (query.type)
+                current_type = *query.type;
+            else
+                current_type = default_password_type;
+
+            AuthenticationData auth_data(current_type);
+
+            if (check_password_rules)
+                access_control.checkPasswordComplexityRules(value);
+
+            if (query.type == AuthenticationType::SHA256_PASSWORD)
+            {
+    #if USE_SSL
+                ///random generator FIPS complaint
+                uint8_t key[32];
+                if (RAND_bytes(key, sizeof(key)) != 1)
+                {
+                    char buf[512] = {0};
+                    ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
+                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
+                }
+
+                String salt;
+                salt.resize(sizeof(key) * 2);
+                char * buf_pos = salt.data();
+                for (uint8_t k : key)
+                {
+                    writeHexByteUppercase(k, buf_pos);
+                    buf_pos += 2;
+                }
+                value.append(salt);
+                auth_data.setSalt(salt);
+    #else
+                throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+    #endif
+            }
+
+            auth_data.setPassword(value);
+            return auth_data;
+        }
+
+        AuthenticationData auth_data(*query.type);
+
+        if (query.expect_hash)
+        {
+            String value = checkAndGetLiteralArgument<String>(query.children[0], "hash");
+            auth_data.setPasswordHashHex(value);
+
+            if (*query.type == AuthenticationType::SHA256_PASSWORD && query.children.size() == 2)
+            {
+                String parsed_salt = checkAndGetLiteralArgument<String>(query.children[1], "salt");
+                auth_data.setSalt(parsed_salt);
+            }
+        }
+        else if (query.expect_ldap_server_name)
+        {
+            String value = checkAndGetLiteralArgument<String>(query.children[0], "ldap_server_name");
+            auth_data.setLDAPServerName(value);
+        }
+        else if (query.expect_kerberos_realm)
+        {
+            if (!query.children.empty())
+            {
+                String value = checkAndGetLiteralArgument<String>(query.children[0], "kerberos_realm");
+                auth_data.setKerberosRealm(value);
+            }
+        }
+        else if (query.expect_common_names)
+        {
+            boost::container::flat_set<String> common_names;
+            for (const auto & ast_child : query.children[0]->children)
+                common_names.insert(checkAndGetLiteralArgument<String>(ast_child, "common_name"));
+
+            auth_data.setSSLCertificateCommonNames(std::move(common_names));
+        }
+
+        return auth_data;
+    }
+
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
@@ -115,7 +224,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     std::optional<AuthenticationData> auth_data;
     if (query.auth_data)
-        auth_data = query.auth_data->makeAuthenticationData(getContext(), !query.attach);
+        auth_data = makeAuthenticationData(*query.auth_data, getContext(), !query.attach);
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -200,7 +309,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
 {
     std::optional<AuthenticationData> auth_data;
     if (query.auth_data)
-        auth_data = query.auth_data->makeAuthenticationData({}, !query.attach);
+        auth_data = makeAuthenticationData(*query.auth_data, {}, !query.attach);
 
     updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
 }
