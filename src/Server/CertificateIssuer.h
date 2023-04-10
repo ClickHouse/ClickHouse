@@ -10,6 +10,8 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <acme-lw.h>
+
 namespace DB
 {
 
