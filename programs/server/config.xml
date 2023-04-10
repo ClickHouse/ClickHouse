@@ -347,7 +347,7 @@
     </openSSL>
 
     <LetsEncrypt>
-        <enableAutomaticIssue>true</enableAutomaticIssue>
+        <enableAutomaticIssue>false</enableAutomaticIssue>
         <reissueHoursBefore>100000</reissueHoursBefore>
     </LetsEncrypt>
 
