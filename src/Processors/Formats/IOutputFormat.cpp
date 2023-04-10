@@ -113,7 +113,7 @@ void IOutputFormat::flush()
 void IOutputFormat::write(const Block & block)
 {
     writePrefixIfNeeded();
-    consume(Chunk(block.getColumns(), block.rows()));
+    consume(Chunk(block.getColumns(), block.rows(), block.info.has_partial_result));
 
     if (auto_flush)
         flush();
@@ -128,6 +128,24 @@ void IOutputFormat::finalize()
     finalizeImpl();
     finalizeBuffers();
     finalized = true;
+}
+
+void IOutputFormat::clearLastLines(size_t lines_number)
+{
+    /// http://en.wikipedia.org/wiki/ANSI_escape_code
+    #define MOVE_TO_PREV_LINE "\033[A"
+    #define CLEAR_TO_END_OF_LINE "\033[K"
+
+    static const char * clear_prev_line = MOVE_TO_PREV_LINE \
+                                          CLEAR_TO_END_OF_LINE;
+
+    /// Move cursor to the beginning of line
+    writeCString("\r", out);
+
+    for (size_t line = 0; line < lines_number; ++line)
+    {
+        writeCString(clear_prev_line, out);
+    }
 }
 
 }

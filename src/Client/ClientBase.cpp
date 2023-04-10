@@ -440,7 +440,9 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (!block)
         return;
 
-    processed_rows += block.rows();
+    if (!block.info.has_partial_result)
+        processed_rows += block.rows();
+
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
@@ -450,14 +452,35 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
+    if (received_first_full_result && block.info.has_partial_result)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server shouldn't send partial results after the first block with a non-empty full result");
+
+    if (!is_interactive && block.info.has_partial_result)
+        return;
+
+    bool first_full_result = false;
+    if (!received_first_full_result && !block.info.has_partial_result)
+    {
+        received_first_full_result = true;
+        first_full_result = true;
+    }
+
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput(*tty_buf);
 
+    if (is_interactive && first_full_result && has_partial_result_setting)
+        std::cout << "Full result:" << std::endl;
+
     try
     {
+        /// Clear previous partial results to write new partial results if needed
+        if (!received_first_full_result && written_first_block)
+            output_format->clearLastLines(prev_block_rows + 2);
+
         output_format->write(materializeBlock(block));
         written_first_block = true;
+        prev_block_rows = block.rows();
     }
     catch (const Exception &)
     {
@@ -865,6 +888,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
     const auto & settings = global_context->getSettingsRef();
     const Int32 signals_before_stop = settings.stop_reading_on_first_cancel ? 2 : 1;
+    has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
+
+    if (is_interactive && has_partial_result_setting)
+        std::cout << "Partial result:" << std::endl;
 
     int retries_left = 10;
     while (retries_left)
@@ -1614,6 +1641,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     }
 
     processed_rows = 0;
+    prev_block_rows = 0;
+    has_partial_result_setting = false;
+    received_first_full_result = false;
     written_first_block = false;
     progress_indication.resetProgress();
     profile_events.watch.restart();

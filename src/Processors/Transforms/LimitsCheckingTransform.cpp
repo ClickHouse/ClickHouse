@@ -38,7 +38,7 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         return;
     }
 
-    if (chunk)
+    if (chunk && !chunk.hasPartialResult())
     {
         info.update(chunk);
 

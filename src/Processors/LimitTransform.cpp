@@ -180,6 +180,11 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         return Status::NeedData;
 
     data.current_chunk = input.pull(true);
+    if (data.current_chunk.hasPartialResult())
+    {
+        output.push(std::move(data.current_chunk));
+        return Status::PortFull;
+    }
 
     auto rows = data.current_chunk.getNumRows();
 

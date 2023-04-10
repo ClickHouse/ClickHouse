@@ -140,7 +140,8 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        total_rows += chunk.getNumRows();
+        if (!chunk.hasPartialResult())
+            total_rows += chunk.getNumRows();
         return;
     }
     if (mono_block)
@@ -321,7 +322,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
     writeString(bottom_separator_s, out);
 
-    total_rows += num_rows;
+    if (!chunk.hasPartialResult())
+        total_rows += num_rows;
 }
 
 

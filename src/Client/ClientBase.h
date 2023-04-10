@@ -259,6 +259,12 @@ protected:
     size_t processed_rows = 0; /// How many rows have been read or written.
     bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
+    /// If `received_first_full_result` set to true then
+    /// client has already received all updates with a partial result
+    bool received_first_full_result = false;
+    bool has_partial_result_setting = false;
+    size_t prev_block_rows = 0; /// How many rows were in the previously received block of data
+
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
