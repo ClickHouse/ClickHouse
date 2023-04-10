@@ -34,7 +34,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>

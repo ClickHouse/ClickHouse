@@ -1,5 +1,6 @@
 #include "MergeTreeDataPartCloner.h"
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 
 namespace DB
 {
@@ -24,7 +25,8 @@ MergeTreeDataPartCloner::MergeTreeDataPartCloner(
     dst_part_info(dst_part_info_), tmp_part_prefix(tmp_part_prefix_),
     txn(txn_), require_part_metadata(require_part_metadata_),
     hardlinked_files(hardlinked_files_), copy_instead_of_hardlink(copy_instead_of_hardlink_),
-    files_to_copy_instead_of_hardlinks(files_to_copy_instead_of_hardlinks_)
+    files_to_copy_instead_of_hardlinks(files_to_copy_instead_of_hardlinks_),
+    log(&Poco::Logger::get("MergeTreeDataPartCloner"))
 {}
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone()
@@ -35,25 +37,41 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartClone
                 "Could not clone and load part {} because disk does not belong to storage policy",
                 quoteString(src_part->getDataPartStorage().getFullPath()));
 
-    assert(!tmp_part_prefix.empty());
-
     auto [destination_part, temporary_directory_lock] = cloneSourcePart();
 
     if (!copy_instead_of_hardlink && hardlinked_files)
     {
         // think of a name for this method
         handleHardLinkedParameterFiles();
+        handleProjections();
     }
 
     return std::make_pair(finalizePart(destination_part), std::move(temporary_directory_lock));
 }
 
-DataPartStoragePtr MergeTreeDataPartCloner::flushPartStorageToDiskIfInMemory() const
+DataPartStoragePtr MergeTreeDataPartCloner::flushPartStorageToDiskIfInMemory(
+    const String & tmp_dst_part_name,
+    scope_guard & src_flushed_tmp_dir_lock,
+    MergeTreeData::MutableDataPartPtr src_flushed_tmp_part
+) const
 {
     if (auto src_part_in_memory = asInMemoryPart(src_part))
     {
         auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        return src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
+        auto tmp_src_part_file_name = fs::path(tmp_dst_part_name).filename();
+
+        src_flushed_tmp_dir_lock = src_part->storage.getTemporaryPartDirectoryHolder(tmp_src_part_file_name);
+
+        auto flushed_part_storage = src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
+
+        src_flushed_tmp_part = MergeTreeDataPartBuilder(*merge_tree_data, src_part->name, flushed_part_storage)
+                                   .withPartInfo(src_part->info)
+                                   .withPartFormatFromDisk()
+                                   .build();
+
+        src_flushed_tmp_part->is_temp = true;
+
+        return flushed_part_storage;
     }
 
     return src_part->getDataPartStoragePtr();
@@ -77,8 +95,8 @@ void MergeTreeDataPartCloner::reserveSpaceOnDisk() const
 }
 
 std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlinkAllFiles(
-        const DataPartStoragePtr & storage,
-        const String & path
+    const DataPartStoragePtr & storage,
+    const String & path
 ) const
 {
     return storage->freeze(
@@ -93,19 +111,33 @@ std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlinkAllFiles(
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::cloneSourcePart() const
 {
-    const String dst_part_name = src_part->getNewName(dst_part_info);
+    const auto dst_part_name = src_part->getNewName(dst_part_info);
 
-    const String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
+    const auto tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     auto temporary_directory_lock = merge_tree_data->getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
     reserveSpaceOnDisk();
 
-    auto src_part_storage = flushPartStorageToDiskIfInMemory();
+    scope_guard src_flushed_tmp_dir_lock;
+    MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
+
+    auto src_part_storage = flushPartStorageToDiskIfInMemory(tmp_dst_part_name, src_flushed_tmp_dir_lock, src_flushed_tmp_part);
 
     auto dst_part_storage = hardlinkAllFiles(src_part_storage, tmp_dst_part_name);
 
-    return std::make_pair(merge_tree_data->createPart(dst_part_name, dst_part_info, dst_part_storage), std::move(temporary_directory_lock));
+    LOG_DEBUG(log, "Clone {} part {} to {}{}",
+              src_flushed_tmp_part ? "flushed" : "",
+              src_part_storage->getFullPath(),
+              std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
+              false);
+
+
+    auto part = MergeTreeDataPartBuilder(*merge_tree_data, dst_part_name, dst_part_storage)
+        .withPartFormatFromDisk()
+        .build();
+
+    return std::make_pair(part, std::move(temporary_directory_lock));
 }
 
 void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
@@ -118,7 +150,9 @@ void MergeTreeDataPartCloner::handleHardLinkedParameterFiles() const
         if (!files_to_copy_instead_of_hardlinks.contains(it->name())
             && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
             && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+        {
             hardlinked_files->hardlinks_from_source_part.insert(it->name());
+        }
     }
 }
 
@@ -136,6 +170,25 @@ MergeTreeDataPartCloner::MutableDataPartPtr MergeTreeDataPartCloner::finalizePar
     dst_part->modification_time = dst_part->getDataPartStorage().getLastModified().epochTime();
 
     return dst_part;
+}
+
+void MergeTreeDataPartCloner::handleProjections() const
+{
+    auto projections = src_part->getProjectionParts();
+    for (const auto & [name, projection_part] : projections)
+    {
+        const auto & projection_storage = projection_part->getDataPartStorage();
+        for (auto it = projection_storage.iterate(); it->isValid(); it->next())
+        {
+            auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
+            if (!files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
+                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME
+                && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
+            {
+                hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
+            }
+        }
+    }
 }
 
 }

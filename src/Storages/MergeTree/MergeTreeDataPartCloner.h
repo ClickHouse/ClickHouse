@@ -48,6 +48,7 @@ namespace DB
         MergeTreeData::HardlinkedFiles * hardlinked_files;
         bool copy_instead_of_hardlink;
         NameSet files_to_copy_instead_of_hardlinks;
+        std::atomic<Poco::Logger *> log;
 
         /// Check that the storage policy contains the disk where the src_part is located.
         bool doesStoragePolicyAllowSameDisk() const;
@@ -57,11 +58,17 @@ namespace DB
         std::shared_ptr<IDataPartStorage> hardlinkAllFiles(const DataPartStoragePtr & storage, const String & path) const;
 
         /// If source part is in memory, flush it to disk and clone it already in on-disk format
-        DataPartStoragePtr flushPartStorageToDiskIfInMemory() const;
+        DataPartStoragePtr flushPartStorageToDiskIfInMemory(
+            const String & tmp_dst_part_name,
+            scope_guard & src_flushed_tmp_dir_lock,
+            MergeTreeData::MutableDataPartPtr src_flushed_tmp_part
+        ) const;
 
         std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart() const;
 
         void handleHardLinkedParameterFiles() const;
+
+        void handleProjections() const;
 
     };
 }
