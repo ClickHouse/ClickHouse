@@ -18,4 +18,5 @@ AND name NOT IN (
     'lemmatize', 'tokenize', 'stem', 'synonyms',
     'detectCharset', 'detectLanguageUnknown', 'detectProgrammingLanguage', 'detectTonality'
      -- these functions are not enabled in fast test
+    'lemmatize', 'tokenize', 'stem', 'synonyms', 'kql_array_sort_asc', 'kql_array_sort_desc' -- these functions are not enabled in fast test
 ) ORDER BY name;
