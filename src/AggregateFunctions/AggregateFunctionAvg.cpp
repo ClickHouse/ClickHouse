@@ -47,4 +47,4 @@ void registerAggregateFunctionAvg(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("avg", createAggregateFunctionAvg, AggregateFunctionFactory::CaseInsensitive);
 }
-}
+

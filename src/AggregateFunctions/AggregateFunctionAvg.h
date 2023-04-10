@@ -33,27 +33,27 @@ using AvgFieldType = std::conditional_t< //
     NearestFieldType<T>>;
 
 template <class T>
-class AggregateFunctionAvg : public IAggregateFunctionDataHelper<AvgState<T>, AggregateFunctionAvg<T>>
+class AggregateFunctionAvg : public IAggregateFunctionDataHelper<AvgState<AvgFieldType<T>>, AggregateFunctionAvg<T>>
 {
 public:
-    using Fraction = AvgState<T>;
+    using Fraction = AvgState<AvgFieldType<T>>;
     using Base = IAggregateFunctionDataHelper<Fraction, AggregateFunctionAvg<T>>;
     using Numerator = AvgFieldType<T>;
     using ColVecType = ColumnVectorOrDecimal<T>;
 
-    explicit AggregateFunctionAvg(const DataTypes & argument_types, UInt32 numerator_scale_ = 0)
-        : Base(argument_types, {}, createResultType()), numerator_scale(numerator_scale_)
+    explicit AggregateFunctionAvg(const DataTypes & argument_types_, UInt32 numerator_scale_ = 0)
+        : Base(argument_types_, {}, createResultType()), numerator_scale(numerator_scale_)
     {
     }
 
-    AggregateFunctionAvg(const DataTypes & argument_types, const DataTypePtr & result_type, UInt32 numerator_scale_ = 0)
-        : Base(argument_types, {}, result_type), numerator_scale(numerator_scale_)
+    AggregateFunctionAvg(const DataTypes & argument_types_, const DataTypePtr & result_type_, UInt32 numerator_scale_ = 0)
+        : Base(argument_types_, {}, result_type_), numerator_scale(numerator_scale_)
     {
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        incrementNumerator(place, static_cast<const ColVecType &>(*columns[0]).getData()[row_num]);
+        this->data(place).numerator += static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
         ++this->data(place).denominator;
     }
 
@@ -79,7 +79,7 @@ public:
             sum_data.addMany(column.getData().data(), row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin);
         }
-        incrementNumerator(place, sum_data.sum);
+        this->data(place).numerator += sum_data.sum;
     }
 
     void addBatchSinglePlaceNotNull(
@@ -114,10 +114,11 @@ public:
             sum_data.addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
             this->data(place).denominator += (row_end - row_begin) - countBytesInFilter(null_map, row_begin, row_end);
         }
-        incrementNumerator(place, sum_data.sum);
+
+        this->data(place).numerator += sum_data.sum;
     }
 
-    String getName() const final { return "avg"; }
+    String getName() const override { return "avg"; }
 
     DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
 
@@ -270,11 +271,6 @@ private:
             return DecimalUtils::convertTo<Float64>(numerator, numerator_scale) / denominator;
         else
             return static_cast<Float64>(numerator) / denominator;
-    }
-
-    void NO_SANITIZE_UNDEFINED incrementNumerator(AggregateDataPtr __restrict place, Numerator count) const
-    {
-        this->data(place).numerator += count;
     }
 };
 }
