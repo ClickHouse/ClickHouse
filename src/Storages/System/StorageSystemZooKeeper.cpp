@@ -356,7 +356,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!isPathNode(node.children.at(0)))
             return;
 
-        auto value = node.children.at(1);
+        const auto * value = node.children.at(1);
         if (!value->column)
             return;
 
@@ -504,7 +504,7 @@ void ReadFromSystemZooKeeper::fillData(MutableColumns & res_columns) const
 }
 
 ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(const Block & header, SelectQueryInfo & query_info, ContextPtr context_)
-    : SourceStepWithFilter({.header = std::move(header)})
+    : SourceStepWithFilter({.header = header})
     , storage_limits(query_info.storage_limits)
     , context(std::move(context_))
 {
