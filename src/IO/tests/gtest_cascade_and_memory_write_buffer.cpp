@@ -198,7 +198,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
         if (s > 1)
         {
             MemoryWriteBuffer buf(s - 1);
-            EXPECT_THROW(buf.write(data.data(), data.size()), DB::Exception);
+            EXPECT_THROW(buf.write(data.data(), data.size()), MemoryWriteBuffer::CurrentBufferExhausted);
         }
     }
 

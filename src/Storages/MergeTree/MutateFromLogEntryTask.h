@@ -30,7 +30,9 @@ public:
     UInt64 getPriority() override { return priority; }
 
 private:
+
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
+
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
@@ -53,7 +55,6 @@ private:
     MergeTreeData::MutableDataPartPtr new_part{nullptr};
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
-    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 };
 

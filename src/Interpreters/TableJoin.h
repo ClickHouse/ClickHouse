@@ -209,7 +209,7 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getTemporaryVolume() { return tmp_volume; }
+    VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {

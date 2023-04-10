@@ -1863,7 +1863,7 @@ def test_ttl_move_if_exists(started_cluster, name, dest_type):
                 )
             )
 
-        for (node, policy) in zip(
+        for node, policy in zip(
             [node1, node2], ["only_jbod_1", "small_jbod_with_external"]
         ):
             node.query(
