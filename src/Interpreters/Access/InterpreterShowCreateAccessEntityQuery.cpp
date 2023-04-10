@@ -11,6 +11,7 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -91,9 +92,11 @@ namespace
             {
                 node->expect_common_names = true;
 
+                auto list = std::make_shared<ASTExpressionList>();
                 for (const auto & name : auth_data.getSSLCertificateCommonNames())
-                    node->children.push_back(std::make_shared<ASTLiteral>(name));
+                    list->children.push_back(std::make_shared<ASTLiteral>(name));
 
+                node->children.push_back(std::move(list));
                 break;
             }
 
