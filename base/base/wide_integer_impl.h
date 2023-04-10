@@ -155,13 +155,13 @@ struct common_type<wide::integer<Bits, Signed>, Arithmetic>
         std::is_floating_point_v<Arithmetic>,
         Arithmetic,
         std::conditional_t<
-            sizeof(Arithmetic) < Bits * sizeof(long),
+            sizeof(Arithmetic) * 8 < Bits,
             wide::integer<Bits, Signed>,
             std::conditional_t<
-                Bits * sizeof(long) < sizeof(Arithmetic),
+                Bits < sizeof(Arithmetic) * 8,
                 Arithmetic,
                 std::conditional_t<
-                    Bits * sizeof(long) == sizeof(Arithmetic) && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
+                    Bits == sizeof(Arithmetic) * 8 && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
                     Arithmetic,
                     wide::integer<Bits, Signed>>>>>;
 };
