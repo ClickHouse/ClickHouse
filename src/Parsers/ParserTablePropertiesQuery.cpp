@@ -61,9 +61,14 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     }
     else if (s_show.ignore(pos, expected))
     {
+        bool has_create = true;
+
         auto old_expected = expected;
         if (!s_create.ignore(pos, expected))
+        {
             expected = old_expected;
+            has_create = false;
+        }
 
         if (s_database.ignore(pos, expected))
         {
@@ -78,7 +83,15 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             parse_show_create_view = true;
         }
         else
-            query = std::make_shared<ASTShowCreateTableQuery>();
+        {
+            /// We support `SHOW CREATE tbl;` and `SHOW TABLE tbl`,
+            /// but do not support `SHOW tbl`, which has ambiguous
+            /// with other statement like `SHOW PRIVILEGES`.
+            if (has_create || s_table.checkWithoutMoving(pos, expected))
+                query = std::make_shared<ASTShowCreateTableQuery>();
+            else
+                return false;
+        }
     }
     else
     {
