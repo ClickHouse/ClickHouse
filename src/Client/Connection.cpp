@@ -324,13 +324,6 @@ void Connection::receiveHello()
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
-
-        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DEFAULT_PASSWORD_TYPE)
-        {
-            UInt64 default_password_type_uint;
-            readVarUInt(default_password_type_uint, *in);
-            default_password_type = static_cast<AuthenticationType>(default_password_type_uint);
-        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();

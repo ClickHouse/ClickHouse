@@ -9,6 +9,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -62,7 +63,7 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data;
+            query->auth_data = ASTAuthenticationData::makeASTAuthenticationData(user.auth_data);
 
         if (!user.settings.empty())
         {

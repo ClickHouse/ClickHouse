@@ -98,44 +98,6 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(std::string_view
 }
 
 
-AuthenticationData AuthenticationData::makePasswordAuthenticationData(AuthenticationType type, String password)
-{
-    AuthenticationData auth_data(type);
-
-    if (type == AuthenticationType::SHA256_PASSWORD)
-    {
-#if USE_SSL
-        ///random generator FIPS complaint
-        uint8_t key[32];
-        if (RAND_bytes(key, sizeof(key)) != 1)
-        {
-            char buf[512] = {0};
-            ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-        }
-
-        String salt;
-        salt.resize(sizeof(key) * 2);
-        char * buf_pos = salt.data();
-        for (uint8_t k : key)
-        {
-            writeHexByteUppercase(k, buf_pos);
-            buf_pos += 2;
-        }
-        password.append(salt);
-        auth_data.setSalt(salt);
-#else
-        throw DB::Exception(
-            "SHA256 passwords support is disabled, because ClickHouse was built without SSL library",
-            DB::ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
-    }
-
-    auth_data.setPassword(password);
-    return auth_data;
-}
-
-
 bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)

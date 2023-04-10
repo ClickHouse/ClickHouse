@@ -150,7 +150,6 @@ public:
 
     /// Default password type when the user does not specify it.
     void setDefaultPasswordTypeFromConfig(const String & type_);
-    void setDefaultPasswordType(const AuthenticationType & type_);
     AuthenticationType getDefaultPasswordType() const;
 
     /// Check complexity requirements for passwords

@@ -92,7 +92,6 @@ public:
     const String & getDescription() const override { return description; }
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
-    AuthenticationType getDefaultPasswordType() const override { return AuthenticationType::MAX; }
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,

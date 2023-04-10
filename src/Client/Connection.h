@@ -94,7 +94,6 @@ public:
     Protocol::Compression getCompression() const { return compression; }
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return password_complexity_rules; }
-    AuthenticationType getDefaultPasswordType() const override { return default_password_type; }
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
@@ -211,8 +210,6 @@ private:
     ThrottlerPtr throttler;
 
     std::vector<std::pair<String, String>> password_complexity_rules;
-
-    AuthenticationType default_password_type = AuthenticationType::MAX;
 
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;

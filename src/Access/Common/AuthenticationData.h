@@ -54,8 +54,6 @@ class AuthenticationData
 public:
     using Digest = std::vector<uint8_t>;
 
-    static AuthenticationData makePasswordAuthenticationData(AuthenticationType type, String password);
-
     explicit AuthenticationData(AuthenticationType type_ = AuthenticationType::NO_PASSWORD) : type(type_) {}
     AuthenticationData(const AuthenticationData & src) = default;
     AuthenticationData & operator =(const AuthenticationData & src) = default;
