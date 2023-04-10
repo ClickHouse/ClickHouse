@@ -1,3 +1,4 @@
+#include <format>
 #include <regex>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -15,12 +16,11 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
-#include <format>
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int SYNTAX_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int SYNTAX_ERROR;
 }
 namespace DB
 {
@@ -326,7 +326,7 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
             else if (arg.starts_with('f') || arg.starts_with('F'))
                 decimal = arg.size();
             else
-                throw Exception( ErrorCodes::SYNTAX_ERROR, "Format specifier {} in function: {} is not supported",arg, fn_name);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Format specifier {} in function: {} is not supported", arg, fn_name);
             res.pop_back();
             i = i + arg.size();
         }
@@ -385,7 +385,7 @@ bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
             if (c == ' ' || c == '-' || c == '_' || c == '[' || c == ']' || c == '/' || c == ',' || c == '.' || c == ':')
                 formatspecifier = formatspecifier + c;
             else
-                throw Exception( ErrorCodes::SYNTAX_ERROR, "Invalid format delimiter in function: {}", fn_name);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid format delimiter in function: {}", fn_name);
             ++i;
         }
         else

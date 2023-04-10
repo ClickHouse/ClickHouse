@@ -2180,7 +2180,7 @@ private:
     bool if_permitted;
 };
 
-/// Layer for table function 'kql' 
+/// Layer for table function 'kql'
 class KustoLayer : public Layer
 {
 public:
