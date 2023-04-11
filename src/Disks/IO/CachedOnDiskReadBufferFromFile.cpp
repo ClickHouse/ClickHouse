@@ -4,8 +4,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
-#include <Common/hex.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
+#include <base/hex.h>
 #include <Interpreters/Context.h>
 
 
@@ -118,10 +119,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     }
     else
     {
-        CreateFileSegmentSettings create_settings{
-            .is_persistent = is_persistent
-        };
-
+        CreateFileSegmentSettings create_settings(is_persistent ? FileSegmentKind::Persistent : FileSegmentKind::Regular);
         file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
     }
 
@@ -615,10 +613,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 }
                 else
                 {
-                    LOG_TEST(log, "Bypassing cache because writeCache method failed");
-                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                    file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-
+                    LOG_TEST(log, "Bypassing cache because writeCache (in predownload) method failed");
                     continue_predownload = false;
                 }
             }
@@ -954,7 +949,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             }
             else
             {
-                LOG_TRACE(log, "No space left in cache, will continue without cache download");
+                LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
                 file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
 
@@ -1051,7 +1046,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {
-            throw Exception("Expected SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected SEEK_SET or SEEK_CUR as whence");
         }
 
         if (whence == SEEK_CUR)
@@ -1178,7 +1173,7 @@ void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
     if (FileCache::isReadOnly()
         && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed (query_id: {})", query_id);
 }
 
 String CachedOnDiskReadBufferFromFile::getInfoForLog()
@@ -1190,7 +1185,7 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         implementation_buffer_read_range_str = "None";
 
     String current_file_segment_info;
-    if (current_file_segment_it == file_segments_holder->file_segments.end())
+    if (current_file_segment_it != file_segments_holder->file_segments.end())
         current_file_segment_info = (*current_file_segment_it)->getInfoForLog();
     else
         current_file_segment_info = "None";

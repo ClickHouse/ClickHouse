@@ -4,6 +4,7 @@
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace ProfileEvents
@@ -20,13 +21,13 @@ AccessType ITableFunction::getSourceAccessType() const
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context) const
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
     AccessFlags required_access = getSourceAccessType();
-    String function_name = getName();
-    if ((function_name != "null") && (function_name != "view") && (function_name != "viewIfPermitted"))
+    auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
+    if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
         required_access |= AccessType::CREATE_TEMPORARY_TABLE;
     context->checkAccess(required_access);
 

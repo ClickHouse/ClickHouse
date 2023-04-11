@@ -77,6 +77,8 @@ public:
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
+    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name);
+
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:

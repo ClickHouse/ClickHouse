@@ -3,6 +3,7 @@
 
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/defines.h>
 
 #include <Compression/CompressionFactory.h>
 #include "CompressedWriteBuffer.h"
@@ -22,7 +23,8 @@ void CompressedWriteBuffer::nextImpl()
     if (!offset())
         return;
 
-    size_t decompressed_size = offset();
+    chassert(offset() <= INT_MAX);
+    UInt32 decompressed_size = static_cast<UInt32>(offset());
     UInt32 compressed_reserve_size = codec->getCompressedReserveSize(decompressed_size);
 
     /** During compression we need buffer with capacity >= compressed_reserve_size + CHECKSUM_SIZE.

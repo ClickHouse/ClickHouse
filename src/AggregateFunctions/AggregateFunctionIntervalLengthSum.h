@@ -117,7 +117,7 @@ struct AggregateFunctionIntervalLengthSumData
         readBinary(size, buf);
 
         if (unlikely(size > MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", MAX_ARRAY_SIZE);
 
         segments.clear();
         segments.reserve(size);
@@ -177,11 +177,11 @@ public:
     String getName() const override { return "intervalLengthSum"; }
 
     explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {}, createResultType())
     {
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         if constexpr (std::is_floating_point_v<T>)
             return std::make_shared<DataTypeFloat64>();

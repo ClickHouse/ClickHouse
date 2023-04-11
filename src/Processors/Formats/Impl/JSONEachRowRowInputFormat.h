@@ -4,6 +4,7 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
 
@@ -48,7 +49,7 @@ private:
     void readJSONObject(MutableColumns & columns);
     void readNestedData(const String & name, MutableColumns & columns);
 
-    virtual void readRowStart() {}
+    virtual void readRowStart(MutableColumns &) {}
     virtual bool checkEndOfData(bool is_first_row);
 
     const FormatSettings format_settings;
@@ -66,10 +67,6 @@ private:
     /// the nested column names are 'n.i' and 'n.s' and the nested prefix is 'n.'
     size_t nested_prefix_length = 0;
 
-    /// Set of columns for which the values were read. The rest will be filled with default values.
-    std::vector<UInt8> read_columns;
-    /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
-    std::vector<UInt8> seen_columns;
     /// These sets may be different, because if null_as_default=1 read_columns[i] will be false and seen_columns[i] will be true
     /// for row like {..., "non-nullable column name" : null, ...}
 
@@ -85,6 +82,12 @@ private:
     bool yield_strings;
 
 protected:
+
+    /// Set of columns for which the values were read. The rest will be filled with default values.
+    std::vector<UInt8> read_columns;
+    /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
+    std::vector<UInt8> seen_columns;
+
     /// This flag is needed to know if data is in square brackets.
     bool data_in_square_brackets = false;
 };
@@ -92,15 +95,16 @@ protected:
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 {
 public:
-    JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings, const FormatSettings & format_settings_);
+    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
-    bool json_strings;
     bool first_row = true;
     bool data_in_square_brackets = false;
+    JSONInferenceInfo inference_info;
 };
 
 }

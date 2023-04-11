@@ -218,7 +218,7 @@ private:
         // Offset from start to first attribute
         uint8_t attr_offset;
         // Offset within debug info.
-        uint32_t offset;
+        uint64_t offset;
         uint64_t code;
         DIEAbbreviation abbr;
     };
@@ -252,10 +252,10 @@ private:
         uint8_t unit_type = DW_UT_compile; // DW_UT_compile or DW_UT_skeleton
         uint8_t addr_size = 0;
         // Offset in .debug_info of this compilation unit.
-        uint32_t offset = 0;
-        uint32_t size = 0;
+        uint64_t offset = 0;
+        uint64_t size = 0;
         // Offset in .debug_info for the first DIE in this compilation unit.
-        uint32_t first_die = 0;
+        uint64_t first_die = 0;
         uint64_t abbrev_offset = 0;
 
         // The beginning of the CU's contribution to .debug_addr

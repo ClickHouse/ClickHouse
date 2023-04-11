@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
-#include "config_core.h"
+#include "config.h"
 
 #if USE_NURAFT
 
@@ -81,6 +80,8 @@ private:
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBufferFromPocoSocket> out;
+
+    std::atomic<bool> connected{false};
 
     void runImpl();
 

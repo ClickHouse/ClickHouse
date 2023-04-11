@@ -9,7 +9,6 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -71,6 +70,9 @@ public:
     /// Check part by name
     CheckResult checkPart(const String & part_name);
 
+    std::unique_lock<std::mutex> pausePartsCheck();
+
+    /// Can be called only while holding a lock returned from pausePartsCheck()
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:

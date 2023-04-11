@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class CompressedReadBuffer : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
+class CompressedReadBuffer final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
     size_t size_compressed = 0;
@@ -21,7 +21,7 @@ public:
     {
     }
 
-    size_t readBig(char * to, size_t n) override;
+    [[nodiscard]] size_t readBig(char * to, size_t n) override;
 
     /// The compressed size of the current block.
     size_t getSizeCompressed() const

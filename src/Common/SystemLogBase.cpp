@@ -10,12 +10,15 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/AsynchronousInsertLog.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
+#include <Common/ThreadPool.h>
 
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
@@ -33,20 +36,18 @@ namespace
     constexpr size_t DBMS_SYSTEM_LOG_QUEUE_SIZE = 1048576;
 }
 
+ISystemLog::~ISystemLog() = default;
+
 void ISystemLog::stopFlushThread()
 {
     {
         std::lock_guard lock(mutex);
 
-        if (!saving_thread.joinable())
-        {
+        if (!saving_thread || !saving_thread->joinable())
             return;
-        }
 
         if (is_shutdown)
-        {
             return;
-        }
 
         is_shutdown = true;
 
@@ -54,13 +55,13 @@ void ISystemLog::stopFlushThread()
         flush_event.notify_all();
     }
 
-    saving_thread.join();
+    saving_thread->join();
 }
 
 void ISystemLog::startup()
 {
     std::lock_guard lock(mutex);
-    saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
+    saving_thread = std::make_unique<ThreadFromGlobalPool>([this] { savingThreadFunction(); });
 }
 
 static thread_local bool recursive_add_call = false;
@@ -168,9 +169,8 @@ void SystemLogBase<LogElement>::flush(bool force)
 
     if (!result)
     {
-        throw Exception(
-            "Timeout exceeded (" + toString(timeout_seconds) + " s) while flushing system log '" + demangle(typeid(*this).name()) + "'.",
-            ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while flushing system log '{}'.",
+            toString(timeout_seconds), demangle(typeid(*this).name()));
     }
 }
 

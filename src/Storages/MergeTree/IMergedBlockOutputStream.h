@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Storages/MergeTree/IDataPartStorage.h"
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -12,8 +13,7 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        DataPartStorageBuilderPtr data_part_storage_builder_,
-        const MergeTreeDataPartPtr & data_part,
+        const MergeTreeMutableDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
         bool reset_columns_);
@@ -42,7 +42,7 @@ protected:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    DataPartStorageBuilderPtr data_part_storage_builder;
+    MutableDataPartStoragePtr data_part_storage;
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 
     bool reset_columns = false;

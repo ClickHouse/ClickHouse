@@ -1,3 +1,6 @@
+SET insert_keeper_max_retries=100;
+SET insert_keeper_retry_max_backoff_ms=10;
+
 SELECT 'simple partition key:';
 DROP TABLE IF EXISTS table1 SYNC;
 CREATE TABLE table1 (id Int64, v UInt64)
@@ -15,7 +18,7 @@ select 'where id % 200 < 0:';
 select id from table1 where id % 200 < 0 order by id;
 
 SELECT 'tuple as partition key:';
-DROP TABLE IF EXISTS table2;
+DROP TABLE IF EXISTS table2 SYNC;
 CREATE TABLE table2 (id Int64, v UInt64)
 ENGINE = MergeTree()
 PARTITION BY (toInt32(id / 2) % 3, id % 200) ORDER BY id;
@@ -24,7 +27,7 @@ INSERT INTO table2 SELECT number-205, number FROM numbers(400, 10);
 SELECT partition as p FROM system.parts WHERE table='table2' and database=currentDatabase() ORDER BY p;
 
 SELECT 'recursive modulo partition key:';
-DROP TABLE IF EXISTS table3;
+DROP TABLE IF EXISTS table3 SYNC;
 CREATE TABLE table3 (id Int64, v UInt64)
 ENGINE = MergeTree()
 PARTITION BY (id % 200, (id % 200) % 10, toInt32(round((id % 200) / 2, 0))) ORDER BY id;
@@ -38,7 +41,7 @@ SELECT 'After detach:';
 SELECT partition as p FROM system.parts WHERE table='table3' and database=currentDatabase() ORDER BY p;
 
 SELECT 'Indexes:';
-DROP TABLE IF EXISTS table4;
+DROP TABLE IF EXISTS table4 SYNC;
 CREATE TABLE table4 (id Int64, v UInt64, s String,
 INDEX a (id * 2, s) TYPE minmax GRANULARITY 3
 ) ENGINE = MergeTree() PARTITION BY id % 10 ORDER BY v;

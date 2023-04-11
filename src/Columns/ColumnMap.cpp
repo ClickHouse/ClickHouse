@@ -88,12 +88,12 @@ bool ColumnMap::isDefaultAt(size_t n) const
 
 StringRef ColumnMap::getDataAt(size_t) const
 {
-    throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
 
 void ColumnMap::insertData(const char *, size_t)
 {
-    throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 }
 
 void ColumnMap::insert(const Field & x)
@@ -273,14 +273,14 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
-void ColumnMap::forEachSubcolumn(ColumnCallback callback)
+void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
 {
     callback(nested);
 }
 
-void ColumnMap::forEachSubcolumnRecursively(ColumnCallback callback)
+void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    callback(nested);
+    callback(*nested);
     nested->forEachSubcolumnRecursively(callback);
 }
 
@@ -294,6 +294,11 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
 double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
 {
     return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
+}
+
+UInt64 ColumnMap::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnMap>();
 }
 
 void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const

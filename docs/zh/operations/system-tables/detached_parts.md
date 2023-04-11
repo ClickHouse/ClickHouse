@@ -10,5 +10,3 @@ slug: /zh/operations/system-tables/detached_parts
 关于其他列的描述，请参见 [system.parts](../../operations/system-tables/parts.md#system_tables-parts)。
 
 如果分区名称无效，一些列的值可能是`NULL`。你可以通过[ALTER TABLE DROP DETACHED PART](../../sql-reference/statements/alter/partition.mdx#alter_drop-detached)来删除这些分区。
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/detached_parts) <!--hide-->

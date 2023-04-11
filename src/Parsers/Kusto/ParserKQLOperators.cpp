@@ -20,7 +20,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> &tokens, IParser::Po
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
-        throw Exception("Syntax error near " + kql_op, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     auto haystack = tokens.back();
 
@@ -55,7 +55,7 @@ String KQLOperators::genInOpExpr(IParser::Pos &token_pos, String kql_op, String 
 
     ++token_pos;
     if (!s_lparen.ignore(token_pos, expected))
-        throw Exception("Syntax error near " + kql_op, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
 
     --token_pos;
     --token_pos;
@@ -115,7 +115,7 @@ String KQLOperators::genHaystackOpExpr(std::vector<String> &tokens,IParser::Pos 
         new_expr = ch_op +"(" + tokens.back() +", concat('" + left_wildcards + left_space + "', " + tmp_arg +", '"+ right_space + right_wildcards + "'))";
     }
     else
-        throw Exception("Syntax error near " + kql_op, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
     tokens.pop_back();
     return new_expr;
 }
@@ -135,7 +135,7 @@ bool KQLOperators::convert(std::vector<String> &tokens,IParser::Pos &pos)
         {
             ++pos;
             if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
-                throw Exception("Invalid negative operator", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid negative operator");
             op ="!"+String(pos->begin,pos->end);
         }
         else if (token == "matches")

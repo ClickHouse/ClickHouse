@@ -4,7 +4,7 @@ sidebar_position: 38
 sidebar_label: FUNCTION
 ---
 
-# CREATE FUNCTION
+# CREATE FUNCTION &mdash; user defined function (UDF)
 
 Creates a user defined function from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
 
@@ -58,3 +58,7 @@ Result:
 │      2 │ even                                 │
 └────────┴──────────────────────────────────────┘
 ```
+
+## Related Content
+
+- [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

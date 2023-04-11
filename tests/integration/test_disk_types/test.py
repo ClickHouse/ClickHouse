@@ -1,10 +1,10 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 disk_types = {
     "default": "local",
     "disk_s3": "s3",
-    "disk_memory": "memory",
     "disk_hdfs": "hdfs",
     "disk_encrypted": "s3",
 }
@@ -21,6 +21,7 @@ def cluster():
             with_hdfs=True,
         )
         cluster.start()
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -28,18 +29,27 @@ def cluster():
 
 def test_different_types(cluster):
     node = cluster.instances["node"]
-    response = node.query("SELECT * FROM system.disks")
-    disks = response.split("\n")
-    for disk in disks:
-        if disk == "":  # skip empty line (after split at last position)
-            continue
-        fields = disk.split("\t")
+    response = TSV.toMat(node.query("SELECT * FROM system.disks FORMAT TSVWithNames"))
+
+    assert len(response) > len(disk_types)  # at least one extra line for header
+
+    name_col_ix = response[0].index("name")
+    type_col_ix = response[0].index("type")
+    encrypted_col_ix = response[0].index("is_encrypted")
+
+    for fields in response[1:]:  # skip header
         assert len(fields) >= 7
-        assert disk_types.get(fields[0], "UNKNOWN") == fields[5]
-        if "encrypted" in fields[0]:
-            assert fields[6] == "1"
+        assert (
+            disk_types.get(fields[name_col_ix], "UNKNOWN") == fields[type_col_ix]
+        ), f"Wrong type ({fields[type_col_ix]}) for disk {fields[name_col_ix]}!"
+        if "encrypted" in fields[name_col_ix]:
+            assert (
+                fields[encrypted_col_ix] == "1"
+            ), f"{fields[name_col_ix]} expected to be encrypted!"
         else:
-            assert fields[6] == "0"
+            assert (
+                fields[encrypted_col_ix] == "0"
+            ), f"{fields[name_col_ix]} expected to be non-encrypted!"
 
 
 def test_select_by_type(cluster):

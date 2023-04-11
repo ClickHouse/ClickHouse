@@ -116,6 +116,15 @@ template <typename A, typename B> struct ResultOfModulo
     using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
 };
 
+template <typename A, typename B> struct ResultOfPositiveModulo
+{
+    /// function positive_modulo always return non-negative number.
+    static constexpr size_t size_of_result = sizeof(B);
+    using Type0 = typename Construct<false, false, size_of_result>::Type;
+    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
+};
+
+
 template <typename A, typename B> struct ResultOfModuloLegacy
 {
     using Type0 = typename Construct<is_signed_v<A> || is_signed_v<B>, false, sizeof(B)>::Type;

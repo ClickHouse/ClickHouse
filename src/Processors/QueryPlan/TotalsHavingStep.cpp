@@ -14,7 +14,6 @@ static ITransformingStep::Traits getTraits(bool has_filter)
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = true,
@@ -88,7 +87,7 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
             return "after_having_auto threshold " + std::to_string(auto_include_threshold);
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const

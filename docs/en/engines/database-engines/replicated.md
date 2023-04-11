@@ -86,7 +86,7 @@ node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 ``` text
 ┌─hosts─┬─groupArray(n)─┐
-│ node1 │  [1,3,5,7,9]  │
+│ node3 │  [1,3,5,7,9]  │
 │ node2 │  [0,2,4,6,8]  │
 └───────┴───────────────┘
 ```

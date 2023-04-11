@@ -3,7 +3,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 
-#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -48,7 +47,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(
         const ASTPtr & query,

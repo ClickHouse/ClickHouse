@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>

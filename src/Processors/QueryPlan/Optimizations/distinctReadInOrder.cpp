@@ -1,5 +1,7 @@
 #include <memory>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -7,7 +9,45 @@
 
 namespace DB::QueryPlanOptimizations
 {
-size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+/// build actions DAG from stack of steps
+static ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_stack)
+{
+    if (dag_stack.empty())
+        return nullptr;
+
+    ActionsDAGPtr path_actions = dag_stack.back()->clone();
+    dag_stack.pop_back();
+    while (!dag_stack.empty())
+    {
+        ActionsDAGPtr clone = dag_stack.back()->clone();
+        dag_stack.pop_back();
+        path_actions->mergeInplace(std::move(*clone));
+    }
+    return path_actions;
+}
+
+static std::set<std::string>
+getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<ActionsDAGPtr> & dag_stack)
+{
+    auto actions = buildActionsForPlanPath(dag_stack);
+    FindOriginalNodeForOutputName original_node_finder(actions);
+    std::set<std::string> original_distinct_columns;
+    for (const auto & column : distinct_columns)
+    {
+        /// const columns doesn't affect DISTINCT, so skip them
+        if (isColumnConst(*column.column))
+            continue;
+
+        const auto * input_node = original_node_finder.find(column.name);
+        if (!input_node)
+            break;
+
+        original_distinct_columns.insert(input_node->result_name);
+    }
+    return original_distinct_columns;
+}
+
+size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 {
     /// check if it is preliminary distinct node
     DistinctStep * pre_distinct = nullptr;
@@ -22,8 +62,10 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     /// walk through the plan
     /// (1) check if nodes below preliminary distinct preserve sorting
     /// (2) gather transforming steps to update their sorting properties later
-    std::vector<ITransformingStep *> steps2update;
+    /// (3) gather actions DAG to find original names for columns in distinct step later
+    std::vector<ITransformingStep *> steps_to_update;
     QueryPlan::Node * node = parent_node;
+    std::vector<ActionsDAGPtr> dag_stack;
     while (!node->children.empty())
     {
         auto * step = dynamic_cast<ITransformingStep *>(node->step.get());
@@ -34,7 +76,12 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         if (!traits.preserves_sorting)
             return 0;
 
-        steps2update.push_back(step);
+        steps_to_update.push_back(step);
+
+        if (const auto * const expr = typeid_cast<const ExpressionStep *>(step); expr)
+            dag_stack.push_back(expr->getExpression());
+        else if (const auto * const filter = typeid_cast<const FilterStep *>(step); filter)
+            dag_stack.push_back(filter->getExpression());
 
         node = node->children.front();
     }
@@ -44,28 +91,30 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     if (!read_from_merge_tree)
         return 0;
 
-    /// find non-const columns in DISTINCT
-    const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
-    std::set<std::string_view> non_const_columns;
-    for (const auto & column : distinct_columns)
-    {
-        if (!isColumnConst(*column.column))
-            non_const_columns.emplace(column.name);
-    }
+    /// if reading from merge tree doesn't provide any output order, we can do nothing
+    /// it means that no ordering can provided or supported for a particular sorting key
+    /// for example, tuple() or sipHash(string)
+    if (read_from_merge_tree->getOutputStream().sort_description.empty())
+        return 0;
 
-    const Names& sorting_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKeyColumns();
+    /// get original names for DISTINCT columns
+    const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
+    auto original_distinct_columns = getOriginalDistinctColumns(distinct_columns, dag_stack);
+
     /// check if DISTINCT has the same columns as sorting key
+    const Names & sorting_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKeyColumns();
     size_t number_of_sorted_distinct_columns = 0;
     for (const auto & column_name : sorting_key_columns)
     {
-        if (non_const_columns.end() == non_const_columns.find(column_name))
+        if (!original_distinct_columns.contains(column_name))
             break;
 
         ++number_of_sorted_distinct_columns;
     }
+
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
-    if (number_of_sorted_distinct_columns != non_const_columns.size())
+    if (number_of_sorted_distinct_columns != original_distinct_columns.size())
         return 0;
 
     /// check if another read in order optimization is already applied
@@ -80,15 +129,17 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     /// update input order info in read_from_merge_tree step
     const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
-    read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
+    bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
+    if (!can_read)
+        return 0;
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
-    while (!steps2update.empty())
+    while (!steps_to_update.empty())
     {
-        steps2update.back()->updateInputStream(*input_stream);
-        input_stream = &steps2update.back()->getOutputStream();
-        steps2update.pop_back();
+        steps_to_update.back()->updateInputStream(*input_stream);
+        input_stream = &steps_to_update.back()->getOutputStream();
+        steps_to_update.pop_back();
     }
 
     return 0;

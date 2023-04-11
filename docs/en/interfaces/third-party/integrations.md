@@ -6,7 +6,7 @@ sidebar_label: Integrations
 
 # Integration Libraries from Third-party Developers
 
-:::warning Disclaimer
+:::note Disclaimer
 ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven’t done extensive testing to ensure their quality.
 :::
 
@@ -113,5 +113,3 @@ ClickHouse, Inc. does **not** maintain the tools and libraries listed below and 
         -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->

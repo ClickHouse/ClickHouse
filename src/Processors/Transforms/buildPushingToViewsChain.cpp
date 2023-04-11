@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
@@ -14,6 +15,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -40,8 +42,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ThreadStatusesHolder::~ThreadStatusesHolder()
+{
+    auto * original_thread = current_thread;
+    SCOPE_EXIT({ current_thread = original_thread; });
+
+    while (!thread_statuses.empty())
+    {
+        current_thread = thread_statuses.front().get();
+        thread_statuses.pop_front();
+    }
+}
+
 struct ViewsData
 {
+    /// A separate holder for thread statuses, needed for proper destruction order.
+    ThreadStatusesHolderPtr thread_status_holder;
     /// Separate information for every view.
     std::list<ViewRuntimeData> views;
     /// Some common info about source storage.
@@ -57,8 +73,9 @@ struct ViewsData
     std::atomic_bool has_exception = false;
     std::exception_ptr first_exception;
 
-    ViewsData(ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_ , StoragePtr source_storage_)
-        : context(std::move(context_))
+    ViewsData(ThreadStatusesHolderPtr thread_status_holder_, ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_ , StoragePtr source_storage_)
+        : thread_status_holder(std::move(thread_status_holder_))
+        , context(std::move(context_))
         , source_storage_id(std::move(source_storage_id_))
         , source_metadata_snapshot(std::move(source_metadata_snapshot_))
         , source_storage(std::move(source_storage_))
@@ -177,12 +194,20 @@ Chain buildPushingToViewsChain(
     ContextPtr context,
     const ASTPtr & query_ptr,
     bool no_destination,
-    ThreadStatus * thread_status,
+    ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms,
     const Block & live_view_header)
 {
     checkStackSize();
     Chain result_chain;
+
+    ThreadStatus * thread_status = current_thread;
+
+    if (!thread_status_holder)
+    {
+        thread_status_holder = std::make_shared<ThreadStatusesHolder>();
+        thread_status = nullptr;
+    }
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
@@ -202,13 +227,13 @@ Chain buildPushingToViewsChain(
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
-    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
     /// We need special context for materialized views insertions
     ContextMutablePtr select_context;
     ContextMutablePtr insert_context;
     ViewsDataPtr views_data;
-    if (!dependencies.empty())
+    if (!views.empty())
     {
         select_context = Context::createCopy(context);
         insert_context = Context::createCopy(context);
@@ -225,24 +250,34 @@ Chain buildPushingToViewsChain(
         if (insert_settings.min_insert_block_size_bytes_for_materialized_views)
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
 
-        views_data = std::make_shared<ViewsData>(select_context, table_id, metadata_snapshot, storage);
+        views_data = std::make_shared<ViewsData>(thread_status_holder, select_context, table_id, metadata_snapshot, storage);
     }
 
     std::vector<Chain> chains;
 
-    for (const auto & database_table : dependencies)
+    for (const auto & view_id : views)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
-        auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        if (view == nullptr)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+            continue;
+        }
+
+        auto view_metadata_snapshot = view->getInMemoryMetadataPtr();
 
         ASTPtr query;
         Chain out;
 
+        /// NOTE: ThreadGroupStatus always should have context attached,
+        /// otherwise entry to the system.query_views_log will not be added
+        /// (see ThreadStatus::logToQueryViewsLog())
         ThreadGroupStatusPtr running_group;
-        if (current_thread && current_thread->getThreadGroup())
+        if (current_thread)
             running_group = current_thread->getThreadGroup();
-        else
-            running_group = std::make_shared<ThreadGroupStatus>();
+        if (!running_group)
+            running_group = std::make_shared<ThreadGroupStatus>(context);
 
         /// We are creating a ThreadStatus per view to store its metrics individually
         /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
@@ -252,42 +287,52 @@ Chain buildPushingToViewsChain(
         SCOPE_EXIT({ current_thread = original_thread; });
 
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
-        /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
-        /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
-        /// N times more interruptions
-        view_thread_status_ptr->disableProfiling();
-        /// view_thread_status_ptr will be moved later (on and on), so need to capture raw pointer.
-        view_thread_status_ptr->deleter = [thread_status = view_thread_status_ptr.get(), running_group]
-        {
-            thread_status->detachQuery();
-        };
-        view_thread_status_ptr->attachQuery(running_group);
+        /// Copy of a ThreadStatus should be internal.
+        view_thread_status_ptr->setInternalThread();
+        view_thread_status_ptr->attachToGroup(running_group);
+
+        auto * view_thread_status = view_thread_status_ptr.get();
+        views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));
 
         auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
-        runtime_stats->target_name = database_table.getFullTableName();
-        runtime_stats->thread_status = std::move(view_thread_status_ptr);
+        runtime_stats->target_name = view_id.getFullTableName();
+        runtime_stats->thread_status = view_thread_status;
         runtime_stats->event_time = std::chrono::system_clock::now();
         runtime_stats->event_status = QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
 
         auto & type = runtime_stats->type;
         auto & target_name = runtime_stats->target_name;
-        auto * view_thread_status = runtime_stats->thread_status.get();
         auto * view_counter_ms = &runtime_stats->elapsed_ms;
 
-        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
         {
+            auto lock = materialized_view->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+
+            if (lock == nullptr)
+            {
+                // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
+                assert(materialized_view->is_dropped || materialized_view->is_detached);
+                LOG_WARNING(
+                    &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+                continue;
+            }
+
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
-            result_chain.addTableLock(materialized_view->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
+            result_chain.addTableLock(lock);
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-            query = dependent_metadata_snapshot->getSelectQuery().inner_query;
+            query = view_metadata_snapshot->getSelectQuery().inner_query;
             target_name = inner_table_id.getFullTableName();
 
+            Block header;
+
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
-                .getSampleBlock();
+            if (select_context->getSettingsRef().allow_experimental_analyzer)
+                header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
+            else
+                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
 
             /// Insert only columns returned by select.
             Names insert_columns;
@@ -300,32 +345,32 @@ Chain buildPushingToViewsChain(
             }
 
             InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
-            out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, view_thread_status, view_counter_ms);
-            out.addStorageHolder(dependent_table);
+            out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms);
+            out.addStorageHolder(view);
             out.addStorageHolder(inner_table);
         }
-        else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))
+        else if (auto * live_view = dynamic_cast<StorageLiveView *>(view.get()))
         {
             runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
+                view, view_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms, storage_header);
         }
-        else if (auto * window_view = dynamic_cast<StorageWindowView *>(dependent_table.get()))
+        else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
         {
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms);
+                view, view_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms);
         }
         else
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_thread_status, view_counter_ms);
+                view, view_metadata_snapshot, insert_context, ASTPtr(), false, thread_status_holder, view_counter_ms);
 
-        views_data->views.emplace_back(ViewRuntimeData{ //-V614
+        views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),
             out.getInputHeader(),
-            database_table,
+            view_id,
             nullptr,
             std::move(runtime_stats)});
 
@@ -341,14 +386,15 @@ Chain buildPushingToViewsChain(
         chains.emplace_back(std::move(out));
 
         /// Add the view to the query access info so it can appear in system.query_log
-        if (!no_destination)
+        /// hasQueryContext - for materialized tables with background replication process query context is not added
+        if (!no_destination && context->hasQueryContext())
         {
             context->getQueryContext()->addQueryAccessInfo(
-                backQuoteIfNeed(database_table.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", database_table.getFullTableName());
+                backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
         }
     }
 
-    if (views_data)
+    if (views_data && !views_data->views.empty())
     {
         size_t num_views = views_data->views.size();
         const Settings & settings = context->getSettingsRef();
@@ -436,8 +482,18 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         std::move(block),
         views_data.source_storage->getVirtuals()));
 
-    InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
-    auto pipeline = select.buildQueryPipeline();
+    QueryPipelineBuilder pipeline;
+
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, local_context->getViewSource(), SelectQueryOptions());
+        pipeline = interpreter.buildQueryPipeline();
+    }
+    else
+    {   InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions());
+        pipeline = interpreter.buildQueryPipeline();
+    }
+
     pipeline.resize(1);
     pipeline.dropTotalsAndExtremes();
 
@@ -594,10 +650,11 @@ PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveVi
 void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    auto * process = context->getProcessListElement();
-    if (process)
+    live_view.writeBlock(getHeader().cloneWithColumns(chunk.detachColumns()), context);
+
+    if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
+
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
@@ -618,9 +675,10 @@ void PushingToWindowViewSink::consume(Chunk chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
         window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    auto * process = context->getProcessListElement();
-    if (process)
+
+    if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);
+
     ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
     ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
@@ -651,6 +709,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
     if (!output.canPush())
         return Status::PortFull;
 
+    bool materialized_views_ignore_errors = views_data->context->getSettingsRef().materialized_views_ignore_errors;
     size_t num_finished = 0;
     size_t pos = 0;
     for (auto & input : inputs)
@@ -676,7 +735,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
                 else
                     statuses[i].exception = data.exception;
 
-                if (i == 0 && statuses[0].is_first)
+                if (i == 0 && statuses[0].is_first && !materialized_views_ignore_errors)
                 {
                     output.pushData(std::move(data));
                     return Status::PortFull;
@@ -693,13 +752,12 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         if (!statuses.empty())
             return Status::Ready;
 
-        if (any_exception)
+        if (any_exception && !materialized_views_ignore_errors)
             output.pushException(any_exception);
 
         output.finish();
         return Status::Finished;
     }
-
     return Status::NeedData;
 }
 
@@ -719,11 +777,13 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return std::current_exception();
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void FinalizingViewsTransform::work()
 {
+    bool materialized_views_ignore_errors = views_data->context->getSettingsRef().materialized_views_ignore_errors;
+
     size_t i = 0;
     for (auto & view : views_data->views)
     {
@@ -736,6 +796,10 @@ void FinalizingViewsTransform::work()
                 any_exception = status.exception;
 
             view.setException(addStorageToException(status.exception, view.table_id));
+
+            /// Exception will be ignored, it is saved here for the system.query_views_log
+            if (materialized_views_ignore_errors)
+                tryLogException(view.exception, &Poco::Logger::get("PushingToViews"), "Cannot push to the storage, ignoring the error");
         }
         else
         {

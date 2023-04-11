@@ -1,6 +1,5 @@
 #pragma once
 
-#include <shared_mutex>
 #include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
@@ -8,7 +7,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/logger_useful.h>
+#include <Common/SharedMutex.h>
 
 
 namespace DB
@@ -18,7 +17,7 @@ struct Range;
 
 class Context;
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class Chunk;
 
@@ -131,7 +130,7 @@ private:
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
       */
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
 
     template <typename Method>
     void insertFromBlockImpl(

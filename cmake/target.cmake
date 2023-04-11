@@ -33,6 +33,9 @@ if (CMAKE_CROSSCOMPILING)
         elseif (ARCH_PPC64LE)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
             set (ENABLE_SENTRY OFF CACHE INTERNAL "")
+        elseif (ARCH_S390X)
+            set (ENABLE_GRPC OFF CACHE INTERNAL "")
+            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies
@@ -51,6 +54,8 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_GRPC OFF CACHE INTERNAL "")
         set (ENABLE_HDFS OFF CACHE INTERNAL "")
         set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+        # use of drand48_data
+        set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation

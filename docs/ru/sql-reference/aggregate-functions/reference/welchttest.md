@@ -63,4 +63,3 @@ SELECT welchTTest(sample_data, sample_index) FROM welch_ttest;
 
 -   [t-критерий Уэлча](https://ru.wikipedia.org/wiki/T-%D0%BA%D1%80%D0%B8%D1%82%D0%B5%D1%80%D0%B8%D0%B9_%D0%A3%D1%8D%D0%BB%D1%87%D0%B0)
 -   [studentTTest](studentttest.md#studentttest)
-

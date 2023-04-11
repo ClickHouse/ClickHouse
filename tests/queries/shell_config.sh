@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2120
 
 # Don't check for ODR violation, since we may test shared build with ASAN
 export ASAN_OPTIONS=detect_odr_violation=0
@@ -13,17 +14,17 @@ export CLICKHOUSE_TEST_NAME
 export CLICKHOUSE_TEST_ZOOKEEPER_PREFIX="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABASE}"
 export CLICKHOUSE_TEST_UNIQUE_NAME="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABASE}"
 
-[ -v CLICKHOUSE_CONFIG_CLIENT ] && CLICKHOUSE_CLIENT_OPT0+=" --config-file=${CLICKHOUSE_CONFIG_CLIENT} "
-[ -v CLICKHOUSE_HOST ] && CLICKHOUSE_CLIENT_OPT0+=" --host=${CLICKHOUSE_HOST} "
-[ -v CLICKHOUSE_PORT_TCP ] && CLICKHOUSE_CLIENT_OPT0+=" --port=${CLICKHOUSE_PORT_TCP} "
-[ -v CLICKHOUSE_PORT_TCP ] && CLICKHOUSE_BENCHMARK_OPT0+=" --port=${CLICKHOUSE_PORT_TCP} "
-[ -v CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL ] && CLICKHOUSE_CLIENT_OPT0+=" --send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL} "
-[ -v CLICKHOUSE_DATABASE ] && CLICKHOUSE_CLIENT_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
-[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_CLIENT_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
-[ -v CLICKHOUSE_DATABASE ] && CLICKHOUSE_BENCHMARK_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
-[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_BENCHMARK_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
+[ -n "${CLICKHOUSE_CONFIG_CLIENT:-}" ] && CLICKHOUSE_CLIENT_OPT0+=" --config-file=${CLICKHOUSE_CONFIG_CLIENT} "
+[ -n "${CLICKHOUSE_HOST:-}" ] && CLICKHOUSE_CLIENT_OPT0+=" --host=${CLICKHOUSE_HOST} "
+[ -n "${CLICKHOUSE_PORT_TCP:-}" ] && CLICKHOUSE_CLIENT_OPT0+=" --port=${CLICKHOUSE_PORT_TCP} "
+[ -n "${CLICKHOUSE_PORT_TCP:-}" ] && CLICKHOUSE_BENCHMARK_OPT0+=" --port=${CLICKHOUSE_PORT_TCP} "
+[ -n "${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:-}" ] && CLICKHOUSE_CLIENT_OPT0+=" --send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL} "
+[ -n "${CLICKHOUSE_DATABASE:-}" ] && CLICKHOUSE_CLIENT_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
+[ -n "${CLICKHOUSE_LOG_COMMENT:-}" ] && CLICKHOUSE_CLIENT_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
+[ -n "${CLICKHOUSE_DATABASE:-}" ] && CLICKHOUSE_BENCHMARK_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
+[ -n "${CLICKHOUSE_LOG_COMMENT:-}" ] && CLICKHOUSE_BENCHMARK_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
 
-export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
+export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="$(command -v clickhouse)"}
 # client
 [ -x "$CLICKHOUSE_BINARY-client" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
 [ -x "$CLICKHOUSE_BINARY" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY client}
@@ -78,23 +79,23 @@ export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:="9005"}
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=keeper_server.tcp_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 
-export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
+export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
 
 # Add database and log comment to url params
-if [ -v CLICKHOUSE_URL_PARAMS ]
+if [ -n "${CLICKHOUSE_URL_PARAMS:-}" ]
 then
   export CLICKHOUSE_URL_PARAMS="${CLICKHOUSE_URL_PARAMS}&database=${CLICKHOUSE_DATABASE}"
 else
   export CLICKHOUSE_URL_PARAMS="database=${CLICKHOUSE_DATABASE}"
 fi
 # Note: missing url encoding of the log comment.
-[ -v CLICKHOUSE_LOG_COMMENT ] && export CLICKHOUSE_URL_PARAMS="${CLICKHOUSE_URL_PARAMS}&log_comment=${CLICKHOUSE_LOG_COMMENT}"
+[ -n "${CLICKHOUSE_LOG_COMMENT:-}" ] && export CLICKHOUSE_URL_PARAMS="${CLICKHOUSE_URL_PARAMS}&log_comment=${CLICKHOUSE_LOG_COMMENT}"
 
 export CLICKHOUSE_URL=${CLICKHOUSE_URL:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/"}
 export CLICKHOUSE_URL_HTTPS=${CLICKHOUSE_URL_HTTPS:="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/"}
 
 # Add url params to url
-if [ -v CLICKHOUSE_URL_PARAMS ]
+if [ -n "${CLICKHOUSE_URL_PARAMS:-}" ]
 then
   export CLICKHOUSE_URL="${CLICKHOUSE_URL}?${CLICKHOUSE_URL_PARAMS}"
   export CLICKHOUSE_URL_HTTPS="${CLICKHOUSE_URL_HTTPS}?${CLICKHOUSE_URL_PARAMS}"
@@ -117,10 +118,10 @@ mkdir -p ${CLICKHOUSE_TMP}
 export MYSQL_CLIENT_BINARY=${MYSQL_CLIENT_BINARY:="mysql"}
 export MYSQL_CLIENT_CLICKHOUSE_USER=${MYSQL_CLIENT_CLICKHOUSE_USER:="default"}
 # Avoids "Can't connect to local MySQL server through socket '/var/run/mysqld/mysqld.sock'" when connecting to localhost
-[ -v CLICKHOUSE_HOST ] && MYSQL_CLIENT_OPT0+=" --protocol tcp "
-[ -v CLICKHOUSE_HOST ] && MYSQL_CLIENT_OPT0+=" --host ${CLICKHOUSE_HOST} "
-[ -v CLICKHOUSE_PORT_MYSQL ] && MYSQL_CLIENT_OPT0+=" --port ${CLICKHOUSE_PORT_MYSQL} "
-[ -v CLICKHOUSE_DATABASE ] && MYSQL_CLIENT_OPT0+=" --database ${CLICKHOUSE_DATABASE} "
+[ -n "${CLICKHOUSE_HOST:-}" ] && MYSQL_CLIENT_OPT0+=" --protocol tcp "
+[ -n "${CLICKHOUSE_HOST:-}" ] && MYSQL_CLIENT_OPT0+=" --host ${CLICKHOUSE_HOST} "
+[ -n "${CLICKHOUSE_PORT_MYSQL:-}" ] && MYSQL_CLIENT_OPT0+=" --port ${CLICKHOUSE_PORT_MYSQL} "
+[ -n "${CLICKHOUSE_DATABASE:-}" ] && MYSQL_CLIENT_OPT0+=" --database ${CLICKHOUSE_DATABASE} "
 MYSQL_CLIENT_OPT0+=" --user ${MYSQL_CLIENT_CLICKHOUSE_USER} "
 export MYSQL_CLIENT_OPT="${MYSQL_CLIENT_OPT0:-} ${MYSQL_CLIENT_OPT:-}"
 export MYSQL_CLIENT=${MYSQL_CLIENT:="$MYSQL_CLIENT_BINARY ${MYSQL_CLIENT_OPT:-}"}
@@ -136,12 +137,13 @@ function clickhouse_client_removed_host_parameter()
 
 function wait_for_queries_to_finish()
 {
+    local max_tries="${1:-20}"
     # Wait for all queries to finish (query may still be running if thread is killed by timeout)
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
         sleep 0.5;
         num_tries=$((num_tries+1))
-        if [ $num_tries -eq 20 ]; then
+        if [ $num_tries -eq $max_tries ]; then
             $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
             break
         fi

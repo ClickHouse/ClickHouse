@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-parallel, no-backward-compatibility-check
+# Tags: long, zookeeper, no-parallel, no-upgrade-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mutation_table"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mutation_table SYNC"
 
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE mutation_table(
@@ -17,9 +17,10 @@ $CLICKHOUSE_CLIENT --query "
     PARTITION BY key % 10
 "
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO mutation_table select number, toString(number) from numbers(100000) where number % 10 != 0"
+# disable keeper fault injection during insert since test checks part names. Part names can differ in case of retries during insert
+$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO mutation_table select number, toString(number) from numbers(100000) where number % 10 != 0"
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO mutation_table VALUES(0, 'hello')"
+$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO mutation_table VALUES(0, 'hello')"
 
 $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM mutation_table"
 
@@ -71,4 +72,4 @@ $CLICKHOUSE_CLIENT --query "SELECT is_done, parts_to_do FROM system.mutations wh
 
 $CLICKHOUSE_CLIENT --query "SELECT type, new_part_name FROM system.replication_queue WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mutation_table"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mutation_table SYNC"

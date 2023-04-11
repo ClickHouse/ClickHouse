@@ -124,7 +124,7 @@ double Value::readFloatText(const char * buf, size_t length) const
             case 'E':
             {
                 ++buf;
-                Int32 exponent = readIntText(buf, end - buf);
+                Int32 exponent = static_cast<Int32>(readIntText(buf, end - buf));
                 x *= preciseExp10(exponent);
                 if (negative)
                     x = -x;
@@ -160,14 +160,16 @@ void Value::throwException(const char * text) const
 
     if (!isNull())
     {
-        info.append(": ");
+        info.append(": '");
         info.append(m_data, m_length);
+        info.append("'");
     }
 
     if (res && res->getQuery())
     {
-        info.append(", query: ");
+        info.append(", query: '");
         info.append(res->getQuery()->str().substr(0, preview_length));
+        info.append("'");
     }
 
     throw CannotParseValue(info);

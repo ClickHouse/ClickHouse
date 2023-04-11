@@ -111,14 +111,15 @@ namespace MySQLReplication
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
-                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "ParseQueryEvent: Unsupported query event: {}", query);
             typ = QUERY_EVENT_XA;
             if (!query.starts_with("XA COMMIT"))
                 transaction_complete = false;
         }
-        else if (query.starts_with("SAVEPOINT"))
+        else if (query.starts_with("SAVEPOINT") || query.starts_with("ROLLBACK")
+                 || query.starts_with("RELEASE SAVEPOINT"))
         {
-            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+            typ = QUERY_SAVEPOINT;
         }
     }
 
@@ -161,7 +162,7 @@ namespace MySQLReplication
     /// https://dev.mysql.com/doc/internals/en/table-map-event.html
     void TableMapEvent::parseImpl(ReadBuffer & payload)
     {
-        column_count = readLengthEncodedNumber(payload);
+        column_count = static_cast<UInt32>(readLengthEncodedNumber(payload));
         for (auto i = 0U; i < column_count; ++i)
         {
             UInt8 v = 0x00;
@@ -246,7 +247,7 @@ namespace MySQLReplication
                     break;
                 }
                 default:
-                    throw ReplicationError("ParseMetaData: Unhandled data type:" + std::to_string(typ), ErrorCodes::UNKNOWN_EXCEPTION);
+                    throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION, "ParseMetaData: Unhandled data type: {}", std::to_string(typ));
             }
         }
     }
@@ -283,7 +284,7 @@ namespace MySQLReplication
 
     void RowsEvent::parseImpl(ReadBuffer & payload)
     {
-        number_columns = readLengthEncodedNumber(payload);
+        number_columns = static_cast<UInt32>(readLengthEncodedNumber(payload));
         size_t columns_bitmap_size = (number_columns + 7) / 8;
         switch (header.type)
         {
@@ -494,7 +495,7 @@ namespace MySQLReplication
                                 readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 6);
                                 intpart = uintpart - 0x800000000000L;
                                 ltime = intpart;
-                                frac = std::abs(intpart % (1L << 24));
+                                frac = static_cast<Int32>(std::abs(intpart % (1L << 24)));
                                 break;
                             }
                             default:
@@ -536,7 +537,7 @@ namespace MySQLReplication
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 5);
                         readTimeFractionalPart(payload, fsp, meta);
 
-                        UInt32 year_month = readBits(val, 1, 17, 40);
+                        UInt32 year_month = static_cast<UInt32>(readBits(val, 1, 17, 40));
                         time_t date_time = DateLUT::instance().makeDateTime(
                             year_month / 13, year_month % 13, readBits(val, 18, 5, 40)
                             , readBits(val, 23, 5, 40), readBits(val, 28, 6, 40), readBits(val, 34, 6, 40)
@@ -580,9 +581,9 @@ namespace MySQLReplication
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -600,7 +601,7 @@ namespace MySQLReplication
                             DecimalType res(0);
 
                             if (payload.eof())
-                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+                                throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
                             if ((*payload.position() & 0x80) == 0)
                                 mask = static_cast<UInt32>(-1);
@@ -625,7 +626,7 @@ namespace MySQLReplication
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
-                                    res *= intExp10OfSize<DecimalType>(digits_per_integer);
+                                    res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(digits_per_integer));
                                     res += (val ^ mask);
                                 }
                             }
@@ -638,7 +639,7 @@ namespace MySQLReplication
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
-                                    res *= intExp10OfSize<DecimalType>(digits_per_integer);
+                                    res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(digits_per_integer));
                                     res += (val ^ mask);
                                 }
 
@@ -648,10 +649,10 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     size_t to_read = compressed_bytes_map[compressed_decimals];
 
-                                    if (to_read) //-V547
+                                    if (to_read)
                                     {
                                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
-                                        res *= intExp10OfSize<DecimalType>(compressed_decimals);
+                                        res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(compressed_decimals));
                                         res += (val ^ (mask & compressed_integer_align_numbers[compressed_decimals]));
                                     }
                                 }
@@ -769,8 +770,8 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        throw ReplicationError(
-                            "ParseRow: Unhandled MySQL field type:" + std::to_string(field_type), ErrorCodes::UNKNOWN_EXCEPTION);
+                        throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION,
+                            "ParseRow: Unhandled MySQL field type: {}", std::to_string(field_type));
                 }
             }
             null_index++;
@@ -872,7 +873,7 @@ namespace MySQLReplication
                 break;
             }
             default:
-                throw ReplicationError("Position update with unsupported event", ErrorCodes::LOGICAL_ERROR);
+                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "Position update with unsupported event");
         }
     }
 
@@ -894,17 +895,17 @@ namespace MySQLReplication
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
         if (payload.eof())
-            throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
         UInt16 header = static_cast<unsigned char>(*payload.position());
         switch (header)
         {
             case PACKET_EOF:
-                throw ReplicationError("Master maybe lost", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ReplicationError(ErrorCodes::CANNOT_READ_ALL_DATA, "Master maybe lost");
             case PACKET_ERR:
                 ERRPacket err;
                 err.readPayloadWithUnpacked(payload);
-                throw ReplicationError(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
+                throw ReplicationError::createDeprecated(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
         }
         // skip the generic response packets header flag.
         payload.ignore(1);
@@ -941,6 +942,8 @@ namespace MySQLReplication
                 {
                     case QUERY_EVENT_MULTI_TXN_FLAG:
                     case QUERY_EVENT_XA:
+                    /// Ignore queries that have no impact on the data.
+                    case QUERY_SAVEPOINT:
                     {
                         event = std::make_shared<DryRunEvent>(std::move(query->header));
                         break;

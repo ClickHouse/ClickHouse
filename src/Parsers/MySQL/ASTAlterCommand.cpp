@@ -267,7 +267,12 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     }
     else
     {
-        return false;
+        if (!ParserCompoundIdentifier(true).parse(pos, new_name, expected))
+            return false;
+        auto new_table_id = new_name->as<ASTTableIdentifier>()->getTableId();
+        alter_command->type = ASTAlterCommand::RENAME_TABLE;
+        alter_command->new_table_name = new_table_id.table_name;
+        alter_command->new_database_name = new_table_id.database_name;
     }
 
     node = alter_command;
@@ -306,6 +311,7 @@ static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected
                 OptionDescribe("CONVERT TO CHARACTER SET", "charset", std::make_shared<ParserCharsetOrCollateName>()),
                 OptionDescribe("CHARACTER SET", "charset", std::make_shared<ParserCharsetOrCollateName>()),
                 OptionDescribe("DEFAULT CHARACTER SET", "charset", std::make_shared<ParserCharsetOrCollateName>()),
+                OptionDescribe("COMMENT", "", std::make_shared<ParserIdentifier>()),
                 OptionDescribe("LOCK", "lock", std::make_shared<ParserIdentifier>())
             }
         };

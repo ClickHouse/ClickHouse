@@ -23,6 +23,7 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <base/errnoToString.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents
@@ -76,7 +77,7 @@ const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
         case MetricsProvider::Netlink:
             return "netlink";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 bool TasksStatsCounters::checkIfAvailable()
@@ -121,7 +122,7 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
         stats_getter = [metrics_provider = std::make_shared<TaskStatsInfoGetter>(), tid]()
                 {
                     ::taskstats result{};
-                    metrics_provider->getStat(result, tid);
+                    metrics_provider->getStat(result, static_cast<pid_t>(tid));
                     return result;
                 };
         break;
@@ -526,7 +527,7 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
             continue;
 
         constexpr ssize_t bytes_to_read = sizeof(current_values[0]);
-        const int bytes_read = read(fd, &current_values[i], bytes_to_read);
+        const ssize_t bytes_read = read(fd, &current_values[i], bytes_to_read);
 
         if (bytes_read != bytes_to_read)
         {

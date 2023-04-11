@@ -27,7 +27,6 @@ if (COMPILER_CLANG)
     no_warning(sign-conversion)
     no_warning(implicit-int-conversion)
     no_warning(implicit-int-float-conversion)
-    no_warning(shorten-64-to-32)
     no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
     no_warning(disabled-macro-expansion)
     no_warning(documentation-unknown-command)
@@ -46,6 +45,7 @@ if (COMPILER_CLANG)
     no_warning(weak-vtables)
     no_warning(thread-safety-negative) # experimental flag, too many false positives
     no_warning(enum-constexpr-conversion) # breaks magic-enum library in clang-16
+    no_warning(unsafe-buffer-usage) # too aggressive
     # TODO Enable conversion, sign-conversion, double-promotion warnings.
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler

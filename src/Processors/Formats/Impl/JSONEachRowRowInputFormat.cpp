@@ -4,6 +4,7 @@
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -37,25 +38,26 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     Params params_,
     const FormatSettings & format_settings_,
     bool yield_strings_)
-    : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns()), yield_strings(yield_strings_)
+    : IRowInputFormat(header_, in_, std::move(params_))
+    , format_settings(format_settings_)
+    , prev_positions(header_.columns())
+    , yield_strings(yield_strings_)
 {
-    size_t num_columns = getPort().getHeader().columns();
-    for (size_t i = 0; i < num_columns; ++i)
+    const auto & header = getPort().getHeader();
+    name_map = header.getNamesToIndexesMap();
+    if (format_settings_.import_nested_json)
     {
-        const String & column_name = columnName(i);
-        name_map[column_name] = i;        /// NOTE You could place names more cache-locally.
-        if (format_settings_.import_nested_json)
+        for (size_t i = 0; i != header.columns(); ++i)
         {
-            const auto split = Nested::splitName(column_name);
+            const StringRef column_name = header.getByPosition(i).name;
+            const auto split = Nested::splitName(column_name.toView());
             if (!split.second.empty())
             {
-                const StringRef table_name(column_name.data(), split.first.size());
+                const StringRef table_name(column_name.data, split.first.size());
                 name_map[table_name] = NESTED_FIELD;
             }
         }
     }
-
-    prev_positions.resize(num_columns);
 }
 
 const String & JSONEachRowRowInputFormat::columnName(size_t i) const
@@ -120,7 +122,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 {
     if (!format_settings.skip_unknown_fields)
-        throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
     skipJSONField(*in, name_ref);
 }
@@ -128,7 +130,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     if (seen_columns[index])
-        throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
     const auto & type = getPort().getHeader().getByPosition(index).type;
@@ -141,7 +143,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
     else if (*in->position() == '}')
     {
         ++in->position();
@@ -178,7 +180,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             else if (column_index == NESTED_FIELD)
                 readNestedData(name_ref.toString(), columns);
             else
-                throw Exception("Logical error: illegal value of column_index", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
         }
         else
         {
@@ -214,7 +216,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     seen_columns.assign(num_columns, false);
 
     nested_prefix_length = 0;
-    readRowStart();
+    readRowStart(columns);
     readJSONObject(columns);
 
     const auto & header = getPort().getHeader();
@@ -277,6 +279,7 @@ void JSONEachRowRowInputFormat::resetParser()
     read_columns.clear();
     seen_columns.clear();
     prev_positions.clear();
+    allow_new_rows = true;
 }
 
 void JSONEachRowRowInputFormat::readPrefix()
@@ -300,9 +303,8 @@ void JSONEachRowRowInputFormat::readSuffix()
     assertEOF(*in);
 }
 
-JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings_)
+JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowWithNamesSchemaReader(in_, format_settings_)
-    , json_strings(json_strings_)
 {
 }
 
@@ -336,12 +338,17 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
         return {};
     }
 
-    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, json_strings);
+    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
 }
 
 void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
+}
+
+void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
+{
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)
@@ -391,11 +398,11 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
 
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
 {
-    auto register_schema_reader = [&](const String & format_name, bool json_strings)
+    auto register_schema_reader = [&](const String & format_name)
     {
-        factory.registerSchemaReader(format_name, [json_strings](ReadBuffer & buf, const FormatSettings & settings)
+        factory.registerSchemaReader(format_name, [](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_unique<JSONEachRowSchemaReader>(buf, json_strings, settings);
+            return std::make_unique<JSONEachRowSchemaReader>(buf, settings);
         });
         factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
         {
@@ -403,10 +410,10 @@ void registerJSONEachRowSchemaReader(FormatFactory & factory)
         });
     };
 
-    register_schema_reader("JSONEachRow", false);
-    register_schema_reader("JSONLines", false);
-    register_schema_reader("NDJSON", false);
-    register_schema_reader("JSONStringsEachRow", true);
+    register_schema_reader("JSONEachRow");
+    register_schema_reader("JSONLines");
+    register_schema_reader("NDJSON");
+    register_schema_reader("JSONStringsEachRow");
 }
 
 }

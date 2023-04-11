@@ -1,10 +1,12 @@
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -37,7 +39,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {
                 if (expr_list->children.size() != 2)
-                    throw Exception("Function CAST must have exactly two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function CAST must have exactly two arguments");
 
                 const ASTPtr & type_ast = expr_list->children.at(1);
                 if (const auto * type_literal = type_ast->as<ASTLiteral>())
@@ -71,6 +73,8 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
     if (!current_ast)
         return;
 
+    checkStackSize();
+
     for (ASTPtr & child : current_ast->children)
     {
         auto * function_node = child->as<ASTFunction>();
@@ -81,12 +85,12 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
         }
 
         if (!function_node->arguments)
-            throw Exception("Wrong number of arguments for function 'if' (0 instead of 3)", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function 'if' (0 instead of 3)");
 
         if (function_node->arguments->children.size() != 3)
-            throw Exception(
-                "Wrong number of arguments for function 'if' (" + toString(function_node->arguments->children.size()) + " instead of 3)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Wrong number of arguments for function 'if' ({} instead of 3)",
+                function_node->arguments->children.size());
 
         visit(function_node->arguments);
         const auto * args = function_node->arguments->as<ASTExpressionList>();

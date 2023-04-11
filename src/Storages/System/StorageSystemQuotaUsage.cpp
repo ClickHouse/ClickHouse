@@ -162,8 +162,8 @@ void StorageSystemQuotaUsage::fillDataImpl(
         time_t end_time = std::chrono::system_clock::to_time_t(interval->end_of_interval);
         UInt32 duration = static_cast<UInt32>(std::chrono::duration_cast<std::chrono::seconds>(interval->duration).count());
         time_t start_time = end_time - duration;
-        column_start_time.getData().push_back(start_time);
-        column_end_time.getData().push_back(end_time);
+        column_start_time.getData().push_back(static_cast<UInt32>(start_time));
+        column_end_time.getData().push_back(static_cast<UInt32>(end_time));
         column_duration.getData().push_back(duration);
         column_start_time_null_map.push_back(false);
         column_end_time_null_map.push_back(false);

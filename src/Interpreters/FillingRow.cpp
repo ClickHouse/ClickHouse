@@ -1,5 +1,6 @@
 #include <Interpreters/FillingRow.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -44,21 +45,27 @@ bool FillingRow::operator==(const FillingRow & other) const
     return true;
 }
 
+bool FillingRow::operator>=(const FillingRow & other) const
+{
+    return !(*this < other);
+}
+
 bool FillingRow::next(const FillingRow & to_row)
 {
+    const size_t row_size = size();
     size_t pos = 0;
 
     /// Find position we need to increment for generating next row.
-    for (; pos < size(); ++pos)
+    for (; pos < row_size; ++pos)
         if (!row[pos].isNull() && !to_row.row[pos].isNull() && !equals(row[pos], to_row.row[pos]))
             break;
 
-    if (pos == size() || less(to_row.row[pos], row[pos], getDirection(pos)))
+    if (pos == row_size || less(to_row.row[pos], row[pos], getDirection(pos)))
         return false;
 
     /// If we have any 'fill_to' value at position greater than 'pos',
     ///  we need to generate rows up to 'fill_to' value.
-    for (size_t i = size() - 1; i > pos; --i)
+    for (size_t i = row_size - 1; i > pos; --i)
     {
         if (getFillDescription(i).fill_to.isNull() || row[i].isNull())
             continue;
@@ -84,7 +91,7 @@ bool FillingRow::next(const FillingRow & to_row)
     {
         bool is_less = false;
         size_t i = pos + 1;
-        for (; i < size(); ++i)
+        for (; i < row_size; ++i)
         {
             const auto & fill_from = getFillDescription(i).fill_from;
             if (!fill_from.isNull())
@@ -107,35 +114,22 @@ void FillingRow::initFromDefaults(size_t from_pos)
         row[i] = getFillDescription(i).fill_from;
 }
 
-void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
-    const FillingRow & filling_row, const Block & interpolate_block)
+String FillingRow::dump() const
 {
-    for (size_t i = 0; i < filling_columns.size(); ++i)
+    WriteBufferFromOwnString out;
+    for (size_t i = 0; i < row.size(); ++i)
     {
-        if (filling_row[i].isNull())
-            filling_columns[i]->insertDefault();
-        else
-            filling_columns[i]->insert(filling_row[i]);
+        if (i != 0)
+            out << ", ";
+        out << row[i].dump();
     }
-
-    if (size_t size = interpolate_block.columns())
-    {
-        Columns columns = interpolate_block.getColumns();
-        for (size_t i = 0; i < size; ++i)
-            interpolate_columns[i]->insertFrom(*columns[i]->convertToFullColumnIfConst(), 0);
-    }
-    else
-        for (const auto & interpolate_column : interpolate_columns)
-            interpolate_column->insertDefault();
-
-    for (const auto & other_column : other_columns)
-        other_column->insertDefault();
+    return out.str();
 }
 
-void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num)
+WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row)
 {
-    for (size_t i = 0; i < source.size(); ++i)
-        dest[i]->insertFrom(*source[i], row_num);
+    out << row.dump();
+    return out;
 }
 
 }

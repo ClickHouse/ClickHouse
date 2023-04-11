@@ -59,7 +59,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 {
     if (send_events)
     {
-        for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
 
@@ -108,11 +108,16 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
             if (!replaceInvalidChars(key))
                 continue;
+
             auto value = name_value.second;
 
+            std::string metric_doc{value.documentation};
+            convertHelpToSingleLine(metric_doc);
+
             // TODO: add HELP section? asynchronous_metrics contains only key and value
+            writeOutLine(wb, "# HELP", key, metric_doc);
             writeOutLine(wb, "# TYPE", key, "gauge");
-            writeOutLine(wb, key, value);
+            writeOutLine(wb, key, value.value);
         }
     }
 
@@ -120,7 +125,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
     {
         for (size_t i = 0, end = CurrentStatusInfo::end(); i < end; ++i)
         {
-            std::lock_guard<std::mutex> lock(CurrentStatusInfo::locks[static_cast<CurrentStatusInfo::Status>(i)]);
+            std::lock_guard lock(CurrentStatusInfo::locks[static_cast<CurrentStatusInfo::Status>(i)]);
             std::string metric_name{CurrentStatusInfo::getName(static_cast<CurrentStatusInfo::Status>(i))};
             std::string metric_doc{CurrentStatusInfo::getDocumentation(static_cast<CurrentStatusInfo::Status>(i))};
 

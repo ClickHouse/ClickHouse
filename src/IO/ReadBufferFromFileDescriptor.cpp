@@ -5,17 +5,15 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Progress.h>
 #include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
 
 
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 namespace ProfileEvents
 {
@@ -24,6 +22,8 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
+    extern const Event LocalReadThrottlerBytes;
+    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -85,7 +85,12 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         }
 
         if (res > 0)
+        {
             bytes_read += res;
+            if (throttler)
+                throttler->add(res, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+        }
+
 
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
@@ -119,7 +124,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 }
 
 
-void ReadBufferFromFileDescriptor::prefetch()
+void ReadBufferFromFileDescriptor::prefetch(int64_t)
 {
 #if defined(POSIX_FADV_WILLNEED)
     /// For direct IO, loading data into page cache is pointless.
@@ -148,7 +153,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
     else
     {
-        throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence");
     }
 
     /// Position is unchanged.
@@ -252,20 +257,6 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
 size_t ReadBufferFromFileDescriptor::getFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
-}
-
-
-void ReadBufferFromFileDescriptor::setProgressCallback(ContextPtr context)
-{
-    auto file_progress_callback = context->getFileProgressCallback();
-
-    if (!file_progress_callback)
-        return;
-
-    setProfileCallback([file_progress_callback](const ProfileInfo & progress)
-    {
-        file_progress_callback(FileProgress(progress.bytes_read, 0));
-    });
 }
 
 }

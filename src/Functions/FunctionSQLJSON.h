@@ -3,9 +3,11 @@
 #include <sstream>
 #include <type_traits>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
@@ -22,7 +24,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
 
-#include "config_functions.h"
+#include "config.h"
 
 namespace DB
 {
@@ -40,36 +42,36 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, const ContextPtr & context)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
 
             if (arguments.size() < 2)
             {
-                throw Exception{"JSONPath functions require at least 2 arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "JSONPath functions require at least 2 arguments");
             }
 
             const auto & json_column = arguments[0];
 
             if (!isString(json_column.type))
             {
-                throw Exception(
-                    "JSONPath functions require first argument to be JSON of string, illegal type: " + json_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "JSONPath functions require first argument to be JSON of string, illegal type: {}",
+                                json_column.type->getName());
             }
 
             const auto & json_path_column = arguments[1];
 
             if (!isString(json_path_column.type))
             {
-                throw Exception(
-                    "JSONPath functions require second argument to be JSONPath of type string, illegal type: " + json_path_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "JSONPath functions require second argument "
+                                "to be JSONPath of type string, illegal type: {}", json_path_column.type->getName());
             }
             if (!isColumnConst(*json_path_column.column))
             {
-                throw Exception("Second argument (JSONPath) must be constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string");
             }
 
             const ColumnPtr & arg_jsonpath = json_path_column.column;
@@ -101,7 +103,7 @@ public:
             const bool parse_res = parser.parse(token_iterator, res, expected);
             if (!parse_res)
             {
-                throw Exception{"Unable to parse JSONPath", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
             }
 
             /// Get data and offsets for 2 argument (JSON)
@@ -115,7 +117,6 @@ public:
 
             /// Parse JSON for every row
             Impl<JSONParser> impl;
-
             for (const auto i : collections::range(0, input_rows_count))
             {
                 std::string_view json{
@@ -125,7 +126,7 @@ public:
                 bool added_to_column = false;
                 if (document_ok)
                 {
-                    added_to_column = impl.insertResultToColumn(*to, document, res);
+                    added_to_column = impl.insertResultToColumn(*to, document, res, context);
                 }
                 if (!added_to_column)
                 {
@@ -154,7 +155,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
+        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments, getContext());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -164,12 +165,12 @@ public:
         /// 2. Create ASTPtr
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions: call getNextItem on generator and handle each item
-        uint32_t parse_depth = getContext()->getSettingsRef().max_parser_depth;
+        unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
-            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
+            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
 #endif
-        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
+        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
     }
 };
 
@@ -194,11 +195,11 @@ class JSONExistsImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const ContextPtr &) { return std::make_shared<DataTypeUInt8>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
@@ -233,11 +234,22 @@ class JSONValueImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeString>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const ContextPtr & context)
+    {
+        if (context->getSettingsRef().function_json_value_return_type_allow_nullable)
+        {
+            DataTypePtr string_type = std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeNullable>(string_type);
+        }
+        else
+        {
+            return std::make_shared<DataTypeString>();
+        }
+    }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr & context)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
@@ -247,7 +259,11 @@ public:
         {
             if (status == VisitorStatus::Ok)
             {
-                if (!(current_element.isArray() || current_element.isObject()))
+                if (context->getSettingsRef().function_json_value_return_type_allow_complex)
+                {
+                    break;
+                }
+                else if (!(current_element.isArray() || current_element.isObject()))
                 {
                     break;
                 }
@@ -267,9 +283,19 @@ public:
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        ColumnString::Chars & data = col_str.getChars();
-        ColumnString::Offsets & offsets = col_str.getOffsets();
+        ColumnString * col_str;
+        if (isColumnNullable(dest))
+        {
+            ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
+            col_null.getNullMapData().push_back(0);
+            col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
+        }
+        else
+        {
+            col_str = assert_cast<ColumnString *>(&dest);
+        }
+        ColumnString::Chars & data = col_str->getChars();
+        ColumnString::Offsets & offsets = col_str->getOffsets();
 
         if (current_element.isString())
         {
@@ -280,7 +306,7 @@ public:
         }
         else
         {
-            col_str.insertData(output_str.data(), output_str.size());
+            col_str->insertData(output_str.data(), output_str.size());
         }
         return true;
     }
@@ -296,11 +322,11 @@ class JSONQueryImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeString>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const ContextPtr &) { return std::make_shared<DataTypeString>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;

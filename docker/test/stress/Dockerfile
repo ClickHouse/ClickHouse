@@ -21,10 +21,9 @@ RUN apt-get update -y \
             openssl \
             netcat-openbsd \
             telnet \
-            llvm-9 \
-            brotli
+            brotli \
+    && apt-get clean
 
-COPY ./stress /stress
 COPY run.sh /
 
 ENV DATASETS="hits visits"

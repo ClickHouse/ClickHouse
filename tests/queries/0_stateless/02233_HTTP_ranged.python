@@ -120,8 +120,9 @@ class HttpProcessor(BaseHTTPRequestHandler):
     allow_range = False
     range_used = False
     get_call_num = 0
+    responses_to_get = []
 
-    def send_head(self):
+    def send_head(self, from_get=False):
         if self.headers["Range"] and HttpProcessor.allow_range:
             try:
                 self.range = parse_byte_range(self.headers["Range"])
@@ -145,7 +146,16 @@ class HttpProcessor(BaseHTTPRequestHandler):
             self.send_error(416, "Requested Range Not Satisfiable")
             return None
 
-        self.send_response(206 if HttpProcessor.allow_range else 200)
+        retry_range_request = (
+            first != 0 and from_get is True and len(HttpProcessor.responses_to_get) > 0
+        )
+        if retry_range_request:
+            code = HttpProcessor.responses_to_get.pop()
+            if code not in HttpProcessor.responses:
+                self.send_response(int(code))
+        else:
+            self.send_response(206 if HttpProcessor.allow_range else 200)
+
         self.send_header("Content-type", "application/json")
 
         if HttpProcessor.allow_range:
@@ -169,7 +179,7 @@ class HttpProcessor(BaseHTTPRequestHandler):
         self.send_head()
 
     def do_GET(self):
-        result = self.send_head()
+        result = self.send_head(True)
         if result == None:
             return
 
@@ -211,25 +221,37 @@ def start_server():
 #####################################################################
 
 
-def test_select(download_buffer_size):
+def test_select(settings):
     global HTTP_SERVER_URL_STR
-    query = f"SELECT * FROM url('{HTTP_SERVER_URL_STR}','JSONAsString') SETTINGS max_download_buffer_size={download_buffer_size};"
+    query = f"SELECT * FROM url('{HTTP_SERVER_URL_STR}','JSONAsString') SETTINGS {','.join((k+'='+repr(v) for k, v in settings.items()))};"
     check_answers(query, EXPECTED_ANSWER)
 
 
-def run_test(allow_range, download_buffer_size=20):
+def run_test(allow_range, settings, check_retries=False):
     HttpProcessor.range_used = False
     HttpProcessor.get_call_num = 0
     HttpProcessor.allow_range = allow_range
+    if check_retries:
+        HttpProcessor.responses_to_get = ["500", "200", "206"]
+    retries_num = len(HttpProcessor.responses_to_get)
 
     t, httpd = start_server()
     t.start()
-    test_select(download_buffer_size)
+    test_select(settings)
 
+    download_buffer_size = settings["max_download_buffer_size"]
     expected_get_call_num = (PAYLOAD_LEN - 1) // download_buffer_size + 1
     if allow_range:
         if not HttpProcessor.range_used:
             raise Exception("HTTP Range was not used when supported")
+
+        if check_retries and len(HttpProcessor.responses_to_get) > 0:
+            raise Exception(
+                "Expected to get http response 500, which had to be retried, but 200 ok returned and then retried"
+            )
+
+        if retries_num > 0:
+            expected_get_call_num += retries_num - 1
 
         if expected_get_call_num != HttpProcessor.get_call_num:
             raise Exception(
@@ -245,9 +267,23 @@ def run_test(allow_range, download_buffer_size=20):
 
 
 def main():
-    run_test(allow_range=False)
-    run_test(allow_range=True, download_buffer_size=20)
-    run_test(allow_range=True, download_buffer_size=10)
+    settings = {"max_download_buffer_size": 20}
+
+    # Test Accept-Ranges=False
+    run_test(allow_range=False, settings=settings)
+    # Test Accept-Ranges=True, parallel download is used
+    run_test(allow_range=True, settings=settings)
+
+    # Test Accept-Ranges=True, parallel download is used
+    settings = {"max_download_buffer_size": 10}
+    run_test(allow_range=True, settings=settings)
+
+    # Test Accept-Ranges=True, parallel download is not used,
+    # first get request 500 response,
+    # second get request 200ok response,
+    # third get request (retry) 206 response.
+    settings["max_download_threads"] = 2
+    run_test(allow_range=True, settings=settings, check_retries=True)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ sidebar_label: Introspection
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
-:::warning    
+:::note    
 These functions are slow and may impose security considerations.
 :::
 
@@ -476,4 +476,3 @@ Result:
 │                            0 │
 └──────────────────────────────┘
 ```
-

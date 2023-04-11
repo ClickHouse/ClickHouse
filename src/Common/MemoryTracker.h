@@ -55,6 +55,7 @@ private:
     std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
+    std::atomic_bool allow_use_jemalloc_memory {true};
 
     static std::atomic<Int64> free_memory_in_allocator_arenas;
 
@@ -125,6 +126,10 @@ public:
     {
         return soft_limit.load(std::memory_order_relaxed);
     }
+    void setAllowUseJemallocMemory(bool value)
+    {
+        allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
+    }
 
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
@@ -135,6 +140,8 @@ public:
     {
         fault_probability = value;
     }
+
+    void injectFault() const;
 
     void setSampleProbability(double value)
     {
@@ -208,6 +215,8 @@ public:
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
+
+    void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
 };
 
 extern MemoryTracker total_memory_tracker;

@@ -15,9 +15,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Version.h>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 #include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -136,11 +134,7 @@ protected:
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
-    void waitForTerminationRequest()
-#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
-    override
-#endif
-    ;
+    void waitForTerminationRequest() override;
     /// thread safe
     virtual void onInterruptSignals(int signal_id);
 
@@ -166,13 +160,13 @@ protected:
     std::mutex signal_handler_mutex;
     std::condition_variable signal_event;
     std::atomic_size_t terminate_signals_counter{0};
-    std::atomic_size_t sigint_signals_counter{0};
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
-    String build_id_info;
+    String build_id;
+    String git_hash;
     String stored_binary_hash;
 
     std::vector<int> handled_signals;
@@ -200,3 +194,9 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
     else
         return {};
 }
+
+#if defined(OS_LINUX)
+/// Sends notification (e.g. "server is ready") to systemd, analogous to sd_notify from libsystemd.
+/// See https://www.freedesktop.org/software/systemd/man/sd_notify.html for more information on the supported notifications.
+void systemdNotify(const std::string_view & command);
+#endif
