@@ -64,18 +64,17 @@ struct SoundexImpl
 
         char current_code;
         in_cur++;
-        while (in_cur < in_end && out_char_data < out_end && (ch = getScode(in_cur, in_end)) != 0)
+        skipNonAlphaASCII(in_cur, in_end);
+        while (in_cur < in_end && out_char_data < out_end)
         {
-            if (in_cur == in_end)
+            current_code = getScode(toUpperIfAlphaASCII(*in_cur));
+            if ((current_code != '0') && (current_code != prev_code))
             {
-                break;
+                *out_char_data++ = current_code;
             }
-            in_cur++;
-            if ((ch != '0') && (ch != last_ch))
-            {
-                *out_char_data++ = ch;
-            }
-            last_ch = ch;
+            prev_code = current_code;
+            ++in_cur;
+            skipNonAlphaASCII(in_cur, in_end);
         }
         while (out_char_data < out_end)
         {
