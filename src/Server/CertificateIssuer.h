@@ -30,7 +30,6 @@ public:
 
     struct LetsEncryptConfigurationData
     {
-        bool is_issuing_enabled;
         int reissue_hours_before;
         std::string domain_name;
         std::string account_private_key;
