@@ -3,11 +3,11 @@
 #include <stdexcept>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
 #include <Common/typeid_cast.h>
+#include <Disks/IO/WriteBufferFromTemporaryFile.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -214,7 +214,7 @@ try
         std::string tmp_template = "tmp/TemporaryFileWriteBuffer/";
         std::string data = makeTestArray(s);
 
-        auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
+        auto buf = std::make_shared<WriteBufferFromTemporaryFile>(tmp_template);
         buf->write(data.data(), data.size());
 
         std::string tmp_filename = buf->getFileName();
@@ -253,7 +253,7 @@ try
         testCascadeBufferRedability(makeTestArray(s),
             {},
             {
-                [=] (auto) { return WriteBufferFromTemporaryFile::create(tmp_template); }
+                [=] (auto) { return std::make_shared<WriteBufferFromTemporaryFile>(tmp_template); }
             });
 
         testCascadeBufferRedability(makeTestArray(s),
@@ -261,7 +261,7 @@ try
                 std::make_shared<MemoryWriteBuffer>(std::max(1ul, s/3ul), 2, 1.5),
             },
             {
-                [=] (auto) { return WriteBufferFromTemporaryFile::create(tmp_template); }
+                [=] (auto) { return std::make_shared<WriteBufferFromTemporaryFile>(tmp_template); }
             });
     }
 }

@@ -11,10 +11,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -623,12 +623,11 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(server.context()->getGlobalTemporaryVolume()->getDisk()->getPath());
-            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
+            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
 
-            auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
+            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return WriteBufferFromTemporaryFile::create(tmp_path_template);
+                return tmp_data->createRawStream(0);
             };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));

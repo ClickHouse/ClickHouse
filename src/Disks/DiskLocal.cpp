@@ -19,11 +19,13 @@
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
+#include <Disks/IO/WriteBufferFromTemporaryFile.h>
+
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
+
 
 namespace CurrentMetrics
 {
@@ -588,7 +590,7 @@ try
     static DiskWriteCheckData data;
     String tmp_template = fs::path(disk_path) / "";
     {
-        auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
+        auto buf = std::make_unique<WriteBufferFromTemporaryFile>(tmp_template);
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->sync();
     }

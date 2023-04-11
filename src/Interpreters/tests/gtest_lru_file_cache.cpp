@@ -708,6 +708,27 @@ TEST_F(FileCacheTest, temporaryData)
 
         ASSERT_EQ(file_cache.getUsedCacheSize(), used_size_before_attempt);
     }
+
+    {
+        size_t before_used_size = file_cache.getUsedCacheSize();
+        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+
+        auto write_buf_stream = tmp_data->createRawStream();
+
+        write_buf_stream->write("1234567890", 10);
+        write_buf_stream->write("abcde", 5);
+        auto read_buf = dynamic_cast<IReadableWriteBuffer *>(write_buf_stream.get())->tryGetReadBuffer();
+
+        ASSERT_GT(file_cache.getUsedCacheSize(), before_used_size + 10);
+
+        char buf[15];
+        size_t read_size = read_buf->read(buf, 15);
+        ASSERT_EQ(read_size, 15);
+        ASSERT_EQ(std::string(buf, 15), "1234567890abcde");
+        read_size = read_buf->read(buf, 15);
+        ASSERT_EQ(read_size, 0);
+    }
+
     {
         auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
         auto & stream = tmp_data->createStream(generateBlock());

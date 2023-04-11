@@ -1,5 +1,6 @@
-#include <IO/WriteBufferFromTemporaryFile.h>
+#include <Disks/IO/WriteBufferFromTemporaryFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <fcntl.h>
 
@@ -12,17 +13,17 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
-
-WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(std::unique_ptr<PocoTemporaryFile> && tmp_file_)
-    : WriteBufferFromFile(tmp_file_->path(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, /* throttler= */ {}, 0600), tmp_file(std::move(tmp_file_))
-{}
-
-
-WriteBufferFromTemporaryFile::Ptr WriteBufferFromTemporaryFile::create(const std::string & tmp_dir)
+WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(TemporaryFileOnDiskHolder && tmp_file_)
+    : WriteBufferFromFile(tmp_file_->getPath(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, /* throttler= */ {}, 0600)
+    , tmp_file(std::move(tmp_file_))
 {
-    return Ptr{new WriteBufferFromTemporaryFile(createTemporaryFile(tmp_dir))};
 }
 
+
+WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(const String & tmp_file_path)
+    : WriteBufferFromFile(tmp_file_path, DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, /* throttler= */ {}, 0600)
+{
+}
 
 class ReadBufferFromTemporaryWriteBuffer : public ReadBufferFromFile
 {
@@ -40,11 +41,11 @@ public:
         return std::make_shared<ReadBufferFromTemporaryWriteBuffer>(fd, file_name, std::move(origin->tmp_file));
     }
 
-    ReadBufferFromTemporaryWriteBuffer(int fd_, const std::string & file_name_, std::unique_ptr<PocoTemporaryFile> && tmp_file_)
+    ReadBufferFromTemporaryWriteBuffer(int fd_, const std::string & file_name_, TemporaryFileOnDiskHolder && tmp_file_)
         : ReadBufferFromFile(fd_, file_name_), tmp_file(std::move(tmp_file_))
     {}
 
-    std::unique_ptr<PocoTemporaryFile> tmp_file;
+    TemporaryFileOnDiskHolder tmp_file;
 };
 
 
