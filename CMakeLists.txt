@@ -286,34 +286,31 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
+# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
+option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
+
 if (COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
     # See https://reviews.llvm.org/D112921
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
-endif ()
 
-# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-# benchmarks.
-if (COMPILER_CLANG)
+    # falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+    # benchmarks.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+
+    if (ARCH_AMD64)
+        # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
+        # which makes benchmark results more stable.
+        set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+
+    if (WITH_COVERAGE)
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+        # If we want to disable coverage for specific translation units
+        set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
+    endif()
 endif ()
-
-if (ARCH_AMD64)
-    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
-    # which makes benchmark results more stable.
-    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
-
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
-endif()
-
-# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
-option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
-
-if (WITH_COVERAGE AND COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-    # If we want to disable coverage for specific translation units
-    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-endif()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
