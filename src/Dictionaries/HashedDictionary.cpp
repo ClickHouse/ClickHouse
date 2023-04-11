@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/CurrentMetrics.h>
 
 #include <Core/Defines.h>
 
@@ -21,6 +22,11 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric HashedDictionaryThreads;
+    extern const Metric HashedDictionaryThreadsActive;
+}
 
 namespace
 {
@@ -60,7 +66,7 @@ public:
     explicit ParallelDictionaryLoader(HashedDictionary & dictionary_)
         : dictionary(dictionary_)
         , shards(dictionary.configuration.shards)
-        , pool(shards)
+        , pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, shards)
         , shards_queues(shards)
     {
         UInt64 backlog = dictionary.configuration.shard_load_queue_backlog;
@@ -108,9 +114,18 @@ public:
 
     ~ParallelDictionaryLoader()
     {
-        for (auto & queue : shards_queues)
-            queue->clearAndFinish();
-        pool.wait();
+        try
+        {
+            for (auto & queue : shards_queues)
+                queue->clearAndFinish();
+
+            /// NOTE: It is OK to not pass the exception next, since on success finish() should be called which will call wait()
+            pool.wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(dictionary.log, "Exception had been thrown during parallel load of the dictionary");
+        }
     }
 
 private:
@@ -213,7 +228,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         return;
 
     size_t shards = std::max<size_t>(configuration.shards, 1);
-    ThreadPool pool(shards);
+    ThreadPool pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, shards);
 
     size_t hash_tables_count = 0;
     auto schedule_destroy = [&hash_tables_count, &pool](auto & container)

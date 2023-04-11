@@ -10,6 +10,9 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -94,6 +97,9 @@ void PipelineExecutor::execute(size_t num_threads)
     if (num_threads < 1)
         num_threads = 1;
 
+    OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
+    span.addAttribute("clickhouse.thread_num", num_threads);
+
     try
     {
         executeImpl(num_threads);
@@ -108,6 +114,8 @@ void PipelineExecutor::execute(size_t num_threads)
     }
     catch (...)
     {
+        span.addAttribute(ExecutionStatus::fromCurrentException());
+
 #ifndef NDEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
 #endif

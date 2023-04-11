@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
+#include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <base/defines.h>
-#include <map>
 #include <mutex>
+#include <unordered_set>
 
 
 namespace Poco { class Logger; }
@@ -18,7 +19,7 @@ namespace DB
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
-    BackupCoordinationLocal();
+    BackupCoordinationLocal(bool plain_backup_);
     ~BackupCoordinationLocal() override;
 
     void setStage(const String & new_stage, const String & message) override;
@@ -43,31 +44,27 @@ public:
     void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) override;
     Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
-    void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
-    void updateFileInfo(const FileInfo & file_info) override;
-
-    std::vector<FileInfo> getAllFileInfos() const override;
-    Strings listFiles(const String & directory, bool recursive) const override;
-    bool hasFiles(const String & directory) const override;
-
-    std::optional<FileInfo> getFileInfo(const String & file_name) const override;
-    std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
-
-    String getNextArchiveSuffix() override;
-    Strings getAllArchiveSuffixes() const override;
+    void addFileInfos(BackupFileInfos && file_infos) override;
+    BackupFileInfos getFileInfos() const override;
+    BackupFileInfos getFileInfosForAllHosts() const override;
+    bool startWritingFile(size_t data_file_index) override;
 
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
-    mutable std::mutex mutex;
-    BackupCoordinationReplicatedTables replicated_tables TSA_GUARDED_BY(mutex);
-    BackupCoordinationReplicatedAccess replicated_access TSA_GUARDED_BY(mutex);
-    BackupCoordinationReplicatedSQLObjects replicated_sql_objects TSA_GUARDED_BY(mutex);
+    Poco::Logger * const log;
 
-    std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
-    std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
-    Strings archive_suffixes TSA_GUARDED_BY(mutex);
-    size_t current_archive_suffix TSA_GUARDED_BY(mutex) = 0;
+    BackupCoordinationReplicatedTables TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
+    BackupCoordinationReplicatedAccess TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
+    BackupCoordinationReplicatedSQLObjects TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
+    BackupCoordinationFileInfos TSA_GUARDED_BY(file_infos_mutex) file_infos;
+    std::unordered_set<size_t> TSA_GUARDED_BY(writing_files_mutex) writing_files;
+
+    mutable std::mutex replicated_tables_mutex;
+    mutable std::mutex replicated_access_mutex;
+    mutable std::mutex replicated_sql_objects_mutex;
+    mutable std::mutex file_infos_mutex;
+    mutable std::mutex writing_files_mutex;
 };
 
 }
