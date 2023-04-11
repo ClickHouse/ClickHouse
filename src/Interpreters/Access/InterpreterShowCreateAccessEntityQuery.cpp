@@ -54,6 +54,7 @@ namespace
         {
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
+                node->expect_password = true;
                 node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getPassword()));
                 break;
             }
