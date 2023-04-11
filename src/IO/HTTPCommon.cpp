@@ -7,8 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 
-#include <Poco/Version.h>
-
 #include "config.h"
 
 #if USE_SSL
