@@ -214,7 +214,7 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (local_context->canUseParallelReplicasOnInitiator())
+    if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
         auto table_id = getStorageID();
 
@@ -245,10 +245,12 @@ void StorageMergeTree::read(
     }
     else
     {
+        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
+
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
             local_context, max_block_size, num_streams,
-            processed_stage, nullptr, /*enable_parallel_reading*/local_context->canUseParallelReplicasOnFollower()))
+            processed_stage, nullptr, enable_parallel_reading))
             query_plan = std::move(*plan);
     }
 
@@ -2116,10 +2118,10 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
 
     Int64 min_data_version = std::numeric_limits<Int64>::max();
     for (const auto & data_part : data_parts)
-        min_data_version = std::min(min_data_version, data_part->info.getDataVersion());
+        min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
 
     backup_entries_collector.addBackupEntries(backupParts(data_parts, data_path_in_backup, local_context));
-    backup_entries_collector.addBackupEntries(backupMutations(min_data_version + 1, data_path_in_backup));
+    backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
 }
 
 

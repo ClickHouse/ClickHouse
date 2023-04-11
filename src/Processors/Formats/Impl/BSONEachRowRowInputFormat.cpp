@@ -282,6 +282,8 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     if (bson_type == BSONType::STRING || bson_type == BSONType::SYMBOL || bson_type == BSONType::JAVA_SCRIPT_CODE)
     {
         auto size = readBSONSize(in);
+        if (size == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size of a string (zero) in BSON");
         readAndInsertStringImpl<is_fixed_string>(in, column, size - 1);
         assertChar(0, in);
     }
@@ -444,11 +446,6 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
 
     const auto * data_type_map = assert_cast<const DataTypeMap *>(data_type.get());
     const auto & key_data_type = data_type_map->getKeyType();
-    if (!isStringOrFixedString(key_data_type))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Only maps with String key type are supported in BSON, got key type: {}",
-                        key_data_type->getName());
-
     const auto & value_data_type = data_type_map->getValueType();
     auto & column_map = assert_cast<ColumnMap &>(column);
     auto & key_column = column_map.getNestedData().getColumn(0);
@@ -462,7 +459,8 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
         auto name = readBSONKeyName(*in, current_key_name);
-        key_column.insertData(name.data, name.size);
+        ReadBufferFromMemory buf(name.data, name.size);
+        key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
         readField(value_column, value_data_type, nested_bson_type);
     }
 
@@ -509,6 +507,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             lc_column.insertFromFullColumn(*tmp_column, 0);
             return res;
         }
+        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             readAndInsertInteger<Int8>(*in, column, data_type, bson_type);
@@ -519,6 +518,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertInteger<UInt8>(*in, column, data_type, bson_type);
             return true;
         }
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             readAndInsertInteger<Int16>(*in, column, data_type, bson_type);
@@ -786,6 +786,9 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         }
         else
         {
+            if (seen_columns[index])
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
+
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
         }
@@ -992,6 +995,10 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     {
         BSONSizeT document_size;
         readBinary(document_size, in);
+
+        if (document_size < sizeof(document_size))
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+
         if (min_bytes != 0 && document_size > 10 * min_bytes)
             throw ParsingException(
                 ErrorCodes::INCORRECT_DATA,
@@ -999,9 +1006,12 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
 
+        if (document_size < sizeof(document_size))
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
-        memcpy(memory.data() + old_size, reinterpret_cast<char *>(&document_size), sizeof(document_size));
+        unalignedStore<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
     }

@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
@@ -316,6 +317,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const Name
 }
 
 void DataPartStorageOnDiskBase::backup(
+    const ReadSettings & read_settings,
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
     const String & path_in_backup,
@@ -391,7 +393,7 @@ void DataPartStorageOnDiskBase::backup(
 
         backup_entries.emplace_back(
             filepath_in_backup,
-            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, file_size, file_hash, temp_dir_owner));
+            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, read_settings, file_size, file_hash, temp_dir_owner));
     }
 }
 

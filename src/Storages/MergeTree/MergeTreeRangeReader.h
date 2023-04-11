@@ -1,6 +1,5 @@
 #pragma once
 #include <Core/Block.h>
-#include <Common/logger_useful.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
