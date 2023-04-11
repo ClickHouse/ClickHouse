@@ -2,11 +2,11 @@
 
 #if USE_SSL
 
-#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -14,16 +14,16 @@ namespace DB
 
 namespace
 {
-/// Call set process for certificate.
-int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
-{
-    return CertificateReloader::instance().setCertificate(ssl);
-}
+    /// Call set process for certificate.
+    int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
+    {
+        return CertificateReloader::instance().setCertificate(ssl);
+    }
 
-void callReloadCertificates()
-{
-    return CertificateReloader::instance().reloadCertificates();
-}
+    void callReloadCertificates()
+    {
+        return CertificateReloader::instance().reloadCertificates();
+    }
 
 }
 
@@ -36,14 +36,10 @@ int CertificateReloader::setCertificate(SSL * ssl)
         return -1;
 
     auto letsencrypt_configuration = let_encrypt_configuration_data.get();
-    if (letsencrypt_configuration)
-    {
-        if (letsencrypt_configuration->is_issuing_enabled
-            && current->cert.expiresOn().timestamp() <= Poco::Timestamp() + Poco::Timespan(3600ll*letsencrypt_configuration->reissue_hours_before, 0))
-        {
-            CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
-        }
-    }
+    if (letsencrypt_configuration
+        && current->cert.expiresOn().timestamp()
+            <= Poco::Timestamp() + Poco::Timespan(3600ll * letsencrypt_configuration->reissue_hours_before, 0))
+        CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
 
     SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
     SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
@@ -66,7 +62,7 @@ void CertificateReloader::init()
 
     /// Set a callback for OpenSSL to allow get the updated cert and key.
 
-    auto* ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+    auto * ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
     SSL_CTX_set_cert_cb(ctx, callSetCertificate, nullptr);
     init_was_not_made = false;
 }
@@ -80,7 +76,8 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
     std::string new_key_path = config.getString("openSSL.server.privateKeyFile", "");
 
     // Fetching configuration for possible reissuing let's encrypt certificates
-    let_encrypt_configuration_data.set(std::make_unique<const CertificateIssuer::LetsEncryptConfigurationData>(config));
+    if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
+        let_encrypt_configuration_data.set(std::make_unique<const CertificateIssuer::LetsEncryptConfigurationData>(config));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
@@ -118,7 +115,8 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
     }
 }
 
-void CertificateReloader::reloadCertificates(){
+void CertificateReloader::reloadCertificates()
+{
     LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
     data.set(std::make_unique<const Data>(cert_file.path, key_file.path, ""));
     LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
@@ -137,8 +135,12 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, Poco::Log
     std::filesystem::file_time_type new_modification_time = std::filesystem::last_write_time(new_path, ec);
     if (ec)
     {
-        LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
-            description, new_path, errnoToString(ec.value()));
+        LOG_ERROR(
+            logger,
+            "Cannot obtain modification time for {} file {}, skipping update. {}",
+            description,
+            new_path,
+            errnoToString(ec.value()));
         return false;
     }
 
