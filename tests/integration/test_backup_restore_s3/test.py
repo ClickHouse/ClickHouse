@@ -5,6 +5,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=[
+        "configs/cleanup.xml",
         "configs/disk_s3.xml",
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",

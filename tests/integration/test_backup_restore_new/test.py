@@ -12,7 +12,7 @@ from helpers.test_tools import assert_eq_with_retry, TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/backups_disk.xml"],
+    main_configs=["configs/cleanup.xml", "configs/backups_disk.xml"],
     user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )

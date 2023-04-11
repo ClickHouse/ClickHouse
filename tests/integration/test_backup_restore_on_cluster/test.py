@@ -1,5 +1,6 @@
-from time import sleep
 import pytest
+import sys
+import time
 import re
 import os.path
 from helpers.cluster import ClickHouseCluster
@@ -9,6 +10,7 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 main_configs = [
+    "configs/cleanup.xml",
     "configs/remote_servers.xml",
     "configs/replicated_access_storage.xml",
     "configs/replicated_user_defined_sql_objects.xml",
@@ -28,6 +30,7 @@ node1 = cluster.add_instance(
     external_dirs=["/backups/"],
     macros={"replica": "node1", "shard": "shard1"},
     with_zookeeper=True,
+    stay_alive=True,
 )
 
 node2 = cluster.add_instance(
@@ -1013,3 +1016,66 @@ def test_stop_other_host_during_backup(kill):
         assert not os.path.exists(
             os.path.join(get_path_to_backup(backup_name), ".backup")
         )
+
+
+def test_cleanup_stale_nodes():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (3)")
+    node2.query("INSERT INTO tbl VALUES (5)")
+    node2.query("INSERT INTO tbl VALUES (7)")
+    node2.query("INSERT INTO tbl VALUES (11)")
+    node2.query("INSERT INTO tbl VALUES (13)")
+
+    BACKUP_COUNT = 100
+    RETRIES_COUNT = 10
+    backup_names = []
+    backup_ids = []
+
+    for _ in range(BACKUP_COUNT):
+        backup_name = new_backup_name()
+        backup_names.append(backup_name)
+
+        id = node1.query(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+        ).split("\t")[0]
+
+        backup_ids.append(id)
+
+    # Hard kill the node
+    node1.stop_clickhouse(kill=True)
+    node2.stop_clickhouse(kill=True)
+
+    node1.start_clickhouse()
+    node2.start_clickhouse()
+
+    number_of_tries = 0
+
+    while True:
+        try:
+            # Get a list on all nodes. We need to check that all backups that were finished or failed doesn't have anything
+            # in [Zoo]Keeper
+            backups_in_zk = node1.query("SELECT name FROM system.zookeeper WHERE path='/clickhouse/backups/'").split('\n')
+
+            print("Backup nodes in ZooKeeper", backups_in_zk)
+
+            for id in backup_ids:
+                for backup in backups_in_zk:
+                    assert not id in backup
+
+            break
+
+        except AssertionError:
+
+            # Cleanup is asynchronious. We may need to retry multiple times.
+            number_of_tries += 1
+            if number_of_tries >= RETRIES_COUNT:
+                print("Test failed", sys.exc_info())
+                exit(1)
+
+            time.sleep(0.5)

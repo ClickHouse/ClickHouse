@@ -49,7 +49,7 @@ def generate_cluster_def():
     return path
 
 
-main_configs = ["configs/disallow_concurrency.xml", generate_cluster_def()]
+main_configs = ["configs/cleanup.xml", "configs/disallow_concurrency.xml", generate_cluster_def()]
 # No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 

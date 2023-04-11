@@ -1,0 +1,6 @@
+<clickhouse>
+    <backups>
+        <stale_backups_restores_check_period_ms>1</stale_backups_restores_check_period_ms>
+        <stale_backups_restores_cleanup_timeout_ms>1</stale_backups_restores_cleanup_timeout_ms>
+    </backups>
+</clickhouse>
