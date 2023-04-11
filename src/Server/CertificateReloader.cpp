@@ -8,6 +8,7 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -49,14 +50,10 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
         return -1;
 
     auto letsencrypt_configuration = let_encrypt_configuration_data.get();
-    if (letsencrypt_configuration)
-    {
-        if (letsencrypt_configuration->is_issuing_enabled
-            && current->cert.expiresOn().timestamp() <= Poco::Timestamp() + Poco::Timespan(3600ll*letsencrypt_configuration->reissue_hours_before, 0))
-        {
-            CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
-        }
-    }
+    if (letsencrypt_configuration
+        && current->cert.expiresOn().timestamp()
+            <= Poco::Timestamp() + Poco::Timespan(3600ll * letsencrypt_configuration->reissue_hours_before, 0))
+        CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
 
     SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
     SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
@@ -154,7 +151,8 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
 
     // Fetching configuration for possible reissuing let's encrypt certificates
-    let_encrypt_configuration_data.set(std::make_unique<const CertificateIssuer::LetsEncryptConfigurationData>(config));
+    if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
+        let_encrypt_configuration_data.set(std::make_unique<const CertificateIssuer::LetsEncryptConfigurationData>(config));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
@@ -193,7 +191,8 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
 }
 
-void CertificateReloader::reloadCertificates(){
+void CertificateReloader::reloadCertificates()
+{
     LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
     data.set(std::make_unique<const Data>(cert_file.path, key_file.path, ""));
     LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
@@ -220,8 +219,12 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, LoggerPtr
     std::filesystem::file_time_type new_modification_time = std::filesystem::last_write_time(new_path, ec);
     if (ec)
     {
-        LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
-            description, new_path, errnoToString(ec.value()));
+        LOG_ERROR(
+            logger,
+            "Cannot obtain modification time for {} file {}, skipping update. {}",
+            description,
+            new_path,
+            errnoToString(ec.value()));
         return false;
     }
 
