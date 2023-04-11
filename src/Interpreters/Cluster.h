@@ -150,7 +150,7 @@ public:
             UInt32 replica_index_);
 
         Address(
-            const DatabaseReplicaInfo & host_port_,
+            const DatabaseReplicaInfo & info,
             const ClusterConnectionParameters & params,
             UInt32 shard_index_,
             UInt32 replica_index_);
