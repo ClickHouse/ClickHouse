@@ -4,6 +4,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {
