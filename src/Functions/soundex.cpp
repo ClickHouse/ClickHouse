@@ -39,15 +39,14 @@ struct SoundexImpl
     };
     static constexpr auto soundex_map = "01230120022455012623010202";
 
-    static char getScode(const char *& ptr, const char * in_end)
+    static void skipNonAlphaASCII(const char *& start, const char * end)
     {
-        while (ptr < in_end && !isAlphaASCII(*ptr))
-        {
-            ptr++;
-        }
-        if (ptr == in_end)
-            return 0;
-        return soundex_map[toUpperIfAlphaASCII(*ptr) - 'A'];
+        while (start < end && !isAlphaASCII(*start))
+            ++start;
+    }
+    static char getScode(char c)
+    {
+        return soundex_map[c - 'A'];
     }
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
