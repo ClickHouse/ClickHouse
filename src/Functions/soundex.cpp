@@ -55,16 +55,16 @@ struct SoundexImpl
         const char * in_end = begin + size;
         unsigned char * out_end = out_char_data + length;
 
+        char prev_code = '0';
         skipNonAlphaASCII(in_cur, in_end);
         if (in_cur < in_end)
         {
-            *out_char_data++ = toUpperIfAlphaASCII(*in_cur);
+          *out_char_data++ = toUpperIfAlphaASCII(*in_cur);
+          prev_code = getScode(toUpperIfAlphaASCII(*in_cur));
+          skipNonAlphaASCII(++in_cur, in_end);
         }
-        char prev_code = getScode(toUpperIfAlphaASCII(*in_cur));
 
-        char current_code;
-        in_cur++;
-        skipNonAlphaASCII(in_cur, in_end);
+        char current_code = '0';
         while (in_cur < in_end && out_char_data < out_end)
         {
             current_code = getScode(toUpperIfAlphaASCII(*in_cur));
@@ -73,8 +73,7 @@ struct SoundexImpl
                 *out_char_data++ = current_code;
             }
             prev_code = current_code;
-            ++in_cur;
-            skipNonAlphaASCII(in_cur, in_end);
+            skipNonAlphaASCII(++in_cur, in_end);
         }
         while (out_char_data < out_end)
         {
