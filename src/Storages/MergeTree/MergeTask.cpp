@@ -95,6 +95,8 @@ static void extractMergingAndGatheringColumns(
             gathering_column_names.emplace_back(column.name);
         }
     }
+    gathering_columns.emplace_back(BlockNumberColumn);
+    gathering_column_names.emplace_back(BlockNumberColumn.name);
 }
 
 static void addMissedColumnsToSerializationInfos(
