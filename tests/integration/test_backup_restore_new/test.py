@@ -1206,13 +1206,9 @@ def test_backup_all(exclude_system_log_tables):
 
     exclude_from_backup = []
     if exclude_system_log_tables:
-        system_log_tables = (
-            instance.query(
-                "SELECT concat('system.', table) FROM system.tables WHERE (database = 'system') AND (table LIKE '%_log')"
-            )
-            .rstrip("\n")
-            .split("\n")
-        )
+        system_log_tables = instance.query(
+            "SELECT concat('system.', table) FROM system.tables WHERE (database = 'system') AND (table LIKE '%_log')"
+        ).splitlines()
         exclude_from_backup += system_log_tables
 
     backup_command = f"BACKUP ALL {'EXCEPT TABLES ' + ','.join(exclude_from_backup) if exclude_from_backup else ''} TO {backup_name}"
