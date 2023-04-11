@@ -55,10 +55,7 @@ struct SoundexImpl
         const char * in_end = begin + size;
         unsigned char * out_end = out_char_data + length;
 
-        while (in_cur < in_end && !isAlphaASCII(*in_cur))
-        {
-            in_cur++;
-        }
+        skipNonAlphaASCII(in_cur, in_end);
         if (in_cur < in_end)
         {
             *out_char_data++ = toUpperIfAlphaASCII(*in_cur);
