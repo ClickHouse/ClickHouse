@@ -21,7 +21,6 @@ _builder.BuildTopDescriptorsAndMessages(
     DESCRIPTOR, "clickhouse_path.format_schemas.social_pb2", globals()
 )
 if _descriptor._USE_C_DESCRIPTORS == False:
-
     DESCRIPTOR._options = None
     _USER._serialized_start = 47
     _USER._serialized_end = 90

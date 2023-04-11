@@ -142,7 +142,7 @@ y	Nullable(String)
 z	IPv4
 ```
 
-:::warning
+:::note
 If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
 :::
 
@@ -964,7 +964,7 @@ Default value: 1.
 
 ### input_format_arrow_import_nested {#input_format_arrow_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
 
 Possible values:
 
@@ -1024,7 +1024,7 @@ Default value: `none`.
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
 
 Possible values:
 
@@ -1073,7 +1073,7 @@ Default value: `none`.
 
 ### input_format_parquet_import_nested {#input_format_parquet_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
 
 Possible values:
 
@@ -1128,7 +1128,7 @@ Default value: `2.latest`.
 
 Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
 
-Default value: `snappy`.
+Default value: `lz4`.
 
 ## Hive format settings {#hive-format-settings}
 
@@ -1492,7 +1492,7 @@ Default value: `65505`.
 
 The name of table that will be used in the output INSERT statement.
 
-Default value: `'table''`.
+Default value: `table`.
 
 ### output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
@@ -1532,4 +1532,12 @@ Disabled by default.
 
 The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
 
-Default value: `1GiB`
+Default value: `1GiB`.
+
+## Native format settings {#native-format-settings}
+
+### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
+
+Allow types conversion in Native input format between columns from input data and requested columns.
+
+Enabled by default.

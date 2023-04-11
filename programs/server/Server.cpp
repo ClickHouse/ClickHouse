@@ -67,7 +67,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <IO/Resource/registerSchedulerNodes.h>
@@ -817,9 +816,8 @@ try
         }
     );
 
-    ConnectionCollector::init(global_context, server_settings.max_threads_for_connection_collector);
-
-    bool has_zookeeper = config().has("zookeeper");
+    zkutil::validateZooKeeperConfig(config());
+    bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -984,7 +982,7 @@ try
 
     StatusFile status{path / "status", StatusFile::write_full_info};
 
-    DB::ServerUUID::load(path / "uuid", log);
+    ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -1294,7 +1292,7 @@ try
             {
                 auto new_pool_size = server_settings.background_pool_size;
                 auto new_ratio = server_settings.background_merges_mutations_concurrency_ratio;
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings.background_merges_mutations_scheduling_policy.toString());
             }
 
@@ -1330,7 +1328,7 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (config->has("zookeeper"))
+                if (zkutil::hasZooKeeperConfig(*config))
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
@@ -1479,7 +1477,7 @@ try
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -1504,7 +1502,7 @@ try
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     if (server_settings.index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);
