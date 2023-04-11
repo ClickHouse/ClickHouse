@@ -112,7 +112,8 @@ class AsyncLoader : private boost::noncopyable
 {
 private:
     // Key of a pending job in ready queue
-    struct ReadyKey {
+    struct ReadyKey
+    {
         ssize_t priority;
         UInt64 ready_seqno;
 
@@ -125,7 +126,8 @@ private:
     };
 
     // Scheduling information for a pending job
-    struct Info {
+    struct Info
+    {
         ssize_t priority = 0;
         size_t dependencies_left = 0;
         UInt64 ready_seqno = 0; // zero means that job is not in ready queue
@@ -465,8 +467,8 @@ private:
 
         LoadJobPtr job;
         std::exception_ptr exception_from_job;
-        while (true) {
-
+        while (true)
+        {
             /// This is inside the loop to also reset previous thread names set inside the jobs
             setThreadName("AsyncLoader");
 
