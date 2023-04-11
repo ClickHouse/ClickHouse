@@ -64,7 +64,7 @@ static void splitAndModifyMutationCommands(
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
-        NameSet mutated_columns;
+        NameSet mutated_columns, dropped_columns;
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
@@ -98,8 +98,12 @@ static void splitAndModifyMutationCommands(
                     }
                     else
                         mutated_columns.emplace(command.column_name);
+
+                    if (command.type == MutationCommand::Type::DROP_COLUMN)
+                        dropped_columns.emplace(command.column_name);
                 }
             }
+
         }
 
         auto alter_conversions = part->storage.getAlterConversionsForPart(part);
@@ -140,6 +144,16 @@ static void splitAndModifyMutationCommands(
             {
                 for_interpreter.emplace_back(
                     MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+            }
+            else if (dropped_columns.contains(column.name))
+            {
+                /// Not needed for compact parts (not executed), added here only to produce correct
+                /// set of columns for new part and their serializations
+                for_file_renames.push_back(
+                {
+                     .type = MutationCommand::Type::DROP_COLUMN,
+                     .column_name = column.name,
+                });
             }
         }
     }
@@ -231,10 +245,14 @@ getColumnsForNewDataPart(
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
+        {
             continue;
+        }
 
         if (command.type == MutationCommand::DROP_COLUMN)
+        {
             removed_columns.insert(command.column_name);
+        }
 
         if (command.type == MutationCommand::RENAME_COLUMN)
         {
