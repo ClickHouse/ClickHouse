@@ -885,7 +885,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     }
 
     const auto & settings = global_context->getSettingsRef();
-    const Int32 signals_before_stop = settings.stop_reading_on_first_cancel ? 2 : 1;
+    const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
     has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
 
     if (is_interactive && has_partial_result_setting)
