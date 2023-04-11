@@ -5,7 +5,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>

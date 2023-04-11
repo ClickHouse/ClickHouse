@@ -242,8 +242,9 @@ void QueryCache::Writer::finalizeWrite()
         Chunks squashed_chunks;
         size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
 
-        for (const auto & chunk : *query_result)
+        for (auto & chunk : *query_result)
         {
+            convertToFullIfSparse(chunk);
             const size_t rows_chunk = chunk.getNumRows();
             size_t rows_chunk_processed = 0;
 
