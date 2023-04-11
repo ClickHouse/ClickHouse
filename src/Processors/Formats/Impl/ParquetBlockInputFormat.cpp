@@ -78,8 +78,6 @@ Chunk ParquetBlockInputFormat::generate()
     }
     else
     {
-        current_record_batch_reader.reset();
-        file_reader.reset();
         return {};
     }
 
@@ -91,6 +89,7 @@ void ParquetBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     file_reader.reset();
+    current_record_batch_reader.reset();
     column_indices.clear();
     row_group_current = 0;
     block_missing_values.clear();
@@ -133,7 +132,7 @@ void ParquetBlockInputFormat::prepareReader()
         format_settings.null_as_default,
         format_settings.parquet.case_insensitive_column_matching);
 
-    ArrowFieldIndexUtil<false> field_util(
+    ArrowFieldIndexUtil field_util(
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
     column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);

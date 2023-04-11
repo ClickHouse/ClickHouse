@@ -15,6 +15,7 @@
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
@@ -29,6 +30,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 }
 
@@ -1163,6 +1166,12 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
         zk->setZooKeeperLog(zk_log);
 }
 
+void ZooKeeper::setServerCompletelyStarted()
+{
+    if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
+        zk->setServerCompletelyStarted();
+}
+
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
@@ -1332,6 +1341,31 @@ String getSequentialNodeName(const String & prefix, UInt64 number)
     String num_str = std::to_string(number);
     String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;
     return name;
+}
+
+void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.has("zookeeper") && config.has("keeper"))
+        throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
+}
+
+bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true));
+}
+
+String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.has("zookeeper"))
+        return "zookeeper";
+
+    if (config.has("keeper"))
+        return "keeper";
+
+    if (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true))
+        return "keeper_server";
+
+    throw DB::Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
 }
 
 }

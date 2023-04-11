@@ -91,6 +91,11 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&elem));
+    }
 };
 
 ASTPtr ASTColumnsElement::clone() const
@@ -435,10 +440,10 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (select)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
-                      << (comment ? "(" : "")
-                      << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
+                      << settings.nl_or_ws
+                      << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
-        settings.ostr << (comment ? ")" : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (comment ? ")" : "") << (settings.hilite ? hilite_none : "");
     }
 
     if (comment)
