@@ -1,6 +1,7 @@
 #include <Planner/Planner.h>
 
 #include <Core/ProtocolDefines.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 

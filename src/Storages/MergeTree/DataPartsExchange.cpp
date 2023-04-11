@@ -5,6 +5,7 @@
 #include <Formats/NativeWriter.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3Common.h>
 #include <Server/HTTP/HTMLForm.h>
