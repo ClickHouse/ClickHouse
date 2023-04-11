@@ -1,6 +1,9 @@
-#include <fstream>
-
 #include "CertificateIssuer.h"
+
+#include <fmt/format.h>
+#include <fstream>
+#include <string>
+#include <vector>
 
 #if USE_SSL
 
@@ -8,15 +11,30 @@
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
+#include <Poco/Net/SSLException.h>
 
 namespace DB
 {
 
 namespace
 {
+    const std::vector<std::string> config_names = {
+            "LetsEncrypt.domainName", "file_system.base_directory",
+            "openSSL.server.certificateFile", "openSSL.server.privateKeyFile",
+            "LetsEncrypt.accountPrivateKeyFile"
+    };
+
     void PlaceFileCall(const std::string & domainName, const std::string & url, const std::string & keyAuthorization)
     {
         CertificateIssuer::instance().PlaceFile(domainName, url, keyAuthorization);
+    }
+
+    void CheckConfiguration(const Poco::Util::AbstractConfiguration & config) {
+        for (const auto & name : config_names){
+            if (!config.has(name)){
+                throw Poco::Net::SSLException(fmt::format("Config must have {} for Let's Ecrypt Integration", name));
+            }
+        }
     }
 }
 
@@ -48,7 +66,7 @@ void CertificateIssuer::UpdateCertificatesIfNeeded(const Poco::Util::AbstractCon
 
 CertificateIssuer::LetsEncryptConfigurationData::LetsEncryptConfigurationData(const Poco::Util::AbstractConfiguration & config)
 {
-    is_issuing_enabled = config.getBool("LetsEncrypt.enableAutomaticIssue", false);
+    CheckConfiguration(config);
     reissue_hours_before = config.getInt("LetsEncrypt.reissueHoursBefore", 48);
 
     domain_name = config.getString("LetsEncrypt.domainName", "");
