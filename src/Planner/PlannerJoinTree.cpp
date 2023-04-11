@@ -1,10 +1,6 @@
 #include <Planner/PlannerJoinTree.h>
 
-#include "Common/logger_useful.h"
 #include <Common/scope_guard_safe.h>
-#include "Parsers/ExpressionListParsers.h"
-#include "Parsers/parseQuery.h"
-#include "Storages/SelectQueryInfo.h"
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -36,6 +32,9 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
+
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -447,10 +446,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
 
     auto const & storage_id = storage->getStorageID();
 
-    LOG_DEBUG(&Poco::Logger::get("buildAdditionalFiltersIfNeeded"), "Trying to find additional filters for table: {}", storage_id.getFullTableName());
-
     ASTPtr additional_filter_ast;
-
     for (size_t i = 0; i < additional_filters.size(); ++i)
     {
         const auto & tuple = additional_filters[i].safeGet<const Tuple &>();
@@ -473,9 +469,6 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
         return {};
 
     table_expression_query_info.additional_filter_ast = additional_filter_ast;
-
-    LOG_DEBUG(&Poco::Logger::get("buildAdditionalFiltersIfNeeded"), "Found additional filter: {}", additional_filter_ast->formatForErrorMessage());
-
     return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
@@ -727,10 +720,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             filter_info.do_remove_column);
                         filter_step->setStepDescription(description);
                         query_plan.addStep(std::move(filter_step));
-                    }
-                    else
-                    {
-                        LOG_DEBUG(&Poco::Logger::get("PlannerJoinTree"), "Can not add filter: {}", description);
                     }
                 }
 
