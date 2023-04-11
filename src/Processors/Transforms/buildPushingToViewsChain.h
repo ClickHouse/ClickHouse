@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 
 namespace Poco
 {
