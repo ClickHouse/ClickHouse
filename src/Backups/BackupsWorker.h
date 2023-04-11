@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Backups/BackupStatus.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
 #include <unordered_map>
@@ -105,8 +106,11 @@ private:
         ContextMutablePtr mutable_context,
         bool called_async);
 
+    /// Builds file infos for specified backup entries.
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, std::shared_ptr<IBackupCoordination> backup_coordination);
+
     /// Write backup entries to an opened backup.
-    void writeBackupEntries(const OperationID & backup_id, BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool, bool internal);
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const OperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal);
 
     OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
@@ -129,8 +133,8 @@ private:
     void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
-    ThreadPool backups_thread_pool;
-    ThreadPool restores_thread_pool;
+    std::unique_ptr<ThreadPool> backups_thread_pool;
+    std::unique_ptr<ThreadPool> restores_thread_pool;
 
     std::unordered_map<OperationID, Info> infos;
     std::condition_variable status_changed;

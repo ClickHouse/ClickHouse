@@ -13,6 +13,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )
 
@@ -1182,6 +1183,68 @@ def test_restore_partition():
     assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
         [[2, "2"], [3, "3"], [12, "12"], [13, "13"], [22, "22"], [23, "23"]]
     )
+
+
+@pytest.mark.parametrize("exclude_system_log_tables", [False, True])
+def test_backup_all(exclude_system_log_tables):
+    create_and_fill_table()
+
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')",
+        params={"session_id": session_id},
+    )
+
+    instance.query("CREATE FUNCTION two_and_half AS (x) -> x * 2.5")
+
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 1")
+
+    backup_name = new_backup_name()
+
+    exclude_from_backup = []
+    if exclude_system_log_tables:
+        system_log_tables = instance.query(
+            "SELECT concat('system.', table) FROM system.tables WHERE (database = 'system') AND (table LIKE '%_log')"
+        ).splitlines()
+        exclude_from_backup += system_log_tables
+
+    backup_command = f"BACKUP ALL {'EXCEPT TABLES ' + ','.join(exclude_from_backup) if exclude_from_backup else ''} TO {backup_name}"
+
+    instance.http_query(backup_command, params={"session_id": session_id})
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
+
+    restore_settings = []
+    if not exclude_system_log_tables:
+        restore_settings.append("allow_non_empty_tables=true")
+    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS '+ ', '.join(restore_settings) if restore_settings else ''}"
+
+    session_id = new_session_id()
+    instance.http_query(
+        restore_command, params={"session_id": session_id}, method="POST"
+    )
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    assert instance.http_query(
+        "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
+    ) == TSV([["e"], ["q"], ["w"]])
+
+    assert instance.query("SELECT two_and_half(6)") == "15\n"
+
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
 
 
 def test_operation_id():
