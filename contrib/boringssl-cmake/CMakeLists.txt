@@ -644,6 +644,7 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/ssl/tls_record.cc"
 
   "${BORINGSSL_SOURCE_DIR}/decrepit/ssl/ssl_decrepit.c"
+  "${BORINGSSL_SOURCE_DIR}/decrepit/x509/x509_decrepit.c"
   "${BORINGSSL_SOURCE_DIR}/decrepit/cfb/cfb.c"
   "${BORINGSSL_SOURCE_DIR}/decrepit/bio/base64_bio.c"
 )
