@@ -1,5 +1,6 @@
 #include <IO/BackupsIOThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Core/Field.h>
 
 namespace CurrentMetrics
