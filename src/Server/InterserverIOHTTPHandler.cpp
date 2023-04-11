@@ -74,12 +74,19 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     {
         endpoint->processQuery(params, body, *used_output.out, response);
     }
+
+    std::string test = "test";
+
+    if (test.size() > 0) {
+        throw 1;
+    }
 }
 
 
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
+
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
