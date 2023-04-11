@@ -199,18 +199,4 @@ void unionJoinDataHints(DataHints & left_hints, const DataHints & right_hints, c
 
 void updateDataHintsWithOutputHeaderKeys(DataHints & hints, const Names & keys);
 
-std::tuple<Names, Names, DataTypes> optimizeAggregatingStepWithDataHints(
-        QueryPipelineBuilder & pipeline,
-        const Names & keys,
-        const DataHints & hints,
-        const ColumnsWithTypeAndName & input_header,
-        const BuildQueryPipelineSettings & settings);
-
-void optimizeAggregatingStepWithDataHintsReturnInitialColumns(
-    QueryPipelineBuilder & pipeline,
-    const DataHints & hints,
-    const Names & changed_keys,
-    const DataTypes & changed_data_types,
-    const BuildQueryPipelineSettings & settings);
-
 }

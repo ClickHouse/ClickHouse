@@ -453,42 +453,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    Names changed_keys, new_keys;
-    DataTypes changed_data_types;
-    if (enable_data_hints_optimization)
-    {
-        const auto & result = optimizeAggregatingStepWithDataHints(
-                pipeline, transform_params->params.keys, hints, input_streams.front().header.getColumnsWithTypeAndName(), settings);
-        changed_keys = get<0>(result);
-        new_keys = get<1>(result);
-        changed_data_types = get<2>(result);
-
-        if (!changed_keys.empty())
-        {
-            Aggregator::Params new_params
-            {
-                new_keys,
-                transform_params->params.aggregates,
-                transform_params->params.overflow_row,
-                transform_params->params.max_rows_to_group_by,
-                transform_params->params.group_by_overflow_mode,
-                transform_params->params.group_by_two_level_threshold,
-                transform_params->params.group_by_two_level_threshold_bytes,
-                transform_params->params.max_bytes_before_external_group_by,
-                transform_params->params.empty_result_for_aggregation_by_empty_set,
-                transform_params->params.tmp_data_scope,
-                transform_params->params.max_threads,
-                transform_params->params.min_free_disk_space,
-                transform_params->params.compile_aggregate_expressions,
-                transform_params->params.min_count_to_compile_aggregate_expression,
-                transform_params->params.max_block_size,
-                transform_params->params.enable_prefetch,
-                transform_params->params.only_merge,
-                transform_params->params.stats_collecting_params};
-            transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getHeader(), std::move(new_params), final);
-        }
-    }
-
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -526,9 +490,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         aggregating = collector.detachProcessors(0);
     }
-
-    if (enable_data_hints_optimization)
-        optimizeAggregatingStepWithDataHintsReturnInitialColumns(pipeline, hints, changed_keys, changed_data_types, settings);
 }
 
 void AggregatingStep::describeActions(FormatSettings & settings) const
@@ -606,6 +567,8 @@ void AggregatingStep::updateOutputStream()
         input_streams.front(),
         appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
         getDataStreamTraits());
+    hints = input_streams.front().hints;
+    updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
 bool AggregatingStep::memoryBoundMergingWillBeUsed() const

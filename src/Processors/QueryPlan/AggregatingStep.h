@@ -67,7 +67,13 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
 
-    void enableDataHintsOptimization() { enable_data_hints_optimization = true; }
+    DataHints getHints() { return hints; }
+
+    void updateParams(const Names & new_keys) { params.keys = new_keys; }
+
+    void setOptimizedWithDataHints() { optimized_with_data_hints = true; }
+
+    bool isOptimizedWithDataHints() { return optimized_with_data_hints; }
 
     bool canUseProjection() const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
@@ -93,7 +99,7 @@ private:
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;
 
-    bool enable_data_hints_optimization = false;
+    bool optimized_with_data_hints = false;
 
     /// Both sort descriptions are needed for aggregate-in-order optimization.
     /// Both sort descriptions are subset of GROUP BY key columns (or monotonic functions over it).

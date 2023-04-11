@@ -70,8 +70,8 @@ struct QueryPlanOptimizationSettings
     /// If query is not remote
     bool aggregation_with_data_hints = false;
 
-    static QueryPlanOptimizationSettings fromSettings(const Settings & from, bool aggregation_with_data_hints = false);
-    static QueryPlanOptimizationSettings fromContext(ContextPtr from, bool aggregation_with_data_hints = false);
+    static QueryPlanOptimizationSettings fromSettings(const Settings & from, bool aggregation_with_data_hints);
+    static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
 
 }

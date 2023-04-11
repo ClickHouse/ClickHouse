@@ -456,7 +456,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()));
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
             if (settings.json)
             {
@@ -502,7 +502,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 }
 
                 auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()),
+                    QueryPlanOptimizationSettings::fromContext(context),
                     BuildQueryPipelineSettings::fromContext(context));
 
                 if (settings.graph)

@@ -49,9 +49,9 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     return settings;
 }
 
-QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromContext(ContextPtr from, bool aggregation_with_data_hints)
+QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromContext(ContextPtr from)
 {
-    return fromSettings(from->getSettingsRef(), aggregation_with_data_hints);
+    return fromSettings(from->getSettingsRef(), !from->isDistributed());
 }
 
 }
