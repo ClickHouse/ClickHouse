@@ -303,9 +303,9 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     }
 }
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function)
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas)
     : impl(std::make_unique<ParserWithOptionalAlias>(
-        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>()),
+        is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>(allow_trailing_commas)),
         allow_alias_without_as_keyword))
 {
 }
@@ -314,7 +314,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function, allow_trailing_commas),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
@@ -779,13 +779,50 @@ protected:
 };
 
 
+struct ParserExpressionImpl
+{
+    static std::vector<std::pair<const char *, Operator>> operators_table;
+    static std::vector<std::pair<const char *, Operator>> unary_operators_table;
+    static const char * overlapping_operators_to_skip[];
+
+    static Operator finish_between_operator;
+
+    ParserCompoundIdentifier identifier_parser{false, true};
+    ParserNumber number_parser;
+    ParserAsterisk asterisk_parser;
+    ParserLiteral literal_parser;
+    ParserTupleOfLiterals tuple_literal_parser;
+    ParserArrayOfLiterals array_literal_parser;
+    ParserSubstitution substitution_parser;
+    ParserMySQLGlobalVariable mysql_global_variable_parser;
+
+    ParserKeyword any_parser{"ANY"};
+    ParserKeyword all_parser{"ALL"};
+
+    // Recursion
+    ParserQualifiedAsterisk qualified_asterisk_parser;
+    ParserColumnsMatcher columns_matcher_parser;
+    ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
+    ParserSubquery subquery_parser;
+
+    bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
+
+    using Layers = std::vector<std::unique_ptr<Layer>>;
+
+    Action tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
+    Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
+};
+
+
 class ExpressionLayer : public Layer
 {
 public:
 
-    explicit ExpressionLayer(bool is_table_function_) : Layer(false, false)
+    explicit ExpressionLayer(bool is_table_function_, bool allow_trailing_commas_ = false)
+        : Layer(false, false)
     {
         is_table_function = is_table_function_;
+        allow_trailing_commas = allow_trailing_commas_;
     }
 
     bool getResult(ASTPtr & node) override
@@ -802,10 +839,62 @@ public:
     bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & /*action*/) override
     {
         if (pos->type == TokenType::Comma)
+        {
             finished = true;
+
+            if (!allow_trailing_commas)
+                return true;
+
+            /// We support trailing commas at the end of the column declaration:
+            ///  - SELECT a, b, c, FROM table
+            ///  - SELECT 1,
+
+            /// For this purpose we need to eliminate the following cases:
+            ///  1. WITH 1 AS from SELECT 2, from
+            ///  2. SELECT to, from FROM table
+            ///  3. SELECT to, from AS alias FROM table
+            ///  4. SELECT to, from + to, from IN [1,2,3], FROM table
+
+            Expected test_expected;
+            auto test_pos = pos;
+            ++test_pos;
+
+            /// End of query
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+            {
+                /// If we can't parse FROM then return
+                if (!ParserKeyword("FROM").ignore(test_pos, test_expected))
+                    return true;
+
+                /// If we parse a second FROM then the first one was a name of a column
+                if (ParserKeyword("FROM").ignore(test_pos, test_expected))
+                    return true;
+
+                /// If we parse an explicit alias to FROM, then it was a name of a column
+                if (ParserAlias(false).ignore(test_pos, test_expected))
+                    return true;
+
+                /// If we parse an operator after FROM then it was a name of a column
+                auto cur_op = ParserExpressionImpl::operators_table.begin();
+                for (; cur_op != ParserExpressionImpl::operators_table.end(); ++cur_op)
+                {
+                    if (parseOperator(test_pos, cur_op->first, test_expected))
+                        break;
+                }
+
+                if (cur_op != ParserExpressionImpl::operators_table.end())
+                    return true;
+            }
+
+            ++pos;
+            return true;
+        }
 
         return true;
     }
+
+private:
+    bool allow_trailing_commas;
 };
 
 /// Basic layer for a function with certain separator and end tokens:
@@ -2164,44 +2253,10 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
-struct ParserExpressionImpl
-{
-    static std::vector<std::pair<const char *, Operator>> operators_table;
-    static std::vector<std::pair<const char *, Operator>> unary_operators_table;
-    static const char * overlapping_operators_to_skip[];
-
-    static Operator finish_between_operator;
-
-    ParserCompoundIdentifier identifier_parser{false, true};
-    ParserNumber number_parser;
-    ParserAsterisk asterisk_parser;
-    ParserLiteral literal_parser;
-    ParserTupleOfLiterals tuple_literal_parser;
-    ParserArrayOfLiterals array_literal_parser;
-    ParserSubstitution substitution_parser;
-    ParserMySQLGlobalVariable mysql_global_variable_parser;
-
-    ParserKeyword any_parser{"ANY"};
-    ParserKeyword all_parser{"ALL"};
-
-    // Recursion
-    ParserQualifiedAsterisk qualified_asterisk_parser;
-    ParserColumnsMatcher columns_matcher_parser;
-    ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
-    ParserSubquery subquery_parser;
-
-    bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
-
-    using Layers = std::vector<std::unique_ptr<Layer>>;
-
-    Action tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
-    Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
-};
-
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<ExpressionLayer>(false);
+    auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
@@ -2255,6 +2310,7 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_t
         {"ILIKE",         Operator("ilike",           8,  2)},
         {"NOT LIKE",      Operator("notLike",         8,  2)},
         {"NOT ILIKE",     Operator("notILike",        8,  2)},
+        {"REGEXP",        Operator("match",           8,  2)},
         {"IN",            Operator("in",              8,  2)},
         {"NOT IN",        Operator("notIn",           8,  2)},
         {"GLOBAL IN",     Operator("globalIn",        8,  2)},
@@ -2543,18 +2599,17 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (cur_op == operators_table.end())
     {
+        if (!layers.back()->allow_alias || layers.back()->parsed_alias)
+            return Action::NONE;
+
         ASTPtr alias;
         ParserAlias alias_parser(layers.back()->allow_alias_without_as_keyword);
 
-        if (layers.back()->allow_alias &&
-            !layers.back()->parsed_alias &&
-            alias_parser.parse(pos, alias, expected) &&
-            layers.back()->insertAlias(alias))
-        {
-            layers.back()->parsed_alias = true;
-            return Action::OPERATOR;
-        }
-        return Action::NONE;
+        if (!alias_parser.parse(pos, alias, expected) || !layers.back()->insertAlias(alias))
+            return Action::NONE;
+
+        layers.back()->parsed_alias = true;
+        return Action::OPERATOR;
     }
 
     auto op = cur_op->second;

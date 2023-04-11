@@ -687,7 +687,7 @@
 
             e.preventDefault();
             return false;
-        } else if (e.key === 'Enter') {
+        } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
             // If the user presses Enter, and the previous line starts with spaces,
             // then we will insert the same number of spaces.
             const elem = e.target;

@@ -9,6 +9,9 @@ node = cluster.add_instance(
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
     ],
+    user_configs=[
+        "configs/zookeeper_retries.xml",
+    ],
     with_minio=True,
 )
 
@@ -138,7 +141,8 @@ def test_backup_to_s3_native_copy():
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
     check_backup_and_restore(storage_policy, backup_destination)
-    assert node.contains_in_log("using native copy")
+    assert node.contains_in_log("BackupImpl.*using native copy")
+    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
     assert node.contains_in_log(
         f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
     )
@@ -151,7 +155,8 @@ def test_backup_to_s3_native_copy_other_bucket():
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
     )
     check_backup_and_restore(storage_policy, backup_destination)
-    assert node.contains_in_log("using native copy")
+    assert node.contains_in_log("BackupImpl.*using native copy")
+    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
     assert node.contains_in_log(
         f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
     )
@@ -162,7 +167,8 @@ def test_backup_to_s3_native_copy_multipart():
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
     check_backup_and_restore(storage_policy, backup_destination, size=1000000)
-    assert node.contains_in_log("using native copy")
+    assert node.contains_in_log("BackupImpl.*using native copy")
+    assert node.contains_in_log("copyS3FileToDisk.*using native copy")
     assert node.contains_in_log(
         f"copyS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
     )

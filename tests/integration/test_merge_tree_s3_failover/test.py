@@ -270,3 +270,29 @@ def test_throttle_retry(cluster):
         )
         == "42\n"
     )
+
+
+# Check that loading of parts is retried.
+def test_retry_loading_parts(cluster):
+    node = cluster.instances["node"]
+
+    node.query(
+        """
+        CREATE TABLE s3_retry_loading_parts (
+            id Int64
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy='s3_no_retries'
+        """
+    )
+
+    node.query("INSERT INTO s3_retry_loading_parts VALUES (42)")
+    node.query("DETACH TABLE s3_retry_loading_parts")
+
+    fail_request(cluster, 5)
+    node.query("ATTACH TABLE s3_retry_loading_parts")
+
+    assert node.contains_in_log(
+        "Failed to load data part all_1_1_0 at try 0 with retryable error"
+    )
+    assert node.query("SELECT * FROM s3_retry_loading_parts") == "42\n"

@@ -5,14 +5,17 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Throttler.h>
+#include <Common/filesystemHelpers.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
-#include <Common/filesystemHelpers.h>
 
 
 namespace ProfileEvents
 {
     extern const Event AsynchronousReadWaitMicroseconds;
+    extern const Event LocalReadThrottlerBytes;
+    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -92,6 +95,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 
         assert(offset <= size);
         size_t bytes_read = size - offset;
+        if (throttler)
+            throttler->add(bytes_read, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
         if (bytes_read)
         {
@@ -117,6 +122,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 
         assert(offset <= size);
         size_t bytes_read = size - offset;
+        if (throttler)
+            throttler->add(bytes_read, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
         if (bytes_read)
         {
@@ -149,12 +156,14 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    std::optional<size_t> file_size_)
+    std::optional<size_t> file_size_,
+    ThrottlerPtr throttler_)
     : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
     , reader(reader_)
     , base_priority(priority_)
     , required_alignment(alignment)
     , fd(fd_)
+    , throttler(throttler_)
 {
     if (required_alignment > buf_size)
         throw Exception(
