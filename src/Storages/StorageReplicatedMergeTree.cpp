@@ -652,6 +652,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/alter_partition_version", String(), zkutil::CreateMode::Persistent));
     /// For deduplication of async inserts
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/async_blocks", String(), zkutil::CreateMode::Persistent));
+    /// To track "lost forever" parts count, just for `system.replicas` table
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lost_part_count", String(), zkutil::CreateMode::Persistent));
 
     /// As for now, "/temp" node must exist, but we want to be able to remove it in future
     if (zookeeper->exists(zookeeper_path + "/temp"))
@@ -2209,35 +2211,43 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Check that we could cover whole range
     for (PartDescriptionPtr & part_desc : parts_to_add)
     {
-        if (adding_parts_active_set.getContainingPart(part_desc->new_part_info).empty())
+        if (!adding_parts_active_set.getContainingPart(part_desc->new_part_info).empty())
+            continue;
+
+        MergeTreePartInfo covering_drop_range;
+        if (queue.isGoingToBeDropped(part_desc->new_part_info, &covering_drop_range))
         {
-            /// We should enqueue missing part for check, so it will be replaced with empty one (if needed)
-            /// and we will be able to execute this REPLACE_RANGE.
-            /// However, it's quite dangerous, because part may appear in source table.
-            /// So we enqueue it for check only if no replicas of source table have part either.
-            bool need_check = true;
-            if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
-            {
-                String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
-                if (!src_replica.empty())
-                {
-                    LOG_DEBUG(log, "Found part {} on replica {} of source table, will not check part {} required for {}",
-                              part_desc->src_part_name, src_replica, part_desc->new_part_name, entry.znode_name);
-                    need_check = false;
-                }
-            }
-
-            if (need_check)
-            {
-                LOG_DEBUG(log, "Will check part {} required for {}, because no replicas have it (including replicas of source table)",
-                          part_desc->new_part_name, entry.znode_name);
-                enqueuePartForCheck(part_desc->new_part_name);
-            }
-
-            throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
-                            "Not found part {} (or part covering it) neither source table neither remote replicas",
-                            part_desc->new_part_name);
+            LOG_WARNING(log, "Will not add part {} (while replacing {}) because it's going to be dropped (DROP_RANGE: {})",
+                        part_desc->new_part_name, entry_replace.drop_range_part_name, covering_drop_range.getPartNameForLogs());
+            continue;
         }
+
+        /// We should enqueue missing part for check, so it will be replaced with empty one (if needed)
+        /// and we will be able to execute this REPLACE_RANGE.
+        /// However, it's quite dangerous, because part may appear in source table.
+        /// So we enqueue it for check only if no replicas of source table have part either.
+        bool need_check = true;
+        if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
+        {
+            String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
+            if (!src_replica.empty())
+            {
+                LOG_DEBUG(log, "Found part {} on replica {} of source table, will not check part {} required for {}",
+                          part_desc->src_part_name, src_replica, part_desc->new_part_name, entry.znode_name);
+                need_check = false;
+            }
+        }
+
+        if (need_check)
+        {
+            LOG_DEBUG(log, "Will check part {} required for {}, because no replicas have it (including replicas of source table)",
+                      part_desc->new_part_name, entry.znode_name);
+            enqueuePartForCheck(part_desc->new_part_name);
+        }
+
+        throw Exception(ErrorCodes::NO_REPLICA_HAS_PART,
+                        "Not found part {} (or part covering it) neither source table neither remote replicas",
+                        part_desc->new_part_name);
     }
 
     /// Filter covered parts
@@ -4415,6 +4425,7 @@ void StorageReplicatedMergeTree::partialShutdown()
 
     partial_shutdown_called = true;
     partial_shutdown_event.set();
+    queue.notifySubscribersOnPartialShutdown();
     replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
@@ -5959,6 +5970,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
     res.log_pointer = 0;
     res.total_replicas = 0;
     res.active_replicas = 0;
+    res.lost_part_count = 0;
     res.last_queue_update_exception = getLastQueueUpdateException();
 
     if (with_zk_fields && !res.is_session_expired)
@@ -5975,6 +5987,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
 
             paths.clear();
             paths.push_back(fs::path(replica_path) / "log_pointer");
+            paths.push_back(fs::path(zookeeper_path) / "lost_part_count");
             for (const String & replica : all_replicas)
                 paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
 
@@ -5992,10 +6005,14 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
 
             res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
             res.total_replicas = all_replicas.size();
+            if (get_result[1].error == Coordination::Error::ZNONODE)
+                res.lost_part_count = 0;
+            else
+                res.lost_part_count = get_result[1].data.empty() ? 0 : parse<UInt64>(get_result[1].data);
 
             for (size_t i = 0, size = all_replicas.size(); i < size; ++i)
             {
-                bool is_replica_active = get_result[i + 1].error != Coordination::Error::ZNONODE;
+                bool is_replica_active = get_result[i + 2].error != Coordination::Error::ZNONODE;
                 res.active_replicas += static_cast<UInt8>(is_replica_active);
                 res.replica_is_active.emplace(all_replicas[i], is_replica_active);
             }
@@ -7578,53 +7595,54 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
 }
 
-bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict)
+bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode)
 {
-    Stopwatch watch;
-
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+
+    if (sync_mode == SyncReplicaMode::PULL)
+        return true;
+
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
     background_operations_assignee.trigger();
 
     std::unordered_set<String> wait_for_ids;
-    bool set_ids_to_wait = true;
+    bool was_interrupted = false;
 
     Poco::Event target_entry_event;
-    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait, strict]
-        (size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
+    auto callback = [this, &target_entry_event, &wait_for_ids, &was_interrupted, sync_mode]
+        (size_t new_queue_size, const String * removed_log_entry_id)
     {
-        if (strict)
+        if (partial_shutdown_called)
         {
-            /// In strict mode we wait for queue to become empty
+            was_interrupted = true;
+            target_entry_event.set();
+            return;
+        }
+
+        if (sync_mode == SyncReplicaMode::STRICT)
+        {
+            /// Wait for queue to become empty
             if (new_queue_size == 0)
                 target_entry_event.set();
             return;
         }
 
-        if (set_ids_to_wait)
-        {
-            wait_for_ids = log_entry_ids;
-            set_ids_to_wait = false;
-        }
+        if (removed_log_entry_id)
+            wait_for_ids.erase(*removed_log_entry_id);
 
-        if (removed_log_entry_id.has_value())
-            wait_for_ids.erase(removed_log_entry_id.value());
-
-        if (wait_for_ids.empty() || new_queue_size == 0)
+        if (wait_for_ids.empty())
             target_entry_event.set();
     };
-    const auto handler = queue.addSubscriber(std::move(callback));
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode);
 
-    while (!target_entry_event.tryWait(50))
-    {
-        if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
-            return false;
+    if (!target_entry_event.tryWait(max_wait_milliseconds))
+        return false;
 
-        if (partial_shutdown_called)
-            throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
-    }
+    if (was_interrupted)
+        throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+
     return true;
 }
 
@@ -8858,6 +8876,20 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             }
 
             getCommitPartOps(ops, new_data_part);
+
+            /// Increment lost_part_count
+            auto lost_part_count_path = fs::path(zookeeper_path) / "lost_part_count";
+            Coordination::Stat lost_part_count_stat;
+            String lost_part_count_str;
+            if (zookeeper->tryGet(lost_part_count_path, lost_part_count_str, &lost_part_count_stat))
+            {
+                UInt64 lost_part_count = lost_part_count_str.empty() ? 0 : parse<UInt64>(lost_part_count_str);
+                ops.emplace_back(zkutil::makeSetRequest(lost_part_count_path, toString(lost_part_count + 1), lost_part_count_stat.version));
+            }
+            else
+            {
+                ops.emplace_back(zkutil::makeCreateRequest(lost_part_count_path, "1", zkutil::CreateMode::Persistent));
+            }
 
             Coordination::Responses responses;
             if (auto code = zookeeper->tryMulti(ops, responses); code == Coordination::Error::ZOK)
