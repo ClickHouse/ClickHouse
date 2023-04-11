@@ -1,5 +1,7 @@
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/ErrorCodes.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -25,7 +27,9 @@ FileChecker::FileChecker(const String & file_info_path_) : FileChecker(nullptr, 
 {
 }
 
-FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(std::move(disk_))
+FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_)
+    : disk(std::move(disk_))
+    , log(&Poco::Logger::get("FileChecker"))
 {
     setPath(file_info_path_);
     try

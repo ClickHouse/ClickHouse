@@ -114,9 +114,18 @@ public:
 
     ~ParallelDictionaryLoader()
     {
-        for (auto & queue : shards_queues)
-            queue->clearAndFinish();
-        pool.wait();
+        try
+        {
+            for (auto & queue : shards_queues)
+                queue->clearAndFinish();
+
+            /// NOTE: It is OK to not pass the exception next, since on success finish() should be called which will call wait()
+            pool.wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(dictionary.log, "Exception had been thrown during parallel load of the dictionary");
+        }
     }
 
 private:
