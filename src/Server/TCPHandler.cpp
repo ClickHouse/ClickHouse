@@ -345,6 +345,7 @@ void TCPHandler::runImpl()
                 /// Send block to the client - input storage structure.
                 state.input_header = metadata_snapshot->getSampleBlock();
                 sendData(state.input_header);
+                sendTimezone();
             });
 
             query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
@@ -452,9 +453,7 @@ void TCPHandler::runImpl()
                             if (isQueryCancelled())
                                 return true;
 
-                            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES
-                                && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-                                sendTimezone();
+//                            sendTimezone();
                             sendProgress();
                             sendSelectProfileEvents();
                             sendLogs();
@@ -496,9 +495,7 @@ void TCPHandler::runImpl()
 
             {
                 std::lock_guard lock(task_callback_mutex);
-                if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES
-                    && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-                    sendTimezone();
+//                sendTimezone();
                 sendLogs();
                 sendEndOfStream();
             }
@@ -764,7 +761,7 @@ void TCPHandler::processInsertQuery()
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
-
+        sendTimezone();
         sendLogs();
 
         while (readDataNext())
@@ -809,6 +806,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         {
             std::lock_guard lock(task_callback_mutex);
             sendData(header);
+            sendTimezone();
         }
     }
 
@@ -1061,7 +1059,16 @@ void TCPHandler::sendInsertProfileEvents()
 
 void TCPHandler::sendTimezone()
 {
+//    if (client_tcp_protocol_version <= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES
+//            || client_tcp_protocol_version <= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+//        return;
+
 //    const String & tz = CurrentThread::get().getQueryContext()->getSettingsRef().timezone.toString();
+    LOG_DEBUG(log, "TCPHandler::sendTimezone() query context: {}, timezone: {} ({})",
+            reinterpret_cast<const void*>(query_context.get()),
+            query_context->getSettingsRef().timezone.toString(),
+            (query_context->getSettingsRef().timezone.changed ? "changed" : "UNCHANGED"));
+
     const String & tz = query_context->getSettingsRef().timezone.toString();
     if (!tz.empty())
     {

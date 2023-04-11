@@ -118,6 +118,8 @@
 #include <rocksdb/table.h>
 #endif
 
+#include <ranges>
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -1543,6 +1545,13 @@ void Context::applySettingChange(const SettingChange & change)
 void Context::applySettingsChanges(const SettingsChanges & changes)
 {
     auto lock = getLock();
+    LOG_DEBUG(shared->log, "Context::applySettingsChanges {} applying settings changes: {}", reinterpret_cast<const void*>(this),
+        fmt::join(std::ranges::transform_view(changes,
+        [](const SettingChange & change)
+    {
+        return change.name + ": " + change.value.dump();
+    }), ", "));
+
     for (const SettingChange & change : changes)
         applySettingChange(change);
     applySettingsQuirks(settings);
