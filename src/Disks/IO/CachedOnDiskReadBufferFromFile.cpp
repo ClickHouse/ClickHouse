@@ -4,8 +4,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
-#include <base/hex.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
+#include <base/hex.h>
 #include <Interpreters/Context.h>
 
 
@@ -1188,7 +1189,7 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         implementation_buffer_read_range_str = "None";
 
     String current_file_segment_info;
-    if (current_file_segment_it == file_segments_holder->file_segments.end())
+    if (current_file_segment_it != file_segments_holder->file_segments.end())
         current_file_segment_info = (*current_file_segment_it)->getInfoForLog();
     else
         current_file_segment_info = "None";

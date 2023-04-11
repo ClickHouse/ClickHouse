@@ -6,10 +6,11 @@
 #include <base/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
-#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Common/ExternalLoaderStatus.h>
+#include <Core/Types.h>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
