@@ -5,8 +5,8 @@
 #include <Poco/Event.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <iostream>
 #include <Common/scope_guard_safe.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
