@@ -13,8 +13,6 @@ namespace DB
 
 class StorageFile final : public IStorage
 {
-friend class partitionedstoragefilesink;
-
 public:
     struct CommonArguments : public WithContext
     {
