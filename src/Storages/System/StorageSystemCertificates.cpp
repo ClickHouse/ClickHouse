@@ -6,7 +6,8 @@
 #include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
-#include "Poco/File.h"
+#include <base/scope_guard.h>
+#include <Poco/File.h>
 #if USE_SSL
     #include <openssl/x509v3.h>
     #include "Poco/Net/SSLManager.h"
