@@ -112,6 +112,7 @@ private:
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
     std::vector<RabbitMQConsumerPtr> consumers; /// available RabbitMQ consumers
+    std::vector<std::weak_ptr<RabbitMQConsumer>> consumers_ref;
 
     String unique_strbase; /// to make unique consumer channel id
 
