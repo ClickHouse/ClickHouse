@@ -43,7 +43,7 @@ void CreatingSetsTransform::work()
     if (done_with_set && done_with_table)
     {
         finishConsume();
-        input.close(); // TODO: what is the proper way to finish the input? why input.close() was not called before my changes?
+        input.close();
     }
 
     IAccumulatingTransform::work();
@@ -51,21 +51,36 @@ void CreatingSetsTransform::work()
 
 void CreatingSetsTransform::startSubquery()
 {
-// TODO: lookup the set in the context->prepared_sets_cache
+    /// Lookup the set in the cache if we don't need to build table.
     auto ctx = context.lock();
-    if (ctx && ctx->getPreparedSetsCache())
+    if (ctx && ctx->getPreparedSetsCache() && !subquery.table)
     {
-        auto from_cache = ctx->getPreparedSetsCache()->findOrPromiseToBuild(subquery.key);
-        if (from_cache.index() == 0)
-            promise_to_build = std::move(std::get<0>(from_cache));
-        else
+        /// Try to find the set in the cache and wait for it to be built.
+        /// Retry if the set from cache fails to be built.
+        while (true)
         {
-            LOG_TRACE(log, "Waiting for set to be build by another thread.");
-            SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
-            SetPtr ready_set = set_built_by_another_thread.get();
-            subquery.promise_to_fill_set.set_value(ready_set);
-            done_with_set = true;
-            subquery.set_in_progress.reset();
+            auto from_cache = ctx->getPreparedSetsCache()->findOrPromiseToBuild(subquery.key);
+            if (from_cache.index() == 0)
+            {
+                promise_to_build = std::move(std::get<0>(from_cache));
+            }
+            else
+            {
+                LOG_TRACE(log, "Waiting for set to be build by another thread, key: {}", subquery.key);
+                SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
+                SetPtr ready_set = set_built_by_another_thread.get();
+                if (!ready_set)
+                {
+                    LOG_TRACE(log, "Failed to use set from cache, key: {}", subquery.key);
+                    continue;
+                }
+
+                subquery.promise_to_fill_set.set_value(ready_set);
+                subquery.set_in_progress.reset();
+                done_with_set = true;
+                set_from_cache = true;
+            }
+            break;
         }
     }
 
@@ -81,9 +96,8 @@ void CreatingSetsTransform::startSubquery()
     done_with_set = !subquery.set_in_progress;
     done_with_table = !subquery.table;
 
-// TODO: properly do this check
-//    if (done_with_set /*&& done_with_join*/ && done_with_table)
-//        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: nothing to do with subquery");
+    if ((done_with_set && !set_from_cache) /*&& done_with_join*/ && done_with_table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: nothing to do with subquery");
 
     if (table_out.initialized())
     {
@@ -94,10 +108,14 @@ void CreatingSetsTransform::startSubquery()
 
 void CreatingSetsTransform::finishSubquery()
 {
-    if (read_rows != 0)
-    {
-        auto seconds = watch.elapsedNanoseconds() / 1e9;
+    auto seconds = watch.elapsedNanoseconds() / 1e9;
 
+    if (set_from_cache)
+    {
+        LOG_DEBUG(log, "Got set from cache in {} sec.", seconds);
+    }
+    else if (read_rows != 0)
+    {
         if (subquery.set_in_progress)
             LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set_in_progress->getTotalRowCount(), read_rows, seconds);
         if (subquery.table)
