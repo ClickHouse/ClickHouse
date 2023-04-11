@@ -652,6 +652,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/alter_partition_version", String(), zkutil::CreateMode::Persistent));
     /// For deduplication of async inserts
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/async_blocks", String(), zkutil::CreateMode::Persistent));
+    /// To track "lost forever" parts count, just for `system.replicas` table
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/lost_part_count", String(), zkutil::CreateMode::Persistent));
 
     /// As for now, "/temp" node must exist, but we want to be able to remove it in future
     if (zookeeper->exists(zookeeper_path + "/temp"))
@@ -5968,6 +5970,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
     res.log_pointer = 0;
     res.total_replicas = 0;
     res.active_replicas = 0;
+    res.lost_part_count = 0;
     res.last_queue_update_exception = getLastQueueUpdateException();
 
     if (with_zk_fields && !res.is_session_expired)
@@ -5984,6 +5987,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
 
             paths.clear();
             paths.push_back(fs::path(replica_path) / "log_pointer");
+            paths.push_back(fs::path(zookeeper_path) / "lost_part_count");
             for (const String & replica : all_replicas)
                 paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
 
@@ -6001,10 +6005,14 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
 
             res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
             res.total_replicas = all_replicas.size();
+            if (get_result[1].error == Coordination::Error::ZNONODE)
+                res.lost_part_count = 0;
+            else
+                res.lost_part_count = get_result[1].data.empty() ? 0 : parse<UInt64>(get_result[1].data);
 
             for (size_t i = 0, size = all_replicas.size(); i < size; ++i)
             {
-                bool is_replica_active = get_result[i + 1].error != Coordination::Error::ZNONODE;
+                bool is_replica_active = get_result[i + 2].error != Coordination::Error::ZNONODE;
                 res.active_replicas += static_cast<UInt8>(is_replica_active);
                 res.replica_is_active.emplace(all_replicas[i], is_replica_active);
             }
@@ -8868,6 +8876,20 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             }
 
             getCommitPartOps(ops, new_data_part);
+
+            /// Increment lost_part_count
+            auto lost_part_count_path = fs::path(zookeeper_path) / "lost_part_count";
+            Coordination::Stat lost_part_count_stat;
+            String lost_part_count_str;
+            if (zookeeper->tryGet(lost_part_count_path, lost_part_count_str, &lost_part_count_stat))
+            {
+                UInt64 lost_part_count = lost_part_count_str.empty() ? 0 : parse<UInt64>(lost_part_count_str);
+                ops.emplace_back(zkutil::makeSetRequest(lost_part_count_path, toString(lost_part_count + 1), lost_part_count_stat.version));
+            }
+            else
+            {
+                ops.emplace_back(zkutil::makeCreateRequest(lost_part_count_path, "1", zkutil::CreateMode::Persistent));
+            }
 
             Coordination::Responses responses;
             if (auto code = zookeeper->tryMulti(ops, responses); code == Coordination::Error::ZOK)

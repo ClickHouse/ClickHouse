@@ -10,6 +10,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
