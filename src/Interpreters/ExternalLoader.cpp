@@ -9,8 +9,9 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
-#include <base/chrono_io.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/logger_useful.h>
+#include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>

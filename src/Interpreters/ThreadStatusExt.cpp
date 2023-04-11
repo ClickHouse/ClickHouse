@@ -19,6 +19,7 @@
 #include <Common/setThreadName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -70,6 +71,22 @@ ThreadGroupStatusPtr ThreadGroupStatus::createForQuery(ContextPtr query_context_
 {
     auto group = std::make_shared<ThreadGroupStatus>(query_context_, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("(for query)");
+    return group;
+}
+
+ThreadGroupStatusPtr ThreadGroupStatus::createForBackgroundProcess(ContextPtr storage_context)
+{
+    auto group = std::make_shared<ThreadGroupStatus>(storage_context);
+
+    group->memory_tracker.setDescription("background process to apply mutate/merge in table");
+    /// However settings from storage context have to be applied
+    const Settings & settings = storage_context->getSettingsRef();
+    group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+    group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+    group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
+    if (settings.memory_tracker_fault_probability > 0.0)
+        group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
+
     return group;
 }
 
@@ -480,7 +497,10 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
 {
     auto query_context_ptr = query_context.lock();
     if (!query_context_ptr)
+    {
+        LOG_ERROR(log, "No query context, query_views_log will not be written (this should never happen)");
         return;
+    }
 
     auto views_log = query_context_ptr->getQueryViewsLog();
     if (!views_log)

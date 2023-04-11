@@ -5,8 +5,9 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Poco/Event.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/CurrentThread.h>
+#include <Poco/Event.h>
 
 namespace DB
 {
