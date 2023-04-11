@@ -175,7 +175,7 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
     buildQueryPlan(query_plan);
 
     auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()),
+        QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));

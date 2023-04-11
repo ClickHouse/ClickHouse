@@ -25,7 +25,7 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPla
 {
     buildQueryPlan(query_plan);
     return std::move(*query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context, !getContext()->isDistributed()), BuildQueryPipelineSettings::fromContext(context)));
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)

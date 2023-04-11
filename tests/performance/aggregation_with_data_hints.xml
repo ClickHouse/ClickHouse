@@ -1,13 +1,18 @@
 <test>
-    <query><![CDATA[select k, count(k) from (select number % 255 as k from numbers(100000000)) where k >= 0 and k < 240 group by k]]></query>
+    <substitutions>
+        <substitution>
+            <name>modulos</name>
+            <values>
+                <value>256</value>
+                <value>65536</value>
+                <value>1000000</value>
+            </values>
+        </substitution>
+    </substitutions>
 
-    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 100 and k < 300 group by k]]></query>
-    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1000 and k < 1250 group by k]]></query>
-    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1000 and k < 1450 group by k]]></query>
-    <query><![CDATA[select k, count(k) from (select number % 65535 as k from numbers(100000000)) where k >= 1200 and k < 3000 group by k]]></query>
-
-    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 0 and k < 256 group by k]]></query>
-    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 100 and k < 300 group by k]]></query>
-    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 1000 and k < 1450 group by k]]></query>
-    <query><![CDATA[select k, count(k) from (select number % 1000000 as k from numbers(100000000)) where k >= 1200 and k < 3000 group by k]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 255 group by k]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 350 group by k]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 20000 group by k]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 65536 group by k]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 100000 group by k]]></query>
 </test>

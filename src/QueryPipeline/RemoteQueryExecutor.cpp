@@ -681,7 +681,7 @@ void RemoteQueryExecutor::sendExternalTables()
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                     auto builder = plan.buildQueryPipeline(
-                        QueryPlanOptimizationSettings::fromContext(context, !(storage_snapshot && storage_snapshot->storage.isRemote())),
+                        QueryPlanOptimizationSettings::fromContext(context),
                         BuildQueryPipelineSettings::fromContext(context));
 
                     builder->resize(1);

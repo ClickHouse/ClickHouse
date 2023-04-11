@@ -73,9 +73,11 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &);
 
+size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 10> optimizations = {{
+    static const std::array<Optimization, 11> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
@@ -90,6 +92,7 @@ inline const auto & getOptimizations()
          "aggregatePartitionsIndependently",
          &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
+        {tryReduceAggregationKeysSize, "reduceAggregationKeysSize", &QueryPlanOptimizationSettings::aggregation_with_data_hints},
     }};
 
     return optimizations;
@@ -108,7 +111,6 @@ void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-void optimizeAggregationWithDataHints(QueryPlan::Node & node);
 bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 

@@ -332,11 +332,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         if (ordinary_query_plan->isInitialized() && projection_plan->isInitialized())
         {
             auto projection_builder = projection_plan->buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context, !(storage_snapshot && storage_snapshot->storage.isRemote())), BuildQueryPipelineSettings::fromContext(context));
+                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
             projection_pipe = QueryPipelineBuilder::getPipe(std::move(*projection_builder), resources);
 
             auto ordinary_builder = ordinary_query_plan->buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context, !(storage_snapshot && storage_snapshot->storage.isRemote())), BuildQueryPipelineSettings::fromContext(context));
+                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
             ordinary_pipe = QueryPipelineBuilder::getPipe(std::move(*ordinary_builder), resources);
 
             /// Here we create shared ManyAggregatedData for both projection and ordinary data.
@@ -432,7 +432,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 add_aggregating_step(projection_plan, true);
 
                 auto projection_builder = projection_plan->buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context, !(storage_snapshot && storage_snapshot->storage.isRemote())), BuildQueryPipelineSettings::fromContext(context));
+                    QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
                 projection_pipe = QueryPipelineBuilder::getPipe(std::move(*projection_builder), resources);
             }
             if (ordinary_query_plan->isInitialized())
@@ -440,7 +440,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 add_aggregating_step(ordinary_query_plan, false);
 
                 auto ordinary_builder = ordinary_query_plan->buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context, !(storage_snapshot && storage_snapshot->storage.isRemote())), BuildQueryPipelineSettings::fromContext(context));
+                    QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
                 ordinary_pipe = QueryPipelineBuilder::getPipe(std::move(*ordinary_builder), resources);
             }
         }
@@ -450,14 +450,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         if (projection_plan->isInitialized())
         {
             auto projection_builder = projection_plan->buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context, !(storage_snapshot && storage_snapshot->storage.isRemote())), BuildQueryPipelineSettings::fromContext(context));
+                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
             projection_pipe = QueryPipelineBuilder::getPipe(std::move(*projection_builder), resources);
         }
 
         if (ordinary_query_plan->isInitialized())
         {
             auto ordinary_builder = ordinary_query_plan->buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context, !(storage_snapshot && storage_snapshot->storage.isRemote())), BuildQueryPipelineSettings::fromContext(context));
+                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
             ordinary_pipe = QueryPipelineBuilder::getPipe(std::move(*ordinary_builder), resources);
         }
     }
