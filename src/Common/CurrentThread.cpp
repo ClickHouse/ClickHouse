@@ -90,7 +90,7 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
 }
 
 
-ThreadGroupStatusPtr CurrentThread::getGroup()
+ThreadGroupPtr CurrentThread::getGroup()
 {
     if (unlikely(!current_thread))
         return nullptr;
