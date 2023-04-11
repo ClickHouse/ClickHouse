@@ -132,6 +132,7 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
 
     category = ""
     entry = ""
+    description_error = ""
 
     i = 0
     while i < len(lines):
@@ -183,22 +184,19 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
             i += 1
 
     if not category:
-        return "Changelog category is empty", category
-
+        description_error = "Changelog category is empty"
     # Filter out the PR categories that are not for changelog.
-    if re.match(
+    elif re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        return "", category
+        pass  # to not check the rest of the conditions
+    elif category not in CATEGORY_TO_LABEL:
+        description_error, category = f"Category '{category}' is not valid", ""
+    elif not entry:
+        description_error = f"Changelog entry required for category '{category}'"
 
-    if category not in CATEGORY_TO_LABEL:
-        return f"Category '{category}' is not valid", ""
-
-    if not entry:
-        return f"Changelog entry required for category '{category}'", category
-
-    return "", category
+    return description_error, category
 
 
 if __name__ == "__main__":
