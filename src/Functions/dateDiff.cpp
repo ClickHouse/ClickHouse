@@ -448,6 +448,11 @@ private:
 REGISTER_FUNCTION(DateDiff)
 {
     factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
+    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
+    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
 }
 
 REGISTER_FUNCTION(TimeDiff)
