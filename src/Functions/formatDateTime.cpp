@@ -187,26 +187,34 @@ private:
     class Action
     {
     public:
-        /// Using std::function will cause performance degradation in MySQL format by 0.45x.
-        /// But std::function is required for Joda format to capture extra variables.
-        /// This is the reason why we use raw function pointer in MySQL format and std::function
-        /// in Joda format.
-        using Func = std::conditional_t<
-            format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL,
-            size_t (*)(char *, Time, UInt64, UInt32, const DateLUTImpl &),
-            std::function<size_t(char *, Time, UInt64, UInt32, const DateLUTImpl &)>>;
+        /// Joda format generally requires capturing extra variables (i.e. holding state) which is more convenient with
+        /// std::function and std::bind. Unfortunately, std::function causes a performance degradation by 0.45x compared to raw function
+        /// pointers. For MySQL format, we generally prefer raw function pointers. Because of the special case that not all formatters are
+        /// fixed-width formatters (see mysqlLiteral action), we still need to be able to store state. For that reason, we use member
+        /// function pointers instead of static function pointers.
+        using FuncMysql = size_t (Action<Time>::*)(char *, Time, UInt64, UInt32, const DateLUTImpl &);
+        FuncMysql func_mysql = nullptr;
 
-        Func func;
+        using FuncJoda = std::function<size_t(char *, Time, UInt64, UInt32, const DateLUTImpl &)>;
+        FuncJoda func_joda = nullptr;
 
         /// extra_shift is only used in MySQL format syntax. It is always 0 in Joda format syntax.
         size_t extra_shift = 0;
 
-        /// Action for appending date/time related number in specified format.
-        explicit Action(Func && func_) : func(std::move(func_)) {}
+        // Holds literal characters that will be copied into the output. Used by the mysqlLiteral action.
+        String literal;
+
+        Action() = default;
+
+        void setMysqlFunc(FuncMysql && func) { func_mysql = std::move(func); }
+        void setJodaFunc(FuncJoda && func) { func_joda = std::move(func); }
+        void setLiteral(std::string_view literal_) { literal = literal_; }
 
         void perform(char *& dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
-            auto shift = func(dest, source, fractional_second, scale, timezone);
+            size_t shift = func_mysql
+                           ? std::invoke(func_mysql, this, dest, source, fractional_second, scale, timezone)
+                           : std::invoke(func_joda, dest, source, fractional_second, scale, timezone);
             dest += shift + extra_shift;
         }
 
@@ -292,21 +300,27 @@ private:
             return pos;
         }
     public:
-        static size_t mysqlNoop(char *, Time, UInt64, UInt32, const DateLUTImpl &) { return 0; }
+        size_t mysqlNoop(char *, Time, UInt64, UInt32, const DateLUTImpl &) { return 0; }
 
-        static size_t mysqlCentury(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlLiteral(char * dest, Time, UInt64, UInt32, const DateLUTImpl &)
+        {
+            memcpy(dest, literal.data(), literal.size());
+            return literal.size();
+        }
+
+        size_t mysqlCentury(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto year = ToYearImpl::execute(source, timezone);
             auto century = year / 100;
             return writeNumber2(dest, century);
         }
 
-        static size_t mysqlDayOfMonth(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlDayOfMonth(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToDayOfMonthImpl::execute(source, timezone));
         }
 
-        static size_t mysqlAmericanDate(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlAmericanDate(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToMonthImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToDayOfMonthImpl::execute(source, timezone));
@@ -314,7 +328,7 @@ private:
             return 8;
         }
 
-        static size_t mysqlDayOfMonthSpacePadded(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlDayOfMonthSpacePadded(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto day = ToDayOfMonthImpl::execute(source, timezone);
             if (day < 10)
@@ -324,7 +338,7 @@ private:
             return 2;
         }
 
-        static size_t mysqlISO8601Date(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Date(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber4(dest, ToYearImpl::execute(source, timezone));
             writeNumber2(dest + 5, ToMonthImpl::execute(source, timezone));
@@ -332,12 +346,12 @@ private:
             return 10;
         }
 
-        static size_t mysqlDayOfYear(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlDayOfYear(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber3(dest, ToDayOfYearImpl::execute(source, timezone));
         }
 
-        static size_t mysqlMonth(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlMonth(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToMonthImpl::execute(source, timezone));
         }
@@ -350,17 +364,17 @@ private:
             return str_view.size();
         }
 
-        static size_t mysqlMonthOfYearTextShort(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        size_t mysqlMonthOfYearTextShort(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
             return monthOfYearText(dest, source, true, fractional_second, scale, timezone);
         }
 
-        static size_t mysqlMonthOfYearTextLong(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        size_t mysqlMonthOfYearTextLong(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
             return monthOfYearText(dest, source, false, fractional_second, scale, timezone);
         }
 
-        static size_t mysqlDayOfWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlDayOfWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             *dest = '0' + ToDayOfWeekImpl::execute(source, 0, timezone);
             return 1;
@@ -377,65 +391,65 @@ private:
             return str_view.size();
         }
 
-        static size_t mysqlDayOfWeekTextShort(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        size_t mysqlDayOfWeekTextShort(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
             return dayOfWeekText(dest, source, true, fractional_second, scale, timezone);
         }
 
-        static size_t mysqlDayOfWeekTextLong(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        size_t mysqlDayOfWeekTextLong(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
             return dayOfWeekText(dest, source, false, fractional_second, scale, timezone);
         }
 
-        static size_t mysqlDayOfWeek0To6(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlDayOfWeek0To6(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
             *dest = '0' + (day == 7 ? 0 : day);
             return 1;
         }
 
-        static size_t mysqlISO8601Week(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Week(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
         {
             return writeNumber2(dest, ToISOWeekImpl::execute(source, timezone));
         }
 
-        static size_t mysqlISO8601Year2(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Year2(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
         {
             return writeNumber2(dest, ToISOYearImpl::execute(source, timezone) % 100);
         }
 
-        static size_t mysqlISO8601Year4(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Year4(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
         {
             return writeNumber4(dest, ToISOYearImpl::execute(source, timezone));
         }
 
-        static size_t mysqlYear2(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlYear2(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToYearImpl::execute(source, timezone) % 100);
         }
 
-        static size_t mysqlYear4(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlYear4(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber4(dest, ToYearImpl::execute(source, timezone));
         }
 
-        static size_t mysqlHour24(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHour24(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToHourImpl::execute(source, timezone));
         }
 
-        static size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto x = ToHourImpl::execute(source, timezone);
             return writeNumber2(dest, x == 0 ? 12 : (x > 12 ? x - 12 : x));
         }
 
-        static size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToMinuteImpl::execute(source, timezone));
         }
 
-        static size_t mysqlAMPM(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        static size_t AMPM(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
         {
             auto hour = ToHourImpl::execute(source, timezone);
             dest[0] = hour >= 12 ? 'P' : 'A';
@@ -443,14 +457,19 @@ private:
             return 2;
         }
 
-        static size_t mysqlHHMM24(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlAMPM(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        {
+            return AMPM(dest, source, fractional_second, scale, timezone);
+        }
+
+        size_t mysqlHHMM24(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             return 5;
         }
 
-        static size_t mysqlHHMM12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHHMM12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto hour = ToHourImpl::execute(source, timezone);
             writeNumber2(dest, hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour));
@@ -460,13 +479,12 @@ private:
             return 8;
         }
 
-        static size_t mysqlSecond(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlSecond(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToSecondImpl::execute(source, timezone));
         }
 
-        static size_t
-        mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
+        size_t mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 1;
@@ -479,7 +497,7 @@ private:
             return scale;
         }
 
-        static size_t mysqlISO8601Time(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Time(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
@@ -487,7 +505,7 @@ private:
             return 8;
         }
 
-        static size_t mysqlTimezoneOffset(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlTimezoneOffset(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto offset = TimezoneOffsetImpl::execute(source, timezone);
             if (offset < 0)
@@ -501,7 +519,7 @@ private:
             return 5;
         }
 
-        static size_t mysqlQuarter(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlQuarter(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             *dest = '0' + ToQuarterImpl::execute(source, timezone);
             return 1;
@@ -610,7 +628,7 @@ private:
         static size_t jodaHalfDayOfDay(
             size_t /*min_represent_digits*/, char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
-            return mysqlAMPM(dest, source, fractional_second, scale, timezone);
+            return AMPM(dest, source, fractional_second, scale, timezone);
         }
 
         static size_t jodaHourOfHalfDay(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -685,6 +703,36 @@ private:
             return str.size();
         }
     };
+
+    [[noreturn]] static void throwLastCharacterIsPercentException()
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
+    }
+
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format)
+    {
+        static constexpr std::array variable_width_formatter = {'W'};
+
+        for (size_t i = 0; i < format.size(); ++i)
+        {
+            switch (format[i])
+            {
+                case '%':
+                    if (i + 1 >= format.size())
+                        throwLastCharacterIsPercentException();
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
+                    i += 1;
+                    continue;
+                default:
+                    break;
+            }
+        }
+
+        return true;
+    }
 
 public:
     static constexpr auto name = Name::name;
@@ -825,10 +873,27 @@ public:
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             scale = times->getScale();
 
+        /// For MySQL, we support two modes of execution:
+        ///
+        /// - All formatters in the format string are fixed-width. As a result, all output rows will have the same width and structure. We
+        ///   take advantage of this and
+        ///     1. create a "template" with placeholders from the format string,
+        ///     2. allocate a result column large enough to store the template on each row,
+        ///     3. copy the template into each result row,
+        ///     4. run instructions which replace the formatter placeholders. All other parts of the template (e.g. whitespaces) are already
+        ///        as desired and instructions skip over them (see 'extra_shift' in the formatters).
+        ///
+        /// - The format string contains at least one variable-width formatter. Output rows will potentially be of different size.
+        ///   Steps 1. and 2. are performed as above (the result column is allocated based on a worst-case size estimation). The result
+        ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
+        ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
+        ///   written which is obviously slow.
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format) : false;
+
         using T = typename ActionValueTypeMap<DataType>::ActionValueType;
         std::vector<Action<T>> instructions;
         String out_template;
-        auto result_size = parseFormat(format, instructions, scale, out_template);
+        auto result_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
         const DateLUTImpl * time_zone_tmp = nullptr;
         if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
@@ -849,24 +914,27 @@ public:
 
         if constexpr (format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL)
         {
-            /// Fill result with literals.
+            if (mysql_with_only_fixed_length_formatters)
             {
-                UInt8 * begin = dst_data.data();
-                UInt8 * end = begin + dst_data.size();
-                UInt8 * pos = begin;
-
-                if (pos < end)
+                /// Fill result with literals.
                 {
-                    memcpy(pos, out_template.data(), result_size + 1); /// With zero terminator.
-                    pos += result_size + 1;
-                }
+                    UInt8 * begin = dst_data.data();
+                    UInt8 * end = begin + dst_data.size();
+                    UInt8 * pos = begin;
 
-                /// Fill by copying exponential growing ranges.
-                while (pos < end)
-                {
-                    size_t bytes_to_copy = std::min(pos - begin, end - pos);
-                    memcpy(pos, begin, bytes_to_copy);
-                    pos += bytes_to_copy;
+                    if (pos < end)
+                    {
+                        memcpy(pos, out_template.data(), result_size + 1); /// With zero terminator.
+                        pos += result_size + 1;
+                    }
+
+                    /// Fill by copying exponential growing ranges.
+                    while (pos < end)
+                    {
+                        size_t bytes_to_copy = std::min(pos - begin, end - pos);
+                        memcpy(pos, begin, bytes_to_copy);
+                        pos += bytes_to_copy;
+                    }
                 }
             }
         }
@@ -898,12 +966,12 @@ public:
     }
 
     template <typename T>
-    size_t parseFormat(const String & format, std::vector<Action<T>> & instructions, UInt32 scale, String & out_template) const
+    size_t parseFormat(const String & format, std::vector<Action<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         if constexpr (format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL)
-            return parseMySQLFormat(format, instructions, scale, out_template);
+            return parseMySQLFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
         else if constexpr (format_syntax == FormatDateTimeTraits::FormatSyntax::Joda)
-            return parseJodaFormat(format, instructions, scale, out_template);
+            return parseJodaFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
         else
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
@@ -913,21 +981,47 @@ public:
     }
 
     template <typename T>
-    size_t parseMySQLFormat(const String & format, std::vector<Action<T>> & instructions, UInt32 scale, String & out_template) const
+    size_t parseMySQLFormat(const String & format, std::vector<Action<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         auto add_extra_shift = [&](size_t amount)
         {
             if (instructions.empty())
-                instructions.emplace_back(&Action<T>::mysqlNoop);
+            {
+                Action<T> action;
+                action.setMysqlFunc(&Action<T>::mysqlNoop);
+                instructions.push_back(std::move(action));
+            }
             instructions.back().extra_shift += amount;
         };
 
-        auto add_instruction_or_extra_shift = [&](auto * func [[maybe_unused]], size_t amount [[maybe_unused]])
+        auto add_literal_instruction = [&](std::string_view literal)
         {
-            if constexpr (std::is_same_v<T, UInt32> || std::is_same_v<T, Int64>)
-                instructions.emplace_back(std::move(func));
-            else
+            Action<T> action;
+            action.setMysqlFunc(&Action<T>::mysqlLiteral);
+            action.setLiteral(literal);
+            instructions.push_back(std::move(action));
+        };
+
+        auto add_extra_shift_or_literal_instruction = [&](size_t amount, std::string_view literal)
+        {
+            if (mysql_with_only_fixed_length_formatters)
                 add_extra_shift(amount);
+            else
+                add_literal_instruction(literal);
+        };
+
+        auto add_time_instruction = [&]([[maybe_unused]] typename Action<T>::FuncMysql && func, [[maybe_unused]] size_t amount, [[maybe_unused]] std::string_view literal)
+        {
+            /// DateTime/DateTime64 --> insert action
+            /// Other types cannot provide the requested data --> write out template
+            if constexpr (is_any_of<T, UInt32, Int64>)
+            {
+                Action<T> action;
+                action.setMysqlFunc(std::move(func));
+                instructions.push_back(std::move(action));
+            }
+            else
+                add_extra_shift_or_literal_instruction(amount, literal);
         };
 
         const char * pos = format.data();
@@ -941,240 +1035,371 @@ public:
             {
                 if (pos < percent_pos)
                 {
-                    add_extra_shift(percent_pos - pos);
+                    /// Handle characters before next %
+                    add_extra_shift_or_literal_instruction(percent_pos - pos, std::string_view(pos, percent_pos - pos));
                     out_template += String(pos, percent_pos - pos);
                 }
 
                 pos = percent_pos + 1;
                 if (pos >= end)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign '%' is the last in format, if you need it, use '%%'");
+                    throwLastCharacterIsPercentException();
 
                 switch (*pos)
                 {
                     // Abbreviated weekday [Mon...Sun]
                     case 'a':
-                        instructions.emplace_back(&Action<T>::mysqlDayOfWeekTextShort);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlDayOfWeekTextShort);
+                        instructions.push_back(std::move(action));
                         out_template += "Mon";
                         break;
+                    }
 
                     // Abbreviated month [Jan...Dec]
                     case 'b':
-                        instructions.emplace_back(&Action<T>::mysqlMonthOfYearTextShort);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlMonthOfYearTextShort);
+                        instructions.push_back(std::move(action));
                         out_template += "Jan";
                         break;
+                    }
 
                     // Month as a decimal number (01-12)
                     case 'c':
-                        instructions.emplace_back(&Action<T>::mysqlMonth);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlMonth);
+                        instructions.push_back(std::move(action));
                         out_template += "00";
                         break;
+                    }
 
                     // Year, divided by 100, zero-padded
                     case 'C':
-                        instructions.emplace_back(&Action<T>::mysqlCentury);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlCentury);
+                        instructions.push_back(std::move(action));
                         out_template += "00";
                         break;
+                    }
 
                     // Day of month, zero-padded (01-31)
                     case 'd':
-                        instructions.emplace_back(&Action<T>::mysqlDayOfMonth);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlDayOfMonth);
+                        instructions.push_back(std::move(action));
                         out_template += "00";
                         break;
+                    }
 
                     // Short MM/DD/YY date, equivalent to %m/%d/%y
                     case 'D':
-                        instructions.emplace_back(&Action<T>::mysqlAmericanDate);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlAmericanDate);
+                        instructions.push_back(std::move(action));
                         out_template += "00/00/00";
                         break;
+                    }
 
                     // Day of month, space-padded ( 1-31)  23
                     case 'e':
-                        instructions.emplace_back(&Action<T>::mysqlDayOfMonthSpacePadded);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlDayOfMonthSpacePadded);
+                        instructions.push_back(std::move(std::move(action)));
                         out_template += " 0";
                         break;
+                    }
 
                     // Fractional seconds
                     case 'f':
                     {
                         /// If the time data type has no fractional part, then we print '0' as the fractional part.
-                        instructions.emplace_back(&Action<T>::mysqlFractionalSecond);
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlFractionalSecond);
+                        instructions.push_back(std::move(action));
                         out_template += String(std::max<UInt32>(1, scale), '0');
                         break;
                     }
 
                     // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                     case 'F':
-                        instructions.emplace_back(&Action<T>::mysqlISO8601Date);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlISO8601Date);
+                        instructions.push_back(std::move(action));
                         out_template += "0000-00-00";
                         break;
+                    }
 
                     // Last two digits of year of ISO 8601 week number (see %G)
                     case 'g':
-                        instructions.emplace_back(&Action<T>::mysqlISO8601Year2);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlISO8601Year2);
+                        instructions.push_back(std::move(action));
                         out_template += "00";
                         break;
+                    }
 
                     // Year of ISO 8601 week number (see %V)
                     case 'G':
-                        instructions.emplace_back(&Action<T>::mysqlISO8601Year4);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlISO8601Year4);
+                        instructions.push_back(std::move(action));
                         out_template += "0000";
                         break;
+                    }
 
                     // Day of the year (001-366)   235
                     case 'j':
-                        instructions.emplace_back(&Action<T>::mysqlDayOfYear);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlDayOfYear);
+                        instructions.push_back(std::move(action));
                         out_template += "000";
                         break;
+                    }
 
                     // Month as a decimal number (01-12)
                     case 'm':
-                        instructions.emplace_back(&Action<T>::mysqlMonth);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlMonth);
+                        instructions.push_back(std::move(action));
                         out_template += "00";
                         break;
+                    }
 
                     // ISO 8601 weekday as number with Monday as 1 (1-7)
                     case 'u':
-                        instructions.emplace_back(&Action<T>::mysqlDayOfWeek);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlDayOfWeek);
+                        instructions.push_back(std::move(action));
                         out_template += "0";
                         break;
+                    }
 
                     // ISO 8601 week number (01-53)
                     case 'V':
-                        instructions.emplace_back(&Action<T>::mysqlISO8601Week);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlISO8601Week);
+                        instructions.push_back(std::move(action));
                         out_template += "00";
                         break;
+                    }
 
                     // Weekday as a decimal number with Sunday as 0 (0-6)  4
                     case 'w':
-                        instructions.emplace_back(&Action<T>::mysqlDayOfWeek0To6);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlDayOfWeek0To6);
+                        instructions.push_back(std::move(action));
                         out_template += "0";
                         break;
+                    }
 
                     // Full weekday [Monday...Sunday]
                     case 'W':
-                        instructions.emplace_back(&Action<T>::mysqlDayOfWeekTextLong);
-                        out_template += "Monday";
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlDayOfWeekTextLong);
+                        instructions.push_back(std::move(action));
+                        out_template += "Wednesday"; /// longest possible weekday name
                         break;
+                    }
 
                     // Two digits year
                     case 'y':
-                        instructions.emplace_back(&Action<T>::mysqlYear2);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlYear2);
+                        instructions.push_back(std::move(action));
                         out_template += "00";
                         break;
+                    }
 
                     // Four digits year
                     case 'Y':
-                        instructions.emplace_back(&Action<T>::mysqlYear4);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlYear4);
+                        instructions.push_back(std::move(action));
                         out_template += "0000";
                         break;
+                    }
 
                     // Quarter (1-4)
                     case 'Q':
-                        instructions.template emplace_back(&Action<T>::mysqlQuarter);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlQuarter);
+                        instructions.push_back(std::move(action));
                         out_template += "0";
                         break;
+                    }
 
                     // Offset from UTC timezone as +hhmm or -hhmm
                     case 'z':
-                        instructions.emplace_back(&Action<T>::mysqlTimezoneOffset);
+                    {
+                        Action<T> action;
+                        action.setMysqlFunc(&Action<T>::mysqlTimezoneOffset);
+                        instructions.push_back(std::move(action));
                         out_template += "+0000";
                         break;
+                    }
 
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
 
                     // Minute (00-59)
                     case 'M':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlMinute, 2);
-                        out_template += "00";
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Action<T>::mysqlMinute, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // AM or PM
                     case 'p':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlAMPM, 2);
-                        out_template += "AM";
+                    {
+                        static constexpr std::string_view val = "AM";
+                        add_time_instruction(&Action<T>::mysqlAMPM, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // 12-hour HH:MM time, equivalent to %h:%i %p 2:55 PM
                     case 'r':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlHHMM12, 8);
-                        out_template += "12:00 AM";
+                    {
+                        static constexpr std::string_view val = "12:00 AM";
+                        add_time_instruction(&Action<T>::mysqlHHMM12, 8, val);
+                        out_template += val;
                         break;
+                    }
 
                     // 24-hour HH:MM time, equivalent to %H:%i 14:55
                     case 'R':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlHHMM24, 5);
-                        out_template += "00:00";
+                    {
+                        static constexpr std::string_view val = "00:00";
+                        add_time_instruction(&Action<T>::mysqlHHMM24, 5, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Seconds
                     case 's':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlSecond, 2);
-                        out_template += "00";
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Action<T>::mysqlSecond, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Seconds
                     case 'S':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlSecond, 2);
-                        out_template += "00";
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Action<T>::mysqlSecond, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S 14:55:02
                     case 'T':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlISO8601Time, 8);
-                        out_template += "00:00:00";
+                    {
+                        static constexpr std::string_view val = "00:00:00";
+                        add_time_instruction(&Action<T>::mysqlISO8601Time, 8, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Hour in 12h format (01-12)
                     case 'h':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlHour12, 2);
-                        out_template += "12";
+                    {
+                        static constexpr std::string_view val = "12";
+                        add_time_instruction(&Action<T>::mysqlHour12, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Hour in 24h format (00-23)
                     case 'H':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlHour24, 2);
-                        out_template += "00";
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Action<T>::mysqlHour24, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Minute of hour range [0, 59]
                     case 'i':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlMinute, 2);
-                        out_template += "00";
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Action<T>::mysqlMinute, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Hour in 12h format (01-12)
                     case 'I':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlHour12, 2);
-                        out_template += "12";
+                    {
+                        static constexpr std::string_view val = "12";
+                        add_time_instruction(&Action<T>::mysqlHour12, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Hour in 24h format (00-23)
                     case 'k':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlHour24, 2);
-                        out_template += "00";
+                    {
+                        static constexpr std::string_view val = "00";
+                        add_time_instruction(&Action<T>::mysqlHour24, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Hour in 12h format (01-12)
                     case 'l':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlHour12, 2);
-                        out_template += "12";
+                    {
+                        static constexpr std::string_view val = "12";
+                        add_time_instruction(&Action<T>::mysqlHour12, 2, val);
+                        out_template += val;
                         break;
+                    }
 
                     case 't':
-                        add_extra_shift(1);
-                        out_template += "\t";
+                    {
+                        static constexpr std::string_view val = "\t";
+                        add_extra_shift_or_literal_instruction(1, val);
+                        out_template += val;
                         break;
+                    }
 
                     case 'n':
-                        add_extra_shift(1);
-                        out_template += "\n";
+                    {
+                        static constexpr std::string_view val = "\n";
+                        add_extra_shift_or_literal_instruction(1, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Escaped literal characters.
                     case '%':
-                        add_extra_shift(1);
-                        out_template += "%";
+                    {
+                        static constexpr std::string_view val = "%";
+                        add_extra_shift_or_literal_instruction(1, val);
+                        out_template += val;
                         break;
+                    }
 
                     // Unimplemented
                     case 'U':
@@ -1199,7 +1424,8 @@ public:
             }
             else
             {
-                add_extra_shift(end - pos);
+                /// Handle characters after last %
+                add_extra_shift_or_literal_instruction(end - pos, std::string_view(pos, end - pos));
                 out_template += String(pos, end - pos);
                 break;
             }
@@ -1209,15 +1435,23 @@ public:
     }
 
     template <typename T>
-    size_t parseJodaFormat(const String & format, std::vector<Action<T>> & instructions, UInt32, String &) const
+    size_t parseJodaFormat(const String & format, std::vector<Action<T>> & instructions, UInt32, bool, String &) const
     {
-        /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
-        auto add_instruction = [&](auto && func [[maybe_unused]], const String & default_literal [[maybe_unused]])
+        /// If the argument was DateTime, add action for printing. If it was date, just append default literal
+        auto add_instruction = [&]([[maybe_unused]] typename Action<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
         {
-            if constexpr (std::is_same_v<T, UInt32> || std::is_same_v<T, Int64>)
-                instructions.emplace_back(func);
+            if constexpr (is_any_of<T, UInt32, Int64>)
+            {
+                Action<T> action;
+                action.setJodaFunc(std::move(func));
+                instructions.push_back(std::move(action));
+            }
             else
-                instructions.emplace_back(std::bind_front(&Action<T>::template jodaLiteral<String>, default_literal));
+            {
+                Action<T> action;
+                action.setJodaFunc(std::bind_front(&Action<T>::template jodaLiteral<String>, default_literal));
+                instructions.push_back(std::move(action));
+            }
         };
 
         size_t reserve_size = 0;
@@ -1234,8 +1468,10 @@ public:
                 // Case 1: 2 consecutive single quote
                 if (pos + 1 < end && *(pos + 1) == '\'')
                 {
+                    Action<T> action;
                     std::string_view literal(cur_token, 1);
-                    instructions.emplace_back(std::bind_front(&Action<T>::template jodaLiteral<decltype(literal)>, literal));
+                    action.setJodaFunc(std::bind_front(&Action<T>::template jodaLiteral<decltype(literal)>, literal));
+                    instructions.push_back(std::move(action));
                     ++reserve_size;
                     pos += 2;
                 }
@@ -1249,9 +1485,10 @@ public:
                     {
                         for (Int64 i = 1; i <= count; i++)
                         {
+                            Action<T> action;
                             std::string_view literal(cur_token + i, 1);
-                            instructions.emplace_back(
-                                std::bind_front(&Action<T>::template jodaLiteral<decltype(literal)>, literal));
+                            action.setJodaFunc(std::bind_front(&Action<T>::template jodaLiteral<decltype(literal)>, literal));
+                            instructions.push_back(std::move(action));
                             ++reserve_size;
                             if (*(cur_token + i) == '\'')
                                 i += 1;
@@ -1272,68 +1509,114 @@ public:
                 switch (*cur_token)
                 {
                     case 'G':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaEra, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaEra, repetitions));
+                        instructions.push_back(std::move(action));
                         reserve_size += repetitions <= 3 ? 2 : 13;
                         break;
+                    }
                     case 'C':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCenturyOfEra, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaCenturyOfEra, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Year range [1900, 2299]
                         reserve_size += std::max(repetitions, 2);
                         break;
+                    }
                     case 'Y':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaYearOfEra, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaYearOfEra, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Year range [1900, 2299]
                         reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                         break;
+                    }
                     case 'x':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekYear, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaWeekYear, repetitions));
+                        instructions.push_back(std::move(action));
                         /// weekyear range [1900, 2299]
                         reserve_size += std::max(repetitions, 4);
                         break;
+                    }
                     case 'w':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekOfWeekYear, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaWeekOfWeekYear, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Week of weekyear range [1, 52]
                         reserve_size += std::max(repetitions, 2);
                         break;
+                    }
                     case 'e':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfWeek1Based, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaDayOfWeek1Based, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Day of week range [1, 7]
                         reserve_size += std::max(repetitions, 1);
                         break;
+                    }
                     case 'E':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfWeekText, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaDayOfWeekText, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Maximum length of short name is 3, maximum length of full name is 9.
                         reserve_size += repetitions <= 3 ? 3 : 9;
                         break;
+                    }
                     case 'y':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaYear, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaYear, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Year range [1900, 2299]
                         reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                         break;
+                    }
                     case 'D':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfYear, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaDayOfYear, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Day of year range [1, 366]
                         reserve_size += std::max(repetitions, 3);
                         break;
+                    }
                     case 'M':
+                    {
                         if (repetitions <= 2)
                         {
-                            instructions.emplace_back(std::bind_front(&Action<T>::jodaMonthOfYear, repetitions));
+                            Action<T> action;
+                            action.setJodaFunc(std::bind_front(&Action<T>::jodaMonthOfYear, repetitions));
+                            instructions.push_back(std::move(action));
                             /// Month of year range [1, 12]
                             reserve_size += 2;
                         }
                         else
                         {
-                            instructions.emplace_back(std::bind_front(&Action<T>::jodaMonthOfYearText, repetitions));
+                            Action<T> action;
+                            action.setJodaFunc(std::bind_front(&Action<T>::jodaMonthOfYearText, repetitions));
+                            instructions.push_back(std::move(action));
                             /// Maximum length of short name is 3, maximum length of full name is 9.
                             reserve_size += repetitions <= 3 ? 3 : 9;
                         }
                         break;
+                    }
                     case 'd':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfMonth, repetitions));
+                    {
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaDayOfMonth, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Day of month range [1, 3]
                         reserve_size += std::max(repetitions, 3);
                         break;
+                    }
                     case 'a':
                         /// Default half day of day is "AM"
                         add_instruction(std::bind_front(&Action<T>::jodaHalfDayOfDay, repetitions), "AM");
@@ -1379,29 +1662,41 @@ public:
                         reserve_size += std::max(repetitions, 2);
                         break;
                     case 'S':
+                    {
                         /// Default fraction of second is 0
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaFractionOfSecond, repetitions));
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaFractionOfSecond, repetitions));
+                        instructions.push_back(std::move(action));
                         /// 'S' repetitions range [0, 9]
                         reserve_size += repetitions <= 9 ? repetitions : 9;
                         break;
+                    }
                     case 'z':
+                    {
                         if (repetitions <= 3)
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
 
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaTimezone, repetitions));
+                        Action<T> action;
+                        action.setJodaFunc(std::bind_front(&Action<T>::jodaTimezone, repetitions));
+                        instructions.push_back(std::move(action));
                         /// Longest length of full name of time zone is 32.
                         reserve_size += 32;
                         break;
+                    }
                     case 'Z':
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for TIMEZONE_OFFSET_ID");
                     default:
+                    {
                         if (isalpha(*cur_token))
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for {}", String(cur_token, repetitions));
 
+                        Action<T> action;
                         std::string_view literal(cur_token, pos - cur_token);
-                        instructions.emplace_back(std::bind_front(&Action<T>::template jodaLiteral<decltype(literal)>, literal));
+                        action.setJodaFunc(std::bind_front(&Action<T>::template jodaLiteral<decltype(literal)>, literal));
+                        instructions.push_back(std::move(action));
                         reserve_size += pos - cur_token;
                         break;
+                    }
                 }
             }
         }
