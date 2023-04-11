@@ -28,6 +28,26 @@ from pyspark.sql.window import Window
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
+def get_spark():
+    builder = (
+        pyspark.sql.SparkSession.builder.appName("spark_test")
+        .config(
+            "spark.jars.packages",
+            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0",
+        )
+        .config(
+            "org.apache.spark.sql.hudi.catalog.HoodieCatalog",
+        )
+        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        .config(
+            "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"
+        )
+        .config("spark.driver.memory", "20g")
+        .master("local")
+    )
+    return builder.master("local").getOrCreate()
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -44,6 +64,12 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
+        if cluster.spark_session is not None:
+            cluster.spark_session.stop()
+            cluster.spark_session._instantiatedContext = None
+
+        cluster.spark_session = get_spark()
+
         yield cluster
 
     finally:
@@ -58,26 +84,6 @@ def run_query(instance, query, stdin=None, settings=None):
     logging.info("Query finished")
 
     return result
-
-
-def get_spark():
-    builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
-        .config(
-            "spark.jars.packages",
-            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.12.0",
-        )
-        .config(
-            "org.apache.spark.sql.hudi.catalog.HoodieCatalog",
-        )
-        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-        .config(
-            "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"
-        )
-        .config("spark.driver.memory", "20g")
-        .master("local")
-    )
-    return builder.master("local").getOrCreate()
 
 
 def write_hudi_from_df(spark, table_name, df, result_path, mode="overwrite"):
@@ -165,9 +171,9 @@ def create_initial_data_file(
 
 def test_single_hudi_file(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_single_hudi_file"
 
     inserted_data = "SELECT number as a, toString(number) as b FROM numbers(100)"
@@ -188,9 +194,9 @@ def test_single_hudi_file(started_cluster):
 
 def test_multiple_hudi_files(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_multiple_hudi_files"
 
     write_hudi_from_df(
@@ -258,9 +264,9 @@ def test_multiple_hudi_files(started_cluster):
 
 def test_types(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_types"
 
     data = [
