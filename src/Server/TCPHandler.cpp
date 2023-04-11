@@ -453,7 +453,7 @@ void TCPHandler::runImpl()
                             if (isQueryCancelled())
                                 return true;
 
-//                            sendTimezone();
+                            sendTimezone();
                             sendProgress();
                             sendSelectProfileEvents();
                             sendLogs();
@@ -495,7 +495,7 @@ void TCPHandler::runImpl()
 
             {
                 std::lock_guard lock(task_callback_mutex);
-//                sendTimezone();
+                sendTimezone();
                 sendLogs();
                 sendEndOfStream();
             }
@@ -1069,14 +1069,14 @@ void TCPHandler::sendTimezone()
             query_context->getSettingsRef().timezone.toString(),
             (query_context->getSettingsRef().timezone.changed ? "changed" : "UNCHANGED"));
 
-    const String & tz = query_context->getSettingsRef().timezone.toString();
-    if (!tz.empty())
-    {
+    const String & tz = CurrentThread::get().getQueryContext()->getSettingsRef().timezone.toString();
+//    if (!tz.empty())
+//    {
         LOG_DEBUG(log, "Sent timezone: {}", tz);
         writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
         writeStringBinary(tz, *out);
         out->next();
-    }
+//    }
 }
 
 
