@@ -451,6 +451,20 @@ private:
         size_t mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
+                scale = 6;
+
+            for (Int64 i = scale, value = fractional_second; i > 0; --i)
+            {
+                dest[i - 1] += value % 10;
+                value /= 10;
+            }
+            return scale;
+        }
+
+        /// Same as mysqlFractionalSecond but prints a single zero if the value has no fractional seconds
+        size_t mysqlFractionalSecondSingleZero(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
+        {
+            if (scale == 0)
                 scale = 1;
 
             for (Int64 i = scale, value = fractional_second; i > 0; --i)
@@ -710,6 +724,7 @@ private:
     }
 
     const bool mysql_M_is_month_name;
+    const bool mysql_f_prints_single_zero;
 
 public:
     static constexpr auto name = Name::name;
@@ -718,6 +733,7 @@ public:
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
         : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+        , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
     {
     }
 
@@ -1116,11 +1132,21 @@ public:
                     // Fractional seconds
                     case 'f':
                     {
-                        /// If the time data type has no fractional part, then we print '0' as the fractional part.
-                        Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
-                        instructions.push_back(std::move(instruction));
-                        out_template += String(std::max<UInt32>(1, scale), '0');
+                        /// If the time data type has no fractional part, we print (default) '000000' or (deprecated) '0' as fractional part.
+                        if (mysql_f_prints_single_zero)
+                        {
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondSingleZero);
+                            instructions.push_back(std::move(instruction));
+                            out_template += String(scale == 0 ? 1 : scale, '0');
+                        }
+                        else
+                        {
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
+                            instructions.push_back(std::move(instruction));
+                            out_template += String(scale == 0 ? 6 : scale, '0');
+                        }
                         break;
                     }
 
