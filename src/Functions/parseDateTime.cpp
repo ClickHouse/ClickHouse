@@ -1055,8 +1055,11 @@ namespace
 
             static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
             {
+                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
+
                 for (size_t i = 0; i < 6; ++i)
-                    cur = assertNumber<NeedCheckSpace::Yes>(cur, end, fragment);
+                    cur = assertNumber<NeedCheckSpace::No>(cur, end, fragment);
+
                 return cur;
             }
 
