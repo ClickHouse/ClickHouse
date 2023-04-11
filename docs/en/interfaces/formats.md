@@ -78,7 +78,7 @@ The supported formats are:
 | [Null](#null)                                                                             | ✗    | ✔      |
 | [XML](#xml)                                                                               | ✗    | ✔      |
 | [CapnProto](#capnproto)                                                                   | ✔    | ✔      |
-| [LineAsString](#lineasstring)                                                             | ✔    | ✗      |
+| [LineAsString](#lineasstring)                                                             | ✔    | ✔      |
 | [Regexp](#data-format-regexp)                                                             | ✔    | ✗      |
 | [RawBLOB](#rawblob)                                                                       | ✔    | ✔      |
 | [MsgPack](#msgpack)                                                                       | ✔    | ✔      |
@@ -1876,6 +1876,13 @@ Column names must:
 -   subsequently contain only `[A-Za-z0-9_]`
 
 Output Avro file compression and sync interval can be configured with [output_format_avro_codec](/docs/en/operations/settings/settings-formats.md/#output_format_avro_codec) and [output_format_avro_sync_interval](/docs/en/operations/settings/settings-formats.md/#output_format_avro_sync_interval) respectively.
+
+### Example Data {#example-data-avro}
+
+Using the ClickHouse [DESCRIBE](/docs/en/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
+
+``` DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro','Avro');
+```
 
 ## AvroConfluent {#data-format-avro-confluent}
 
