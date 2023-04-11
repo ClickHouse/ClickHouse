@@ -1,6 +1,7 @@
 #include "CertificateIssuer.h"
 
 #include <fmt/format.h>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
+#include <Poco/Crypto/X509Certificate.h>
 #include <Poco/Net/SSLException.h>
 
 namespace DB
@@ -40,8 +42,11 @@ namespace
 
 void CertificateIssuer::UpdateCertificates(const LetsEncryptConfigurationData & config_data, std::function<void()> callback)
 {
-    export_directory_path = config_data.export_directory_path;
-    // TODO: Probably do not allow to update until updated
+    if (update_started.load()){
+        return;
+    }
+    update_started = true;
+
     acme_lw::AcmeClient::init();
     acme_lw::AcmeClient client(config_data.account_private_key);
     const auto certificate = client.issueCertificate({config_data.domain_name}, PlaceFileCall);
@@ -55,12 +60,28 @@ void CertificateIssuer::UpdateCertificates(const LetsEncryptConfigurationData & 
     certificate_file.close();
 
     callback();
+    update_started = false;
+}
+
+bool CertificateIssuer::ShouldUpdateCertificates(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.getBool("LetsEncrypt.enableAutomaticIssue", false))
+        return false;
+
+    const auto certificatePath = config.getString("openSSL.server.certificateFile", "");
+    const auto keyPath = config.getString("openSSL.server.privateKeyFile", "");
+    const auto reissue_hours_before = config.getInt("LetsEncrypt.reissueHoursBefore", 48);
+    Poco::Crypto::X509Certificate certificate{certificatePath};
+    if (std::filesystem::exists(certificatePath) && std::filesystem::exists(keyPath) &&
+         certificate.expiresOn().timestamp()
+            <= Poco::Timestamp() + Poco::Timespan(3600ll * reissue_hours_before, 0))
+        return true;
+    return false;
 }
 
 void CertificateIssuer::UpdateCertificatesIfNeeded(const Poco::Util::AbstractConfiguration & config)
 {
-    if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
-        //TODO: Check here that certificates exist and subject to expire
+    if (ShouldUpdateCertificates(config))
         UpdateCertificates(LetsEncryptConfigurationData(config), []() {});
 }
 
