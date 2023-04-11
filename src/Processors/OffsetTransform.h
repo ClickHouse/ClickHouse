@@ -10,7 +10,7 @@ namespace DB
 /// Implementation for OFFSET N (without limit)
 /// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
-class OffsetTransform final : public IProcessor
+class OffsetTransform : public IProcessor
 {
 private:
     UInt64 offset;
@@ -45,7 +45,7 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit_at_least.swap(counter); }
 };
 
 }

@@ -9,7 +9,6 @@ namespace DB
     {
         extern const int NO_AVAILABLE_DATA;
         extern const int INCORRECT_DATA;
-        extern const int TOO_LARGE_ARRAY_SIZE;
     }
 }
 
@@ -95,7 +94,7 @@ public:
                 DB::readVarUInt(size, in);
 
                 if (size > capacity)
-                    throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
+                    throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
 
                 is_initialized = true;
             }
@@ -115,7 +114,7 @@ public:
         inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
-                throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
+                throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
 
             return cell.getValue();
         }
@@ -280,11 +279,9 @@ public:
 
         size_t new_size = 0;
         DB::readVarUInt(new_size, rb);
-        if (new_size > 1000'000)
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized small table is suspiciously large: {}", new_size);
 
         if (new_size > capacity)
-            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
+            throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
 
         for (size_t i = 0; i < new_size; ++i)
             buf[i].read(rb);
@@ -302,7 +299,7 @@ public:
         DB::readText(new_size, rb);
 
         if (new_size > capacity)
-            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
+            throw DB::Exception("Illegal size", DB::ErrorCodes::INCORRECT_DATA);
 
         for (size_t i = 0; i < new_size; ++i)
         {
@@ -349,3 +346,4 @@ template
     size_t capacity
 >
 using SmallSet = SmallTable<Key, HashTableCell<Key, HashUnused>, capacity>;
+

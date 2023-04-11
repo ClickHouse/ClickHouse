@@ -5,6 +5,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -32,13 +33,12 @@ public:
     class ReadBufferFactory : public WithFileSize
     {
     public:
-        ~ReadBufferFactory() override = default;
-
         virtual SeekableReadBufferPtr getReader() = 0;
+        virtual ~ReadBufferFactory() override = default;
         virtual off_t seek(off_t off, int whence) = 0;
     };
 
-    ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers);
+    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, CallbackRunner schedule_, size_t max_working_readers);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -75,7 +75,7 @@ private:
     size_t max_working_readers;
     std::atomic_size_t active_working_reader{0};
 
-    ThreadPoolCallbackRunner<void> schedule;
+    CallbackRunner schedule;
 
     std::unique_ptr<ReadBufferFactory> reader_factory;
 

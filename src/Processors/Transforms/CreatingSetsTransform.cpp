@@ -6,7 +6,6 @@
 #include <Interpreters/IJoin.h>
 #include <Storages/IStorage.h>
 
-#include <Common/logger_useful.h>
 #include <iomanip>
 
 
@@ -57,7 +56,7 @@ void CreatingSetsTransform::startSubquery()
     done_with_table = !subquery.table;
 
     if (done_with_set /*&& done_with_join*/ && done_with_table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: nothing to do with subquery");
+        throw Exception("Logical error: nothing to do with subquery", ErrorCodes::LOGICAL_ERROR);
 
     if (table_out.initialized())
     {

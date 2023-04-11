@@ -60,7 +60,7 @@ public:
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
     /// Returns cluster consisting of database replicas
-    ClusterPtr tryGetCluster() const;
+    ClusterPtr getCluster() const;
 
     void drop(ContextPtr /*context*/) override;
 
@@ -76,8 +76,6 @@ public:
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
-
-    static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name);
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;

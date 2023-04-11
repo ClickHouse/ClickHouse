@@ -7,7 +7,6 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -92,8 +91,6 @@ public:
 
     const String & getDescription() const override { return description; }
 
-    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
-
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -111,7 +108,7 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -159,6 +156,7 @@ private:
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
+    std::optional<ThreadStatus> thread_status;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;

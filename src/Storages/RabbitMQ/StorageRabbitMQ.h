@@ -5,7 +5,7 @@
 #include <Poco/Semaphore.h>
 #include <mutex>
 #include <atomic>
-#include <Storages/RabbitMQ/RabbitMQConsumer.h>
+#include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Common/thread_local_rng.h>
@@ -16,8 +16,6 @@
 
 namespace DB
 {
-
-using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
 class StorageRabbitMQ final: public IStorage, WithContext
 {
@@ -52,19 +50,18 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context) override;
 
-    /// We want to control the number of rows in a chunk inserted into RabbitMQ
-    bool prefersLargeBlocks() const override { return false; }
+    void pushReadBuffer(ConsumerBufferPtr buf);
+    ConsumerBufferPtr popReadBuffer();
+    ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
-    void pushConsumer(RabbitMQConsumerPtr consumer);
-    RabbitMQConsumerPtr popConsumer();
-    RabbitMQConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    ProducerBufferPtr createWriteBuffer();
 
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
@@ -74,7 +71,7 @@ public:
 
     bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
-    void prepareChannelForConsumer(RabbitMQConsumerPtr consumer);
+    void prepareChannelForBuffer(ConsumerBufferPtr buffer);
 
     void incrementReader();
     void decrementReader();
@@ -87,12 +84,12 @@ private:
     const String format_name;
     AMQP::ExchangeType exchange_type;
     Names routing_keys;
+    char row_delimiter;
     const String schema_name;
     size_t num_consumers;
     size_t num_queues;
     String queue_base;
     Names queue_settings_list;
-    size_t max_rows_per_message;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
@@ -110,18 +107,17 @@ private:
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
-    std::mutex consumers_mutex;
-    std::vector<RabbitMQConsumerPtr> consumers; /// available RabbitMQ consumers
-    std::vector<std::weak_ptr<RabbitMQConsumer>> consumers_ref;
+    std::mutex buffers_mutex;
+    std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     String unique_strbase; /// to make unique consumer channel id
 
     /// maximum number of messages in RabbitMQ queue (x-max-length). Also used
-    /// to setup size of inner consumer for received messages
+    /// to setup size of inner buffer for received messages
     uint32_t queue_size;
 
     String sharding_exchange, bridge_exchange, consumer_exchange;
-    size_t consumer_id = 0; /// counter for consumer, needed for channel id
+    size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
 
     std::vector<String> queues;
 
@@ -139,8 +135,8 @@ private:
     /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
-    /// Counter for producers, needed for channel id.
-    /// Needed to generate unique producer identifiers.
+    /// Counter for producer buffers, needed for channel id.
+    /// Needed to generate unique producer buffer identifiers.
     std::atomic<size_t> producer_id = 1;
     /// Has connection background task completed successfully?
     /// It is started only once -- in constructor.
@@ -164,7 +160,7 @@ private:
     mutable bool drop_table = false;
     bool is_attach;
 
-    RabbitMQConsumerPtr createConsumer();
+    ConsumerBufferPtr createReadBuffer();
     void initializeBuffers();
     bool initialized = false;
 
@@ -192,9 +188,8 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    /// Return true on successful stream attempt.
-    bool tryStreamToViews();
-    bool hasDependencies(const StorageID & table_id);
+    bool streamToViews();
+    bool checkDependencies(const StorageID & table_id);
 
     static String getRandomName()
     {

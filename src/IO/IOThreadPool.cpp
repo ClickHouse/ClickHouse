@@ -1,13 +1,5 @@
 #include <IO/IOThreadPool.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool.h>
-#include <Core/Field.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric IOThreads;
-    extern const Metric IOThreadsActive;
-}
+#include "Core/Field.h"
 
 namespace DB
 {
@@ -26,13 +18,7 @@ void IOThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The IO thread pool is initialized twice");
     }
 
-    instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::IOThreads,
-        CurrentMetrics::IOThreadsActive,
-        max_threads,
-        max_free_threads,
-        queue_size,
-        /* shutdown_on_exception= */ false);
+    instance = std::make_unique<ThreadPool>(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/);
 }
 
 ThreadPool & IOThreadPool::get()

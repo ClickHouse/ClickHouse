@@ -29,10 +29,7 @@ struct RowRef
     SizeT row_num = 0;
 
     RowRef() = default;
-    RowRef(const Block * block_, size_t row_num_)
-        : block(block_)
-        , row_num(static_cast<SizeT>(row_num_))
-    {}
+    RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
 };
 
 /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
@@ -63,8 +60,7 @@ struct RowRefList : RowRef
                 return batch;
             }
 
-            row_refs[size] = std::move(row_ref);
-            ++size;
+            row_refs[size++] = std::move(row_ref);
             return this;
         }
     };

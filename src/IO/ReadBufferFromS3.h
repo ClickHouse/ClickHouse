@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Common/RangeGenerator.h>
-#include <Storages/StorageS3Settings.h>
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -19,7 +18,7 @@
 
 namespace Aws::S3
 {
-class Client;
+class S3Client;
 }
 
 namespace DB
@@ -30,11 +29,11 @@ namespace DB
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
     String version_id;
-    const S3Settings::RequestSettings request_settings;
+    UInt64 max_single_read_retries;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
@@ -49,11 +48,11 @@ private:
 
 public:
     ReadBufferFromS3(
-        std::shared_ptr<const S3::Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        const S3Settings::RequestSettings & request_settings_,
+        UInt64 max_single_read_retries_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,
@@ -95,13 +94,13 @@ class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public
 {
 public:
     explicit ReadBufferS3Factory(
-        std::shared_ptr<const S3::Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
         size_t range_step_,
         size_t object_size_,
-        const S3Settings::RequestSettings & request_settings_,
+        UInt64 s3_max_single_read_retries_,
         const ReadSettings & read_settings_)
         : client_ptr(client_ptr_)
         , bucket(bucket_)
@@ -111,7 +110,7 @@ public:
         , range_generator(object_size_, range_step_)
         , range_step(range_step_)
         , object_size(object_size_)
-        , request_settings(request_settings_)
+        , s3_max_single_read_retries(s3_max_single_read_retries_)
     {
         assert(range_step > 0);
         assert(range_step < object_size);
@@ -126,7 +125,7 @@ public:
     String getFileName() const override { return bucket + "/" + key; }
 
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const String bucket;
     const String key;
     const String version_id;
@@ -136,7 +135,7 @@ private:
     size_t range_step;
     size_t object_size;
 
-    const S3Settings::RequestSettings request_settings;
+    UInt64 s3_max_single_read_retries;
 };
 
 }

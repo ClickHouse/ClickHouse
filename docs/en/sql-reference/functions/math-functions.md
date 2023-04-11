@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/math-functions
 sidebar_position: 44
 sidebar_label: Mathematical
 ---
@@ -548,64 +547,4 @@ Result:
 ┌──────radians(180)─┐
 │ 3.141592653589793 │
 └───────────────────┘
-```
-
-
-## factorial(n)
-
-Computes the factorial of an integer value. It works with any native integer type including UInt(8|16|32|64) and Int(8|16|32|64). The return type is UInt64.
-
-The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
-
-
-**Syntax**
-
-``` sql
-factorial(n)
-```
-
-**Example**
-
-Query:
-
-``` sql
-SELECT factorial(10);
-```
-
-Result:
-
-``` text
-┌─factorial(10)─┐
-│       3628800 │
-└───────────────┘
-```
-
-## width_bucket(operand, low, high, count)
-
-Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
-
-`operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
-
-**Syntax**
-
-```sql
-widthBucket(operand, low, high, count)
-```
-
-There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatibility with other databases.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT widthBucket(10.15, -8.6, 23, 18);
-```
-
-Result:
-
-``` text
-┌─widthBucket(10.15, -8.6, 23, 18)─┐
-│                               11 │
-└──────────────────────────────────┘
 ```

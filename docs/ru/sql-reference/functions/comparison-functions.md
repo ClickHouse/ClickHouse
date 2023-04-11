@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/comparison-functions
 sidebar_position: 36
 sidebar_label: "Функции сравнения"
 ---
@@ -34,3 +33,4 @@ sidebar_label: "Функции сравнения"
 ## lessOrEquals, оператор `<=` {#function-lessorequals}
 
 ## greaterOrEquals, оператор `>=` {#function-greaterorequals}
+

@@ -1,4 +1,0 @@
-{"query":"show processlist format Null\n  "}
-{"query":"show databases format Null\n  "}
-{"query":"insert into opentelemetry_test values","read_rows":"3","written_rows":"3"}
-{"query":"select * from opentelemetry_test format Null\n  ","read_rows":"3","written_rows":""}

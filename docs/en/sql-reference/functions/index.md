@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/
 sidebar_position: 32
 sidebar_label: Functions
 ---
@@ -91,7 +90,7 @@ The command must read arguments from `STDIN` and must output the result to `STDO
 **Example**
 
 Creating `test_function` using XML configuration.
-File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
+File test_function.xml.
 ```xml
 <functions>
     <function>
@@ -108,7 +107,7 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
 </functions>
 ```
 
-Script file inside `user_scripts` folder `test_function.py` (`/var/lib/clickhouse/user_scripts/test_function.py` with default path settings).
+Script file inside `user_scripts` folder `test_function.py`.
 
 ```python
 #!/usr/bin/python3
@@ -136,7 +135,7 @@ Result:
 ```
 
 Creating `test_function_sum` manually specifying `execute_direct` to `0` using XML configuration.
-File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
+File test_function.xml.
 ```xml
 <functions>
     <function>
@@ -173,7 +172,7 @@ Result:
 ```
 
 Creating `test_function_sum_json` with named arguments and format [JSONEachRow](../../interfaces/formats.md#jsoneachrow) using XML configuration.
-File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
+File test_function.xml.
 ```xml
 <functions>
     <function>
@@ -195,7 +194,7 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
 </functions>
 ```
 
-Script file inside `user_scripts` folder `test_function_sum_json.py` (`/var/lib/clickhouse/user_scripts/test_function_sum_json.py` with default path settings).
+Script file inside `user_scripts` folder `test_function_sum_json.py`.
 
 ```python
 #!/usr/bin/python3
@@ -228,7 +227,7 @@ Result:
 ```
 
 Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type).
-File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function_parameter_python.xml` with default path settings).
+File test_function_parameter_python.xml.
 ```xml
 <functions>
     <function>
@@ -244,7 +243,7 @@ File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function
 </functions>
 ```
 
-Script file inside `user_scripts` folder `test_function_parameter_python.py` (`/var/lib/clickhouse/user_scripts/test_function_parameter_python.py` with default path settings).
+Script file inside `user_scripts` folder `test_function_parameter_python.py`.
 
 ```python
 #!/usr/bin/python3
@@ -296,7 +295,3 @@ Another example is the `hostName` function, which returns the name of the server
 
 If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an ‘any’ aggregate function or add it to a key in `GROUP BY`.
 
-
-## Related Content
-
-- [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

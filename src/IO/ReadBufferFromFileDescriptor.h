@@ -2,7 +2,6 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Throttler_fwd.h>
 
 #include <unistd.h>
 
@@ -22,10 +21,8 @@ protected:
 
     int fd;
 
-    ThrottlerPtr throttler;
-
     bool nextImpl() override;
-    void prefetch(int64_t priority) override;
+    void prefetch() override;
 
     /// Name or some description of file.
     std::string getFileName() const override;
@@ -36,12 +33,10 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {})
+        std::optional<size_t> file_size_ = std::nullopt)
         : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
         , required_alignment(alignment)
         , fd(fd_)
-        , throttler(throttler_)
     {
     }
 
@@ -67,9 +62,11 @@ public:
 
     size_t getFileSize() override;
 
+    void setProgressCallback(ContextPtr context);
+
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-    bool poll(size_t timeout_microseconds) const;
+    bool poll(size_t timeout_microseconds);
 };
 
 
@@ -83,9 +80,8 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {})
-        : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_, throttler_)
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     {
         use_pread = true;
     }

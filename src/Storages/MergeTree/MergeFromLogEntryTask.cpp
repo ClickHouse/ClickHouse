@@ -2,7 +2,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ProfileEventsScope.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 namespace ProfileEvents
@@ -95,9 +94,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         if (!source_part_or_covering)
         {
             /// We do not have one of source parts locally, try to take some already merged part from someone.
-            LOG_DEBUG(log, "Don't have all parts (at least {} is missing) for merge {}; will try to fetch it instead. "
-                "Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
-               source_part_name, entry.new_part_name);
+            LOG_DEBUG(log, "Don't have all parts (at least part {} is missing) for merge {}; will try to fetch it instead", source_part_name, entry.new_part_name);
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
@@ -112,11 +109,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
-            constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            String message;
-            LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
+            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
-                throw Exception::createDeprecated(message, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
 
             return PrepareResult{
                 .prepared_successfully = false,
@@ -164,9 +160,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
-        auto disk_name = part_ptr->getDataPartStorage().getDiskName();
-        size_t volume_index = storage.getStoragePolicy()->getVolumeIndexByDiskName(disk_name);
-        max_volume_index = std::max(max_volume_index, volume_index);
+        max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
     }
 
     /// It will live until the whole task is being destroyed
@@ -174,11 +168,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
     if (future_merged_part->name != entry.new_part_name)
     {
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
-            backQuote(future_merged_part->name), backQuote(entry.new_part_name));
+        throw Exception("Future merged part name " + backQuote(future_merged_part->name) + " differs from part name in log entry: "
+            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
@@ -221,7 +215,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
                 LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
-                storage.watchZeroCopyLock(entry.new_part_name, disk);
                 /// Don't check for missing part -- it's missing because other replica still not
                 /// finished merge.
                 return PrepareResult{
@@ -229,27 +222,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                     .need_to_check_missing_part_in_fetch = false,
                     .part_log_writer = {}
                 };
-            }
-            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
-            {
-                /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
-                /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
-                ///
-                /// It's also possible just because reads in [Zoo]Keeper are not lineariazable.
-                ///
-                /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
-                zero_copy_lock->lock->unlock();
-
-                LOG_DEBUG(log, "We took zero copy lock, but merge of part {} finished by some other replica, will release lock and download merged part to avoid data duplication", entry.new_part_name);
-                return PrepareResult{
-                    .prepared_successfully = false,
-                    .need_to_check_missing_part_in_fetch = true,
-                    .part_log_writer = {}
-                };
-            }
-            else
-            {
-                LOG_DEBUG(log, "Zero copy lock taken, will merge part {}", entry.new_part_name);
             }
         }
     }
@@ -260,15 +232,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto table_id = storage.getStorageID();
 
-    task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
-
     /// Add merge to list
+    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        task_context);
+        settings);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
@@ -284,7 +253,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
-            entry.cleanup,
             storage.merging_params,
             NO_TRANSACTION_PTR);
 
@@ -295,10 +263,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
+            entry.new_part_name, part, parts, merge_mutate_entry.get());
     }};
 }
 
@@ -306,15 +273,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     part = merge_task->getFuture().get();
+    auto builder = merge_task->getBuilder();
 
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
-    /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
-    /// not able to remove the part and will throw an exception (because someone holds the pointer).
-    ///
-    /// Why we cannot reset task right after obtaining part from getFuture()? Because it holds RAII wrapper for
-    /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
-    /// and it's really needed.
+    /// Task is not needed
     merge_task.reset();
+
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr, builder);
 
     try
     {
@@ -342,10 +306,10 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
                 " We will download merged part from replica to force byte-identical result.",
                 getCurrentExceptionMessage(false));
 
-            write_part_log(ExecutionStatus::fromCurrentException("", true));
+            write_part_log(ExecutionStatus::fromCurrentException());
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
-                storage.forcefullyMovePartToDetachedAndRemoveFromMemory(std::move(part), "merge-not-byte-identical");
+                storage.forgetPartAndMoveToDetached(std::move(part), "merge-not-byte-identical");
             else
                 storage.tryRemovePartImmediately(std::move(part));
 

@@ -1,6 +1,4 @@
--- Tags: distributed
-
-set enable_memory_bound_merging_of_aggregation_results=0;
+-- Tags: distributed, no-s3-storage
 
 drop table if exists projection_test;
 

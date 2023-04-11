@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/hdfsCluster
 sidebar_position: 55
 sidebar_label: hdfsCluster
 ---
@@ -50,7 +49,7 @@ SELECT count(*)
 FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```
 
-:::note    
+:::warning    
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 

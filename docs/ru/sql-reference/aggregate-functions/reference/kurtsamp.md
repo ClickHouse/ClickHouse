@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/kurtsamp
 sidebar_position: 154
 ---
 
@@ -26,3 +25,4 @@ kurtSamp(expr)
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column;
 ```
+

@@ -4,7 +4,6 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
-#include <Access/resolveSetting.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
@@ -67,15 +66,11 @@ namespace
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates;
 
         if (num_password_fields > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates' "
-                            "are used to specify authentication info for user {}. "
-                            "Must be only one of them.", user_name);
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates' are used to specify authentication info for user " + user_name + ". Must be only one of them.",
+                ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
-                            "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' "
-                            "or 'ssl_certificates' must be specified for user {}.", user_name);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' or 'ssl_certificates' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
@@ -96,11 +91,11 @@ namespace
         {
             bool has_ldap_server = config.has(user_config + ".ldap.server");
             if (!has_ldap_server)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", user_name);
+                throw Exception("Missing mandatory 'server' in 'ldap', with LDAP server name, for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
             const auto ldap_server_name = config.getString(user_config + ".ldap.server");
             if (ldap_server_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
+                throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
             user->auth_data = AuthenticationData{AuthenticationType::LDAP};
             user->auth_data.setLDAPServerName(ldap_server_name);
@@ -128,7 +123,7 @@ namespace
                     common_names.insert(std::move(value));
                 }
                 else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
+                    throw Exception("Unknown certificate pattern type: " + key, ErrorCodes::BAD_ARGUMENTS);
             }
             user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
         }
@@ -171,7 +166,7 @@ namespace
                 else if (key.starts_with("host"))
                     user->allowed_client_hosts.addName(value);
                 else
-                    throw Exception(ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE, "Unknown address pattern type: {}", key);
+                    throw Exception("Unknown address pattern type: " + key, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
             }
         }
 
@@ -231,18 +226,6 @@ namespace
         {
             user->access.revoke(AccessType::ACCESS_MANAGEMENT);
             user->access.revokeGrantOption(AccessType::ALL);
-        }
-
-        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
-        if (!named_collection_control)
-        {
-            user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
-        }
-
-        bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
-        if (!show_named_collections_secrets)
-        {
-            user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
         }
 
         String default_database = config.getString(user_config + ".default_database", "");
@@ -458,34 +441,17 @@ namespace
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
 
-            size_t writability_count = 0;
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.min_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
-                else if (constraint_type == "readonly" || constraint_type == "const")
-                {
-                    writability_count++;
-                    profile_element.writability = SettingConstraintWritability::CONST;
-                }
-                else if (constraint_type == "changeable_in_readonly")
-                {
-                    writability_count++;
-                    if (access_control.doesSettingsConstraintsReplacePrevious())
-                        profile_element.writability = SettingConstraintWritability::CHANGEABLE_IN_READONLY;
-                    else
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting changeable_in_readonly for {} is not allowed "
-                                        "unless settings_constraints_replace_previous is enabled", setting_name);
-                }
+                    profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                else if (constraint_type == "readonly")
+                    profile_element.readonly = true;
                 else
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting {} value for {} isn't supported", constraint_type, setting_name);
+                    throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
-            if (writability_count > 1)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not more than one constraint writability specifier "
-                                "(const/readonly/changeable_in_readonly) is allowed for {}", setting_name);
-
             profile_elements.push_back(std::move(profile_element));
         }
 
@@ -530,7 +496,7 @@ namespace
 
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
-            profile_element.value = settingStringToValueUtil(setting_name, config.getString(profile_config + "." + key));
+            profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 
@@ -669,6 +635,13 @@ void UsersConfigAccessStorage::load(
         /* already_loaded = */ false);
 }
 
+void UsersConfigAccessStorage::reload()
+{
+    std::lock_guard lock{load_mutex};
+    if (config_reloader)
+        config_reloader->reload();
+}
+
 void UsersConfigAccessStorage::startPeriodicReloading()
 {
     std::lock_guard lock{load_mutex};
@@ -681,13 +654,6 @@ void UsersConfigAccessStorage::stopPeriodicReloading()
     std::lock_guard lock{load_mutex};
     if (config_reloader)
         config_reloader->stop();
-}
-
-void UsersConfigAccessStorage::reload(ReloadMode /* reload_mode */)
-{
-    std::lock_guard lock{load_mutex};
-    if (config_reloader)
-        config_reloader->reload();
 }
 
 std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const

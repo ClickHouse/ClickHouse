@@ -11,7 +11,7 @@ set -eu
 for module; do
   if [ "${module#-}" = "$module" ]; then
     ip link show "$module" || true
-    lsmod | rg "$module" || true
+    lsmod | grep "$module" || true
   fi
 done
 

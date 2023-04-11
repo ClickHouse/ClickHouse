@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -42,13 +43,13 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
-        fd = static_cast<int>(
-            (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>());
+        fd = (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>();
         if (fd < 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
+            throw Exception("File descriptor must be non-negative", ErrorCodes::BAD_ARGUMENTS);
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
+        throw Exception(
+            "The first argument of table function '" + getName() + "' mush be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
 }
 
 String TableFunctionFile::getFormatFromFirstArgument()
@@ -87,7 +88,8 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     if (structure == "auto")
     {
         if (fd >= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
+            throw Exception(
+                "Schema inference is not supported for table function '" + getName() + "' with file descriptor", ErrorCodes::LOGICAL_ERROR);
         size_t total_bytes_to_read = 0;
         Strings paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context);

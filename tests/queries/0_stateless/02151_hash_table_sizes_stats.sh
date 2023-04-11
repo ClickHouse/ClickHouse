@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan
+# Tags: long
 
 # shellcheck disable=SC2154
 
@@ -11,7 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 # tests rely on that all the rows are unique and max_threads divides table_size
-table_size=1000005
+table_size=10000
 max_threads=5
 
 

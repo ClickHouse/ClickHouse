@@ -14,14 +14,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnMap.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 
 namespace DB
 {
@@ -44,9 +42,10 @@ void CapnProtoOutputStream::write(const void * buffer, size_t size)
 CapnProtoRowOutputFormat::CapnProtoRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
+    const RowOutputFormatParams & params_,
     const FormatSchemaInfo & info,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), column_names(header_.getNames()), column_types(header_.getDataTypes()), output_stream(std::make_unique<CapnProtoOutputStream>(out_)), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_, params_), column_names(header_.getNames()), column_types(header_.getDataTypes()), output_stream(std::make_unique<CapnProtoOutputStream>(out_)), format_settings(format_settings_)
 {
     schema = schema_parser.getMessageSchema(info);
     checkCapnProtoSchemaStructure(schema, getPort(PortKind::Main).getHeader(), format_settings.capn_proto.enum_comparing_mode);
@@ -80,7 +79,7 @@ static capnp::DynamicValue::Builder initStructFieldBuilder(const ColumnPtr & col
     if (const auto * array_column = checkAndGetColumn<ColumnArray>(*column))
     {
         size_t size = array_column->getOffsets()[row_num] - array_column->getOffsets()[row_num - 1];
-        return struct_builder.init(field, static_cast<unsigned>(size));
+        return struct_builder.init(field, size);
     }
 
     if (field.getType().isStruct())
@@ -93,7 +92,6 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
     const ColumnPtr & column,
     const DataTypePtr & data_type,
     size_t row_num,
-    const String & column_name,
     capnp::DynamicValue::Builder builder,
     FormatSettings::EnumComparingMode enum_comparing_mode,
     std::vector<std::unique_ptr<String>> & temporary_text_data_storage)
@@ -105,20 +103,18 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
         const auto * lc_column = assert_cast<const ColumnLowCardinality *>(column.get());
         const auto & dict_type = assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType();
         size_t index = lc_column->getIndexAt(row_num);
-        return convertToDynamicValue(lc_column->getDictionary().getNestedColumn(), dict_type, index, column_name, builder, enum_comparing_mode, temporary_text_data_storage);
+        return convertToDynamicValue(lc_column->getDictionary().getNestedColumn(), dict_type, index, builder, enum_comparing_mode, temporary_text_data_storage);
     }
 
     switch (builder.getType())
     {
         case capnp::DynamicValue::Type::INT:
+            /// We allow output DateTime64 as Int64.
+            if (WhichDataType(data_type).isDateTime64())
+                return capnp::DynamicValue::Reader(assert_cast<const ColumnDecimal<DateTime64> *>(column.get())->getElement(row_num));
             return capnp::DynamicValue::Reader(column->getInt(row_num));
         case capnp::DynamicValue::Type::UINT:
-        {
-            /// IPv4 column doesn't support getUInt method.
-            if (isIPv4(data_type))
-                return capnp::DynamicValue::Reader(assert_cast<const ColumnIPv4 *>(column.get())->getElement(row_num));
             return capnp::DynamicValue::Reader(column->getUInt(row_num));
-        }
         case capnp::DynamicValue::Type::BOOL:
             return capnp::DynamicValue::Reader(column->getBool(row_num));
         case capnp::DynamicValue::Type::FLOAT:
@@ -154,7 +150,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
         {
             auto struct_builder = builder.as<capnp::DynamicStruct>();
             auto nested_struct_schema = struct_builder.getSchema();
-            /// Struct can represent Tuple, Nullable (named union with two fields) or single column when it contains one nested column.
+            /// Struct can be represent Tuple or Naullable (named union with two fields)
             if (data_type->isNullable())
             {
                 const auto * nullable_type = assert_cast<const DataTypeNullable *>(data_type.get());
@@ -171,63 +167,25 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
                     struct_builder.clear(value_field);
                     const auto & nested_column = nullable_column->getNestedColumnPtr();
                     auto value_builder = initStructFieldBuilder(nested_column, row_num, struct_builder, value_field);
-                    auto value = convertToDynamicValue(nested_column, nullable_type->getNestedType(), row_num, column_name, value_builder, enum_comparing_mode, temporary_text_data_storage);
+                    auto value = convertToDynamicValue(nested_column, nullable_type->getNestedType(), row_num, value_builder, enum_comparing_mode, temporary_text_data_storage);
                     if (value)
                         struct_builder.set(value_field, *value);
                 }
             }
-            else if (isTuple(data_type))
-            {
-                const auto * tuple_data_type = assert_cast<const DataTypeTuple *>(data_type.get());
-                const auto & nested_types = tuple_data_type->getElements();
-                const auto & nested_names = tuple_data_type->getElementNames();
-                const auto & nested_columns = assert_cast<const ColumnTuple *>(column.get())->getColumns();
-                bool have_explicit_names = tuple_data_type->haveExplicitNames();
-                for (uint32_t i = 0; i != nested_names.size(); ++i)
-                {
-                    capnp::StructSchema::Field nested_field = have_explicit_names ? nested_struct_schema.getFieldByName(nested_names[i]) : nested_struct_schema.getFields()[i];
-                    auto field_builder = initStructFieldBuilder(nested_columns[i], row_num, struct_builder, nested_field);
-                    auto value = convertToDynamicValue(nested_columns[i], nested_types[i], row_num, nested_names[i], field_builder, enum_comparing_mode, temporary_text_data_storage);
-                    if (value)
-                        struct_builder.set(nested_field, *value);
-                }
-            }
-            else if (isMap(data_type))
-            {
-                /// We output Map type as follow CapnProto schema
-                ///
-                /// struct Map {
-                ///     struct Entry {
-                ///         key @0: Key;
-                ///         value @1: Value;
-                ///     }
-                ///     entries @0 :List(Entry);
-                /// }
-                ///
-                /// And we don't need to check that struct have this form here because we checked it before.
-                const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
-                DataTypes key_value_types = {map_type.getKeyType(), map_type.getValueType()};
-                Names key_value_names = {"key", "value"};
-                auto entries_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(key_value_types, key_value_names));
-
-                /// Nested column in Map is actually Array(Tuple), so we can output it according to "entries" field schema.
-                const auto & entries_column = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
-
-                auto entries_field = nested_struct_schema.getFields()[0];
-                auto field_builder = initStructFieldBuilder(entries_column, row_num, struct_builder, entries_field);
-                auto entries_value = convertToDynamicValue(entries_column, entries_type, row_num, column_name, field_builder, enum_comparing_mode, temporary_text_data_storage);
-                if (entries_value)
-                    struct_builder.set(entries_field, *entries_value);
-            }
             else
             {
-                /// It can be nested column from Nested type.
-                auto [field_name, nested_name] = splitCapnProtoFieldName(column_name);
-                auto nested_field = nested_struct_schema.getFieldByName(nested_name);
-                auto field_builder = initStructFieldBuilder(column, row_num, struct_builder, nested_field);
-                auto value = convertToDynamicValue(column, data_type, row_num, nested_name, field_builder, enum_comparing_mode, temporary_text_data_storage);
-                if (value)
-                    struct_builder.set(nested_field, *value);
+                const auto * tuple_data_type = assert_cast<const DataTypeTuple *>(data_type.get());
+                auto nested_types = tuple_data_type->getElements();
+                const auto & nested_columns = assert_cast<const ColumnTuple *>(column.get())->getColumns();
+                for (const auto & name : tuple_data_type->getElementNames())
+                {
+                    auto pos = tuple_data_type->getPositionByName(name);
+                    auto field_builder
+                        = initStructFieldBuilder(nested_columns[pos], row_num, struct_builder, nested_struct_schema.getFieldByName(name));
+                    auto value = convertToDynamicValue(nested_columns[pos], nested_types[pos], row_num, field_builder, enum_comparing_mode, temporary_text_data_storage);
+                    if (value)
+                        struct_builder.set(name, *value);
+                }
             }
             return std::nullopt;
         }
@@ -242,7 +200,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
             size_t size = offsets[row_num] - offset;
 
             const auto * nested_array_column = checkAndGetColumn<ColumnArray>(*nested_column);
-            for (unsigned i = 0; i != static_cast<unsigned>(size); ++i)
+            for (size_t i = 0; i != size; ++i)
             {
                 capnp::DynamicValue::Builder value_builder;
                 /// For nested arrays we need to initialize nested list builder.
@@ -250,12 +208,12 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
                 {
                     const auto & nested_offset = nested_array_column->getOffsets();
                     size_t nested_array_size = nested_offset[offset + i] - nested_offset[offset + i - 1];
-                    value_builder = list_builder.init(i, static_cast<unsigned>(nested_array_size));
+                    value_builder = list_builder.init(i, nested_array_size);
                 }
                 else
                     value_builder = list_builder[i];
 
-                auto value = convertToDynamicValue(nested_column, nested_type, offset + i, column_name, value_builder, enum_comparing_mode, temporary_text_data_storage);
+                auto value = convertToDynamicValue(nested_column, nested_type, offset + i, value_builder, enum_comparing_mode, temporary_text_data_storage);
                 if (value)
                     list_builder.set(i, *value);
             }
@@ -273,19 +231,11 @@ void CapnProtoRowOutputFormat::write(const Columns & columns, size_t row_num)
     /// See comment in convertToDynamicValue() for more details.
     std::vector<std::unique_ptr<String>> temporary_text_data_storage;
     capnp::DynamicStruct::Builder root = message.initRoot<capnp::DynamicStruct>(schema);
-
-    /// Some columns can share same field builder. For example when we have
-    /// column with Nested type that was flattened into several columns.
-    std::unordered_map<size_t, capnp::DynamicValue::Builder> field_builders;
     for (size_t i = 0; i != columns.size(); ++i)
     {
         auto [struct_builder, field] = getStructBuilderAndFieldByColumnName(root, column_names[i]);
-        if (!field_builders.contains(field.getIndex()))
-        {
-            auto field_builder = initStructFieldBuilder(columns[i], row_num, struct_builder, field);
-            field_builders[field.getIndex()] = field_builder;
-        }
-        auto value = convertToDynamicValue(columns[i], column_types[i], row_num, column_names[i], field_builders[field.getIndex()], format_settings.capn_proto.enum_comparing_mode, temporary_text_data_storage);
+        auto field_builder = initStructFieldBuilder(columns[i], row_num, struct_builder, field);
+        auto value = convertToDynamicValue(columns[i], column_types[i], row_num, field_builder, format_settings.capn_proto.enum_comparing_mode, temporary_text_data_storage);
         if (value)
             struct_builder.set(field, *value);
     }
@@ -298,9 +248,10 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
     factory.registerOutputFormat("CapnProto", [](
         WriteBuffer & buf,
         const Block & sample,
+        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<CapnProtoRowOutputFormat>(buf, sample, FormatSchemaInfo(format_settings, "CapnProto", true), format_settings);
+        return std::make_shared<CapnProtoRowOutputFormat>(buf, sample, params, FormatSchemaInfo(format_settings, "CapnProto", true), format_settings);
     });
 }
 

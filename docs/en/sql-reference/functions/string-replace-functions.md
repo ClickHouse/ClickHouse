@@ -1,35 +1,32 @@
 ---
-slug: /en/sql-reference/functions/string-replace-functions
 sidebar_position: 42
-sidebar_label: Replacing in Strings
+sidebar_label: For Replacing in Strings
 ---
 
 # Functions for Searching and Replacing in Strings
 
-:::note
+:::note    
 Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
 :::
 
 ## replaceOne(haystack, pattern, replacement)
 
-Replaces the first occurrence of the substring ‘pattern’ (if it exists) in ‘haystack’ by the ‘replacement’ string.
+Replaces the first occurrence, if it exists, of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
+Hereafter, ‘pattern’ and ‘replacement’ must be constants.
 
 ## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement)
 
-Replaces all occurrences of the substring ‘pattern’ in ‘haystack’ by the ‘replacement’ string.
-
-Alias: `replace`.
+Replaces all occurrences of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
 
 ## replaceRegexpOne(haystack, pattern, replacement)
 
-Replaces the first occurrence of the substring matching the regular expression ‘pattern’ in ‘haystack‘ by the ‘replacement‘ string.
-‘pattern‘ must be a [re2 regular expression](https://github.com/google/re2/wiki/Syntax).
-‘replacement’ must be a plain string or a string containing substitutions `\0-\9`.
-Substitutions `\1-\9` correspond to the 1st to 9th capturing group (submatch), substitution `\0` corresponds to the entire match.
-To use a verbatim `\` character in the ‘pattern‘ or ‘replacement‘ string, escape it using `\`.
-Also keep in mind that string literals require an extra escaping.
+Replacement using the ‘pattern’ regular expression. A re2 regular expression.
+Replaces only the first occurrence, if it exists.
+A pattern can be specified as ‘replacement’. This pattern can include substitutions `\0-\9`.
+The substitution `\0` includes the entire regular expression. Substitutions `\1-\9` correspond to the subpattern numbers.To use the `\` character in a template, escape it using `\`.
+Also keep in mind that a string literal requires an extra escape.
 
-Example 1. Converting ISO dates to American format:
+Example 1. Converting the date to American format:
 
 ``` sql
 SELECT DISTINCT
@@ -64,7 +61,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 
 ## replaceRegexpAll(haystack, pattern, replacement)
 
-Like ‘replaceRegexpOne‘, but replaces all occurrences of the pattern. Example:
+This does the same thing, but replaces all the occurrences. Example:
 
 ``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
@@ -88,8 +85,6 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 │ here: Hello, World! │
 └─────────────────────┘
 ```
-
-Alias: `REGEXP_REPLACE`.
 
 ## regexpQuoteMeta(s)
 

@@ -2,7 +2,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Access/EnabledQuota.h>
 
-
 namespace ProfileEvents
 {
     extern const Event SelectedRows;
@@ -18,7 +17,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
-void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
+void ReadProgressCallback::setProcessListElement(QueryStatus * elem)
 {
     process_list_elem = elem;
     if (!elem)
@@ -112,13 +111,22 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
 
         size_t total_rows = progress.total_rows_to_read;
 
-        CurrentThread::updatePerformanceCountersIfNeeded();
+        constexpr UInt64 profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
+        UInt64 total_elapsed_microseconds = total_stopwatch.elapsedMicroseconds();
 
-        std::lock_guard lock(limits_and_quotas_mutex);
+        std::lock_guard lock(last_profile_events_update_time_mutex);
+        {
+            if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
+            {
+                /// TODO: Should be done in PipelineExecutor.
+                CurrentThread::updatePerformanceCounters();
+                last_profile_events_update_time = total_elapsed_microseconds;
+            }
+        }
 
         /// TODO: Should be done in PipelineExecutor.
         for (const auto & limits : storage_limits)
-            limits.local_limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_stopwatch.elapsedMicroseconds());
+            limits.local_limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota)
             quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});

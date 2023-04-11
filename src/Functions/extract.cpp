@@ -1,6 +1,6 @@
-#include <Functions/FunctionsStringSearchToString.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/Regexps.h>
+#include "FunctionsStringSearchToString.h"
+#include "FunctionFactory.h"
+#include "Regexps.h"
 #include <Common/OptimizedRegularExpression.h>
 
 

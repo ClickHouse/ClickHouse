@@ -31,8 +31,6 @@ public:
 
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
-    void assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr context) const;
-
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
 
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);

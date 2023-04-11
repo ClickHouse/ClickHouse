@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <base/types.h>
-#include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -15,40 +14,26 @@ namespace ErrorCodes
 }
 
 
-/// Variable-Length Quantity (VLQ) Base-128 compression, also known as Variable Byte (VB) or Varint encoding.
-
-/// Write UInt64 in variable length format (base128)
+/** Write UInt64 in variable length format (base128) NOTE Only up to 2^63 - 1 are supported. */
 void writeVarUInt(UInt64 x, std::ostream & ostr);
 void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 char * writeVarUInt(UInt64 x, char * ostr);
 
-/// NOTE: Due to historical reasons, only values up to 1<<63-1 can be safely encoded/decoded (bigger values are not idempotent under
-/// encoding/decoding). This cannot be changed without breaking backward compatibility (some drivers, e.g. clickhouse-rs (Rust), have the
-/// same limitation, others support the full 1<<64 range, e.g. clickhouse-driver (Python))
-constexpr UInt64 VAR_UINT_MAX = (1ULL<<63) - 1;
 
-/// Write UInt64 in variable length format (base128), limit the value to VAR_UINT_MAX if it exceed VAR_UINT_MAX (to bypass sanity check)
-template <typename ...Args>
-auto writeVarUIntOverflow(UInt64 x, Args && ... args)
-{
-    return writeVarUInt(std::min(x, VAR_UINT_MAX), std::forward<Args>(args)...);
-}
-
-
-/// Read UInt64, written in variable length format (base128)
+/** Read UInt64, written in variable length format (base128) */
 void readVarUInt(UInt64 & x, std::istream & istr);
 void readVarUInt(UInt64 & x, ReadBuffer & istr);
 const char * readVarUInt(UInt64 & x, const char * istr, size_t size);
 
 
-/// Get the length of UInt64 in VarUInt format
+/** Get the length of UInt64 in VarUInt format */
 size_t getLengthOfVarUInt(UInt64 x);
 
-/// Get the Int64 length in VarInt format
+/** Get the Int64 length in VarInt format */
 size_t getLengthOfVarInt(Int64 x);
 
 
-/// Write Int64 in variable length format (base128)
+/** Write Int64 in variable length format (base128) */
 template <typename OUT>
 inline void writeVarInt(Int64 x, OUT & ostr)
 {
@@ -61,7 +46,7 @@ inline char * writeVarInt(Int64 x, char * ostr)
 }
 
 
-/// Read Int64, written in variable length format (base128)
+/** Read Int64, written in variable length format (base128) */
 template <typename IN>
 inline void readVarInt(Int64 & x, IN & istr)
 {
@@ -98,14 +83,14 @@ inline void readVarUInt(UInt32 & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = static_cast<UInt32>(tmp);
+    x = tmp;
 }
 
 inline void readVarInt(Int32 & x, ReadBuffer & istr)
 {
     Int64 tmp;
     readVarInt(tmp, istr);
-    x = static_cast<Int32>(tmp);
+    x = tmp;
 }
 
 inline void readVarUInt(UInt16 & x, ReadBuffer & istr)
@@ -134,7 +119,7 @@ inline void readVarUInt(T & x, ReadBuffer & istr)
 
 [[noreturn]] inline void throwReadAfterEOF()
 {
-    throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
+    throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
 template <bool fast>
@@ -201,7 +186,6 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
 
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
-    chassert(x <= VAR_UINT_MAX);
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
@@ -221,7 +205,6 @@ inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 
 inline void writeVarUInt(UInt64 x, std::ostream & ostr)
 {
-    chassert(x <= VAR_UINT_MAX);
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
@@ -239,7 +222,6 @@ inline void writeVarUInt(UInt64 x, std::ostream & ostr)
 
 inline char * writeVarUInt(UInt64 x, char * ostr)
 {
-    chassert(x <= VAR_UINT_MAX);
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;

@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 
 -- VisitParam with basic type
 SELECT visitParamExtractInt('{"myparam":-1}', 'myparam');

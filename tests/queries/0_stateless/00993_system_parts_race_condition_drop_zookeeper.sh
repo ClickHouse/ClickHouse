@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, no-upgrade-check, no-replicated-database
+# Tags: race, zookeeper, no-parallel, no-backward-compatibility-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -60,7 +60,6 @@ function thread6()
         sleep 0.$RANDOM;
     done
 }
-
 
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
 export -f thread1;

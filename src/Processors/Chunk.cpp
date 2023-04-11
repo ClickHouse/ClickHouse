@@ -23,11 +23,11 @@ Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
     checkNumRowsIsConsistent();
 }
 
-static Columns unmuteColumns(MutableColumns && mutable_columns)
+static Columns unmuteColumns(MutableColumns && mut_columns)
 {
     Columns columns;
-    columns.reserve(mutable_columns.size());
-    for (auto & col : mutable_columns)
+    columns.reserve(mut_columns.size());
+    for (auto & col : mut_columns)
         columns.emplace_back(std::move(col));
 
     return columns;
@@ -70,31 +70,31 @@ void Chunk::checkNumRowsIsConsistent()
     {
         auto & column = columns[i];
         if (column->size() != num_rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}: expected {}, got {}",
-                            column->getName()+ " position " + toString(i), toString(num_rows), toString(column->size()));
+            throw Exception("Invalid number of rows in Chunk column " + column->getName()+ " position " + toString(i) + ": expected " +
+                            toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
     }
 }
 
 MutableColumns Chunk::mutateColumns()
 {
     size_t num_columns = columns.size();
-    MutableColumns mutable_columns(num_columns);
+    MutableColumns mut_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        mutable_columns[i] = IColumn::mutate(std::move(columns[i]));
+        mut_columns[i] = IColumn::mutate(std::move(columns[i]));
 
     columns.clear();
     num_rows = 0;
 
-    return mutable_columns;
+    return mut_columns;
 }
 
 MutableColumns Chunk::cloneEmptyColumns() const
 {
     size_t num_columns = columns.size();
-    MutableColumns mutable_columns(num_columns);
+    MutableColumns mut_columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        mutable_columns[i] = columns[i]->cloneEmpty();
-    return mutable_columns;
+        mut_columns[i] = columns[i]->cloneEmpty();
+    return mut_columns;
 }
 
 Columns Chunk::detachColumns()
@@ -108,8 +108,8 @@ void Chunk::addColumn(ColumnPtr column)
     if (empty())
         num_rows = column->size();
     else if (column->size() != num_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}, got {}",
-                        column->getName()+ ": expected " + toString(num_rows), toString(column->size()));
+        throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
+                        toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
 
     columns.emplace_back(std::move(column));
 }
@@ -133,11 +133,11 @@ void Chunk::addColumn(size_t position, ColumnPtr column)
 void Chunk::erase(size_t position)
 {
     if (columns.empty())
-        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Chunk is empty");
+        throw Exception("Chunk is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
 
     if (position >= columns.size())
-        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Chunk::erase(), max position = {}",
-                        toString(position), toString(columns.size() - 1));
+        throw Exception("Position " + toString(position) + " out of bound in Chunk::erase(), max position = "
+                        + toString(columns.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
 
     columns.erase(columns.begin() + position);
 }
@@ -171,19 +171,14 @@ std::string Chunk::dumpStructure() const
 
 void Chunk::append(const Chunk & chunk)
 {
-    append(chunk, 0, chunk.getNumRows());
-}
-
-void Chunk::append(const Chunk & chunk, size_t from, size_t length)
-{
-    MutableColumns mutable_columns = mutateColumns();
-    for (size_t position = 0; position < mutable_columns.size(); ++position)
+    MutableColumns mutation = mutateColumns();
+    for (size_t position = 0; position < mutation.size(); ++position)
     {
         auto column = chunk.getColumns()[position];
-        mutable_columns[position]->insertRangeFrom(*column, from, length);
+        mutation[position]->insertRangeFrom(*column, 0, column->size());
     }
-    size_t rows = mutable_columns[0]->size();
-    setColumns(std::move(mutable_columns), rows);
+    size_t rows = mutation[0]->size();
+    setColumns(std::move(mutation), rows);
 }
 
 void ChunkMissingValues::setBit(size_t column_idx, size_t row_idx)

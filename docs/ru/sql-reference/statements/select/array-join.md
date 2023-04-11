@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/select/array-join
 sidebar_label: ARRAY JOIN
 ---
 
@@ -146,7 +145,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-В приведенном ниже примере используется функция [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate):
+В приведенном ниже примере используется функция [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate):
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -259,7 +258,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Пример использования функции [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate):
+Пример использования функции [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate):
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num

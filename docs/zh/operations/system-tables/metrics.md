@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/metrics
----
 # system.metrics {#system_tables-metrics}
 
 此系统表包含可以即时计算或具有当前值的指标。例如，同时处理的查询数量或当前的复制延迟。这个表始终是最新的。

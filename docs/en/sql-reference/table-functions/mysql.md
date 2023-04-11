@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/mysql
 sidebar_position: 42
 sidebar_label: mysql
 ---
@@ -56,7 +55,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 
 A table object with the same columns as the original MySQL table.
 
-:::note
+:::note    
 In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
 
@@ -110,4 +109,5 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 **See Also**
 
 -   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
--   [Using MySQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+-   [Using MySQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
+

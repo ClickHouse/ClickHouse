@@ -17,8 +17,7 @@ set(SRCS
     "${LIBRARY_DIR}/src/containers/run.c"
     "${LIBRARY_DIR}/src/roaring.c"
     "${LIBRARY_DIR}/src/roaring_priority_queue.c"
-    "${LIBRARY_DIR}/src/roaring_array.c"
-    "${LIBRARY_DIR}/src/memory.c")
+    "${LIBRARY_DIR}/src/roaring_array.c")
 
 add_library(_roaring ${SRCS})
 

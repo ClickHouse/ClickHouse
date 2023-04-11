@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/quotas
----
 # quotas
 
 Contains information about [quotas](../../operations/system-tables/quotas.md).
@@ -20,9 +17,12 @@ Columns:
 - `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Logical value. It shows which users the quota is applied to. Values:
     - `0` — The quota applies to users specify in the `apply_to_list`.
     - `1` — The quota applies to all users except those listed in `apply_to_except`.
-- `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of user names/[roles](../../guides/sre/user-management/index.md#role-management) that the quota should be applied to.
+- `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of user names/[roles](../../operations/access-rights.md#role-management) that the quota should be applied to.
 - `apply_to_except` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of user names/roles that the quota should not apply to.
 
 ## See Also {#see-also}
 
 -   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/quotas) <!--hide-->
+

@@ -21,6 +21,8 @@ from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 NAME = "Run Check"
 
 TRUSTED_ORG_IDS = {
+    7409213,  # yandex
+    28471076,  # altinity
     54801242,  # clickhouse
 }
 
@@ -35,8 +37,8 @@ LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
-        "Bug Fix (user-visible misbehaviour in official stable release)",
-        "Bug Fix (user-visible misbehavior in official stable release)",
+        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
@@ -88,11 +90,9 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
     if FORCE_TESTS_LABEL in pr_info.labels:
-        print(f"Label '{FORCE_TESTS_LABEL}' set, forcing remaining checks")
         return True, f"Labeled '{FORCE_TESTS_LABEL}'", "pending"
 
     if DO_NOT_TEST_LABEL in pr_info.labels:
-        print(f"Label '{DO_NOT_TEST_LABEL}' set, skipping remaining checks")
         return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
@@ -105,15 +105,12 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
-        print(
-            f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
-        )
         return False, "Needs 'can be tested' label", "failure"
 
     return True, "No special conditions apply", "pending"
 
 
-def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
+def check_pr_description(pr_info) -> Tuple[str, str]:
     lines = list(
         map(lambda x: x.strip(), pr_info.body.split("\n") if pr_info.body else [])
     )
@@ -236,7 +233,7 @@ if __name__ == "__main__":
     elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
         pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
 
-    print(f"Change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
+    print(f"change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
     if pr_labels_to_add:
         post_labels(gh, pr_info, pr_labels_to_add)
 

@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/special/merge
 sidebar_position: 36
 sidebar_label: Merge
 ---

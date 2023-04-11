@@ -1,16 +1,11 @@
 ---
-slug: /en/sql-reference/functions/json-functions
 sidebar_position: 56
 sidebar_label: JSON
 ---
 
-There are two sets of functions to parse JSON. 
-   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
-   - `JSONExtract*` is made to parse normal JSON.
+# Functions for Working with JSON
 
-# visitParam functions
-
-ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
+ClickHouse has special functions for working with this JSON. All the JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
 
 The following assumptions are made:
 
@@ -79,9 +74,7 @@ visitParamExtractString('{"abc":"hello}', 'abc') = '';
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
-# JSONExtract functions
-
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements.
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
 
 ## isValidJSON(json)
 
@@ -401,7 +394,7 @@ Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, jso
 
 Parses a JSON and extract a value as JSON scalar.
 
-If the value does not exist, an empty string will be returned by default, and by SET `function_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
+If the value does not exist, an empty string will be returned.
 
 Example:
 
@@ -410,8 +403,6 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
 SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_VALUE('{"hello":2}', '$.hello');
 SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
-select JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
-select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 ```
 
 Result:
@@ -473,38 +464,3 @@ Result:
 
 -   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
 -   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
-
-
-## JSONArrayLength
-
-Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
-
-**Syntax**
-
-``` sql
-JSONArrayLength(json)
-```
-
-Alias: `JSON_ARRAY_LENGTH(json)`.
-
-**Arguments**
-
--   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
-
-**Returned value**
-
--   If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
-
-Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-``` sql
-SELECT
-    JSONArrayLength(''),
-    JSONArrayLength('[1,2,3]')
-
-┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
-│                ᴺᵁᴸᴸ │                          3 │
-└─────────────────────┴────────────────────────────┘
-```

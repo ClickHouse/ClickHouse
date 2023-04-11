@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: User Settings
 ---
@@ -9,7 +8,7 @@ sidebar_label: User Settings
 The `users` section of the `user.xml` configuration file contains user settings.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing users. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
 :::
 
 Structure of the `users` section:
@@ -35,7 +34,7 @@ Structure of the `users` section:
             <database_name>
                 <table_name>
                     <filter>expression</filter>
-                </table_name>
+                <table_name>
             </database_name>
         </databases>
     </user_name>
@@ -77,7 +76,7 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 ### access_management {#access_management-user-setting}
 
-This setting enables or disables using of SQL-driven [access control and account management](../../guides/sre/user-management/index.md#access-control) for the user.
+This setting enables or disables using of SQL-driven [access control and account management](../../operations/access-rights.md#access-control) for the user.
 
 Possible values:
 
@@ -118,7 +117,7 @@ To open access for user from any network, specify:
 <ip>::/0</ip>
 ```
 
-:::note
+:::warning
 It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
 :::
 
@@ -161,3 +160,5 @@ The following configuration forces that user `user1` can only see the rows of `t
 ```
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+
+[Original article](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

@@ -14,7 +14,6 @@ MergingSortedTransform::MergingSortedTransform(
     size_t max_block_size,
     SortingQueueStrategy sorting_queue_strategy,
     UInt64 limit_,
-    bool always_read_till_end_,
     WriteBuffer * out_row_sources_buf_,
     bool quiet_,
     bool use_average_block_sizes,
@@ -25,7 +24,6 @@ MergingSortedTransform::MergingSortedTransform(
         header,
         have_all_inputs_,
         limit_,
-        always_read_till_end_,
         header,
         num_inputs,
         description_,
@@ -54,7 +52,7 @@ void MergingSortedTransform::onFinish()
 
     double seconds = total_stopwatch.elapsedSeconds();
 
-    if (seconds == 0.0)
+    if (!seconds)
         LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in 0 sec.", merged_data.totalChunks(), merged_data.totalMergedRows());
     else
         LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",

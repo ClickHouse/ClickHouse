@@ -71,7 +71,8 @@ namespace
             String all_types_str;
             for (auto kt : collections::range(QuotaKeyType::MAX))
                 all_types_str += String(all_types_str.empty() ? "" : ", ") + "'" + QuotaKeyTypeInfo::get(kt).name + "'";
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Quota cannot be keyed by '{}'. Expected one of the following identifiers: {}", name, all_types_str);
+            String msg = "Quota cannot be keyed by '" + name + "'. Expected one of the following identifiers: " + all_types_str;
+            throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
         });
     }
 

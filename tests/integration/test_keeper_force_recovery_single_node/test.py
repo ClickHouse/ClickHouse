@@ -2,11 +2,10 @@ import os
 import pytest
 import socket
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import time
 
 
-from kazoo.client import KazooClient, KazooRetry
+from kazoo.client import KazooClient
 
 CLUSTER_SIZE = 3
 
@@ -46,19 +45,47 @@ def started_cluster():
 
 def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181",
-        timeout=timeout,
-        connection_retry=KazooRetry(max_tries=10),
-        command_retry=KazooRetry(max_tries=10),
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
     )
     _fake_zk_instance.start()
     return _fake_zk_instance
 
 
-def wait_and_assert_data(zk, path, data):
-    while zk.retry(zk.exists, path) is None:
+def get_keeper_socket(node_name):
+    hosts = cluster.get_instance_ip(node_name)
+    client = socket.socket()
+    client.settimeout(10)
+    client.connect((hosts, 9181))
+    return client
+
+
+def send_4lw_cmd(node_name, cmd="ruok"):
+    client = None
+    try:
+        client = get_keeper_socket(node_name)
+        client.send(cmd.encode())
+        data = client.recv(100_000)
+        data = data.decode()
+        return data
+    finally:
+        if client is not None:
+            client.close()
+
+
+def wait_until_connected(node_name):
+    while send_4lw_cmd(node_name, "mntr") == NOT_SERVING_REQUESTS_ERROR_MSG:
         time.sleep(0.1)
-    assert zk.retry(zk.get, path)[0] == data.encode()
+
+
+def wait_nodes(nodes):
+    for node in nodes:
+        wait_until_connected(node.name)
+
+
+def wait_and_assert_data(zk, path, data):
+    while zk.exists(path) is None:
+        time.sleep(0.1)
+    assert zk.get(path)[0] == data.encode()
 
 
 def close_zk(zk):
@@ -66,17 +93,20 @@ def close_zk(zk):
     zk.close()
 
 
+NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
+
+
 def test_cluster_recovery(started_cluster):
     node_zks = []
     try:
-        keeper_utils.wait_nodes(cluster, nodes)
+        wait_nodes(nodes)
 
         node_zks = [get_fake_zk(node.name) for node in nodes]
 
         data_in_cluster = []
 
         def add_data(zk, path, data):
-            zk.retry(zk.create, path, data.encode())
+            zk.create(path, data.encode())
             data_in_cluster.append((path, data))
 
         def assert_all_data(zk):
@@ -107,7 +137,7 @@ def test_cluster_recovery(started_cluster):
             wait_and_assert_data(node_zk, "/test_force_recovery_extra", "somedataextra")
 
         nodes[0].start_clickhouse()
-        keeper_utils.wait_until_connected(cluster, nodes[0])
+        wait_until_connected(nodes[0].name)
 
         node_zks[0] = get_fake_zk(nodes[0].name)
         wait_and_assert_data(node_zks[0], "/test_force_recovery_extra", "somedataextra")
@@ -126,7 +156,7 @@ def test_cluster_recovery(started_cluster):
         )
 
         nodes[0].start_clickhouse()
-        keeper_utils.wait_until_connected(cluster, nodes[0])
+        wait_until_connected(nodes[0].name)
 
         assert_all_data(get_fake_zk(nodes[0].name))
     finally:

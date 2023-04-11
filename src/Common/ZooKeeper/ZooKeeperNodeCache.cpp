@@ -44,7 +44,7 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
 
     zkutil::ZooKeeperPtr zookeeper = get_zookeeper();
     if (!zookeeper)
-        throw DB::Exception(DB::ErrorCodes::NO_ZOOKEEPER, "Could not get znode: '{}'. ZooKeeper not configured.", path);
+        throw DB::Exception("Could not get znode: '" + path + "'. ZooKeeper not configured.", DB::ErrorCodes::NO_ZOOKEEPER);
 
     for (const auto & invalidated_path : invalidated_paths)
         path_to_cached_znode.erase(invalidated_path);

@@ -216,6 +216,7 @@ class _NetworkManager:
         container_exit_timeout=60,
         docker_api_version=os.environ.get("DOCKER_API_VERSION"),
     ):
+
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 
@@ -231,6 +232,7 @@ class _NetworkManager:
 
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
+
             for i in range(5):
                 if self._container is not None:
                     try:
@@ -305,7 +307,7 @@ class _NetworkManager:
         return output
 
 
-# Approximately measure network I/O speed for interface
+# Approximately mesure network I/O speed for interface
 class NetThroughput(object):
     def __init__(self, node):
         self.node = node
