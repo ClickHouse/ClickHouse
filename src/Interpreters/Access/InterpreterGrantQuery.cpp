@@ -334,14 +334,22 @@ namespace
     template <typename T>
     void grantCurrentGrantsTemplate(
         T & grantee,
-        const AccessRightsElements & elements_to_grant,
-        const AccessRightsElements & elements_to_revoke,
-        std::shared_ptr<const ContextAccess> current_user_access,
-        bool grant_option)
+        const AccessRights & rights_to_grant,
+        const AccessRightsElements & elements_to_revoke)
     {
         if (!elements_to_revoke.empty())
             grantee.access.revoke(elements_to_revoke);
 
+        grantee.access.makeUnion(rights_to_grant);
+    }
+
+    /// Grants current user's grants with grant options to specified user.
+    void grantCurrentGrants(
+        IAccessEntity & grantee,
+        const AccessRightsElements & elements_to_grant,
+        const AccessRightsElements & elements_to_revoke,
+        std::shared_ptr<const ContextAccess> current_user_access)
+    {
         /// We need to collect all current user's grant and filter them by grant option.
         AccessRightsElements current_user_grantable_elements;
         auto available_grant_elements = current_user_access->getAccessRights()->getElements();
@@ -360,36 +368,13 @@ namespace
                 current_user_rights.grant(element);
         }
 
-        /// If elements_to_grant was not specified it will grant all available for user grants.
-        /// Otherwise, we will intersect available grants with given set.
-        if (elements_to_grant.empty())
-        {
-            if (!grant_option)
-                current_user_rights.revokeGrantOption(AccessType::ALL);
+        AccessRights new_rights(elements_to_grant);
+        new_rights.makeIntersection(current_user_rights);
 
-            grantee.access.makeUnion(current_user_rights);
-        }
-        else
-        {
-            AccessRights new_rights(elements_to_grant);
-            new_rights.makeIntersection(current_user_rights);
-
-            grantee.access.makeUnion(new_rights);
-        }
-    }
-
-    /// Grants current user's grants with grant options to specified user.
-    void grantCurrentGrants(
-        IAccessEntity & grantee,
-        const AccessRightsElements & elements_to_grant,
-        const AccessRightsElements & elements_to_revoke,
-        std::shared_ptr<const ContextAccess> current_user_access,
-        bool grant_option)
-    {
         if (auto * user = typeid_cast<User *>(&grantee))
-            grantCurrentGrantsTemplate(*user, elements_to_grant, elements_to_revoke, current_user_access, grant_option);
+            grantCurrentGrantsTemplate(*user, new_rights, elements_to_revoke);
         else if (auto * role = typeid_cast<Role *>(&grantee))
-            grantCurrentGrantsTemplate(*role, elements_to_grant, elements_to_revoke, current_user_access, grant_option);
+            grantCurrentGrantsTemplate(*role, new_rights, elements_to_revoke);
     }
 
     /// Updates grants of a specified user or role.
@@ -465,7 +450,7 @@ BlockIO InterpreterGrantQuery::execute()
     {
         auto clone = entity->clone();
         if (query.current_grants)
-            grantCurrentGrants(*clone, elements_to_grant, elements_to_revoke, current_user_access, query.with_grant_option);
+            grantCurrentGrants(*clone, elements_to_grant, elements_to_revoke, current_user_access);
         else
             updateGrantedAccessRightsAndRoles(*clone, elements_to_grant, elements_to_revoke, roles_to_grant, roles_to_revoke, query.admin_option);
         return clone;

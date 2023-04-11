@@ -296,6 +296,11 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 return false;
         }
+
+        /// If no elements were specified it will grant all available for user grants.
+        /// Using `.size() == 0` because `.empty()` is overridden and returns true for NONE elements.
+        if (elements.size() == 0) // NOLINT
+            elements.emplace_back(AccessType::ALL);
     }
     else
     {
@@ -370,7 +375,6 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
     query->current_grants = current_grants;
-    query->with_grant_option = grant_option;
 
     return true;
 }
