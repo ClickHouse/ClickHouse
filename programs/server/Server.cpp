@@ -981,7 +981,7 @@ try
 
     StatusFile status{path / "status", StatusFile::write_full_info};
 
-    DB::ServerUUID::load(path / "uuid", log);
+    ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {

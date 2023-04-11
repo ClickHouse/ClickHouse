@@ -272,7 +272,7 @@ void RegExpTreeDictionary::initGraph()
         if (value->parent_id == 0) // this is root node.
             initTopologyOrder(id, visited, topology_id);
     if (topology_order.size() != regex_nodes.size())
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The topology order cannot match the number of regex nodes. This is likely a internal bug.");
 }
 
 void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id)
@@ -280,7 +280,7 @@ void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> &
     visited.insert(node_idx);
     for (UInt64 child_idx : regex_nodes[node_idx]->children)
         if (visited.contains(child_idx))
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree. The input tree is cyclical");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "The regexp tree is cyclical. Please check your config.");
         else
             initTopologyOrder(child_idx, visited, topology_id);
     topology_order[node_idx] = topology_id++;

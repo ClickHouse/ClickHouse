@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 #include <IO/HashingReadBuffer.h>
 
 
