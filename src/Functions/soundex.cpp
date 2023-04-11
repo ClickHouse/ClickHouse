@@ -60,7 +60,7 @@ struct SoundexImpl
         {
             *out_char_data++ = toUpperIfAlphaASCII(*in_cur);
         }
-        char last_ch = getScode(in_cur, in_end);
+        char prev_code = getScode(toUpperIfAlphaASCII(*in_cur));
 
         char ch;
         in_cur++;
