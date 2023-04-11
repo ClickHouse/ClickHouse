@@ -36,7 +36,7 @@ public:
     /// Create FutureSet from a ready set.
     explicit FutureSet(SetPtr readySet);
 
-    /// The set object will be ready in the future, as oposed to 'null' object  when FutureSet is default constructed.
+    /// The set object will be ready in the future, as opposed to 'null' object  when FutureSet is default constructed.
     bool isValid() const { return future_set.valid(); }
 
     /// The the value of SetPtr is ready, but the set object might not have been filled yet.
@@ -102,7 +102,6 @@ struct PreparedSetKey
     };
 };
 
-
 class PreparedSets
 {
 public:
@@ -123,7 +122,7 @@ public:
 
     /// Returns all sets that match the given ast hash not checking types
     /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey
-    std::vector<SetPtr> getByTreeHash(IAST::Hash ast_hash) const;
+    std::vector<FutureSet> getByTreeHash(IAST::Hash ast_hash) const;
 
     bool empty() const;
 
@@ -148,6 +147,9 @@ using SharedSet = std::shared_future<SetPtr>;
 class PreparedSetsCache
 {
 public:
+    /// Lookup for set in the cache.
+    /// If it is found, get the future to be able to wait for the set to be built.
+    /// Otherwise create a promise, build the set and set the promise value.
     std::variant<std::promise<SetPtr>, SharedSet> findOrPromiseToBuild(const String & key);
 
 private:

@@ -100,7 +100,7 @@ void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = Fu
 FutureSet PreparedSets::getFuture(const PreparedSetKey & key) const
 {
     auto it = sets.find(key);
-    if (it == sets.end())// || it->second.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    if (it == sets.end())
         return {};
     return it->second;
 }
@@ -113,13 +113,13 @@ SetPtr PreparedSets::get(const PreparedSetKey & key) const
     return it->second.get();
 }
 
-std::vector<SetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash) const
+std::vector<FutureSet> PreparedSets::getByTreeHash(IAST::Hash ast_hash) const
 {
-    std::vector<SetPtr> res;
+    std::vector<FutureSet> res;
     for (const auto & it : this->sets)
     {
         if (it.first.ast_hash == ast_hash)
-            res.push_back(it.second.get());
+            res.push_back(it.second);
     }
     return res;
 }
@@ -178,26 +178,22 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
 {
 //    auto* log = &Poco::Logger::get("PreparedSetsCache");
 
-    /// Look for existing entry in the cache.
+    std::lock_guard lock(cache_mutex);
+
+    auto it = cache.find(key);
+    if (it != cache.end())
     {
-        std::lock_guard lock(cache_mutex);
-
-        auto it = cache.find(key);
-        if (it != cache.end())
-        {
-            /// If the set is being built, return its future, but if it's ready and is nullptr then we should retry building it.
-            /// TODO: consider moving retry logic outside of the cache.
-            if (it->second.future.valid() &&
-                (it->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready || it->second.future.get() != nullptr))
-                return it->second.future;
-        }
-
-        /// Insert the entry into the cache so that other threads can find it and start waiting for the set.
-        std::promise<SetPtr> promise_to_fill_set;
-        Entry & entry = cache[key];
-        entry.future = promise_to_fill_set.get_future();
-        return promise_to_fill_set;
+        /// If the set is being built, return its future, but if it's ready and is nullptr then we should retry building it.
+        if (it->second.future.valid() &&
+            (it->second.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready || it->second.future.get() != nullptr))
+            return it->second.future;
     }
+
+    /// Insert the entry into the cache so that other threads can find it and start waiting for the set.
+    std::promise<SetPtr> promise_to_fill_set;
+    Entry & entry = cache[key];
+    entry.future = promise_to_fill_set.get_future();
+    return promise_to_fill_set;
 }
 
 };
