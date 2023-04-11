@@ -21,8 +21,8 @@ ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & req
     if (requested_column.isSubcolumn())
     {
         auto subcolumn_name = requested_column.getSubcolumnName();
-        elem_type = elem_type->tryGetSubcolumnType(subcolumn_name);
         elem_column = elem_type->tryGetSubcolumn(subcolumn_name, elem_column);
+        elem_type = elem_type->tryGetSubcolumnType(subcolumn_name);
 
         if (!elem_type || !elem_column)
             return nullptr;
