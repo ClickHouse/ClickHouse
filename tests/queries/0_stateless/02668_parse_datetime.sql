@@ -18,6 +18,12 @@ select parseDateTime('12345', '%c'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('jun', '%b', 'UTC') = toDateTime('2000-06-01', 'UTC');
 select parseDateTime('JUN', '%b', 'UTC') = toDateTime('2000-06-01', 'UTC');
 select parseDateTime('abc', '%b'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime('08', '%M', 'UTC') = toDateTime('1970-01-01 00:08:00', 'UTC');
+select parseDateTime('59', '%M', 'UTC') = toDateTime('1970-01-01 00:59:00', 'UTC');
+select parseDateTime('00/', '%M/', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
+select parseDateTime('60', '%M', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime('-1', '%M', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime('123456789', '%M', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 
 -- day of month
 select parseDateTime('07', '%d', 'UTC') = toDateTime('2000-01-07', 'UTC');
