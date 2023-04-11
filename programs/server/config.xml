@@ -139,7 +139,7 @@
          This interface is also used by ODBC and JDBC drivers (DataGrip, Dbeaver, ...)
          and by most of web interfaces (embedded UI, Grafana, Redash, ...).
       -->
-    <http_port>8123</http_port>
+    <!-- <https_port>8443</https_port> -->
 
      <!-- Setting that allows to download files from directory.
           It is essentially used for completing HTTP-01 challenge and fetching
@@ -194,7 +194,7 @@
          You have to configure certificate to enable this interface.
          See the openSSL section below.
     -->
-    <tcp_port_secure>9440</tcp_port_secure>
+    <!-- <tcp_port_secure>9440</tcp_port_secure> -->
 
     <!-- Native interface wrapped with PROXYv1 protocol
          PROXYv1 header sent for every connection.
@@ -311,8 +311,8 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+             <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
@@ -346,10 +346,12 @@
         </client>
     </openSSL>
 
+    <!--
     <LetsEncrypt>
         <enableAutomaticIssue>false</enableAutomaticIssue>
         <reissueHoursBefore>100000</reissueHoursBefore>
     </LetsEncrypt>
+    -->
 
     <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->
     <!--
@@ -1616,20 +1618,6 @@
         </rule>
     </http_handlers>
     -->
-    <!--
-    <http_handlers>
-        <rule>
-            <url>/files</url>
-            <handler>
-                <type>static</type>
-                <content_type>application/octet-stream</content_type>
-                <response_content>file:///../../../../../../home/lohmat/ClickHouse/README.md</response_content>
-            </handler>
-        </rule>
-    </http_handlers>
-    -->
-
-
 
     <send_crash_reports>
         <!-- Changing <enabled> to true allows sending crash reports to -->
