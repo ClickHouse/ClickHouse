@@ -1,5 +1,5 @@
 ---
-slug: /zh/faq/general/overview
+slug: /zh/faq/general
 ---
 # 常见问题 {#chang-jian-wen-ti}
 

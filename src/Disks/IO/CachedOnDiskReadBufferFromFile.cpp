@@ -4,9 +4,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
+#include <Common/hex.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/logger_useful.h>
-#include <base/hex.h>
 #include <Interpreters/Context.h>
 
 

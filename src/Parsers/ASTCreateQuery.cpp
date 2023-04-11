@@ -440,10 +440,10 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (select)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
-                      << settings.nl_or_ws
-                      << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
+                      << (comment ? "(" : "")
+                      << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (comment ? ")" : "") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (comment ? ")" : "");
     }
 
     if (comment)

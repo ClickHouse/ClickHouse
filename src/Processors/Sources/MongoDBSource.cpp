@@ -15,6 +15,7 @@
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <Poco/URI.h>
+#include <Poco/Version.h>
 
 // only after poco
 // naming conflict:

@@ -174,15 +174,6 @@ $CLICKHOUSE_CLIENT -q "SELECT t1.value_ FROM test_table_1 AS t1 INNER JOIN test_
 $CLICKHOUSE_CLIENT -q "SELECT t2.value_ FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 ON t1.id = t2.id SETTINGS allow_experimental_analyzer = 1;" 2>&1 \
     | grep "Maybe you meant: \['t2.value'\]" &>/dev/null;
 
-$CLICKHOUSE_CLIENT -q "SELECT [1] AS a, a.size1 SETTINGS allow_experimental_analyzer = 1;" 2>&1 \
-    | grep "Maybe you meant: \['a.size0'\]" &>/dev/null;
-
-$CLICKHOUSE_CLIENT -q "SELECT ((1))::Tuple(a Tuple(b UInt32)) AS t, t.c SETTINGS allow_experimental_analyzer = 1;" 2>&1 \
-    | grep "Maybe you meant: \['t.a'\]" &>/dev/null;
-
-$CLICKHOUSE_CLIENT -q "SELECT ((1))::Tuple(a Tuple(b UInt32)) AS t, t.a.c SETTINGS allow_experimental_analyzer = 1;" 2>&1 \
-    | grep "Maybe you meant: \['t.a.b'\]" &>/dev/null;
-
 $CLICKHOUSE_CLIENT -q "SELECT 1";
 
 $CLICKHOUSE_CLIENT -n -q "

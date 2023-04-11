@@ -75,7 +75,6 @@ add_subdirectory (Coordination)
 add_subdirectory (Bridge)
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
-add_subdirectory (Formats)
 
 
 set(dbms_headers)
@@ -578,8 +577,8 @@ if (TARGET ch_contrib::annoy)
 endif()
 
 if (TARGET ch_rust::skim)
+    # Add only -I, library is needed only for clickhouse-client/clickhouse-local
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
-    dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
@@ -608,8 +607,7 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        string_utils
-        hilite_comparator)
+        string_utils)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
@@ -623,9 +621,6 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
     endif()
 
-    if (TARGET ch_contrib::parquet)
-        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
-    endif()
 
     add_check(unit_tests_dbms)
 endif ()

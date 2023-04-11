@@ -318,9 +318,6 @@ bool PostgreSQLHandler::isEmptyQuery(const String & query)
 {
     if (query.empty())
         return true;
-    /// golang driver pgx sends ";"
-    if (query == ";")
-        return true;
 
     Poco::RegularExpression regex(R"(\A\s*\z)");
     return regex.match(query);

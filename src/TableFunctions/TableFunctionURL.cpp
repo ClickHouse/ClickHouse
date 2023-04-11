@@ -9,8 +9,6 @@
 #include <Storages/StorageExternalDistributed.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
@@ -28,24 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
-{
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
-    std::vector<size_t> result;
-
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
-    }
-
-    return result;
-}
-
 void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 {
     const auto & ast_function = assert_cast<const ASTFunction *>(ast.get());
@@ -56,7 +36,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 
     auto & url_function_args = assert_cast<ASTExpressionList *>(args[0].get())->children;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(url_function_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(url_function_args))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
 

@@ -155,13 +155,13 @@ struct common_type<wide::integer<Bits, Signed>, Arithmetic>
         std::is_floating_point_v<Arithmetic>,
         Arithmetic,
         std::conditional_t<
-            sizeof(Arithmetic) * 8 < Bits,
+            sizeof(Arithmetic) < Bits * sizeof(long),
             wide::integer<Bits, Signed>,
             std::conditional_t<
-                Bits < sizeof(Arithmetic) * 8,
+                Bits * sizeof(long) < sizeof(Arithmetic),
                 Arithmetic,
                 std::conditional_t<
-                    Bits == sizeof(Arithmetic) * 8 && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
+                    Bits * sizeof(long) == sizeof(Arithmetic) && (std::is_same_v<Signed, signed> || std::is_signed_v<Arithmetic>),
                     Arithmetic,
                     wide::integer<Bits, Signed>>>>>;
 };
@@ -732,10 +732,9 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(rhs);
 
-            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(t, big(i));
+                base_type rhs_item = get_item(rhs, big(i));
 
                 if (lhs.items[big(i)] != rhs_item)
                     return lhs.items[big(i)] > rhs_item;
@@ -758,10 +757,9 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(lhs);
 
-            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(t, big(i));
+                base_type rhs_item = get_item(rhs, big(i));
 
                 if (lhs.items[big(i)] != rhs_item)
                     return lhs.items[big(i)] < rhs_item;
@@ -781,10 +779,9 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type rhs_item = get_item(t, any(i));
+                base_type rhs_item = get_item(rhs, any(i));
 
                 if (lhs.items[any(i)] != rhs_item)
                     return false;
@@ -1242,7 +1239,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
     for (unsigned i = 0; i < _impl::item_count; ++i)
     {
         long double t = res;
-        res *= static_cast<long double>(std::numeric_limits<base_type>::max());
+        res *= std::numeric_limits<base_type>::max();
         res += t;
         res += tmp.items[_impl::big(i)];
     }

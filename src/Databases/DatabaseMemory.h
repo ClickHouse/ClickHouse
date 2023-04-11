@@ -53,8 +53,6 @@ public:
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
 private:
-    void removeDataPath(ContextPtr local_context);
-
     const String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;
     NameToASTCreate create_queries TSA_GUARDED_BY(mutex);

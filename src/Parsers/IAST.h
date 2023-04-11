@@ -208,8 +208,7 @@ public:
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
-            show_secrets(other.show_secrets)
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
@@ -269,7 +268,6 @@ public:
         Delete,
         Create,
         Drop,
-        Undrop,
         Rename,
         Optimize,
         Check,

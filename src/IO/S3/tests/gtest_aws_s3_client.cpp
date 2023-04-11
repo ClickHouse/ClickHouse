@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "IO/S3/Credentials.h"
 #include "config.h"
 
 
@@ -110,11 +109,8 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
         secret_access_key,
         server_side_encryption_customer_key_base64,
         headers,
-        DB::S3::CredentialsConfiguration
-        {
-            .use_environment_credentials = use_environment_credentials,
-            .use_insecure_imds_request = use_insecure_imds_request
-        }
+        use_environment_credentials,
+        use_insecure_imds_request
     );
 
     ASSERT_TRUE(client);

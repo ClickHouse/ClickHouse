@@ -83,7 +83,7 @@ CAST(N as DateTime64(9, 'Europe/Minsk'))
 # CAST(N as DateTime64(12, 'Asia/Istanbul'))
 # DateTime64(18) will always fail due to zero precision, but it is Ok to test here:
 # CAST(N as DateTime64(18, 'Asia/Istanbul'))
-formatDateTime(N, '%C %d %D %e %F %H %I %j %m %i %p %R %S %T %u %V %w %y %Y %%', 'Asia/Istanbul')
+formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%', 'Asia/Istanbul')
 """.splitlines()
 
 # Expanded later to cartesian product of all arguments, using format string.

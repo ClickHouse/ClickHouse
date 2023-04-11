@@ -69,7 +69,8 @@ private:
         for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
             candidates.push_back({ *it, is_deterministic });
 
-        /// Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
+        // Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
+        // TODO: Also process CONSTANT here. We can simplify GROUP BY x, x + 1 to GROUP BY x.
         while (!candidates.empty())
         {
             auto [candidate, parents_are_only_deterministic] = candidates.back();
@@ -107,7 +108,6 @@ private:
                     return false;
             }
         }
-
         return true;
     }
 

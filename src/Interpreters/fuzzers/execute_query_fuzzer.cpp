@@ -1,3 +1,4 @@
+#include <iostream>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include "Processors/Executors/PullingPipelineExecutor.h"

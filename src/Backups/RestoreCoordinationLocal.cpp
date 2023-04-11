@@ -1,30 +1,26 @@
 #include <Backups/RestoreCoordinationLocal.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() : log(&Poco::Logger::get("RestoreCoordinationLocal"))
-{
-}
-
+RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStage(const String &, const String &)
+void RestoreCoordinationLocal::setStage(const String &, const String &, const String &)
 {
 }
 
-void RestoreCoordinationLocal::setError(const Exception &)
+void RestoreCoordinationLocal::setError(const String &, const Exception &)
 {
 }
 
-Strings RestoreCoordinationLocal::waitForStage(const String &)
+Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &)
 {
     return {};
 }
 
-Strings RestoreCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
+Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &, std::chrono::milliseconds)
 {
     return {};
 }
@@ -46,19 +42,9 @@ bool RestoreCoordinationLocal::acquireReplicatedAccessStorage(const String &)
     return true;
 }
 
-bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserDefinedSQLObjectType)
-{
-    return true;
-}
-
 bool RestoreCoordinationLocal::hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const
 {
-    if (num_active_restores > 1)
-    {
-        LOG_WARNING(log, "Found concurrent backups: num_active_restores={}", num_active_restores);
-        return true;
-    }
-    return false;
+    return (num_active_restores > 1);
 }
 
 }

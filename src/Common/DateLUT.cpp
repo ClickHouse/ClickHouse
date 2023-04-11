@@ -149,7 +149,7 @@ DateLUT::DateLUT()
 
 const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
 
     auto it = impls.emplace(time_zone, nullptr).first;
     if (!it->second)

@@ -13,31 +13,21 @@ namespace DB
 ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
     const FormatSchemaInfo & schema_info_, bool with_length_delimiter_, bool flatten_google_wrappers_)
     : IRowInputFormat(header_, in_, params_)
-    , message_descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No))
-    , with_length_delimiter(with_length_delimiter_)
-    , flatten_google_wrappers(flatten_google_wrappers_)
+    , reader(std::make_unique<ProtobufReader>(in_))
+    , serializer(ProtobufSerializer::create(
+          header_.getNames(),
+          header_.getDataTypes(),
+          missing_column_indices,
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
+          with_length_delimiter_,
+          /* with_envelope = */ false,
+          flatten_google_wrappers_,
+         *reader))
 {
-}
-
-void ProtobufRowInputFormat::createReaderAndSerializer()
-{
-    reader = std::make_unique<ProtobufReader>(*in);
-    serializer = ProtobufSerializer::create(
-        getPort().getHeader().getNames(),
-        getPort().getHeader().getDataTypes(),
-        missing_column_indices,
-        *message_descriptor,
-        with_length_delimiter,
-        /* with_envelope = */ false,
-        flatten_google_wrappers,
-        *reader);
 }
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
-    if (!reader)
-        createReaderAndSerializer();
-
     if (reader->eof())
         return false;
 
@@ -56,8 +46,7 @@ bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
 
 void ProtobufRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    if (reader)
-        reader->setReadBuffer(in_);
+    reader->setReadBuffer(in_);
     IRowInputFormat::setReadBuffer(in_);
 }
 
@@ -69,13 +58,6 @@ bool ProtobufRowInputFormat::allowSyncAfterError() const
 void ProtobufRowInputFormat::syncAfterError()
 {
     reader->endMessage(true);
-}
-
-void ProtobufRowInputFormat::resetParser()
-{
-    IRowInputFormat::resetParser();
-    serializer.reset();
-    reader.reset();
 }
 
 void registerInputFormatProtobuf(FormatFactory & factory)

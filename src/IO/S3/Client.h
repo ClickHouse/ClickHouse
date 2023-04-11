@@ -4,13 +4,13 @@
 
 #if USE_AWS_S3
 
+#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClient.h>
-#include <IO/S3/Credentials.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
@@ -109,9 +109,6 @@ public:
         }
     }
 
-    /// Returns the initial endpoint.
-    const String & getInitialEndpoint() const { return initial_endpoint; }
-
     /// Decorator for RetryStrategy needed for this client to work correctly.
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
@@ -201,8 +198,6 @@ private:
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
-    String initial_endpoint;
-
     std::string explicit_region;
     mutable bool detect_region = true;
 
@@ -227,7 +222,8 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HTTPHeaderEntries headers,
-        CredentialsConfiguration credentials_configuration);
+        bool use_environment_credentials,
+        bool use_insecure_imds_request);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,

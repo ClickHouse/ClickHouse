@@ -274,7 +274,7 @@ namespace
                     }
                     catch (...)
                     {
-                        std::lock_guard lock(send_data_lock);
+                        std::lock_guard<std::mutex> lock(send_data_lock);
                         exception_during_send_data = std::current_exception();
                     }
                 });
@@ -387,7 +387,7 @@ namespace
 
         void rethrowExceptionDuringSendDataIfNeeded()
         {
-            std::lock_guard lock(send_data_lock);
+            std::lock_guard<std::mutex> lock(send_data_lock);
             if (exception_during_send_data)
             {
                 command_is_invalid = true;

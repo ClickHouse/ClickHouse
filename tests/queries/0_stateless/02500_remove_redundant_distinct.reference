@@ -464,16 +464,3 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
 1
 
 0
--- DISTINCT COUNT() with GROUP BY => do _not_ remove DISTINCT
--- query
-select distinct count() from numbers(10) group by number
--- explain
-Expression (Projection)
-  Distinct
-    Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
-        Aggregating
-          Expression (Before GROUP BY)
-            ReadFromStorage (SystemNumbers)
--- execute
-1

@@ -91,8 +91,8 @@ def test_mutate_and_upgrade(start_cluster):
 
     node2.query("OPTIMIZE TABLE mt FINAL")
 
-    assert node1.query("SELECT id FROM mt ORDER BY id") == "1\n4\n"
-    assert node2.query("SELECT id FROM mt ORDER BY id") == "1\n4\n"
+    assert node1.query("SELECT id FROM mt") == "1\n4\n"
+    assert node2.query("SELECT id FROM mt") == "1\n4\n"
 
     for node in [node1, node2]:
         node.query("DROP TABLE mt")

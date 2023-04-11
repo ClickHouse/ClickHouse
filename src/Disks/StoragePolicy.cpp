@@ -7,7 +7,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
-#include <Common/logger_useful.h>
 
 #include <set>
 

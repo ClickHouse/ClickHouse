@@ -1,6 +1,5 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -35,7 +34,7 @@ IFileCachePriority::WriteIterator LRUFileCachePriority::add(const Key & key, siz
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
+    LOG_TRACE(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }
@@ -55,7 +54,7 @@ void LRUFileCachePriority::removeAll(std::lock_guard<std::mutex> &)
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, cache_size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, queue.size());
 
-    LOG_TEST(log, "Removed all entries from LRU queue");
+    LOG_TRACE(log, "Removed all entries from LRU queue");
 
     queue.clear();
     cache_size = 0;
@@ -89,7 +88,7 @@ void LRUFileCachePriority::LRUFileCacheIterator::removeAndGetNext(std::lock_guar
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, queue_iter->size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(cache_priority->log, "Removed entry from LRU queue, key: {}, offset: {}", queue_iter->key.toString(), queue_iter->offset);
+    LOG_TRACE(cache_priority->log, "Removed entry from LRU queue, key: {}, offset: {}", queue_iter->key.toString(), queue_iter->offset);
 
     queue_iter = cache_priority->queue.erase(queue_iter);
 }

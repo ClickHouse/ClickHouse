@@ -3,7 +3,7 @@
 #include <random>
 #include <base/getThreadId.h>
 #include <Common/Exception.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 
@@ -68,8 +68,7 @@ bool Span::addAttribute(const Exception & e) noexcept
     if (!this->isTraceEnabled())
         return false;
 
-    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false))
-        && addAttributeImpl("clickhouse.exception_code", toString(e.code()));
+    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
 }
 
 bool Span::addAttribute(std::exception_ptr e) noexcept
@@ -78,15 +77,6 @@ bool Span::addAttribute(std::exception_ptr e) noexcept
         return false;
 
     return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
-}
-
-bool Span::addAttribute(const ExecutionStatus & e) noexcept
-{
-    if (!this->isTraceEnabled())
-        return false;
-
-    return addAttributeImpl("clickhouse.exception", e.message)
-        && addAttributeImpl("clickhouse.exception_code", toString(e.code));
 }
 
 bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexcept
@@ -102,7 +92,7 @@ bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexc
     return true;
 }
 
-SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
+SpanHolder::SpanHolder(std::string_view _operation_name)
 {
     if (!current_thread_trace_context.isTraceEnabled())
     {
@@ -116,7 +106,6 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
         this->parent_span_id = current_thread_trace_context.span_id;
         this->span_id = thread_local_rng(); // create a new id for this span
         this->operation_name = _operation_name;
-        this->kind = _kind;
         this->start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 

@@ -122,19 +122,5 @@ private:
     uint64_t data_size;
 };
 
-class MixedRequestGenerator final : public IGenerator
-{
-public:
-    explicit MixedRequestGenerator(std::vector<std::unique_ptr<IGenerator>> generators_)
-        : generators(std::move(generators_))
-    {}
-
-    void startup(Coordination::ZooKeeper & zookeeper) override;
-    Coordination::ZooKeeperRequestPtr generate() override;
-
-private:
-    std::vector<std::unique_ptr<IGenerator>> generators;
-};
-
 
 std::unique_ptr<IGenerator> getGenerator(const std::string & name);

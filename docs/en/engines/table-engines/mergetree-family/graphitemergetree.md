@@ -55,7 +55,7 @@ When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/t
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+:::warning
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
@@ -129,7 +129,7 @@ default
     ...
 ```
 
-:::important
+:::warning
 Patterns must be strictly ordered:
 
 1. Patterns without `function` or `retention`.
@@ -263,6 +263,6 @@ Valid values:
 </graphite_rollup>
 ```
 
-:::note
+:::warning
 Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
 :::

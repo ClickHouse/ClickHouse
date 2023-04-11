@@ -19,10 +19,63 @@ namespace zkutil
 
 ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, const String & config_name)
 {
-    if (config_name == "keeper_server")
-        initFromKeeperServerSection(config);
-    else
-        initFromKeeperSection(config, config_name);
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_name, keys);
+
+    for (const auto & key : keys)
+    {
+        if (key.starts_with("node"))
+        {
+            hosts.push_back(
+                (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "")
+                + config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
+        }
+        else if (key == "session_timeout_ms")
+        {
+            session_timeout_ms = config.getInt(config_name + "." + key);
+        }
+        else if (key == "operation_timeout_ms")
+        {
+            operation_timeout_ms = config.getInt(config_name + "." + key);
+        }
+        else if (key == "connection_timeout_ms")
+        {
+            connection_timeout_ms = config.getInt(config_name + "." + key);
+        }
+        else if (key == "send_fault_probability")
+        {
+            send_fault_probability = config.getDouble(config_name + "." + key);
+        }
+        else if (key == "recv_fault_probability")
+        {
+            recv_fault_probability = config.getDouble(config_name + "." + key);
+        }
+        else if (key == "identity")
+        {
+            identity = config.getString(config_name + "." + key);
+            if (!identity.empty())
+                auth_scheme = "digest";
+        }
+        else if (key == "root")
+        {
+            chroot = config.getString(config_name + "." + key);
+        }
+        else if (key == "implementation")
+        {
+            implementation = config.getString(config_name + "." + key);
+        }
+        else if (key == "zookeeper_load_balancing")
+        {
+            String load_balancing_str = config.getString(config_name + "." + key);
+            /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
+            auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
+            if (!load_balancing)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
+            get_priority_load_balancing.load_balancing = *load_balancing;
+        }
+        else
+            throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
+    }
 
     if (!chroot.empty())
     {
@@ -50,162 +103,6 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
 ZooKeeperArgs::ZooKeeperArgs(const String & hosts_string)
 {
     splitInto<','>(hosts, hosts_string);
-}
-
-void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config)
-{
-    static constexpr std::string_view config_name = "keeper_server";
-
-    if (auto key = std::string{config_name} + ".tcp_port_secure";
-        config.has(key))
-    {
-        auto tcp_port_secure = config.getString(key);
-
-        if (tcp_port_secure.empty())
-            throw KeeperException("Empty tcp_port_secure in config file", Coordination::Error::ZBADARGUMENTS);
-    }
-
-    bool secure{false};
-    std::string tcp_port;
-    if (auto tcp_port_secure_key = std::string{config_name} + ".tcp_port_secure";
-        config.has(tcp_port_secure_key))
-    {
-        secure = true;
-        tcp_port = config.getString(tcp_port_secure_key);
-    }
-    else if (auto tcp_port_key = std::string{config_name} + ".tcp_port";
-        config.has(tcp_port_key))
-    {
-        tcp_port = config.getString(tcp_port_key);
-    }
-
-    if (tcp_port.empty())
-        throw KeeperException("No tcp_port or tcp_port_secure in config file", Coordination::Error::ZBADARGUMENTS);
-
-    if (auto coordination_key = std::string{config_name} + ".coordination_settings";
-        config.has(coordination_key))
-    {
-        if (auto operation_timeout_key = coordination_key + ".operation_timeout_ms";
-            config.has(operation_timeout_key))
-            operation_timeout_ms = config.getInt(operation_timeout_key);
-
-        if (auto session_timeout_key = coordination_key + ".session_timeout_ms";
-            config.has(session_timeout_key))
-            session_timeout_ms = config.getInt(session_timeout_key);
-    }
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    std::string raft_configuration_key = std::string{config_name} + ".raft_configuration";
-    config.keys(raft_configuration_key, keys);
-    for (const auto & key : keys)
-    {
-        if (startsWith(key, "server"))
-            hosts.push_back(
-                (secure ? "secure://" : "") + config.getString(raft_configuration_key + "." + key + ".hostname") + ":" + tcp_port);
-    }
-
-    static constexpr std::array load_balancing_keys
-    {
-        ".zookeeper_load_balancing",
-        ".keeper_load_balancing"
-    };
-
-    for (const auto * load_balancing_key : load_balancing_keys)
-    {
-        if (auto load_balancing_config = std::string{config_name} + load_balancing_key;
-            config.has(load_balancing_config))
-        {
-            String load_balancing_str = config.getString(load_balancing_config);
-            /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
-            auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
-            if (!load_balancing)
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-            get_priority_load_balancing.load_balancing = *load_balancing;
-            break;
-        }
-    }
-
-}
-
-void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_name, keys);
-
-    for (const auto & key : keys)
-    {
-        if (key.starts_with("node"))
-        {
-            hosts.push_back(
-                (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "")
-                + config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
-        }
-        else if (key == "session_timeout_ms")
-        {
-            session_timeout_ms = config.getInt(config_name + "." + key);
-        }
-        else if (key == "operation_timeout_ms")
-        {
-            operation_timeout_ms = config.getInt(config_name + "." + key);
-        }
-        else if (key == "connection_timeout_ms")
-        {
-            connection_timeout_ms = config.getInt(config_name + "." + key);
-        }
-        else if (key == "enable_fault_injections_during_startup")
-        {
-            enable_fault_injections_during_startup = config.getBool(config_name + "." + key);
-        }
-        else if (key == "send_fault_probability")
-        {
-            send_fault_probability = config.getDouble(config_name + "." + key);
-        }
-        else if (key == "recv_fault_probability")
-        {
-            recv_fault_probability = config.getDouble(config_name + "." + key);
-        }
-        else if (key == "send_sleep_probability")
-        {
-            send_sleep_probability = config.getDouble(config_name + "." + key);
-        }
-        else if (key == "recv_sleep_probability")
-        {
-            recv_sleep_probability = config.getDouble(config_name + "." + key);
-        }
-        else if (key == "send_sleep_ms")
-        {
-            send_sleep_ms = config.getUInt64(config_name + "." + key);
-        }
-        else if (key == "recv_sleep_ms")
-        {
-            recv_sleep_ms = config.getUInt64(config_name + "." + key);
-        }
-        else if (key == "identity")
-        {
-            identity = config.getString(config_name + "." + key);
-            if (!identity.empty())
-                auth_scheme = "digest";
-        }
-        else if (key == "root")
-        {
-            chroot = config.getString(config_name + "." + key);
-        }
-        else if (key == "implementation")
-        {
-            implementation = config.getString(config_name + "." + key);
-        }
-        else if (key == "zookeeper_load_balancing" || key == "keeper_load_balancing")
-        {
-            String load_balancing_str = config.getString(config_name + "." + key);
-            /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
-            auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
-            if (!load_balancing)
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-            get_priority_load_balancing.load_balancing = *load_balancing;
-        }
-        else
-            throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
-    }
 }
 
 }

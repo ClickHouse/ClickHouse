@@ -401,7 +401,7 @@ Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, jso
 
 Parses a JSON and extract a value as JSON scalar.
 
-If the value does not exist, an empty string will be returned by default, and by SET `function_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
+If the value does not exist, an empty string will be returned.
 
 Example:
 
@@ -410,8 +410,6 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
 SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_VALUE('{"hello":2}', '$.hello');
 SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
-select JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
-select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 ```
 
 Result:

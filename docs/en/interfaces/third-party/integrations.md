@@ -6,7 +6,7 @@ sidebar_label: Integrations
 
 # Integration Libraries from Third-party Developers
 
-:::note Disclaimer
+:::warning Disclaimer
 ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven’t done extensive testing to ensure their quality.
 :::
 

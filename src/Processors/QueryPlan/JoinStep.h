@@ -49,8 +49,6 @@ public:
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    const JoinPtr & getJoin() const { return join; }
-
 private:
     void updateOutputStream() override;
 

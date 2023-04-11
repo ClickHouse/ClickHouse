@@ -1,7 +1,6 @@
 #include <Server/ProxyV1Handler.h>
 #include <Poco/Net/NetException.h>
 #include <Common/NetException.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
 

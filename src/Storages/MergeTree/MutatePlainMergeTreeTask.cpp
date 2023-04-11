@@ -29,11 +29,11 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
-    task_context = createTaskContext();
+    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        task_context);
+        settings);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -52,9 +52,13 @@ void MutatePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
+    fake_query_context = Context::createCopy(storage.getContext());
+    fake_query_context->makeQueryContext();
+    fake_query_context->setCurrentQueryId("");
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
-            time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            time(nullptr), fake_query_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
 
@@ -64,9 +68,9 @@ bool MutatePlainMergeTreeTask::executeStep()
     ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
-    std::optional<ThreadGroupSwitcher> switcher;
+    MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
-        switcher.emplace((*merge_list_entry)->thread_group);
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_list_entry);
 
     switch (state)
     {
@@ -124,15 +128,6 @@ bool MutatePlainMergeTreeTask::executeStep()
     }
 
     return false;
-}
-
-ContextMutablePtr MutatePlainMergeTreeTask::createTaskContext() const
-{
-    auto context = Context::createCopy(storage.getContext());
-    context->makeQueryContext();
-    auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
-    context->setCurrentQueryId(queryId);
-    return context;
 }
 
 }

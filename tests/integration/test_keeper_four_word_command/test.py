@@ -1,7 +1,14 @@
+import socket
 import pytest
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
+import random
+import string
+import os
 import time
+from multiprocessing.dummy import Pool
+from helpers.test_tools import assert_eq_with_retry
+from io import StringIO
 import csv
 import re
 
@@ -16,7 +23,7 @@ node3 = cluster.add_instance(
     "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
 
-from kazoo.client import KazooClient
+from kazoo.client import KazooClient, KazooState
 
 
 def wait_nodes():
@@ -278,9 +285,8 @@ def test_cmd_conf(started_cluster):
         assert result["fresh_log_gap"] == "200"
 
         assert result["max_requests_batch_size"] == "100"
-        assert result["max_requests_batch_bytes_size"] == "102400"
         assert result["max_request_queue_size"] == "100000"
-        assert result["max_requests_quick_batch_size"] == "100"
+        assert result["max_requests_quick_batch_size"] == "10"
         assert result["quorum_reads"] == "false"
         assert result["force_sync"] == "true"
 
@@ -673,44 +679,3 @@ def test_cmd_rqld(started_cluster):
                     + " does not become leader after 30s, maybe there is something wrong."
                 )
         assert keeper_utils.is_leader(cluster, node)
-
-
-def test_cmd_clrs(started_cluster):
-    if node1.is_built_with_sanitizer():
-        return
-
-    def get_memory_purges():
-        return node1.query(
-            "SELECT value FROM system.events WHERE event = 'MemoryAllocatorPurge' SETTINGS system_events_show_zero_values = 1"
-        )
-
-    zk = None
-    try:
-        wait_nodes()
-
-        zk = get_fake_zk(node1.name, timeout=30.0)
-
-        paths = [f"/clrs_{i}" for i in range(10000)]
-
-        # we only count the events because we cannot reliably test memory usage of Keeper
-        # but let's create and delete nodes so the first purge needs to release some memory
-        create_transaction = zk.transaction()
-        for path in paths:
-            create_transaction.create(path)
-        create_transaction.commit()
-
-        delete_transaction = zk.transaction()
-        for path in paths:
-            delete_transaction.delete(path)
-        delete_transaction.commit()
-
-        # repeat multiple times to make sure MemoryAllocatorPurge isn't increased because of other reasons
-        for _ in range(5):
-            prev_purges = int(get_memory_purges())
-            keeper_utils.send_4lw_cmd(cluster, node1, cmd="clrs")
-            current_purges = int(get_memory_purges())
-            assert current_purges > prev_purges
-            prev_purges = current_purges
-
-    finally:
-        destroy_zk_client(zk)

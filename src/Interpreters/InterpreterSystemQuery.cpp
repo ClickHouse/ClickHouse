@@ -7,7 +7,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
-#include <Common/CurrentMetrics.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -64,12 +63,6 @@
 #endif
 
 #include "config.h"
-
-namespace CurrentMetrics
-{
-    extern const Metric RestartReplicaThreads;
-    extern const Metric RestartReplicaThreadsActive;
-}
 
 namespace DB
 {
@@ -516,7 +509,7 @@ BlockIO InterpreterSystemQuery::execute()
             dropDatabaseReplica(query);
             break;
         case Type::SYNC_REPLICA:
-            syncReplica(query);
+            syncReplica();
             break;
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
@@ -604,7 +597,6 @@ void InterpreterSystemQuery::restoreReplica()
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
-    LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = need_ddl_guard
         ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
         : nullptr;
@@ -648,7 +640,6 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     database->attachTable(system_context, replica.table_name, table, data_path);
 
     table->startup();
-    LOG_TRACE(log, "Restarted replica {}", replica);
     return table;
 }
 
@@ -694,12 +685,11 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
-    size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
-    LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
-    ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
+    ThreadPool pool(std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size()));
 
     for (auto & replica : replica_names)
     {
+        LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());
         pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
     }
     pool.wait();
@@ -889,7 +879,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
+void InterpreterSystemQuery::syncReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -897,8 +887,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
-        auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode))
+        if (!storage_replicated->waitForProcessingQueue(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \

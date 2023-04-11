@@ -85,7 +85,7 @@ The build requires the following components:
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.15 or newer
 -   Ninja
--   C++ compiler: clang-15 or newer
+-   C++ compiler: clang-14 or newer
 -   Linker: lld
 -   Yasm
 -   Gawk
@@ -159,3 +159,4 @@ The CI checks build the binaries on each commit to [ClickHouse](https://github.c
 1. Find the type of package for your operating system that you need and download the files.
 
 ![build artifact check](images/find-build-artifact.png)
+

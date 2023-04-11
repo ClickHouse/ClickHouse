@@ -39,7 +39,7 @@ public:
         std::optional<FormatSettings> format_settings_)
         : Storage(
             getAdjustedConfiguration(
-                context_, Storage::copyAndUpdateConfiguration(context_, configuration_), &Poco::Logger::get("Storage" + String(name))),
+                context_, Storage::updateConfiguration(context_, configuration_), &Poco::Logger::get("Storage" + String(name))),
             table_id_,
             columns_,
             constraints_,
@@ -59,7 +59,7 @@ public:
 
         auto new_configuration = getAdjustedConfiguration(ctx, configuration, &Poco::Logger::get("Storage" + String(name)));
 
-        return Storage::getTableStructureFromData(new_configuration, format_settings, ctx);
+        return Storage::getTableStructureFromData(new_configuration, format_settings, ctx, /*object_infos*/ nullptr);
     }
 
     static Configuration

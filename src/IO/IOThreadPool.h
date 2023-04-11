@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Common/ThreadPool_fwd.h>
-#include <cstdlib>
-#include <memory>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {

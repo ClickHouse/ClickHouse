@@ -2,8 +2,6 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <IO/SwapHelper.h>
 
-#include <base/scope_guard.h>
-
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -12,23 +10,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_ENOUGH_SPACE;
+    extern const int LOGICAL_ERROR;
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
     : WriteBufferFromFileDecorator(file_segment_->detachWriter()), file_segment(file_segment_)
 {
+    auto downloader = file_segment->getOrSetDownloader();
+    if (downloader != FileSegment::getCallerId())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set a downloader. ({})", file_segment->getInfoForLog());
 }
 
 /// If it throws an exception, the file segment will be incomplete, so you should not use it in the future.
 void WriteBufferToFileSegment::nextImpl()
 {
-    auto downloader [[maybe_unused]] = file_segment->getOrSetDownloader();
-    chassert(downloader == FileSegment::getCallerId());
-
-    SCOPE_EXIT({
-        file_segment->completePartAndResetDownloader();
-    });
-
     size_t bytes_to_write = offset();
 
     /// In case of an error, we don't need to finalize the file segment

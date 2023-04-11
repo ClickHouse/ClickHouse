@@ -5,6 +5,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {

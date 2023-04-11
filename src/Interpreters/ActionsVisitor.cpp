@@ -75,7 +75,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -468,6 +467,10 @@ SetPtr makeExplicitSet(
     return set;
 }
 
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
+
 class ScopeStack::Index
 {
     /// Map column name -> Node.
@@ -520,10 +523,6 @@ public:
         return result;
     }
 };
-
-ScopeStack::Level::~Level() = default;
-ScopeStack::Level::Level() = default;
-ScopeStack::Level::Level(Level &&) noexcept = default;
 
 ActionsMatcher::Data::Data(
     ContextPtr context_,
@@ -1108,12 +1107,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
             throw;
         }
-    }
-
-    /// Normal functions are not parametric for now.
-    if (node.parameters)
-    {
-        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
     }
 
     Names argument_names;

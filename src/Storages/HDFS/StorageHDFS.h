@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Poco/URI.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

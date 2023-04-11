@@ -83,24 +83,4 @@ DiskConfigurationPtr getDiskConfigurationFromAST(const std::string & root_name, 
     return conf;
 }
 
-
-ASTs convertDiskConfigurationToAST(const Poco::Util::AbstractConfiguration & configuration, const std::string & config_path)
-{
-    ASTs result;
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    configuration.keys(config_path, keys);
-
-    for (const auto & key : keys)
-    {
-        result.push_back(
-            makeASTFunction(
-                "equals",
-                std::make_shared<ASTIdentifier>(key),
-                std::make_shared<ASTLiteral>(configuration.getString(config_path + "." + key))));
-    }
-
-    return result;
-}
-
 }

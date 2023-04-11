@@ -5,7 +5,6 @@
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>

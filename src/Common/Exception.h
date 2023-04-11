@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 
+#include <Poco/Version.h>
 #include <Poco/Exception.h>
 
 #include <base/defines.h>

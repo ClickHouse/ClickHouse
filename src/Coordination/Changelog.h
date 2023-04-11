@@ -10,7 +10,6 @@
 #include <libnuraft/nuraft.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ThreadPool.h>
 
 namespace DB
 {

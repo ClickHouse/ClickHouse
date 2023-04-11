@@ -9,6 +9,7 @@
 
 #include <pcg_random.hpp>
 
+#include <Common/logger_useful.h>
 
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>

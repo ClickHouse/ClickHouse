@@ -563,7 +563,7 @@ std::string ZooKeeperMultiRequest::toStringImpl() const
     for (const auto & request : requests)
     {
         const auto & zk_request = dynamic_cast<const ZooKeeperRequest &>(*request);
-        fmt::format_to(std::back_inserter(out), "SubRequest\n{}\n", zk_request.toString());
+        format_to(std::back_inserter(out), "SubRequest\n{}\n", zk_request.toString());
     }
     return {out.data(), out.size()};
 }

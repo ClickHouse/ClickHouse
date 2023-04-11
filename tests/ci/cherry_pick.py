@@ -27,7 +27,7 @@ import argparse
 import logging
 import os
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from subprocess import CalledProcessError
 from typing import List, Optional
 
@@ -52,31 +52,21 @@ class Labels:
 
 
 class ReleaseBranch:
-    CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
-
-This pull-request is a first step of an automated backporting.
+    CHERRYPICK_DESCRIPTION = """This pull-request is a first step of an automated \
+    backporting.
 It contains changes like after calling a local command `git cherry-pick`.
 If you intend to continue backporting this changes, then resolve all conflicts if any.
 Otherwise, if you do not want to backport them, then just close this pull-request.
 
 The check results does not matter at this step - you can safely ignore them.
-
-### Note
-
-This pull-request will be merged automatically as it reaches the mergeable state, \
-**do not merge it manually**.
-
-### If the PR was closed and then reopened
-
-If it stuck, check #{pr_number} for `{label_backports_created}` and delete it if \
-necessary. Manually merging will do nothing, since `{label_backports_created}` \
-prevents the original PR #{pr_number} from being processed.
+Also this pull-request will be merged automatically as it reaches the mergeable state, \
+    but you always can merge it manually.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
 Treat it as a standard pull-request: look at the checks and resolve conflicts.
 Merge it only if you intend to backport changes to the target branch, otherwise just \
-close it.
+    close it.
 """
     REMOTE = ""
 
@@ -123,9 +113,7 @@ close it.
             # Going from the tail to keep the order and pop greater index first
             prs.pop(i)
 
-    def process(  # pylint: disable=too-many-return-statements
-        self, dry_run: bool
-    ) -> None:
+    def process(self, dry_run: bool) -> None:
         if self.backported:
             return
         if not self.cherrypick_pr:
@@ -140,11 +128,6 @@ close it.
         if self.cherrypick_pr is not None:
             # Try to merge cherrypick instantly
             if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
-                if dry_run:
-                    logging.info(
-                        "DRY RUN: Would merge cherry-pick PR for #%s", self.pr.number
-                    )
-                    return
                 self.cherrypick_pr.merge()
                 # The PR needs update, since PR.merge doesn't update the object
                 self.cherrypick_pr.update()
@@ -156,7 +139,7 @@ close it.
                     return
                 self.create_backport()
                 return
-            if self.cherrypick_pr.state == "closed":
+            elif self.cherrypick_pr.state == "closed":
                 logging.info(
                     "The cherrypick PR #%s for PR #%s is discarded",
                     self.cherrypick_pr.number,
@@ -169,7 +152,6 @@ close it.
                 self.cherrypick_pr.number,
                 self.pr.number,
             )
-            self.ping_cherry_pick_assignees(dry_run)
 
     def create_cherrypick(self):
         # First, create backport branch:
@@ -218,10 +200,8 @@ close it.
 
         self.cherrypick_pr = self.pr.base.repo.create_pull(
             title=f"Cherry pick #{self.pr.number} to {self.name}: {self.pr.title}",
-            body=self.CHERRYPICK_DESCRIPTION.format(
-                pr_number=self.pr.number,
-                label_backports_created=Labels.BACKPORTS_CREATED,
-            ),
+            body=f"Original pull-request #{self.pr.number}\n\n"
+            f"{self.CHERRYPICK_DESCRIPTION}",
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
@@ -235,7 +215,6 @@ close it.
         assert self.cherrypick_pr is not None
         # Checkout the backport branch from the remote and make all changes to
         # apply like they are only one cherry-pick commit on top of release
-        logging.info("Creating backport for PR #%s", self.pr.number)
         git_runner(f"{self.git_prefix} checkout -f {self.backport_branch}")
         git_runner(
             f"{self.git_prefix} pull --ff-only {self.REMOTE} {self.backport_branch}"
@@ -263,40 +242,6 @@ close it.
         )
         self.backport_pr.add_to_labels(Labels.BACKPORT)
         self._assign_new_pr(self.backport_pr)
-
-    def ping_cherry_pick_assignees(self, dry_run: bool) -> None:
-        assert self.cherrypick_pr is not None
-        logging.info(
-            "Checking if cherry-pick PR #%s needs to be pinged",
-            self.cherrypick_pr.number,
-        )
-        since_updated = datetime.now() - self.cherrypick_pr.updated_at
-        since_updated_str = (
-            f"{since_updated.days}d{since_updated.seconds // 3600}"
-            f"h{since_updated.seconds // 60 % 60}m{since_updated.seconds % 60}s"
-        )
-        if since_updated < timedelta(days=1):
-            logging.info(
-                "The cherry-pick PR was updated at %s %s ago, "
-                "waiting for the next running",
-                self.cherrypick_pr.updated_at.isoformat(),
-                since_updated_str,
-            )
-            return
-        assignees = ", ".join(f"@{user.login}" for user in self.cherrypick_pr.assignees)
-        comment_body = (
-            f"Dear {assignees}, the PR is not updated for {since_updated_str}. "
-            "Please, either resolve the conflicts, or close it to finish "
-            f"the backport process of #{self.pr.number}"
-        )
-        if dry_run:
-            logging.info(
-                "DRY RUN: would comment the cherry-pick PR #%s:\n",
-                self.cherrypick_pr.number,
-            )
-            return
-
-        self.cherrypick_pr.create_issue_comment(comment_body)
 
     def _assign_new_pr(self, new_pr: PullRequest) -> None:
         """Assign `new_pr` to author, merger and assignees of an original PR"""
@@ -563,7 +508,7 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token, create_cache_dir=False)
+    gh = GitHub(token, create_cache_dir=False, per_page=100)
     bp = Backport(gh, args.repo, args.dry_run)
     # https://github.com/python/mypy/issues/3004
     bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore

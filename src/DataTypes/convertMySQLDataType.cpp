@@ -115,8 +115,6 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
             res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
         else if (precision <= DecimalUtils::max_precision<Decimal128>)
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal256>)
-            res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
     }
 
     /// Also String is fallback for all unknown types.

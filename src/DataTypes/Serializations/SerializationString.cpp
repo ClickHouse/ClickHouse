@@ -14,8 +14,6 @@
 #include <IO/VarInt.h>
 #include <IO/ReadBufferFromString.h>
 
-#include <base/unit.h>
-
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -159,14 +157,6 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         UInt64 size;
         readVarUInt(size, istr);
-
-        static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
-        if (size > max_string_size)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "Too large string size: {}. The maximum is: {}.",
-                size,
-                max_string_size);
 
         offset += size + 1;
         offsets.push_back(offset);

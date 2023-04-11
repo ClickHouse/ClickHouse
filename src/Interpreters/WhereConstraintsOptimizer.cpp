@@ -74,7 +74,7 @@ bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const Cons
     return false;
 }
 
-bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const ComparisonGraph<ASTPtr> & graph)
+bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const ComparisonGraph & graph)
 {
     /// We try to find at least one atom that is always true by using comparison graph.
     for (const auto & atom : group)
@@ -82,7 +82,7 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
         const auto * func = atom.ast->as<ASTFunction>();
         if (func && func->arguments->children.size() == 2)
         {
-            const auto expected = ComparisonGraph<ASTPtr>::atomToCompareResult(atom);
+            const auto expected = ComparisonGraph::atomToCompareResult(atom);
             if (graph.isAlwaysCompare(expected, func->arguments->children[0], func->arguments->children[1]))
                 return true;
         }
@@ -108,20 +108,20 @@ bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const
     return false;
 }
 
-bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
+bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const ComparisonGraph & graph)
 {
     const auto * func = atom.ast->as<ASTFunction>();
     if (func && func->arguments->children.size() == 2)
     {
         /// TODO: special support for !=
-        const auto expected = ComparisonGraph<ASTPtr>::atomToCompareResult(atom);
+        const auto expected = ComparisonGraph::atomToCompareResult(atom);
         return !graph.isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]);
     }
 
     return false;
 }
 
-void replaceToConstants(ASTPtr & term, const ComparisonGraph<ASTPtr> & graph)
+void replaceToConstants(ASTPtr & term, const ComparisonGraph & graph)
 {
     const auto equal_constant = graph.getEqualConst(term);
     if (equal_constant)
@@ -135,7 +135,7 @@ void replaceToConstants(ASTPtr & term, const ComparisonGraph<ASTPtr> & graph)
     }
 }
 
-CNFQuery::AtomicFormula replaceTermsToConstants(const CNFQuery::AtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
+CNFQuery::AtomicFormula replaceTermsToConstants(const CNFQuery::AtomicFormula & atom, const ComparisonGraph & graph)
 {
     CNFQuery::AtomicFormula result;
     result.negative = atom.negative;

@@ -11,13 +11,6 @@
 namespace DB
 {
 
-enum class MovePartsOutcome
-{
-    PartsMoved,
-    NothingToMove,
-    MovesAreCancelled,
-    MoveWasPostponedBecauseOfZeroCopy,
-};
 
 /// Active part from storage and destination reservation where it has to be moved
 struct MergeTreeMoveEntry

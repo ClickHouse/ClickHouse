@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/scope_guard.h>
+#include <Common/logger_useful.h>
 #include <Common/LockMemoryExceptionInThread.h>
 
 /// Same as SCOPE_EXIT() but block the MEMORY_LIMIT_EXCEEDED errors.

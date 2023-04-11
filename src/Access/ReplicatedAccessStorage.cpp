@@ -1,4 +1,3 @@
-#include <memory>
 #include <Access/AccessEntityIO.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/ReplicatedAccessStorage.h>
@@ -16,7 +15,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
 #include <base/range.h>
 #include <base/sleep.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -74,7 +72,7 @@ void ReplicatedAccessStorage::startWatchingThread()
 {
     bool prev_watching_flag = watching.exchange(true);
     if (!prev_watching_flag)
-        watching_thread = std::make_unique<ThreadFromGlobalPool>(&ReplicatedAccessStorage::runWatchingThread, this);
+        watching_thread = ThreadFromGlobalPool(&ReplicatedAccessStorage::runWatchingThread, this);
 }
 
 void ReplicatedAccessStorage::stopWatchingThread()
@@ -83,8 +81,8 @@ void ReplicatedAccessStorage::stopWatchingThread()
     if (prev_watching_flag)
     {
         watched_queue->finish();
-        if (watching_thread && watching_thread->joinable())
-            watching_thread->join();
+        if (watching_thread.joinable())
+            watching_thread.join();
     }
 }
 
@@ -676,16 +674,18 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
         backup_entries_collector.getContext()->getAccessControl());
 
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
-    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, backup_entry_with_path.first);
+    String current_host_id = backup_entries_collector.getBackupSettings().host_id;
+    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, current_host_id, backup_entry_with_path.first);
 
     backup_entries_collector.addPostTask(
         [backup_entry = backup_entry_with_path.second,
          zookeeper_path = zookeeper_path,
          type,
+         current_host_id,
          &backup_entries_collector,
          backup_coordination]
         {
-            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type))
+            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type, current_host_id))
                 backup_entries_collector.addBackupEntry(path, backup_entry);
         });
 }
