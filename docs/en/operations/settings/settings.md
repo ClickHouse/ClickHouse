@@ -42,7 +42,7 @@ SETTINGS additional_table_filters = (('table_1', 'x != 2'))
 
 ## additional_result_filter
 
-An additional filter expression is applied after to the result of `SELECT` query.
+An additional filter expression to apply to the result of `SELECT` query.
 This setting is not applied to any subquery.
 
 Default value: `''`.
