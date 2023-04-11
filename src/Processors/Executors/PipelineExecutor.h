@@ -3,7 +3,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrencyControl.h>
 

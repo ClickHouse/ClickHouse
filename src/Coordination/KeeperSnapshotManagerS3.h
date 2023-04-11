@@ -9,7 +9,6 @@
 #if USE_AWS_S3
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
-#include <Common/logger_useful.h>
 
 #include <string>
 #endif
