@@ -201,7 +201,7 @@ void FileSegment::resetDownloadingStateUnlocked([[maybe_unused]] std::unique_loc
 
     size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
     /// range().size() can equal 0 in case of write-though cache.
-    if (current_downloaded_size != 0 && current_downloaded_size == range().size())
+    if (!is_unbound && current_downloaded_size != 0 && current_downloaded_size == range().size())
         setDownloadedUnlocked(segment_lock);
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED);
@@ -343,7 +343,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
                 ErrorCodes::LOGICAL_ERROR,
                 "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
 
-        if (current_downloaded_size == range().size())
+        if (!is_unbound && current_downloaded_size == range().size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
         if (!cache_writer)
@@ -689,7 +689,8 @@ String FileSegment::getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment
     info << "first non-downloaded offset: " << getFirstNonDownloadedOffsetUnlocked(segment_lock) << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "detached: " << is_detached << ", ";
-    info << "kind: " << toString(segment_kind);
+    info << "kind: " << toString(segment_kind) << ", ";
+    info << "unbound: " << is_unbound;
 
     return info.str();
 }
@@ -785,6 +786,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(segment_lock);
     snapshot->download_state = file_segment->download_state;
     snapshot->segment_kind = file_segment->getKind();
+    snapshot->is_unbound = file_segment->is_unbound;
 
     return snapshot;
 }
@@ -905,6 +907,8 @@ String FileSegmentsHolder::toString()
         if (!ranges.empty())
             ranges += ", ";
         ranges += file_segment->range().toString();
+        if (file_segment->is_unbound)
+            ranges += "(unbound)";
     }
     return ranges;
 }
