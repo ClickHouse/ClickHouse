@@ -1060,7 +1060,9 @@ def test_cleanup_stale_nodes():
         try:
             # Get a list on all nodes. We need to check that all backups that were finished or failed doesn't have anything
             # in [Zoo]Keeper
-            backups_in_zk = node1.query("SELECT name FROM system.zookeeper WHERE path='/clickhouse/backups/'").split('\n')
+            backups_in_zk = node1.query(
+                "SELECT name FROM system.zookeeper WHERE path='/clickhouse/backups/'"
+            ).split("\n")
 
             print("Backup nodes in ZooKeeper", backups_in_zk)
 
@@ -1071,7 +1073,6 @@ def test_cleanup_stale_nodes():
             break
 
         except AssertionError:
-
             # Cleanup is asynchronious. We may need to retry multiple times.
             number_of_tries += 1
             if number_of_tries >= RETRIES_COUNT:
