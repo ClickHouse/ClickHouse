@@ -31,7 +31,7 @@ std::optional<String> ASTAuthenticationData::getSalt() const
 {
     if (type && *type == AuthenticationType::SHA256_PASSWORD && children.size() == 2)
     {
-        if (const auto * salt = children[0]->as<const ASTLiteral>())
+        if (const auto * salt = children[1]->as<const ASTLiteral>())
         {
             return salt->value.safeGet<String>();
         }
@@ -51,10 +51,10 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 
     String auth_type_name;
     String prefix; /// "BY" or "SERVER" or "REALM"
-    ASTPtr password; /// either a password or hash
-    ASTPtr salt;
-    ASTPtr parameter;
-    ASTPtr parameters;
+    bool password = false; /// either a password or hash
+    bool salt = false;
+    bool parameter = false;
+    bool parameters = false;
 
     if (type)
     {
@@ -65,7 +65,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
                 prefix = "BY";
-                password = children[0];
+                password = true;
                 break;
             }
             case AuthenticationType::SHA256_PASSWORD:
@@ -74,9 +74,9 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                     auth_type_name = "sha256_hash";
 
                 prefix = "BY";
-                password = children[0];
+                password = true;
                 if (children.size() == 2)
-                    salt = children[1];
+                    salt = true;
                 break;
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
@@ -85,13 +85,13 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                     auth_type_name = "double_sha1_hash";
 
                 prefix = "BY";
-                password = children[0];
+                password = true;
                 break;
             }
             case AuthenticationType::LDAP:
             {
                 prefix = "SERVER";
-                parameter = children[0];
+                parameter = true;
                 break;
             }
             case AuthenticationType::KERBEROS:
@@ -99,14 +99,14 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                 if (!children.empty())
                 {
                     prefix = "REALM";
-                    parameter = children[0];
+                    parameter = true;
                 }
                 break;
             }
             case AuthenticationType::SSL_CERTIFICATE:
             {
                 prefix = "CN";
-                parameters = children[0];
+                parameters = true;
                 break;
             }
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
@@ -118,14 +118,14 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     {
         /// Default password type
         prefix = "BY";
-        password = children[0];
+        password = true;
     }
 
     if (password && !settings.show_secrets)
     {
         prefix = "";
-        password.reset();
-        salt.reset();
+        password = false;
+        salt = false;
         if (type)
             auth_type_name = AuthenticationTypeInfo::get(*type).name;
     }
@@ -146,24 +146,30 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     if (password)
     {
         settings.ostr << " ";
-        password->format(settings);
+        children[0]->format(settings);
     }
 
     if (salt)
     {
         settings.ostr << " SALT ";
-        salt->format(settings);
+        children[1]->format(settings);
     }
 
     if (parameter)
     {
         settings.ostr << " ";
-        parameter->format(settings);
+        children[0]->format(settings);
     }
     else if (parameters)
     {
         settings.ostr << " ";
-        parameters->format(settings);
+        bool need_comma = false;
+        for (const auto & child : children)
+        {
+            if (std::exchange(need_comma, true))
+                settings.ostr << ", ";
+            child->format(settings);
+        }
     }
 }
 

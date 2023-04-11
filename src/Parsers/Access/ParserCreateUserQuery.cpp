@@ -122,6 +122,7 @@ namespace
 
             ASTPtr value;
             ASTPtr parsed_salt;
+            ASTPtr common_names;
             if (expect_password || expect_hash)
             {
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
@@ -154,7 +155,7 @@ namespace
                 if (!ParserKeyword{"CN"}.ignore(pos, expected))
                     return false;
 
-                if (!ParserList{std::make_unique<ParserStringAndSubstitution>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, value, expected))
+                if (!ParserList{std::make_unique<ParserStringAndSubstitution>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
                     return false;
             }
 
@@ -172,6 +173,9 @@ namespace
 
             if (parsed_salt)
                 auth_data->children.push_back(std::move(parsed_salt));
+
+            if (common_names)
+                auth_data->children = std::move(common_names->children);
 
             return true;
         });

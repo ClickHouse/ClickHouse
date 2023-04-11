@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <boost/range/algorithm/copy.hpp>
 
 #include "config.h"
@@ -37,6 +38,11 @@ namespace
         if (query.type && *query.type == AuthenticationType::NO_PASSWORD)
             return AuthenticationData();
 
+        size_t args_size = query.children.size();
+        ASTs args(args_size);
+        for (size_t i = 0; i < args_size; ++i)
+            args[i] = evaluateConstantExpressionAsLiteral(query.children[i], context);
+
         if (query.expect_password)
         {
             if (!query.type && !context)
@@ -47,7 +53,7 @@ namespace
 
             /// NOTE: We will also extract bcrypt workfactor from context
 
-            String value = checkAndGetLiteralArgument<String>(query.children[0], "password");
+            String value = checkAndGetLiteralArgument<String>(args[0], "password");
 
             AuthenticationType current_type;
 
@@ -97,33 +103,33 @@ namespace
 
         if (query.expect_hash)
         {
-            String value = checkAndGetLiteralArgument<String>(query.children[0], "hash");
+            String value = checkAndGetLiteralArgument<String>(args[0], "hash");
             auth_data.setPasswordHashHex(value);
 
-            if (*query.type == AuthenticationType::SHA256_PASSWORD && query.children.size() == 2)
+            if (*query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
             {
-                String parsed_salt = checkAndGetLiteralArgument<String>(query.children[1], "salt");
+                String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
                 auth_data.setSalt(parsed_salt);
             }
         }
         else if (query.expect_ldap_server_name)
         {
-            String value = checkAndGetLiteralArgument<String>(query.children[0], "ldap_server_name");
+            String value = checkAndGetLiteralArgument<String>(args[0], "ldap_server_name");
             auth_data.setLDAPServerName(value);
         }
         else if (query.expect_kerberos_realm)
         {
-            if (!query.children.empty())
+            if (!args.empty())
             {
-                String value = checkAndGetLiteralArgument<String>(query.children[0], "kerberos_realm");
+                String value = checkAndGetLiteralArgument<String>(args[0], "kerberos_realm");
                 auth_data.setKerberosRealm(value);
             }
         }
         else if (query.expect_common_names)
         {
             boost::container::flat_set<String> common_names;
-            for (const auto & ast_child : query.children[0]->children)
-                common_names.insert(checkAndGetLiteralArgument<String>(ast_child, "common_name"));
+            for (const auto & arg : args)
+                common_names.insert(checkAndGetLiteralArgument<String>(arg, "common_name"));
 
             auth_data.setSSLCertificateCommonNames(std::move(common_names));
         }
