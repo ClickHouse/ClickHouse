@@ -92,12 +92,9 @@ namespace
             case AuthenticationType::SSL_CERTIFICATE:
             {
                 node->expect_common_names = true;
-
-                auto list = std::make_shared<ASTExpressionList>();
                 for (const auto & name : auth_data.getSSLCertificateCommonNames())
-                    list->children.push_back(std::make_shared<ASTLiteral>(name));
+                    node->children.push_back(std::make_shared<ASTLiteral>(name));
 
-                node->children.push_back(std::move(list));
                 break;
             }
 
