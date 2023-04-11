@@ -340,7 +340,7 @@ QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
-    ThreadGroupStatusPtr && thread_group_,
+    ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
