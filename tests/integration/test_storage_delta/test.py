@@ -29,8 +29,21 @@ from pyspark.sql.window import Window
 
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
-
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+
+def get_spark():
+    builder = (
+        pyspark.sql.SparkSession.builder.appName("spark_test")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
+        .master("local")
+    )
+
+    return configure_spark_with_delta_pip(builder).master("local").getOrCreate()
 
 
 @pytest.fixture(scope="module")
@@ -48,24 +61,15 @@ def started_cluster():
 
         prepare_s3_bucket(cluster)
 
+        if cluster.spark_session is not None:
+            cluster.spark_session.stop()
+            cluster.spark_session._instantiatedContext = None
+        cluster.spark_session = get_spark()
+
         yield cluster
 
     finally:
         cluster.shutdown()
-
-
-def get_spark():
-    builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config(
-            "spark.sql.catalog.spark_catalog",
-            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-        )
-        .master("local")
-    )
-
-    return configure_spark_with_delta_pip(builder).master("local").getOrCreate()
 
 
 def write_delta_from_file(spark, path, result_path, mode="overwrite"):
@@ -139,9 +143,9 @@ def create_initial_data_file(
 
 def test_single_log_file(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_single_log_file"
 
     inserted_data = "SELECT number, toString(number + 1) FROM numbers(100)"
@@ -163,9 +167,9 @@ def test_single_log_file(started_cluster):
 
 def test_partition_by(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_partition_by"
 
     write_delta_from_df(
@@ -185,9 +189,9 @@ def test_partition_by(started_cluster):
 
 def test_checkpoint(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_checkpoint"
 
     write_delta_from_df(
@@ -258,9 +262,9 @@ def test_checkpoint(started_cluster):
 
 def test_multiple_log_files(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_multiple_log_files"
 
     write_delta_from_df(
@@ -296,9 +300,9 @@ def test_multiple_log_files(started_cluster):
 
 def test_metadata(started_cluster):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_metadata"
 
     parquet_data_path = create_initial_data_file(
@@ -328,8 +332,8 @@ def test_metadata(started_cluster):
 
 
 def test_types(started_cluster):
-    spark = get_spark()
     TABLE_NAME = "test_types"
+    spark = started_cluster.spark_session
     result_file = f"{TABLE_NAME}_result_2"
 
     delta_table = (

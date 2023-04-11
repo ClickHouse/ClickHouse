@@ -447,6 +447,8 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
 
+        self.spark_session = None
+
         self.with_azurite = False
 
         # available when with_hdfs == True

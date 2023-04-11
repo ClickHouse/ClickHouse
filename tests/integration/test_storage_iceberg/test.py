@@ -31,38 +31,6 @@ from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_conte
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-@pytest.fixture(scope="module")
-def started_cluster():
-    try:
-        cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
-            "node1",
-            main_configs=["configs/config.d/named_collections.xml"],
-            with_minio=True,
-        )
-
-        logging.info("Starting cluster...")
-        cluster.start()
-
-        prepare_s3_bucket(cluster)
-        logging.info("S3 bucket created")
-
-        yield cluster
-
-    finally:
-        cluster.shutdown()
-
-
-def run_query(instance, query, stdin=None, settings=None):
-    # type: (ClickHouseInstance, str, object, dict) -> str
-
-    logging.info("Running query '{}'...".format(query))
-    result = instance.query(query, stdin=stdin, settings=settings)
-    logging.info("Query finished")
-
-    return result
-
-
 def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -80,6 +48,44 @@ def get_spark():
         .master("local")
     )
     return builder.master("local").getOrCreate()
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster = ClickHouseCluster(__file__)
+        cluster.add_instance(
+            "node1",
+            main_configs=["configs/config.d/named_collections.xml"],
+            with_minio=True,
+        )
+
+        logging.info("Starting cluster...")
+        cluster.start()
+
+        prepare_s3_bucket(cluster)
+        logging.info("S3 bucket created")
+
+        if cluster.spark_session is not None:
+            cluster.spark_session.stop()
+            cluster.spark_session._instantiatedContext = None
+
+        cluster.spark_session = get_spark()
+
+        yield cluster
+
+    finally:
+        cluster.shutdown()
+
+
+def run_query(instance, query, stdin=None, settings=None):
+    # type: (ClickHouseInstance, str, object, dict) -> str
+
+    logging.info("Running query '{}'...".format(query))
+    result = instance.query(query, stdin=stdin, settings=settings)
+    logging.info("Query finished")
+
+    return result
 
 
 def write_iceberg_from_file(
@@ -161,9 +167,9 @@ def create_initial_data_file(
 @pytest.mark.parametrize("format_version", ["1", "2"])
 def test_single_iceberg_file(started_cluster, format_version):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_single_iceberg_file_" + format_version
 
     inserted_data = "SELECT number, toString(number) FROM numbers(100)"
@@ -174,6 +180,7 @@ def test_single_iceberg_file(started_cluster, format_version):
     write_iceberg_from_file(
         spark, parquet_data_path, TABLE_NAME, format_version=format_version
     )
+    time.sleep(500)
 
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
@@ -188,9 +195,9 @@ def test_single_iceberg_file(started_cluster, format_version):
 @pytest.mark.parametrize("format_version", ["1", "2"])
 def test_partition_by(started_cluster, format_version):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_partition_by_" + format_version
 
     write_iceberg_from_df(
@@ -214,9 +221,9 @@ def test_partition_by(started_cluster, format_version):
 @pytest.mark.parametrize("format_version", ["1", "2"])
 def test_multiple_iceberg_files(started_cluster, format_version):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_multiple_iceberg_files_" + format_version
 
     write_iceberg_from_df(
@@ -261,9 +268,9 @@ def test_multiple_iceberg_files(started_cluster, format_version):
 @pytest.mark.parametrize("format_version", ["1", "2"])
 def test_types(started_cluster, format_version):
     instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    spark = get_spark()
     TABLE_NAME = "test_types_" + format_version
 
     data = [
