@@ -271,14 +271,16 @@ void RegExpTreeDictionary::initGraph()
     for (const auto & [id, value]: regex_nodes)
         if (value->parent_id == 0) // this is root node.
             initTopologyOrder(id, visited, topology_id);
+    /// If there is a cycle and all nodes have a parent, this condition will be met.
     if (topology_order.size() != regex_nodes.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The topology order cannot match the number of regex nodes. This is likely a internal bug.");
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "The regexp tree is cyclical. Please check your config.");
 }
 
 void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id)
 {
     visited.insert(node_idx);
     for (UInt64 child_idx : regex_nodes[node_idx]->children)
+        /// there is a cycle when dfs the graph.
         if (visited.contains(child_idx))
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "The regexp tree is cyclical. Please check your config.");
         else
