@@ -665,13 +665,22 @@ def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     node.query(
-        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_with_cache_and_jbod';"
+        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY value SETTINGS storage_policy='s3_with_cache_and_jbod';"
     )
     node.query(
-        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500000"
+        "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(100000000)"
     )
-    node.query(
-        "SELECT * FROM s3_test WHERE value LIKE '%abc%' ORDER BY value FORMAT Null"
+    out = node.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "benchmark",
+            "--iterations",
+            "10",
+            "--max_threads",
+            "100",
+            "--query",
+            "SELECT count() FROM s3_test WHERE key < 40000000 or key > 80000000 SETTINGS max_read_buffer_size='44Ki'",
+        ]
     )
     assert node.contains_in_log(
         "Insert into cache is skipped due to insufficient disk space"
