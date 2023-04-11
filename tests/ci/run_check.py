@@ -35,8 +35,9 @@ LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
-        "Bug Fix (user-visible misbehaviour in official stable release)",
-        "Bug Fix (user-visible misbehavior in official stable release)",
+        "Bug Fix (user-visible misbehavior in an official stable release)",
+        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
