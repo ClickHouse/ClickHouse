@@ -31,6 +31,8 @@ SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 # They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
 # updated accordingly
+# The following lists are append only, try to avoid editing them
+# They atill could be cleaned out after the decent time though.
 LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
@@ -189,6 +191,9 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
         category,
     ):
         return "", category
+
+    if category not in CATEGORY_TO_LABEL:
+        return f"Category '{category}' is not valid", ""
 
     if not entry:
         return f"Changelog entry required for category '{category}'", category
