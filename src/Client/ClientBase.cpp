@@ -65,6 +65,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <Poco/Logger.h>
 #include <iostream>
 #include <filesystem>
 #include <map>
@@ -73,10 +74,43 @@
 #include "config_version.h"
 #include "config.h"
 
+#include <Common/logger_useful.h>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+
+namespace
+{
+using namespace DB;
+using ContetGetterFunc = std::function<ContextPtr(void)> const;
+const void* getContextPtrOrNull(ContetGetterFunc contextFunc)
+{
+    try
+    {
+        return contextFunc().get();
+    }
+    catch(...)
+    {
+    }
+    return nullptr;
+}
+
+void LogContextes(const std::string_view scope, const ContextPtr global_context)
+{
+    const auto * context = global_context.get();
+    std::cerr << scope << " contextes"
+              << "\n\tglobal:    "  << reinterpret_cast<const void*>(context)
+              << "\n\tsession:   "  << getContextPtrOrNull([&]() { return context ? context->getSessionContext() : nullptr; })
+              << "\n\tquery:     "   << getContextPtrOrNull([&]() { return context ? context->getQueryContext() : nullptr; })
+              << "\n\tcurrent T query: "   << getContextPtrOrNull([&]() { return DB::CurrentThread::get().getQueryContext(); })
+              << "\n\tcurrent T global: "   << getContextPtrOrNull([&]() { return DB::CurrentThread::get().getGlobalContext(); })
+//              << "\n\tbuffer:  "   << getContextPtrOrNull(context, &Context::getBufferContext)
+              << std::endl;
+}
+
+}
 
 namespace CurrentMetrics
 {
@@ -438,7 +472,12 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
+    {
+        LogContextes("ClientBase::onData header", global_context);
         return;
+    }
+
+    LogContextes("ClientBase::onData DATA block", global_context);
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
@@ -1048,7 +1087,15 @@ void ClientBase::onProgress(const Progress & value)
 
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
+    std::cerr << "ClientBase::onTimezoneUpdate received new TZ from server: " <<  tz << std::endl;
     DateLUT::setDefaultTimezone(tz);
+
+    Settings settings;
+    settings.timezone = tz;
+    global_context->applySettingsChanges(settings.changes());
+//    DB::CurrentThread::get().getQueryContext()->applySettingsChanges(settings.changes());
+
+    LogContextes("ClientBase::onTimezoneUpdate", global_context);
 }
 
 
