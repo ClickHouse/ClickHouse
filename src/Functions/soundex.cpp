@@ -79,7 +79,6 @@ struct SoundexImpl
         {
             *out_char_data++ = '0';
         }
-        return;
     }
 };
 
