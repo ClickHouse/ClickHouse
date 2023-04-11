@@ -40,7 +40,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 ## Синтаксис присвоения текущих привилегий {#grant-current-grants-syntax}
 
 ```sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+GRANT CURRENT GRANTS[(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*})] TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 - `privilege` — Тип привилегии
