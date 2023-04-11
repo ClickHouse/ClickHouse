@@ -22,13 +22,13 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC"
-$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN header=1 $query"
+$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN $query"
 
 function run_query {
     echo "-- query"
     echo "$1"
     echo "-- explain"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN header=1 $1"
+    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN $1"
     echo "-- execute"
     $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$1"
 }
