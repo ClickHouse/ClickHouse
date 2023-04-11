@@ -11,6 +11,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
 

@@ -3,7 +3,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <memory>
 #include <string>
-#include <Common/logger_useful.h>
+
+namespace Poco { class Logger; }
 
 namespace zkutil
 {
