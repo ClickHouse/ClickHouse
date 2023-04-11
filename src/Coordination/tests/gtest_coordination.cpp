@@ -1672,7 +1672,7 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     // commit all entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
-    state_machine->commit(2, set_acl_entry->get_buf());
+    state_machine->commit(3, set_acl_entry->get_buf());
 
     const auto & uncommitted_state = state_machine->getStorage().uncommitted_state;
     auto node = uncommitted_state.getNode(node_path);
