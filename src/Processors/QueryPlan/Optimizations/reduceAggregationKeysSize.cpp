@@ -79,7 +79,7 @@ std::shared_ptr<ActionsDAG> buildSuccessorActionsDag(const Block & header, const
 
         const auto key_to_remove = "__hinted_key_" + changed_key;
 
-        const auto * hinted_key_casted_column_node = &dag->addCast(dag->findInOutputs(key_to_remove), changed_data_type, "__casted_key_" + changed_key);
+        const auto * node_to_remove = &dag->findInOutputs(key_to_remove);
         ColumnWithTypeAndName const_column;
         if (hint.lower_boundary->getTypeName() == "Int64")
             const_column.type = std::make_shared<DataTypeInt64>();
@@ -89,9 +89,9 @@ std::shared_ptr<ActionsDAG> buildSuccessorActionsDag(const Block & header, const
         const_column.name = "__plus_value_" + changed_key;
         const auto * hint_node = &dag->addColumn(const_column);
 
-        ActionsDAG::NodeRawConstPtrs children = {hinted_key_casted_column_node, hint_node};
+        ActionsDAG::NodeRawConstPtrs children = {node_to_remove, hint_node};
         auto plus_function = FunctionFactory::instance().get("plus", Context::getGlobalContextInstance());
-        dag->addOrReplaceInOutputs(dag->addFunction(plus_function, children, changed_key));
+        dag->addOrReplaceInOutputs(dag->addCast(dag->addFunction(plus_function, children, "__uncasted_" + changed_key), changed_data_type, changed_key));
         dag->removeUnusedResult(key_to_remove);
     }
 
@@ -116,6 +116,7 @@ size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & n
 
     if (aggregating_node->children.size() != 1)
         return 0;
+
     auto * next_node = aggregating_node->children.front();
 
     const auto & input_stream = next_node->step->getOutputStream();
