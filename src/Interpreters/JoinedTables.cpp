@@ -308,7 +308,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
 
     auto settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
-    auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
+    auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
