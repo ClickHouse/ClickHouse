@@ -1,4 +1,5 @@
 SELECT roundAge(0);
+SELECT roundAge(12);
 SELECT roundAge(18);
 SELECT roundAge(25);
 SELECT roundAge(35);
