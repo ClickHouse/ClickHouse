@@ -2385,11 +2385,6 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
     return ret;
 }
 
-void KeeperStorage::recalculateStats()
-{
-    container.recalculateDataSize();
-}
-
 String KeeperStorage::generateDigest(const String & userdata)
 {
     std::vector<String> user_password;
