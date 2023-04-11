@@ -43,12 +43,16 @@ public:
 
     void UpdateCertificates(const LetsEncryptConfigurationData & config_data, std::function<void()> callback);
 
+    bool ShouldUpdateCertificates(const Poco::Util::AbstractConfiguration & config);
+
     void UpdateCertificatesIfNeeded(const Poco::Util::AbstractConfiguration & config);
 
     void PlaceFile(const std::string & domainName, const std::string & url, const std::string & keyAuthorization);
 
 private:
     CertificateIssuer() = default;
+
+    std::atomic<bool> update_started = false;
 
     Poco::Logger * log = &Poco::Logger::get("CertificateIssuer");
 
