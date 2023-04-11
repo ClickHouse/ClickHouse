@@ -88,22 +88,16 @@ class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_);
+    PlannerContext(ContextPtr query_context_, GlobalPlannerContextPtr global_planner_context_);
 
     /// Get planner context query context
-    ContextPtr getQueryContext() const
+    const ContextPtr & getQueryContext() const
     {
         return query_context;
     }
 
-    /// Get planner context mutable query context
-    const ContextMutablePtr & getMutableQueryContext() const
-    {
-        return query_context;
-    }
-
-    /// Get planner context mutable query context
-    ContextMutablePtr & getMutableQueryContext()
+    /// Get planner context query context
+    ContextPtr & getQueryContext()
     {
         return query_context;
     }
@@ -143,14 +137,8 @@ public:
       */
     TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node);
 
-    /// Get table expression node to data map
+    /// Get table expression node to data read only map
     const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
-    {
-        return table_expression_node_to_data;
-    }
-
-    /// Get table expression node to data map
-    std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData()
     {
         return table_expression_node_to_data;
     }
@@ -196,7 +184,7 @@ public:
 
 private:
     /// Query context
-    ContextMutablePtr query_context;
+    ContextPtr query_context;
 
     /// Global planner context
     GlobalPlannerContextPtr global_planner_context;

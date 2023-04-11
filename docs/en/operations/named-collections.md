@@ -239,17 +239,15 @@ Example of configuration:
 <clickhouse>
     <named_collections>
         <remote1>
-            <host>remote_host</host>
+            <host>localhost</host>
             <port>9000</port>
             <database>system</database>
             <user>foo</user>
             <password>secret</password>
-            <secure>1</secure>
         </remote1>
     </named_collections>
 </clickhouse>
 ```
-`secure` is not needed for connection because of `remoteSecure`, but it can be used for dictionaries.
 
 ### Example of using named collections with the `remote`/`remoteSecure` functions
 

@@ -17,9 +17,6 @@ SELECT JSON_VALUE('{"hello":"\\uD83C\\uDF3A \\uD83C\\uDF38 \\uD83C\\uDF37 Hello,
 SELECT JSON_VALUE('{"a":"Hello \\"World\\" \\\\"}', '$.a');
 select JSON_VALUE('{"a":"\\n\\u0000"}', '$.a');
 select JSON_VALUE('{"a":"\\u263a"}', '$.a');
-select JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
-select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
-SELECT JSON_VALUE('{"hello":["world","world2"]}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 
 SELECT '--JSON_QUERY--';
 SELECT JSON_QUERY('{"hello":1}', '$');

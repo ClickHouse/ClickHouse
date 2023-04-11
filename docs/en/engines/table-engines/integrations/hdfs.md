@@ -64,7 +64,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
     -   Indexes.
     -   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
   
-  :::note Zero-copy replication is not ready for production
+  :::warning Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
 
@@ -110,7 +110,7 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::note
+:::warning
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 

@@ -1,0 +1,7 @@
+position: 1
+label: 'Example Datasets'
+collapsible: true
+collapsed: true
+link:
+  type: doc
+  id: en/getting-started/example-datasets/

@@ -2,7 +2,6 @@
 
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
-#include <IO/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
@@ -28,6 +27,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_FILE_SIZE;
 }
 
+
+ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
 {
@@ -96,27 +97,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             num_bytes_to_read = internal_buffer.size();
         }
 
-        ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
-        int bytes_read;
-        try
-        {
-            bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
-        }
-        catch (...)
-        {
-            read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
-            throw;
-        }
-        rlock.unlock();
-
+        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
         if (bytes_read < 0)
-        {
-            read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
                 hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
-        }
-        read_settings.resource_link.adjust(num_bytes_to_read, bytes_read);
 
         if (bytes_read)
         {
@@ -163,8 +148,6 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
     , use_external_buffer(use_external_buffer_)
 {
 }
-
-ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 size_t ReadBufferFromHDFS::getFileSize()
 {
@@ -234,13 +217,13 @@ IAsynchronousReader::Result ReadBufferFromHDFS::readInto(char * data, size_t siz
     /// TODO: we don't need to copy if there is no pending data
     seek(offset, SEEK_SET);
     if (eof())
-        return {0, 0, nullptr};
+        return {0, 0};
 
     /// Make sure returned size no greater than available bytes in working_buffer
     size_t count = std::min(size, available());
     memcpy(data, position(), count);
     position() += count;
-    return {count, 0, nullptr};
+    return {count, 0};
 }
 
 String ReadBufferFromHDFS::getFileName() const

@@ -1,4 +1,4 @@
--- Tags: no-s3-storage, no-random-merge-tree-settings
+-- Tags: no-s3-storage
 
 DROP TABLE IF EXISTS data_01551;
 
@@ -8,7 +8,7 @@ CREATE TABLE data_01551
 ) engine=AggregatingMergeTree()
 PARTITION BY key%2
 ORDER BY (key, key/2)
-SETTINGS index_granularity=10, index_granularity_bytes='10Mi';
+SETTINGS index_granularity=10;
 
 INSERT INTO data_01551 SELECT number FROM numbers(100000);
 SET max_threads=3;

@@ -18,6 +18,9 @@ namespace DB
     }
 }
 
+template<typename T, typename ... U>
+concept is_any_of = (std::same_as<T, U> || ...);
+
 
 /** Checks type by comparing typeid.
   * The exact match of the type is checked. That is, cast to the ancestor will be unsuccessful.
@@ -34,7 +37,7 @@ To typeid_cast(From & from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
@@ -55,7 +58,7 @@ To typeid_cast(From * from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -90,6 +93,6 @@ To typeid_cast(const std::shared_ptr<From> & from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 }

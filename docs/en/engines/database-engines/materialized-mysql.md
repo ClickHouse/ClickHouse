@@ -6,7 +6,7 @@ sidebar_position: 70
 
 # [experimental] MaterializedMySQL 
 
-:::note
+:::warning
 This is an experimental feature that should not be used in production.
 :::
 
@@ -245,7 +245,7 @@ extra care needs to be taken.
 
 You may specify overrides for tables that do not exist yet.
 
-:::important
+:::warning
 It is easy to break replication with table overrides if not used with care. For example:
     
 * If an ALIAS column is added with a table override, and a column with the same name is later added to the source

@@ -79,7 +79,9 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
     ::DB::encodeSHA256(text, hash.data());
     return hash;
 #else
-    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+    throw DB::Exception(
+        "SHA256 passwords support is disabled, because ClickHouse was built without SSL library",
+        DB::ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
 }
 

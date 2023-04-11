@@ -45,37 +45,36 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 
 Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
 
-## MD5 {#hash_functions-md5}
+## MD5
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64 (#hash_functions-siphash64)
+## sipHash64
 
-Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
+Produces a 64-bit [SipHash](https://131002.net/siphash/) hash value.
 
 ```sql
 sipHash64(par1,...)
 ```
 
-This is a cryptographic hash function. It works at least three times faster than the [MD5](#hash_functions-md5) hash function.
+This is a cryptographic hash function. It works at least three times faster than the [MD5](#hash_functions-md5) function.
 
-The function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
+Function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. Then combines hashes by the following algorithm:
 
-1.  The first and the second hash value are concatenated to an array which is hashed.
-2.  The previously calculated hash value and the hash of the third input paramter are hashed in a similar way.
-3.  This calculation is repeated for all remaining hash values of the original input.
+1.  After hashing all the input parameters, the function gets the array of hashes.
+2.  Function takes the first and the second elements and calculates a hash for the array of them.
+3.  Then the function takes the hash value, calculated at the previous step, and the third element of the initial hash array, and calculates a hash for the array of them.
+4.  The previous step is repeated for all the remaining elements of the initial hash array.
 
 **Arguments**
 
-The function takes a variable number of input parameters of any of the [supported data types](/docs/en/sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
 A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
-
-Note that the calculated hash values may be equal for the same input values of different argument types. This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
 
 **Example**
 
@@ -85,51 +84,13 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ```response
 ┌──────────────SipHash─┬─type───┐
-│ 11400366955626497465 │ UInt64 │
+│ 13726873534472839665 │ UInt64 │
 └──────────────────────┴────────┘
-```
-
-## sipHash64Keyed
-
-Same as [sipHash64](#hash_functions-siphash64) but additionally takes an explicit key argument instead of using a fixed key.
-
-**Syntax**
-
-```sql
-sipHash64Keyed((k0, k1), par1,...)
-```
-
-**Arguments**
-
-Same as [sipHash64](#hash_functions-siphash64), but the first argument is a tuple of two UInt64 values representing the key.
-
-**Returned value**
-
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
-
-**Example**
-
-Query:
-
-```sql
-SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
-```
-
-```response
-┌─────────────SipHash─┬─type───┐
-│ 8017656310194184311 │ UInt64 │
-└─────────────────────┴────────┘
 ```
 
 ## sipHash128
 
-Like [sipHash64](#hash_functions-siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
-
-:::note
-This 128-bit variant differs from the reference implementation and it's weaker.
-This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects should probably use [sipHash128Reference](#hash_functions-siphash128reference).
-:::
+Produces a 128-bit [SipHash](https://131002.net/siphash/) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
 
 **Syntax**
 
@@ -139,11 +100,13 @@ sipHash128(par1,...)
 
 **Arguments**
 
-Same as for [sipHash64](#hash_functions-siphash64).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned value**
 
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+A 128-bit `SipHash` hash value.
+
+Type: [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Example**
 
@@ -159,114 +122,6 @@ Result:
 ┌─hex(sipHash128('foo', '', 3))────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
-```
-
-## sipHash128Keyed
-
-Same as [sipHash128](#hash_functions-siphash128) but additionally takes an explicit key argument instead of using a fixed key.
-
-:::note
-This 128-bit variant differs from the reference implementation and it's weaker.
-This version exists because, when it was written, there was no official 128-bit extension for SipHash.
-New projects should probably use [sipHash128ReferenceKeyed](#hash_functions-siphash128referencekeyed).
-:::
-
-**Syntax**
-
-```sql
-sipHash128Keyed((k0, k1), par1,...)
-```
-
-**Arguments**
-
-Same as [sipHash128](#hash_functions-siphash128), but the first argument is a tuple of two UInt64 values representing the key.
-
-**Returned value**
-
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912),'foo', '\x01', 3));
-```
-
-Result:
-
-```response
-┌─hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
-│ B8467F65C8B4CFD9A5F8BD733917D9BF                                              │
-└───────────────────────────────────────────────────────────────────────────────┘
-```
-
-## sipHash128Reference
-
-Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
-
-**Syntax**
-
-```sql
-sipHash128Reference(par1,...)
-```
-
-**Arguments**
-
-Same as for [sipHash128](#hash_functions-siphash128).
-
-**Returned value**
-
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT hex(sipHash128Reference('foo', '\x01', 3));
-```
-
-Result:
-
-```response
-┌─hex(sipHash128Reference('foo', '', 3))─┐
-│ 4D1BE1A22D7F5933C0873E1698426260       │
-└────────────────────────────────────────┘
-```
-
-## sipHash128ReferenceKeyed
-
-Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.
-
-**Syntax**
-
-```sql
-sipHash128ReferenceKeyed((k0, k1), par1,...)
-```
-
-**Arguments**
-
-Same as [sipHash128Reference](#hash_functions-siphash128reference), but the first argument is a tuple of two UInt64 values representing the key.
-
-**Returned value**
-
-A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\x01', 3));
-```
-
-Result:
-
-```response
-┌─hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
-│ 630133C9722DC08646156B8130C4CDC8                                                       │
-└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## cityHash64
@@ -441,11 +296,11 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash
 
-Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452),
-[Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405),
-[Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410),
-[Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
-[Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
+Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452), 
+[Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405), 
+[Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410), 
+[Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959), 
+[Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060). 
 This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
 Note that Java only support calculating signed integers hash, so if you want to calculate unsigned integers hash you must cast it to proper signed ClickHouse types.
@@ -658,45 +513,6 @@ Result:
 ┌─────────────────res1─┬────────────────res2─┐
 │ 12384823029245979431 │ 1188926775431157506 │
 └──────────────────────┴─────────────────────┘
-```
-
-
-## kafkaMurmurHash
-
-Calculates a 32-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [Kafka](https://github.com/apache/kafka/blob/461c5cfe056db0951d9b74f5adc45973670404d7/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L482) and without the highest bit to be compatible with [Default Partitioner](https://github.com/apache/kafka/blob/139f7709bd3f5926901a21e55043388728ccca78/clients/src/main/java/org/apache/kafka/clients/producer/internals/BuiltInPartitioner.java#L328).
-
-**Syntax**
-
-```sql
-MurmurHash(par1, ...)
-```
-
-**Arguments**
-
--   `par1, ...` — A variable number of parameters that can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
-
-**Returned value**
-
--   Calculated hash value.
-
-Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    kafkaMurmurHash('foobar') AS res1,
-    kafkaMurmurHash(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS res2
-```
-
-Result:
-
-```response
-┌───────res1─┬─────res2─┐
-│ 1357151166 │ 85479775 │
-└────────────┴──────────┘
 ```
 
 ## murmurHash3_32, murmurHash3_64

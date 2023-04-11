@@ -63,7 +63,6 @@ DEFAULT_ENV_NAME = ".env"
 
 SANITIZER_SIGN = "=================="
 
-
 # to create docker-compose env file
 def _create_env_file(path, variables):
     logging.debug(f"Env {variables} stored in {path}")
@@ -115,11 +114,14 @@ def run_and_check(
     return out
 
 
-# Based on https://stackoverflow.com/a/1365284/3706827
+# Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
 def get_free_port():
-    with socket.socket() as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
@@ -371,7 +373,6 @@ class ClickHouseCluster:
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
         self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
-        self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
         self.up_called = False
@@ -467,10 +468,10 @@ class ClickHouseCluster:
         # available when with_kafka == True
         self.kafka_host = "kafka1"
         self.kafka_dir = os.path.join(self.instances_dir, "kafka")
-        self._kafka_port = 0
+        self.kafka_port = get_free_port()
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
-        self._schema_registry_port = 0
+        self.schema_registry_port = get_free_port()
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
@@ -478,7 +479,7 @@ class ClickHouseCluster:
         # available when with_kerberozed_kafka == True
         # reuses kafka_dir
         self.kerberized_kafka_host = "kerberized_kafka1"
-        self._kerberized_kafka_port = 0
+        self.kerberized_kafka_port = get_free_port()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
             self.kerberized_kafka_host
         )
@@ -489,15 +490,15 @@ class ClickHouseCluster:
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
-        self._mongo_port = 0
+        self.mongo_port = get_free_port()
         self.mongo_no_cred_host = "mongo2"
-        self._mongo_no_cred_port = 0
+        self.mongo_no_cred_port = get_free_port()
 
         # available when with_meili == True
         self.meili_host = "meili1"
-        self._meili_port = 0
+        self.meili_port = get_free_port()
         self.meili_secure_host = "meili_secure"
-        self._meili_secure_port = 0
+        self.meili_secure_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -527,7 +528,7 @@ class ClickHouseCluster:
 
         # available when with_redis == True
         self.redis_host = "redis1"
-        self._redis_port = 0
+        self.redis_port = get_free_port()
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -612,62 +613,6 @@ class ClickHouseCluster:
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
-
-    @property
-    def kafka_port(self):
-        if self._kafka_port:
-            return self._kafka_port
-        self._kafka_port = get_free_port()
-        return self._kafka_port
-
-    @property
-    def schema_registry_port(self):
-        if self._schema_registry_port:
-            return self._schema_registry_port
-        self._schema_registry_port = get_free_port()
-        return self._schema_registry_port
-
-    @property
-    def kerberized_kafka_port(self):
-        if self._kerberized_kafka_port:
-            return self._kerberized_kafka_port
-        self._kerberized_kafka_port = get_free_port()
-        return self._kerberized_kafka_port
-
-    @property
-    def mongo_port(self):
-        if self._mongo_port:
-            return self._mongo_port
-        self._mongo_port = get_free_port()
-        return self._mongo_port
-
-    @property
-    def mongo_no_cred_port(self):
-        if self._mongo_no_cred_port:
-            return self._mongo_no_cred_port
-        self._mongo_no_cred_port = get_free_port()
-        return self._mongo_no_cred_port
-
-    @property
-    def meili_port(self):
-        if self._meili_port:
-            return self._meili_port
-        self._meili_port = get_free_port()
-        return self._meili_port
-
-    @property
-    def meili_secure_port(self):
-        if self._meili_secure_port:
-            return self._meili_secure_port
-        self._meili_secure_port = get_free_port()
-        return self._meili_secure_port
-
-    @property
-    def redis_port(self):
-        if self._redis_port:
-            return self._redis_port
-        self._redis_port = get_free_port()
-        return self._redis_port
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1508,6 +1453,7 @@ class ClickHouseCluster:
         config_root_name="clickhouse",
         extra_configs=[],
     ) -> "ClickHouseInstance":
+
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -1908,8 +1854,6 @@ class ClickHouseCluster:
             exec_cmd = ["docker", "exec"]
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
-            if "privileged" in kwargs:
-                exec_cmd += ["--privileged"]
             result = subprocess_check_call(
                 exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
             )
@@ -2910,10 +2854,7 @@ class ClickHouseCluster:
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
                     sanitizer_assert_instance = instance.grep_in_log(
-                        SANITIZER_SIGN,
-                        from_host=True,
-                        filename="stderr.log",
-                        after=1000,
+                        SANITIZER_SIGN, from_host=True, filename="stderr.log"
                     )
                     logging.error(
                         "Sanitizer in instance %s log %s",
@@ -2954,8 +2895,8 @@ class ClickHouseCluster:
 
         if sanitizer_assert_instance is not None:
             raise Exception(
-                "Sanitizer assert found for instance {}".format(
-                    sanitizer_assert_instance
+                "Sanitizer assert found in {} for instance {}".format(
+                    self.docker_logs_path, sanitizer_assert_instance
                 )
             )
         if fatal_log is not None:
@@ -3062,8 +3003,6 @@ services:
             - NET_ADMIN
             - IPC_LOCK
             - SYS_NICE
-            # for umount/mount on fly
-            - SYS_ADMIN
         depends_on: {depends_on}
         user: '{user}'
         env_file:
@@ -3142,6 +3081,7 @@ class ClickHouseInstance:
         config_root_name="clickhouse",
         extra_configs=[],
     ):
+
         self.name = name
         self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
@@ -3316,7 +3256,7 @@ class ClickHouseInstance:
         sleep_time=0.5,
         check_callback=lambda x: True,
     ):
-        # logging.debug(f"Executing query {sql} on {self.name}")
+        logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
             try:
@@ -3335,7 +3275,7 @@ class ClickHouseInstance:
                     return result
                 time.sleep(sleep_time)
             except Exception as ex:
-                # logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
         if result is not None:
@@ -3437,7 +3377,6 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
-        content=False,
     ):
         output, error = self.http_query_and_get_answer_with_error(
             sql,
@@ -3449,7 +3388,6 @@ class ClickHouseInstance:
             port=port,
             timeout=timeout,
             retry_strategy=retry_strategy,
-            content=content,
         )
 
         if error:
@@ -3502,7 +3440,6 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
-        content=False,
     ):
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
@@ -3534,7 +3471,7 @@ class ClickHouseInstance:
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
 
         if r.ok:
-            return (r.content if content else r.text, None)
+            return (r.text, None)
 
         code = r.status_code
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
@@ -3711,21 +3648,15 @@ class ClickHouseInstance:
             )
         return len(result) > 0
 
-    def grep_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log", after=None
-    ):
+    def grep_in_log(self, substring, from_host=False, filename="clickhouse-server.log"):
         logging.debug(f"grep in log called %s", substring)
-        if after is not None:
-            after_opt = "-A{}".format(after)
-        else:
-            after_opt = ""
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{substring}" {self.logs_dir}/{filename}* || true',
                 ]
             )
         else:
@@ -3733,7 +3664,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
                 ]
             )
         logging.debug("grep result %s", result)
@@ -4454,17 +4385,6 @@ class ClickHouseInstance:
             if path:
                 objects = objects + self.get_s3_data_objects(path)
         return objects
-
-    def create_format_schema(self, file_name, content):
-        self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "echo '{}' > {}".format(
-                    content, "/var/lib/clickhouse/format_schemas/" + file_name
-                ),
-            ]
-        )
 
 
 class ClickHouseKiller(object):

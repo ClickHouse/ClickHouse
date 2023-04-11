@@ -87,7 +87,7 @@ private:
     Poco::Logger * log;
 };
 
-class CompressionCodecDeflateQpl final : public ICompressionCodec
+class CompressionCodecDeflateQpl : public ICompressionCodec
 {
 public:
     CompressionCodecDeflateQpl();

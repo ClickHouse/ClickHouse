@@ -12,7 +12,7 @@ CREATE TABLE rename2 (p Int64, i Int64, v UInt64) ENGINE = ReplicatedReplacingMe
 INSERT INTO rename1 VALUES (0, 1, 0);
 INSERT INTO rename1 VALUES (0, 1, 1);
 
-SYSTEM SYNC REPLICA rename1 PULL; -- Avoid "Cannot select parts for optimization: Entry for part 0_1_1_0 hasn't been read from the replication log yet"
+SYSTEM SYNC REPLICA rename1; -- Avoid "Cannot select parts for optimization: Entry for part 0_1_1_0 hasn't been read from the replication log yet"
 SYSTEM SYNC REPLICA rename2;
 OPTIMIZE TABLE rename1 FINAL;
 OPTIMIZE TABLE rename2 FINAL;

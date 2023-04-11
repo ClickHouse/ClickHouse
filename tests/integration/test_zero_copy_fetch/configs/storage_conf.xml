@@ -1,8 +1,4 @@
 <clickhouse>
-    <logger>
-        <level>test</level>
-    </logger>
-
     <storage_configuration>
         <disks>
             <s3>
@@ -25,13 +21,6 @@
                     </main>
                 </volumes>
             </s3>
-            <s3_only>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_only>
         </policies>
     </storage_configuration>
 

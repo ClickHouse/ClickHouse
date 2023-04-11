@@ -27,14 +27,13 @@ public:
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
     String getName() const override { return "MergingAggregated"; }
-    const Aggregator::Params & getParams() const { return params; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void applyOrder(SortDescription input_sort_description, DataStream::SortScope sort_scope);
+    void updateInputSortDescription(SortDescription input_sort_description, DataStream::SortScope sort_scope);
 
     bool memoryBoundMergingWillBeUsed() const;
 
@@ -49,10 +48,7 @@ private:
     size_t memory_efficient_merge_threads;
     const size_t max_block_size;
     const size_t memory_bound_merging_max_block_bytes;
-    SortDescription group_by_sort_description;
-
-    bool is_order_overwritten = false;
-    DataStream::SortScope overwritten_sort_scope = DataStream::SortScope::None;
+    const SortDescription group_by_sort_description;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;

@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MarkCache.h>
 #include <IO/ReadSettings.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -30,7 +30,7 @@ public:
 
     ~MergeTreeMarksLoader();
 
-    MarkInCompressedFile getMark(size_t row_index, size_t column_index = 0);
+    const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
 private:
     DataPartStoragePtr data_part_storage;

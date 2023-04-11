@@ -14,7 +14,7 @@ namespace DB
 {
 class ASTStorage;
 
-#define LIST_OF_DISTRIBUTED_SETTINGS(M, ALIAS) \
+#define LIST_OF_DISTRIBUTED_SETTINGS(M) \
     M(Bool, fsync_after_insert, false, "Do fsync for every inserted. Will decreases performance of inserts (only for async INSERT, i.e. insert_distributed_sync=false)", 0) \
     M(Bool, fsync_directories, false, "Do fsync for temporary directory (that is used for async INSERT only) after all part operations (writes, renames, etc.).", 0) \
     /** Inserts settings. */ \

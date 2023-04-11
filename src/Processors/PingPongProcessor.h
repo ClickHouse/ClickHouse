@@ -3,6 +3,7 @@
 #include <Processors/IProcessor.h>
 #include <base/unit.h>
 #include <Processors/Chunk.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -90,7 +91,11 @@ public:
 
     String getName() const override { return "ReadHeadBalancedProcessor"; }
 
-    bool consume(const Chunk & chunk) override;
+    bool consume(const Chunk & chunk) override
+    {
+        data_consumed += chunk.getNumRows();
+        return data_consumed > size_to_wait;
+    }
 
 private:
     size_t data_consumed;

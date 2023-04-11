@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -17,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
 }
 
 class IFunctionOverloadResolver;
@@ -87,10 +85,7 @@ public:
     /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
-    /// Get argument types
     const DataTypes & getArgumentTypes() const;
-
-    /// Get argument columns
     ColumnsWithTypeAndName getArgumentColumns() const;
 
     /// Returns true if function node has window, false otherwise
@@ -109,26 +104,13 @@ public:
       */
     QueryTreeNodePtr & getWindowNode() { return children[window_child_index]; }
 
-    /** Get ordinary function.
-      * If function is not resolved or is resolved as non ordinary function nullptr is returned.
+    /** Get non aggregate function.
+      * If function is not resolved nullptr returned.
       */
     FunctionBasePtr getFunction() const
     {
         if (kind != FunctionKind::ORDINARY)
             return {};
-        return std::static_pointer_cast<const IFunctionBase>(function);
-    }
-
-    /** Get ordinary function.
-      * If function is not resolved or is resolved as non ordinary function exception is thrown.
-      */
-    FunctionBasePtr getFunctionOrThrow() const
-    {
-        if (kind != FunctionKind::ORDINARY)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-              "Function node with name '{}' is not resolved as ordinary function",
-              function_name);
-
         return std::static_pointer_cast<const IFunctionBase>(function);
     }
 
@@ -188,16 +170,7 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Function node with name '{}' is not resolved",
                 function_name);
-        auto type = function->getResultType();
-        if (wrap_with_nullable)
-          return makeNullableSafe(type);
-        return type;
-    }
-
-    void convertToNullable() override
-    {
-        chassert(kind == FunctionKind::ORDINARY);
-        wrap_with_nullable = true;
+        return function->getResultType();
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
@@ -209,13 +182,12 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl() const override;
 
 private:
     String function_name;
     FunctionKind kind = FunctionKind::UNKNOWN;
     IResolvedFunctionPtr function;
-    bool wrap_with_nullable = false;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;

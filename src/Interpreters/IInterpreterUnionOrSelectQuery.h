@@ -35,7 +35,6 @@ public:
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
     QueryPipelineBuilder buildQueryPipeline();
-    QueryPipelineBuilder buildQueryPipeline(QueryPlan & query_plan);
 
     virtual void ignoreWithTotals() = 0;
 
@@ -44,6 +43,8 @@ public:
     Block getSampleBlock() { return result_header; }
 
     size_t getMaxStreams() const { return max_streams; }
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
     /// Returns whether the query uses the view source from the Context
     /// The view source is a virtual storage that currently only materialized views use to replace the source table

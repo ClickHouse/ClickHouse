@@ -2,13 +2,11 @@
 
 #include <base/types.h>
 #include <base/getThreadId.h>
-#include <base/defines.h>
-#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <boost/noncopyable.hpp>
+#include <Common/logger_useful.h>
 
 
 #if defined(OS_LINUX)
@@ -206,7 +204,7 @@ public:
     void updateCounters(ProfileEvents::Counters & profile_events);
 
 private:
-    ::taskstats stats;
+    ::taskstats stats;  //-V730_NOINIT
     std::function<::taskstats()> stats_getter;
 
     explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);

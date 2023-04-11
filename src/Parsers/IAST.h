@@ -208,8 +208,7 @@ public:
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
-            show_secrets(other.show_secrets)
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
@@ -264,33 +263,16 @@ public:
     enum class QueryKind : uint8_t
     {
         None = 0,
-        Select,
-        Insert,
-        Delete,
+        Alter,
         Create,
         Drop,
-        Undrop,
-        Rename,
-        Optimize,
-        Check,
-        Alter,
         Grant,
+        Insert,
+        Rename,
         Revoke,
+        SelectIntersectExcept,
+        Select,
         System,
-        Set,
-        Use,
-        Show,
-        Exists,
-        Describe,
-        Explain,
-        Backup,
-        Restore,
-        KillQuery,
-        ExternalDDL,
-        Begin,
-        Commit,
-        Rollback,
-        SetTransactionSnapshot,
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }

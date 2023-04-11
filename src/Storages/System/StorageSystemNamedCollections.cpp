@@ -7,7 +7,6 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -30,16 +29,11 @@ StorageSystemNamedCollections::StorageSystemNamedCollections(const StorageID & t
 
 void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    const auto & access = context->getAccess();
-
-    NamedCollectionUtils::loadIfNot();
+    context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS);
 
     auto collections = NamedCollectionFactory::instance().getAll();
     for (const auto & [name, collection] : collections)
     {
-        if (!access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS, name))
-            continue;
-
         res_columns[0]->insert(name);
 
         auto * column_map = typeid_cast<ColumnMap *>(res_columns[1].get());
@@ -53,10 +47,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         for (const auto & key : collection->getKeys())
         {
             key_column.insertData(key.data(), key.size());
-            if (access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS))
-                value_column.insert(collection->get<String>(key));
-            else
-                value_column.insert("[HIDDEN]");
+            value_column.insert(collection->get<String>(key));
             size++;
         }
 

@@ -67,6 +67,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 #include <Poco/MongoDB/ObjectId.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
@@ -113,11 +114,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 {
     if (!uri.empty())
     {
-        // Connect with URI.
-        Poco::MongoDB::Connection::SocketFactory socket_factory;
-        connection->connect(uri, socket_factory);
-
-        Poco::URI poco_uri(connection->uri());
+        Poco::URI poco_uri(uri);
 
         // Parse database from URI. This is required for correctness -- the
         // cursor is created using database name and collection name, so we have
@@ -137,6 +134,10 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         {
             user.resize(separator);
         }
+
+        // Connect with URI.
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
+        connection->connect(uri, socket_factory);
     }
     else
     {

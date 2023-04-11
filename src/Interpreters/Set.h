@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB

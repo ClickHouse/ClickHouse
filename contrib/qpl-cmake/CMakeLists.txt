@@ -10,30 +10,11 @@ if (NOT ENABLE_QPL)
     return()
 endif()
 
-## QPL has build dependency on libaccel-config. Here is to build libaccel-config which is required by QPL.
-## libaccel-config is the utility library for controlling and configuring Intel® In-Memory Analytics Accelerator (Intel® IAA).
-set (LIBACCEL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/idxd-config")
-set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
-set (LIBACCEL_HEADER_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake/idxd-header")
-set (SRCS
-    "${LIBACCEL_SOURCE_DIR}/accfg/lib/libaccfg.c"
-    "${LIBACCEL_SOURCE_DIR}/util/log.c"
-    "${LIBACCEL_SOURCE_DIR}/util/sysfs.c"
-)
-
-add_library(accel-config ${SRCS})
-
-target_compile_options(accel-config PRIVATE "-D_GNU_SOURCE")
-
-target_include_directories(accel-config BEFORE
-    PRIVATE ${UUID_DIR}
-    PRIVATE ${LIBACCEL_HEADER_DIR}
-    PRIVATE ${LIBACCEL_SOURCE_DIR})
-
-## QPL build start here.
 set (QPL_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl")
 set (QPL_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl/sources")
 set (QPL_BINARY_DIR "${ClickHouse_BINARY_DIR}/build/contrib/qpl")
+set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
+
 set (EFFICIENT_WAIT OFF)
 set (BLOCK_ON_FAULT ON)
 set (LOG_HW_INIT OFF)
@@ -334,8 +315,13 @@ target_compile_definitions(_qpl
         PRIVATE -DQPL_BADARG_CHECK
         PUBLIC -DENABLE_QPL_COMPRESSION)
 
+find_library(LIBACCEL accel-config)
+if(NOT LIBACCEL)
+    message(FATAL_ERROR "Please install QPL dependency library:libaccel-config from https://github.com/intel/idxd-config")
+endif()
+
 target_link_libraries(_qpl
-        PRIVATE accel-config
+        PRIVATE ${LIBACCEL}
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)

@@ -115,13 +115,6 @@ configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/A
 
 # ARROW_ORC + adapters/orc/CMakefiles
 set(ORC_SRCS
-        "${CMAKE_CURRENT_BINARY_DIR}/orc_proto.pb.h"
-        "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/Literal.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/PredicateLeaf.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SargsApplier.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SearchArgument.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/TruthValue.cc"
         "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
         "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
         "${ORC_SOURCE_SRC_DIR}/Reader.cc"
@@ -136,20 +129,13 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/MemoryPool.cc"
         "${ORC_SOURCE_SRC_DIR}/RLE.cc"
         "${ORC_SOURCE_SRC_DIR}/RLEv1.cc"
-        "${ORC_SOURCE_SRC_DIR}/RleDecoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/RleEncoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLEV2Util.cc"
+        "${ORC_SOURCE_SRC_DIR}/RLEv2.cc"
         "${ORC_SOURCE_SRC_DIR}/Statistics.cc"
         "${ORC_SOURCE_SRC_DIR}/StripeStream.cc"
         "${ORC_SOURCE_SRC_DIR}/Timezone.cc"
         "${ORC_SOURCE_SRC_DIR}/TypeImpl.cc"
         "${ORC_SOURCE_SRC_DIR}/Vector.cc"
         "${ORC_SOURCE_SRC_DIR}/Writer.cc"
-        "${ORC_SOURCE_SRC_DIR}/Adaptor.cc"
-        "${ORC_SOURCE_SRC_DIR}/BloomFilter.cc"
-        "${ORC_SOURCE_SRC_DIR}/Murmur3.cc"
-        "${ORC_SOURCE_SRC_DIR}/BlockBuffer.cc"
-        "${ORC_SOURCE_SRC_DIR}/wrap/orc-proto-wrapper.cc"
         "${ORC_SOURCE_SRC_DIR}/io/InputStream.cc"
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
         "${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc"
@@ -202,7 +188,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/builder.cc"
         "${LIBRARY_DIR}/buffer.cc"
         "${LIBRARY_DIR}/chunked_array.cc"
-        "${LIBRARY_DIR}/chunk_resolver.cc"
         "${LIBRARY_DIR}/compare.cc"
         "${LIBRARY_DIR}/config.cc"
         "${LIBRARY_DIR}/datum.cc"
@@ -269,10 +254,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/uri.cc"
         "${LIBRARY_DIR}/util/utf8.cc"
         "${LIBRARY_DIR}/util/value_parsing.cc"
-        "${LIBRARY_DIR}/util/byte_size.cc"
-        "${LIBRARY_DIR}/util/debug.cc"
-        "${LIBRARY_DIR}/util/tracing.cc"
-        "${LIBRARY_DIR}/util/atfork_internal.cc"
         "${LIBRARY_DIR}/vendored/base64.cpp"
         "${LIBRARY_DIR}/vendored/datetime/tz.cpp"
 
@@ -306,11 +287,9 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/exec/source_node.cc"
         "${LIBRARY_DIR}/compute/exec/sink_node.cc"
         "${LIBRARY_DIR}/compute/exec/order_by_impl.cc"
-        "${LIBRARY_DIR}/compute/exec/partition_util.cc"
         "${LIBRARY_DIR}/compute/function.cc"
         "${LIBRARY_DIR}/compute/function_internal.cc"
         "${LIBRARY_DIR}/compute/kernel.cc"
-        "${LIBRARY_DIR}/compute/light_array.cc"
         "${LIBRARY_DIR}/compute/registry.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_basic.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_mode.cc"
@@ -324,28 +303,21 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_boolean.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_dictionary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_extension.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_numeric.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_string.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_temporal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_compare.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_nested.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_random.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_round.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_set_lookup.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_string.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_temporal_binary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_temporal_unary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_validity.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_if_else.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_string_ascii.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_string_utf8.cc"
         "${LIBRARY_DIR}/compute/kernels/util_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_array_sort.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_cumulative_ops.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_hash.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_rank.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_select_k.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_replace.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_selection.cc"
@@ -354,15 +326,13 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/exec/union_node.cc"
         "${LIBRARY_DIR}/compute/exec/key_hash.cc"
         "${LIBRARY_DIR}/compute/exec/key_map.cc"
+        "${LIBRARY_DIR}/compute/exec/key_compare.cc"
+        "${LIBRARY_DIR}/compute/exec/key_encode.cc"
         "${LIBRARY_DIR}/compute/exec/util.cc"
         "${LIBRARY_DIR}/compute/exec/hash_join_dict.cc"
         "${LIBRARY_DIR}/compute/exec/hash_join.cc"
         "${LIBRARY_DIR}/compute/exec/hash_join_node.cc"
         "${LIBRARY_DIR}/compute/exec/task_util.cc"
-        "${LIBRARY_DIR}/compute/row/encode_internal.cc"
-        "${LIBRARY_DIR}/compute/row/grouper.cc"
-        "${LIBRARY_DIR}/compute/row/compare_internal.cc"
-        "${LIBRARY_DIR}/compute/row/row_internal.cc"
 
         "${LIBRARY_DIR}/ipc/dictionary.cc"
         "${LIBRARY_DIR}/ipc/feather.cc"
@@ -373,8 +343,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/ipc/writer.cc"
 
         "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/util.cc"
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/options.cc"
+        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc"
         )
 
 add_definitions(-DARROW_WITH_LZ4)
@@ -388,9 +357,6 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
 
 add_definitions(-DARROW_WITH_ZSTD)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
-
-add_definitions(-DARROW_WITH_BROTLI)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
 
 
 add_library(_arrow ${ARROW_SRCS})
@@ -406,7 +372,6 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::snappy
     ch_contrib::zlib
     ch_contrib::zstd
-    ch_contrib::brotli
 )
 target_link_libraries(_arrow PUBLIC _orc)
 

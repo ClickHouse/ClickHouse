@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cache/FileCache.h>
+#include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>

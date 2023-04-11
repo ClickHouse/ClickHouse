@@ -126,12 +126,6 @@ public:
         user_error = UserError{};
     }
 
-    template <typename... Args>
-    void setKeeperError(Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setKeeperError(code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
     void stopRetries() { stop_retries = true; }
 
     void requestUnconditionalRetry() { unconditional_retry = true; }
@@ -218,10 +212,10 @@ private:
     void throwIfError() const
     {
         if (user_error.code != ErrorCodes::OK)
-            throw Exception::createDeprecated(user_error.message, user_error.code);
+            throw Exception(user_error.code, user_error.message);
 
         if (keeper_error.code != KeeperError::Code::ZOK)
-            throw zkutil::KeeperException(keeper_error.message, keeper_error.code);
+            throw zkutil::KeeperException(keeper_error.code, keeper_error.message);
     }
 
     void logLastError(std::string_view header)

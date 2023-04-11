@@ -9,11 +9,11 @@
 
 using namespace DB;
 
-static ComparisonGraph<ASTPtr> getGraph(const String & query)
+static ComparisonGraph getGraph(const String & query)
 {
     ParserExpressionList parser(false);
     ASTPtr ast = parseQuery(parser, query, 0, 0);
-    return ComparisonGraph<ASTPtr>(ast->children);
+    return ComparisonGraph(ast->children);
 }
 
 TEST(ComparisonGraph, Bounds)
@@ -47,8 +47,8 @@ TEST(ComparisonGraph, Bounds)
         auto x = std::make_shared<ASTIdentifier>("x");
         auto y = std::make_shared<ASTIdentifier>("y");
 
-        ASSERT_EQ(graph.compare(x, y), ComparisonGraphCompareResult::LESS);
-        ASSERT_EQ(graph.compare(y, x), ComparisonGraphCompareResult::GREATER);
+        ASSERT_EQ(graph.compare(x, y), ComparisonGraph::CompareResult::LESS);
+        ASSERT_EQ(graph.compare(y, x), ComparisonGraph::CompareResult::GREATER);
     }
 }
 
@@ -93,7 +93,7 @@ TEST(ComparisonGraph, Components)
 
 TEST(ComparisonGraph, Compare)
 {
-    using enum ComparisonGraphCompareResult;
+    using CompareResult = ComparisonGraph::CompareResult;
 
     {
         String query = "a >= b, c >= b";
@@ -102,7 +102,7 @@ TEST(ComparisonGraph, Compare)
         auto a = std::make_shared<ASTIdentifier>("a");
         auto c = std::make_shared<ASTIdentifier>("c");
 
-        ASSERT_EQ(graph.compare(a, c), UNKNOWN);
+        ASSERT_EQ(graph.compare(a, c), CompareResult::UNKNOWN);
     }
 
     {
@@ -113,9 +113,9 @@ TEST(ComparisonGraph, Compare)
         auto b = std::make_shared<ASTIdentifier>("b");
         auto c = std::make_shared<ASTIdentifier>("c");
 
-        ASSERT_EQ(graph.compare(a, c), GREATER);
-        ASSERT_EQ(graph.compare(a, b), GREATER_OR_EQUAL);
-        ASSERT_EQ(graph.compare(b, c), GREATER);
+        ASSERT_EQ(graph.compare(a, c), CompareResult::GREATER);
+        ASSERT_EQ(graph.compare(a, b), CompareResult::GREATER_OR_EQUAL);
+        ASSERT_EQ(graph.compare(b, c), CompareResult::GREATER);
     }
 
     {
@@ -126,9 +126,9 @@ TEST(ComparisonGraph, Compare)
         auto b = std::make_shared<ASTIdentifier>("b");
         auto c = std::make_shared<ASTIdentifier>("c");
 
-        ASSERT_EQ(graph.compare(a, b), NOT_EQUAL);
-        ASSERT_EQ(graph.compare(a, c), GREATER);
-        ASSERT_EQ(graph.compare(b, c), UNKNOWN);
+        ASSERT_EQ(graph.compare(a, b), CompareResult::NOT_EQUAL);
+        ASSERT_EQ(graph.compare(a, c), CompareResult::GREATER);
+        ASSERT_EQ(graph.compare(b, c), CompareResult::UNKNOWN);
     }
 
     {
@@ -154,17 +154,17 @@ TEST(ComparisonGraph, Compare)
         auto lit_3 = std::make_shared<ASTLiteral>(3u);
         auto lit_4 = std::make_shared<ASTLiteral>(4u);
 
-        ASSERT_EQ(graph.compare(lit_3, a), LESS_OR_EQUAL);
-        ASSERT_FALSE(graph.isAlwaysCompare(LESS, lit_3, a));
-        ASSERT_TRUE(graph.isAlwaysCompare(LESS, lit_2, a));
+        ASSERT_EQ(graph.compare(lit_3, a), CompareResult::LESS_OR_EQUAL);
+        ASSERT_FALSE(graph.isAlwaysCompare(CompareResult::LESS, lit_3, a));
+        ASSERT_TRUE(graph.isAlwaysCompare(CompareResult::LESS, lit_2, a));
 
-        ASSERT_EQ(graph.compare(b, lit_2), GREATER);
-        ASSERT_EQ(graph.compare(b, lit_3), GREATER);
-        ASSERT_EQ(graph.compare(b, lit_4), UNKNOWN);
+        ASSERT_EQ(graph.compare(b, lit_2), CompareResult::GREATER);
+        ASSERT_EQ(graph.compare(b, lit_3), CompareResult::GREATER);
+        ASSERT_EQ(graph.compare(b, lit_4), CompareResult::UNKNOWN);
 
-        ASSERT_EQ(graph.compare(d, lit_2), GREATER);
-        ASSERT_EQ(graph.compare(d, lit_3), GREATER_OR_EQUAL);
-        ASSERT_EQ(graph.compare(d, lit_4), UNKNOWN);
+        ASSERT_EQ(graph.compare(d, lit_2), CompareResult::GREATER);
+        ASSERT_EQ(graph.compare(d, lit_3), CompareResult::GREATER_OR_EQUAL);
+        ASSERT_EQ(graph.compare(d, lit_4), CompareResult::UNKNOWN);
     }
 
     {
@@ -176,8 +176,8 @@ TEST(ComparisonGraph, Compare)
         auto lit_3 = std::make_shared<ASTLiteral>(3);
         auto lit_15 = std::make_shared<ASTLiteral>(15);
 
-        ASSERT_EQ(graph.compare(a, lit_8), UNKNOWN);
-        ASSERT_EQ(graph.compare(a, lit_3), GREATER);
-        ASSERT_EQ(graph.compare(a, lit_15), LESS);
+        ASSERT_EQ(graph.compare(a, lit_8), CompareResult::UNKNOWN);
+        ASSERT_EQ(graph.compare(a, lit_3), CompareResult::GREATER);
+        ASSERT_EQ(graph.compare(a, lit_15), CompareResult::LESS);
     }
 }

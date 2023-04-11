@@ -1,8 +1,7 @@
 #include "ClusterCopierApp.h"
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
-#include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
 #include <Common/scope_guard_safe.h>
 #include <unistd.h>
@@ -192,8 +191,6 @@ void ClusterCopierApp::mainImpl()
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
-
-    zkutil::validateZooKeeperConfig(config());
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));

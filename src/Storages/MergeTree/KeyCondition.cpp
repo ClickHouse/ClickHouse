@@ -706,12 +706,8 @@ Block KeyCondition::getBlockWithConstants(
 
     if (syntax_analyzer_result)
     {
-        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
-        for (const auto & action_node : actions->getOutputs())
-        {
-            if (action_node->column)
-                result.insert(ColumnWithTypeAndName{action_node->column, action_node->result_type, action_node->result_name});
-        }
+        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
+        expr_for_constant_folding->execute(result);
     }
 
     return result;

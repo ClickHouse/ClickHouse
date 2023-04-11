@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Poco/URI.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -141,6 +142,8 @@ public:
 
     Chunk generate() override;
 
+    void onCancel() override;
+
 private:
     StorageHDFSPtr storage;
     Block block_for_format;
@@ -152,6 +155,8 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+    /// onCancel and generate can be called concurrently.
+    std::mutex reader_mutex;
     String current_path;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.

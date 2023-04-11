@@ -4,7 +4,6 @@
 #include <Interpreters/TableJoin.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 
 namespace DB
@@ -44,10 +43,6 @@ public:
 
         const auto & on_expr = table_join->getOnlyClause();
         bool support_conditions = !on_expr.on_filter_condition_left && !on_expr.on_filter_condition_right;
-
-        if (!on_expr.analyzer_left_filter_condition_column_name.empty() ||
-            !on_expr.analyzer_right_filter_condition_column_name.empty())
-            support_conditions = false;
 
         /// Key column can change nullability and it's not handled on type conversion stage, so algorithm should be aware of it
         bool support_using_and_nulls = !table_join->hasUsing() || !table_join->joinUseNulls();

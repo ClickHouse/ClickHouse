@@ -8,7 +8,6 @@
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -18,10 +17,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTShowEngineQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -62,7 +59,6 @@
 #include <Interpreters/InterpreterDropFunctionQuery.h>
 #include <Interpreters/InterpreterDropIndexQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/InterpreterUndropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterExternalDDLQuery.h>
@@ -77,10 +73,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
-#include <Interpreters/InterpreterShowEngineQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
-#include <Interpreters/InterpreterShowColumnsQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -165,10 +159,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterDropQuery>(query, context);
     }
-    else if (query->as<ASTUndropQuery>())
-    {
-        return std::make_unique<InterpreterUndropQuery>(query, context);
-    }
     else if (query->as<ASTRenameQuery>())
     {
         return std::make_unique<InterpreterRenameQuery>(query, context);
@@ -176,14 +166,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTShowTablesQuery>())
     {
         return std::make_unique<InterpreterShowTablesQuery>(query, context);
-    }
-    else if (query->as<ASTShowColumnsQuery>())
-    {
-        return std::make_unique<InterpreterShowColumnsQuery>(query, context);
-    }
-    else if (query->as<ASTShowEnginesQuery>())
-    {
-        return std::make_unique<InterpreterShowEnginesQuery>(query, context);
     }
     else if (query->as<ASTUseQuery>())
     {

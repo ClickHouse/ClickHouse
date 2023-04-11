@@ -6,8 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
-#include <IO/S3/getObjectInfo.h>
-#include <IO/S3/Credentials.h>
+#include <IO/S3Common.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromFile.h>
@@ -18,7 +17,10 @@
 #include <Common/Macros.h>
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
 
 #include <filesystem>
 
@@ -29,7 +31,7 @@ namespace DB
 
 struct KeeperSnapshotManagerS3::S3Configuration
 {
-    S3Configuration(S3::URI uri_, S3::AuthSettings auth_settings_, std::shared_ptr<const S3::Client> client_)
+    S3Configuration(S3::URI uri_, S3::AuthSettings auth_settings_, std::shared_ptr<const Aws::S3::S3Client> client_)
         : uri(std::move(uri_))
         , auth_settings(std::move(auth_settings_))
         , client(std::move(client_))
@@ -37,7 +39,7 @@ struct KeeperSnapshotManagerS3::S3Configuration
 
     S3::URI uri;
     S3::AuthSettings auth_settings;
-    std::shared_ptr<const S3::Client> client;
+    std::shared_ptr<const Aws::S3::S3Client> client;
 };
 
 KeeperSnapshotManagerS3::KeeperSnapshotManagerS3()
@@ -103,13 +105,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,
             std::move(headers),
-            S3::CredentialsConfiguration
-            {
-                auth_settings.use_environment_credentials.value_or(true),
-                auth_settings.use_insecure_imds_request.value_or(false),
-                auth_settings.expiration_window_seconds.value_or(S3::DEFAULT_EXPIRATION_WINDOW_SECONDS),
-                auth_settings.no_sign_request.value_or(false),
-            });
+            auth_settings.use_environment_credentials.value_or(false),
+            auth_settings.use_insecure_imds_request.value_or(false));
 
         auto new_client = std::make_shared<KeeperSnapshotManagerS3::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));
 
@@ -205,7 +202,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
             LOG_INFO(log, "Removing lock file");
             try
             {
-                S3::DeleteObjectRequest delete_request;
+                Aws::S3::Model::DeleteObjectRequest delete_request;
                 delete_request.SetBucket(s3_client->uri.bucket);
                 delete_request.SetKey(lock_file);
                 auto delete_outcome = s3_client->client->DeleteObject(delete_request);

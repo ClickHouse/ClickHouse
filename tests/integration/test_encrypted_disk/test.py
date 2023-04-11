@@ -12,7 +12,6 @@ node = cluster.add_instance(
     main_configs=["configs/storage.xml"],
     tmpfs=["/disk:size=100M"],
     with_minio=True,
-    stay_alive=True,
 )
 
 
@@ -270,28 +269,3 @@ def test_read_in_order():
     node.query(
         "SELECT * FROM encrypted_test ORDER BY a, b SETTINGS optimize_read_in_order=0 FORMAT Null"
     )
-
-
-def test_restart():
-    for policy in ["disk_s3_encrypted_default_path", "encrypted_s3_cache"]:
-        node.query(
-            f"""
-            DROP TABLE IF EXISTS encrypted_test;
-            CREATE TABLE encrypted_test (
-                id Int64,
-                data String
-            ) ENGINE=MergeTree()
-            ORDER BY id
-            SETTINGS disk='{policy}'
-            """
-        )
-
-        node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
-        select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
-        assert node.query(select_query) == "(0,'data'),(1,'data')"
-
-        node.restart_clickhouse()
-
-        assert node.query(select_query) == "(0,'data'),(1,'data')"
-
-        node.query("DROP TABLE encrypted_test NO DELAY;")

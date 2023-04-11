@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
 
@@ -109,7 +110,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -166,10 +167,7 @@ private:
     /// For inter-server authorization
     String cluster;
     String cluster_secret;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    std::optional<UInt64> nonce;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
@@ -267,8 +265,7 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    ParallelReadRequest receiveParallelReadRequest() const;
-    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
+    PartitionReadRequest receivePartitionReadRequest() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

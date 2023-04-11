@@ -35,26 +35,28 @@ extern const int ATTEMPT_TO_READ_AFTER_EOF;
 
 class BitReader
 {
-    const char * const source_begin;
-    const char * const source_end;
-    const char * source_current;
-
     using BufferType = unsigned __int128;
-    BufferType bits_buffer = 0;
 
-    UInt8 bits_count = 0;
+    const char * source_begin;
+    const char * source_current;
+    const char * source_end;
+
+    BufferType bits_buffer;
+    UInt8 bits_count;
 
 public:
     BitReader(const char * begin, size_t size)
-        : source_begin(begin)
-        , source_end(begin + size)
-        , source_current(begin)
+        : source_begin(begin),
+          source_current(begin),
+          source_end(begin + size),
+          bits_buffer(0),
+          bits_count(0)
     {}
 
     ~BitReader() = default;
 
     // reads bits_to_read high-bits from bits_buffer
-    ALWAYS_INLINE UInt64 readBits(UInt8 bits_to_read)
+    ALWAYS_INLINE inline UInt64 readBits(UInt8 bits_to_read)
     {
         if (bits_to_read > bits_count)
             fillBitBuffer();
@@ -62,7 +64,7 @@ public:
         return getBitsFromBitBuffer<CONSUME>(bits_to_read);
     }
 
-    UInt8 peekByte()
+    inline UInt8 peekByte()
     {
         if (bits_count < 8)
             fillBitBuffer();
@@ -70,31 +72,31 @@ public:
         return getBitsFromBitBuffer<PEEK>(8);
     }
 
-    ALWAYS_INLINE UInt8 readBit()
+    ALWAYS_INLINE inline UInt8 readBit()
     {
         return static_cast<UInt8>(readBits(1));
     }
 
     // skip bits from bits_buffer
-    void skipBufferedBits(UInt8 bits)
+    inline void skipBufferedBits(UInt8 bits)
     {
         bits_buffer <<= bits;
         bits_count -= bits;
     }
 
 
-    bool eof() const
+    inline bool eof() const
     {
         return bits_count == 0 && source_current >= source_end;
     }
 
     // number of bits that was already read by clients with readBits()
-    UInt64 count() const
+    inline UInt64 count() const
     {
         return (source_current - source_begin) * 8 - bits_count;
     }
 
-    UInt64 remaining() const
+    inline UInt64 remaining() const
     {
         return (source_end - source_current) * 8 + bits_count;
     }
@@ -103,7 +105,7 @@ private:
     enum GetBitsMode {CONSUME, PEEK};
     // read data from internal buffer, if it has not enough bits, result is undefined.
     template <GetBitsMode mode>
-    UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
+    inline UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
     {
         assert(bits_to_read > 0);
 
@@ -150,22 +152,24 @@ private:
 
 class BitWriter
 {
-    char * dest_begin;
-    char * dest_end;
-    char * dest_current;
-
     using BufferType = unsigned __int128;
-    BufferType bits_buffer = 0;
 
-    UInt8 bits_count = 0;
+    char * dest_begin;
+    char * dest_current;
+    char * dest_end;
+
+    BufferType bits_buffer;
+    UInt8 bits_count;
 
     static constexpr UInt8 BIT_BUFFER_SIZE = sizeof(bits_buffer) * 8;
 
 public:
     BitWriter(char * begin, size_t size)
-        : dest_begin(begin)
-        , dest_end(begin + size)
-        , dest_current(begin)
+        : dest_begin(begin),
+          dest_current(begin),
+          dest_end(begin + size),
+          bits_buffer(0),
+          bits_count(0)
     {}
 
     ~BitWriter()
@@ -174,7 +178,7 @@ public:
     }
 
     // write `bits_to_write` low-bits of `value` to the buffer
-    void writeBits(UInt8 bits_to_write, UInt64 value)
+    inline void writeBits(UInt8 bits_to_write, UInt64 value)
     {
         assert(bits_to_write > 0);
 
@@ -195,14 +199,14 @@ public:
     }
 
     // flush contents of bits_buffer to the dest_current, partial bytes are completed with zeroes.
-    void flush()
+    inline void flush()
     {
         bits_count = (bits_count + 8 - 1) & ~(8 - 1); // align up to 8-bytes, so doFlush will write all data from bits_buffer
         while (bits_count != 0)
             doFlush();
     }
 
-    UInt64 count() const
+    inline UInt64 count() const
     {
         return (dest_current - dest_begin) * 8 + bits_count;
     }

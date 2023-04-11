@@ -43,14 +43,24 @@ using ActionsChainSteps = std::vector<ActionsChainStepPtr>;
 class ActionsChainStep
 {
 public:
+    /// Available output columns strategy for actions chain step
+    enum class AvailableOutputColumnsStrategy
+    {
+        ALL_NODES,
+        OUTPUT_NODES
+    };
+
     /** Initialize actions step with actions dag.
       * Input column names initialized using actions dag nodes with INPUT type.
-      * If use_actions_nodes_as_output_columns = true output columns are initialized using actions dag nodes.
-      * If additional output columns are specified they are added to output columns.
+      *
+      * If available output columns strategy is ALL_NODES, then available output columns initialized using actions dag nodes.
+      * If available output columns strategy is OUTPUT_NODES, then available output columns initialized using actions dag output nodes.
       */
+    explicit ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_ = AvailableOutputColumnsStrategy::ALL_NODES);
+
     explicit ActionsChainStep(ActionsDAGPtr actions_,
-        bool use_actions_nodes_as_output_columns = true,
-        ColumnsWithTypeAndName additional_output_columns_ = {});
+        AvailableOutputColumnsStrategy available_output_columns_stategy_,
+        ColumnsWithTypeAndName additional_output_columns_);
 
     /// Get actions
     ActionsDAGPtr & getActions()
@@ -100,7 +110,7 @@ private:
 
     ActionsDAGPtr actions;
 
-    bool use_actions_nodes_as_output_columns = true;
+    AvailableOutputColumnsStrategy available_output_columns_strategy;
 
     NameSet input_columns_names;
 

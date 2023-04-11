@@ -45,6 +45,7 @@ static ITransformingStep::Traits getTraits(size_t limit)
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
@@ -98,13 +99,11 @@ SortingStep::SortingStep(
     const DataStream & input_stream,
     SortDescription sort_description_,
     size_t max_block_size_,
-    UInt64 limit_,
-    bool always_read_till_end_)
+    UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
-    , always_read_till_end(always_read_till_end_)
     , sort_settings(max_block_size_)
 {
     sort_settings.max_block_size = max_block_size_;
@@ -177,15 +176,13 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             result_sort_desc,
             sort_settings.max_block_size,
             SortingQueueStrategy::Batch,
-            limit_,
-            always_read_till_end);
+            limit_);
 
         pipeline.addTransform(std::move(transform));
     }
 }
 
-void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_)
+void SortingStep::mergeSorting(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_)
 {
     bool increase_sort_description_compile_attempts = true;
 
@@ -203,10 +200,6 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            auto tmp_data_on_disk = sort_settings.tmp_data
-                ? std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort)
-                : std::unique_ptr<TemporaryDataOnDisk>();
-
             return std::make_shared<MergeSortingTransform>(
                 header,
                 result_sort_desc,
@@ -216,17 +209,12 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
                 sort_settings.remerge_lowered_memory_bytes_ratio,
                 sort_settings.max_bytes_before_external_sort,
-                std::move(tmp_data_on_disk),
+                std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort),
                 sort_settings.min_free_disk_space);
         });
 }
 
-void SortingStep::fullSortStreams(
-    QueryPipelineBuilder & pipeline,
-    const Settings & sort_settings,
-    const SortDescription & result_sort_desc,
-    const UInt64 limit_,
-    const bool skip_partial_sort)
+void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
 {
     if (!skip_partial_sort || limit_)
     {
@@ -240,7 +228,7 @@ void SortingStep::fullSortStreams(
             });
 
         StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
+        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
         limits.size_limits = sort_settings.size_limits;
 
         pipeline.addSimpleTransform(
@@ -253,25 +241,13 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_);
-}
-
-void SortingStep::fullSort(
-    QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
-{
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
+    mergeSorting(pipeline, result_sort_desc, limit_);
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
         auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(),
-            pipeline.getNumStreams(),
-            result_sort_desc,
-            sort_settings.max_block_size,
-            SortingQueueStrategy::Batch,
-            limit_,
-            always_read_till_end);
+            pipeline.getHeader(), pipeline.getNumStreams(), result_sort_desc, sort_settings.max_block_size, SortingQueueStrategy::Batch, limit_);
 
         pipeline.addTransform(std::move(transform));
     }

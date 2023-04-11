@@ -6,7 +6,6 @@
 #include <Interpreters/IJoin.h>
 #include <Storages/IStorage.h>
 
-#include <Common/logger_useful.h>
 #include <iomanip>
 
 

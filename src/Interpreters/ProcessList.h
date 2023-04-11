@@ -52,7 +52,6 @@ class ProcessListEntry;
 struct QueryStatusInfo
 {
     String query;
-    IAST::QueryKind query_kind{};
     UInt64 elapsed_microseconds;
     size_t read_rows;
     size_t read_bytes;
@@ -86,7 +85,7 @@ protected:
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
-    ThreadGroupPtr thread_group;
+    ThreadGroupStatusPtr thread_group;
 
     Stopwatch watch;
 
@@ -149,8 +148,7 @@ protected:
 
     OvercommitTracker * global_overcommit_tracker = nullptr;
 
-    /// This is used to control the maximum number of SELECT or INSERT queries.
-    IAST::QueryKind query_kind{};
+    IAST::QueryKind query_kind;
 
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
@@ -162,7 +160,7 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        ThreadGroupPtr && thread_group_,
+        ThreadGroupStatusPtr && thread_group_,
         IAST::QueryKind query_kind_,
         UInt64 watch_start_nanoseconds);
 
@@ -190,6 +188,11 @@ public:
         if (!thread_group)
             return nullptr;
         return &thread_group->memory_tracker;
+    }
+
+    IAST::QueryKind getQueryKind() const
+    {
+        return query_kind;
     }
 
     bool updateProgressIn(const Progress & value)

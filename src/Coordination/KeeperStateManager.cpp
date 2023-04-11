@@ -7,7 +7,6 @@
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -215,7 +214,7 @@ KeeperStateManager::KeeperStateManager(
     int server_id_, const std::string & host, int port, const std::string & logs_path, const std::string & state_file_path)
     : my_server_id(server_id_)
     , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, LogFileSettings{.force_sync =false, .compress_logs = false, .rotate_interval = 5000}))
+    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
     , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {
@@ -239,14 +238,9 @@ KeeperStateManager::KeeperStateManager(
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
           log_storage_path,
-          LogFileSettings
-          {
-            .force_sync = coordination_settings->force_sync,
-            .compress_logs = coordination_settings->compress_logs,
-            .rotate_interval = coordination_settings->rotate_log_storage_interval,
-            .max_size = coordination_settings->max_log_file_size,
-            .overallocate_size = coordination_settings->log_file_overallocate_size
-          }))
+          coordination_settings->rotate_log_storage_interval,
+          coordination_settings->force_sync,
+          coordination_settings->compress_logs))
     , server_state_path(state_file_path)
     , logger(&Poco::Logger::get("KeeperStateManager"))
 {

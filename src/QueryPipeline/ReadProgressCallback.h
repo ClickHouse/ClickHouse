@@ -38,8 +38,10 @@ private:
     /// The approximate total number of rows to read. For progress bar.
     std::atomic_size_t total_rows_approx = 0;
 
-    std::mutex limits_and_quotas_mutex;
-    Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};  /// Including waiting time
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time.
+    /// According to total_stopwatch in microseconds.
+    UInt64 last_profile_events_update_time = 0;
+    std::mutex last_profile_events_update_time_mutex;
 
     bool update_profile_events = true;
 };

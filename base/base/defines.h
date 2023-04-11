@@ -28,8 +28,8 @@
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
 
-#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__riscv) && (__riscv_xlen == 64))
-#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress) and RISC-V 64 (experimental)"
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !(defined(__riscv) && (__riscv_xlen == 64))
+#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress) and RISC-V 64 (experimental)"
 #endif
 
 /// Check for presence of address sanitizer
@@ -127,14 +127,10 @@
 /// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
-        #define chassert(x) static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x)
+        #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
         #define UNREACHABLE() abort()
     #else
-        /// Here sizeof() trick is used to suppress unused warning for result,
-        /// since simple "(void)x" will evaluate the expression, while
-        /// "sizeof(!(x))" will not.
-        #define NIL_EXPRESSION(x) (void)sizeof(!(x))
-        #define chassert(x) NIL_EXPRESSION(x)
+        #define chassert(x) ((void)0)
         #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif

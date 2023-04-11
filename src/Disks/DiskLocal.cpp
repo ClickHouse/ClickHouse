@@ -1,5 +1,4 @@
 #include "DiskLocal.h"
-#include <Common/Throttler_fwd.h>
 #include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
@@ -62,8 +61,9 @@ static void loadDiskLocalConfig(const String & name,
     if (name == "default")
     {
         if (!path.empty())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                "\"default\" disk path should be provided in <path> not it <storage_configuration>");
+            throw Exception(
+                "\"default\" disk path should be provided in <path> not it <storage_configuration>",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         path = context->getPath();
     }
     else
@@ -368,11 +368,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(
-        fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
+    return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
 }
 
 void DiskLocal::removeFile(const String & path)

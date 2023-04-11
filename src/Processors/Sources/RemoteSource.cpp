@@ -1,4 +1,3 @@
-#include <variant>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -8,11 +7,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_)
     : ISource(executor->getHeader(), false)
@@ -57,9 +51,7 @@ ISource::Status RemoteSource::prepare()
     {
         query_executor->finish(&read_context);
         is_async_state = false;
-        return status;
     }
-
     return status;
 }
 
@@ -82,13 +74,8 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         /// Get rows_before_limit result for remote query from ProfileInfo packet.
         query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
         {
-            if (rows_before_limit)
-            {
-                if (info.hasAppliedLimit())
-                    rows_before_limit->add(info.getRowsBeforeLimit());
-                else
-                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-            }
+            if (rows_before_limit && info.hasAppliedLimit())
+                rows_before_limit->set(info.getRowsBeforeLimit());
         });
 
         query_executor->sendQuery();
@@ -101,41 +88,27 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     if (async_read)
     {
         auto res = query_executor->read(read_context);
-
-        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::Nothing)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an empty packet from the RemoteQueryExecutor. This is a bug");
-
-        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::FileDescriptor)
+        if (std::holds_alternative<int>(res))
         {
-            fd = res.getFileDescriptor();
+            fd = std::get<int>(res);
             is_async_state = true;
-            return Chunk();
-        }
-
-        if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
-        {
-            is_async_state = false;
             return Chunk();
         }
 
         is_async_state = false;
 
-        block = res.getBlock();
+        block = std::get<Block>(std::move(res));
     }
     else
-        block = query_executor->readBlock();
+        block = query_executor->read();
 
     if (!block)
     {
-        if (manually_add_rows_before_limit_counter)
-            rows_before_limit->add(rows);
-
         query_executor->finish(&read_context);
         return {};
     }
 
     UInt64 num_rows = block.rows();
-    rows += num_rows;
     Chunk chunk(block.getColumns(), num_rows);
 
     if (add_aggregation_info)
