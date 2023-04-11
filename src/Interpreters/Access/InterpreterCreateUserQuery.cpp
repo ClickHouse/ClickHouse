@@ -39,27 +39,27 @@ namespace
 
         if (query.expect_password)
         {
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get necessary parameters without context");
+            if (!query.type && !context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get default password type without context");
+
+            if (check_password_rules && !context)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check password complexity rules without context");
+
+            /// NOTE: We will also extract bcrypt workfactor from context
 
             String value = checkAndGetLiteralArgument<String>(query.children[0], "password");
-
-            const auto & access_control = context->getAccessControl();
-            AuthenticationType default_password_type = access_control.getDefaultPasswordType();
-
-            /// NOTE: We will also extract bcrypt workfactor from access_control
 
             AuthenticationType current_type;
 
             if (query.type)
                 current_type = *query.type;
             else
-                current_type = default_password_type;
+                current_type = context->getAccessControl().getDefaultPasswordType();
 
             AuthenticationData auth_data(current_type);
 
             if (check_password_rules)
-                access_control.checkPasswordComplexityRules(value);
+                context->getAccessControl().checkPasswordComplexityRules(value);
 
             if (query.type == AuthenticationType::SHA256_PASSWORD)
             {
