@@ -75,10 +75,14 @@
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.") \
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.") \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.") \
-    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server' throttler.") \
-    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server' throttling.") \
-    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server' throttler.") \
-    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server' throttling.") \
+    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttler.") \
+    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttling.") \
+    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttler.") \
+    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttling.") \
+    M(LocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttler.") \
+    M(LocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttling.") \
+    M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.") \
+    M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.") \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
@@ -497,10 +501,10 @@ The server successfully detected this situation and will download merged part fr
 namespace ProfileEvents
 {
 
-#define M(NAME, DOCUMENTATION) extern const Event NAME = __COUNTER__;
+#define M(NAME, DOCUMENTATION) extern const Event NAME = Event(__COUNTER__);
     APPLY_FOR_EVENTS(M)
 #undef M
-constexpr Event END = __COUNTER__;
+constexpr Event END = Event(__COUNTER__);
 
 /// Global variable, initialized by zeros.
 Counter global_counters_array[END] {};
@@ -522,7 +526,7 @@ void Counters::resetCounters()
 {
     if (counters)
     {
-        for (Event i = 0; i < num_counters; ++i)
+        for (Event i = Event(0); i < num_counters; ++i)
             counters[i].store(0, std::memory_order_relaxed);
     }
 }
@@ -540,7 +544,7 @@ Counters::Snapshot::Snapshot()
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
-    for (Event i = 0; i < num_counters; ++i)
+    for (Event i = Event(0); i < num_counters; ++i)
         res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
     return res;
 }
@@ -616,7 +620,7 @@ CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
 {
     init();
-    for (Event i = 0; i < Counters::num_counters; ++i)
+    for (Event i = Event(0); i < Counters::num_counters; ++i)
         increment_holder[i] = static_cast<Increment>(after[i]) - static_cast<Increment>(before[i]);
 }
 

@@ -711,16 +711,15 @@ void StorageRabbitMQ::read(
     Pipes pipes;
     pipes.reserve(num_created_consumers);
 
+    uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+        ? rabbitmq_settings->rabbitmq_flush_interval_ms
+        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
+
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
-
-        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
-
-        rabbit_source->setTimeLimit(max_execution_time_ms);
+            *this, storage_snapshot, modified_context, column_names, 1,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -800,7 +799,8 @@ void StorageRabbitMQ::startup()
         try
         {
             auto consumer = createConsumer();
-            pushConsumer(std::move(consumer));
+            consumers_ref.push_back(consumer);
+            pushConsumer(consumer);
             ++num_created_consumers;
         }
         catch (...)
@@ -819,6 +819,9 @@ void StorageRabbitMQ::shutdown()
 {
     shutdown_called = true;
 
+    for (auto & consumer : consumers_ref)
+        consumer.lock()->shutdown();
+
     LOG_TRACE(log, "Deactivating background tasks");
 
     /// In case it has not yet been able to setup connection;
@@ -834,13 +837,11 @@ void StorageRabbitMQ::shutdown()
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        if (drop_table)
-        {
-            for (auto & consumer : consumers)
-                consumer->closeChannel();
+        for (auto & consumer : consumers_ref)
+            consumer.lock()->closeConnections();
 
+        if (drop_table)
             cleanupRabbitMQ();
-        }
 
         /// It is important to close connection here - before removing consumers, because
         /// it will finish and clean callbacks, which might use those consumers data.
@@ -946,16 +947,17 @@ RabbitMQConsumerPtr StorageRabbitMQ::popConsumer(std::chrono::milliseconds timeo
 RabbitMQConsumerPtr StorageRabbitMQ::createConsumer()
 {
     return std::make_shared<RabbitMQConsumer>(
-        connection->getHandler(), queues, ++consumer_id,
-        unique_strbase, log, queue_size, shutdown_called);
+        connection->getHandler(), queues, ++consumer_id, unique_strbase, log, queue_size);
 }
 
-bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
+bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
+
     if (view_ids.empty())
-        return true;
+        return false;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
@@ -967,10 +969,6 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -1012,32 +1010,24 @@ void StorageRabbitMQ::streamingToViewsFunc()
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
                 {
-                    if (!checkDependencies(table_id))
+                    if (!hasDependencies(table_id))
                         break;
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    if (streamToViews())
-                    {
-                        /// Reschedule with backoff.
-                        if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
-                            milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
-                        stopLoopIfNoReaders();
+                    bool continue_reading = tryStreamToViews();
+                    if (!continue_reading)
                         break;
-                    }
-                    else
-                    {
-                        milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
-                    }
 
                     auto end_time = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
                     if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                     {
-                        stopLoopIfNoReaders();
                         LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
                         break;
                     }
+
+                    milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
                 }
             }
         }
@@ -1055,11 +1045,17 @@ void StorageRabbitMQ::streamingToViewsFunc()
         stopLoopIfNoReaders();
 
     if (!shutdown_called)
+    {
+        /// Reschedule with backoff.
+        if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
+            milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
+
         streaming_task->scheduleAfter(milliseconds_to_wait);
+    }
 }
 
 
-bool StorageRabbitMQ::streamToViews()
+bool StorageRabbitMQ::tryStreamToViews()
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1086,16 +1082,14 @@ bool StorageRabbitMQ::streamToViews()
     sources.reserve(num_created_consumers);
     pipes.reserve(num_created_consumers);
 
+    uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+        ? rabbitmq_settings->rabbitmq_flush_interval_ms
+        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
+
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
-
-        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
-
-        source->setTimeLimit(max_execution_time_ms);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1117,10 +1111,17 @@ bool StorageRabbitMQ::streamToViews()
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
 
+    if (!hasDependencies(getStorageID()))
+    {
+        /// Do not commit to rabbitmq if the dependency was removed.
+        LOG_TRACE(log, "No dependencies, reschedule");
+        return false;
+    }
+
     if (!connection->isConnected())
     {
         if (shutdown_called)
-            return true;
+            return false;
 
         if (connection->reconnect())
         {
@@ -1131,7 +1132,7 @@ bool StorageRabbitMQ::streamToViews()
         else
         {
             LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
-            return true;
+            return false;
         }
     }
     else
@@ -1139,7 +1140,7 @@ bool StorageRabbitMQ::streamToViews()
         /// Commit
         for (auto & source : sources)
         {
-            if (source->queueEmpty())
+            if (!source->hasPendingMessages())
                 ++queue_empty;
 
             if (source->needChannelUpdate())
@@ -1177,7 +1178,7 @@ bool StorageRabbitMQ::streamToViews()
         connection->heartbeat();
         read_attempts = 0;
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
-        return true;
+        return false;
     }
     else
     {
@@ -1185,7 +1186,7 @@ bool StorageRabbitMQ::streamToViews()
     }
 
     /// Do not reschedule, do not stop event loop.
-    return false;
+    return true;
 }
 
 
