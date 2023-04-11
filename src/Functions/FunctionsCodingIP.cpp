@@ -1129,7 +1129,9 @@ public:
 
         for (size_t i = 0; i < vec_res.size(); ++i)
         {
-            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char *>(buffer));
+            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
+                                            reinterpret_cast<const char *>(&vec_src[offsets_src[i] - 1]),
+                                            reinterpret_cast<unsigned char *>(buffer));
             prev_offset = offsets_src[i];
         }
 

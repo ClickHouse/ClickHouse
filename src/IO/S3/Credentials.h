@@ -9,7 +9,6 @@
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
 
-#    include <Common/logger_useful.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 
@@ -121,15 +120,21 @@ private:
     uint64_t expiration_window_seconds;
 };
 
+struct CredentialsConfiguration
+{
+    bool use_environment_credentials = false;
+    bool use_insecure_imds_request = false;
+    uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS;
+    bool no_sign_request = false;
+};
+
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
     S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request,
-        uint64_t expiration_window_seconds);
+        CredentialsConfiguration credentials_configuration);
 };
 }
 
