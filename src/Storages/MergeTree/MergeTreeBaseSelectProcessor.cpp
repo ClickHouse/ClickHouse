@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 namespace ProfileEvents

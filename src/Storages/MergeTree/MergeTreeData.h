@@ -1497,6 +1497,16 @@ private:
         MergeTreeDataPartState to_state,
         std::mutex & part_loading_mutex);
 
+    LoadPartResult loadDataPartWithRetries(
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        const DiskPtr & part_disk_ptr,
+        MergeTreeDataPartState to_state,
+        std::mutex & part_loading_mutex,
+        size_t backoff_ms,
+        size_t max_backoff_ms,
+        size_t max_tries);
+
     std::vector<LoadPartResult> loadDataPartsFromDisk(
         ThreadPool & pool,
         size_t num_parts,
