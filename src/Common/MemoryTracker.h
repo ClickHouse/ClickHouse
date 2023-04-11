@@ -117,7 +117,13 @@ public:
     // of total_memory_tracker.
     void adjustOnBackgroundTaskEnd(const MemoryTracker * child)
     {
-        amount.fetch_sub(child->amount.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        auto background_memory_consumption = child->amount.load(std::memory_order_relaxed);
+        amount.fetch_sub(background_memory_consumption, std::memory_order_relaxed);
+
+        // Also fix CurrentMetrics::MergesMutationsMemoryTracking
+        auto metric_loaded = metric.load(std::memory_order_relaxed);
+        if (metric_loaded != CurrentMetrics::end())
+            CurrentMetrics::sub(metric_loaded, background_memory_consumption);
     }
 
     Int64 getPeak() const
