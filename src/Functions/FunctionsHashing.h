@@ -986,6 +986,7 @@ public:
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
+
         if (which.isUInt8())
             return executeType<UInt8>(arguments);
         else if (which.isUInt16())
