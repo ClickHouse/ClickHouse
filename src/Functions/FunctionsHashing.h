@@ -986,7 +986,6 @@ public:
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
-
         if (which.isUInt8())
             return executeType<UInt8>(arguments);
         else if (which.isUInt16())
@@ -1061,6 +1060,9 @@ class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -1193,6 +1195,11 @@ private:
     {
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
+            if (column->isNullAt(i))
+            {
+                vec_to[i] = 42;
+                continue;
+            }
             StringRef bytes = column->getDataAt(i);
             const ToType h = apply(key, bytes.data, bytes.size);
             if constexpr (first)
