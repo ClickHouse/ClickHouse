@@ -15,6 +15,7 @@
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
 #include <boost/range/algorithm/copy.hpp>
+#include <base/scope_guard.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
