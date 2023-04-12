@@ -143,6 +143,7 @@ std::unique_ptr<S3::Client> getClient(
     }
 
     HTTPHeaderEntries headers = S3::getHTTPHeaders(config_prefix, config);
+    S3::ServerSideEncryptionKMSConfig sse_kms_config = S3::getSSEKMSConfig(config_prefix, config);
 
     client_configuration.retryStrategy
         = std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".retry_attempts", 10));
@@ -153,6 +154,7 @@ std::unique_ptr<S3::Client> getClient(
         config.getString(config_prefix + ".access_key_id", ""),
         config.getString(config_prefix + ".secret_access_key", ""),
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
+        std::move(sse_kms_config),
         std::move(headers),
         S3::CredentialsConfiguration
         {
