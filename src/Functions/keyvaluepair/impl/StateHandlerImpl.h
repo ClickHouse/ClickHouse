@@ -195,6 +195,14 @@ public:
             {
                 return {pos, State::WAITING_KEY};
             }
+
+            if constexpr (WITH_ESCAPING)
+            {
+                if (isEscapeCharacter(current_character))
+                {
+                    return {pos, State::WAITING_KEY};
+                }
+            }
         }
 
         return {pos, State::READING_VALUE};
