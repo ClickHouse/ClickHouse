@@ -449,6 +449,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
             break;
 
+        case Protocol::Server::TimezoneUpdate:
+            break;
+
         default:
             got_unknown_packet_from_replica = true;
             throw Exception(
@@ -545,6 +548,9 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
+            
+        case Protocol::Server::TimezoneUpdate:
             break;
 
         default:
