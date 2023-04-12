@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-from typing import Dict, TypeVar
+from dataclasses import dataclass
+from typing import Callable, Dict, TypeVar
 
 ConfValue = TypeVar("ConfValue", str, bool)
 BuildConfig = Dict[str, ConfValue]
@@ -398,4 +399,158 @@ REQUIRED_CHECKS = [
     "Unit tests (release-clang)",
     "Unit tests (tsan)",
     "Unit tests (ubsan)",
+]
+
+
+@dataclass
+class CheckDescription:
+    name: str
+    description: str  # the check descriptions, will be put into the status table
+    match_func: Callable[[str], bool]  # the function to check vs the commit status
+
+
+CHECK_DESCRIPTIONS = [
+    CheckDescription(
+        "AST fuzzer",
+        "Runs randomly generated queries to catch program errors. "
+        "The build type is optionally given in parenthesis. "
+        "If it fails, ask a maintainer for help.",
+        lambda x: x.startswith("AST fuzzer"),
+    ),
+    CheckDescription(
+        "Bugfix validate check",
+        "Checks that either a new test (functional or integration) or there "
+        "some changed tests that fail with the binary built on master branch",
+        lambda x: x == "Bugfix validate check",
+    ),
+    CheckDescription(
+        "ClickHouse build check",
+        "Builds ClickHouse in various configurations for use in further steps. "
+        "You have to fix the builds that fail. Build logs often has enough "
+        "information to fix the error, but you might have to reproduce the failure "
+        "locally. The `cmake` options can be found in the build log, grepping for "
+        "`cmake`. Use these options and follow the [general build process]"
+        "(https://clickhouse.com/docs/en/development/build).",
+        lambda x: x.startswith("ClickHouse") and x.endswith("build check"),
+    ),
+    CheckDescription(
+        "Compatibility check",
+        "Checks that `clickhouse` binary runs on distributions with old libc "
+        "versions. If it fails, ask a maintainer for help.",
+        lambda x: x.startswith("Compatibility check"),
+    ),
+    CheckDescription(
+        "Docker image for servers",
+        "The check to build and optionally push the mentioned image to docker hub",
+        lambda x: x.startswith("Docker image")
+        and (x.endswith("building check") or x.endswith("build and push")),
+    ),
+    CheckDescription(
+        "Docs Check", "Builds and tests the documentation", lambda x: x == "Docs Check"
+    ),
+    CheckDescription(
+        "Fast test",
+        "Normally this is the first check that is ran for a PR. It builds ClickHouse "
+        "and runs most of [stateless functional tests]"
+        "(https://clickhouse.com/docs/en/development/tests#functional-tests), "
+        "omitting some. If it fails, further checks are not started until it is fixed. "
+        "Look at the report to see which tests fail, then reproduce the failure "
+        "locally as described [here]"
+        "(https://clickhouse.com/docs/en/development/tests#functional-test-locally).",
+        lambda x: x == "Fast test",
+    ),
+    CheckDescription(
+        "Flaky tests",
+        "Runs a flaky tests from master multiple times to identify if they are stable.",
+        lambda x: "tests flaky check" in x,
+    ),
+    CheckDescription(
+        "Install packages",
+        "Checks that the built packages are installable in a clear environment",
+        lambda x: x.startswith("Install packages ("),
+    ),
+    CheckDescription(
+        "Integration tests",
+        "The integration tests report. In parenthesis the package type is given, "
+        "and in square brackets are the optional part/total tests",
+        lambda x: x.startswith("Integration tests ("),
+    ),
+    CheckDescription(
+        "Mergeable Check",
+        "Checks if all other necessary checks are successful",
+        lambda x: x == "Mergeable Check",
+    ),
+    CheckDescription(
+        "Performance Comparison",
+        "Measure changes in query performance. The performance test report is "
+        "described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/"
+        "master/docker/test/performance-comparison#how-to-read-the-report). "
+        "In square brackets are the optional part/total tests",
+        lambda x: x.startswith("Performance Comparison"),
+    ),
+    CheckDescription(
+        "Push to Dockerhub",
+        "The check for building and pushing the CI related docker images to docker hub",
+        lambda x: x.startswith("Push") and "to Dockerhub" in x,
+    ),
+    CheckDescription(
+        "Run Check",
+        "A meta-check that indicates the running CI. Normally, it's in `success` or "
+        "`pending` state. The failed status indicates some problems with the PR",
+        lambda x: x == "Run Check",
+    ),
+    CheckDescription(
+        "Sqllogic",
+        "Run clickhouse on the [sqllogic](https://www.sqlite.org/sqllogictest) "
+        "test set against sqlite and checks that all statements are passed.",
+        lambda x: x.startswith("Sqllogic test"),
+    ),
+    CheckDescription(
+        "SQLancer",
+        "Fuzzing tests that detect logical bugs with "
+        "[SQLancer](https://github.com/sqlancer/sqlancer) tool.",
+        lambda x: x.startswith("SQLancer"),
+    ),
+    CheckDescription(
+        "Stateful tests",
+        "Runs stateful functional tests for ClickHouse binaries built in various "
+        "configurations -- release, debug, with sanitizers, etc.",
+        lambda x: x.startswith("Stateful tests ("),
+    ),
+    CheckDescription(
+        "Stateless tests",
+        "Runs stateless functional tests for ClickHouse binaries built in various "
+        "configurations -- release, debug, with sanitizers, etc.",
+        lambda x: x.startswith("Stateless tests ("),
+    ),
+    CheckDescription(
+        "Stress test",
+        "Runs stateless functional tests concurrently from several clients to detect "
+        "concurrency-related errors.",
+        lambda x: x.startswith("Stress test ("),
+    ),
+    CheckDescription(
+        "Style Check",
+        "Runs a set of checks to keep the code style clean. If some of tests failed, "
+        "see the related log from the report.",
+        lambda x: x == "Style Check",
+    ),
+    CheckDescription(
+        "Unit tests",
+        "Runs the unit tests for different release types",
+        lambda x: x.startswith("Unit tests ("),
+    ),
+    CheckDescription(
+        "Upgrade check",
+        "Runs stress tests on server version from last release and then tries to "
+        "upgrade it to the version from the PR. It checks if the new server can "
+        "successfully startup without any errors, crashes or sanitizer asserts.",
+        lambda x: x.startswith("Upgrade check ("),
+    ),
+    CheckDescription(
+        "Falback for unknown",
+        "There's no description for the check yet, please add it to "
+        "tests/ci/ci_config.py:CHECK_DESCRIPTIONS",
+        lambda x: True,
+    ),
 ]
