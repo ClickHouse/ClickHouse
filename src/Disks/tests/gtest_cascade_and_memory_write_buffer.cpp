@@ -7,7 +7,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
 #include <Common/typeid_cast.h>
+#include <Disks/DiskLocal.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
+#include <Disks/TemporaryFileOnDisk.h>
+
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -21,6 +24,26 @@ static std::string makeTestArray(size_t size)
         res[i] = i % 256;
     return res;
 }
+
+class TestCascadeWriteBufferWithDisk : public testing::Test
+{
+public:
+    constexpr static auto tmp_root = "tmp/RereadWithTemporaryFileWriteBuffer/";
+
+    void SetUp() override
+    {
+        fs::create_directories(tmp_root);
+        disk = std::make_shared<DB::DiskLocal>("local_disk", tmp_root, 0);
+    }
+
+    void TearDown() override
+    {
+        disk.reset();
+        fs::remove_all(tmp_root);
+    }
+
+    DB::DiskPtr disk;
+};
 
 static void testCascadeBufferRedability(
     std::string data,
@@ -206,17 +229,18 @@ TEST(MemoryWriteBuffer, WriteAndReread)
 }
 
 
-TEST(TemporaryFileWriteBuffer, WriteAndReread)
+TEST_F(TestCascadeWriteBufferWithDisk, WriteAndReread)
 try
 {
     for (size_t s = 0; s < 2500000; s += 500000)
     {
-        std::string tmp_template = "tmp/TemporaryFileWriteBuffer/";
         std::string data = makeTestArray(s);
 
-        auto buf = std::make_shared<WriteBufferFromTemporaryFile>(tmp_template);
+        auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk);
+        auto buf = std::make_shared<WriteBufferFromTemporaryFile>(std::move(tmp_file));
         buf->write(data.data(), data.size());
 
+        std::string tmp_template = TestCascadeWriteBufferWithDisk::tmp_root;
         std::string tmp_filename = buf->getFileName();
         ASSERT_EQ(tmp_template, tmp_filename.substr(0, tmp_template.size()));
 
@@ -243,17 +267,15 @@ catch (...)
 }
 
 
-TEST(CascadeWriteBuffer, RereadWithTemporaryFileWriteBuffer)
+TEST_F(TestCascadeWriteBufferWithDisk, RereadWithTemporaryFileWriteBuffer)
 try
 {
-    const std::string tmp_template = "tmp/RereadWithTemporaryFileWriteBuffer/";
-
     for (size_t s = 0; s < 4000000; s += 1000000)
     {
         testCascadeBufferRedability(makeTestArray(s),
             {},
             {
-                [=] (auto) { return std::make_shared<WriteBufferFromTemporaryFile>(tmp_template); }
+                [=, this] (auto) { return std::make_shared<WriteBufferFromTemporaryFile>(std::make_unique<TemporaryFileOnDisk>(disk)); }
             });
 
         testCascadeBufferRedability(makeTestArray(s),
@@ -261,7 +283,7 @@ try
                 std::make_shared<MemoryWriteBuffer>(std::max(1ul, s/3ul), 2, 1.5),
             },
             {
-                [=] (auto) { return std::make_shared<WriteBufferFromTemporaryFile>(tmp_template); }
+                [=, this] (auto) { return std::make_shared<WriteBufferFromTemporaryFile>(std::make_unique<TemporaryFileOnDisk>(disk)); }
             });
     }
 }
