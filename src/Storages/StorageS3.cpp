@@ -639,8 +639,6 @@ StorageS3Source::ReadBufferOrFactory StorageS3Source::createS3ReadBuffer(const S
         return {.buf = createAsyncS3ReadBuffer(key, read_settings, object_size)};
     }
 
-    chassert(object_size > 0);
-
     auto factory = std::make_unique<ReadBufferS3Factory>(
         client, bucket, key, version_id, object_size, request_settings, read_settings);
     return {.buf_factory = std::move(factory)};
