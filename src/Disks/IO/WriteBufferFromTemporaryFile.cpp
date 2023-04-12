@@ -19,12 +19,6 @@ WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(TemporaryFileOnDiskHo
 {
 }
 
-
-WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(const String & tmp_file_path)
-    : WriteBufferFromFile(tmp_file_path, DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, /* throttler= */ {}, 0600)
-{
-}
-
 class ReadBufferFromTemporaryWriteBuffer : public ReadBufferFromFile
 {
 public:

@@ -16,10 +16,7 @@ using TemporaryFileOnDiskHolder = std::unique_ptr<TemporaryFileOnDisk>;
 class WriteBufferFromTemporaryFile : public WriteBufferFromFile, public IReadableWriteBuffer
 {
 public:
-    using Ptr = std::shared_ptr<WriteBufferFromTemporaryFile>;
-
     explicit WriteBufferFromTemporaryFile(TemporaryFileOnDiskHolder && tmp_file_);
-    explicit WriteBufferFromTemporaryFile(const String & tmp_file_path);
 
     ~WriteBufferFromTemporaryFile() override;
 

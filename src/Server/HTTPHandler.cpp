@@ -46,9 +46,6 @@
 
 #include <chrono>
 #include <sstream>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
