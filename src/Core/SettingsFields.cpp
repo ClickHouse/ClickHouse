@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -166,15 +167,17 @@ namespace
     {
         if (startsWith(str, "auto"))
             return 0;
-        return parseFromString<UInt64>(str);
+
+        UInt64 result;
+        ReadBufferFromString in{str};
+        if (!tryReadIntText(result, in))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Overflow while trying to read setting value from {}", str);
+        return result;
     }
 
     UInt64 fieldToMaxThreads(const Field & f)
     {
-        if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.get<const String &>());
-        else
-            return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
+        return stringToMaxThreads(applyVisitor(FieldVisitorToString(), f));
     }
 }
 
