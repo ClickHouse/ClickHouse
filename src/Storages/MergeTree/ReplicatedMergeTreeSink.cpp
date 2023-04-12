@@ -415,7 +415,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
     size_t streams = 0;
     bool support_parallel_write = false;
-    size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
 
     for (auto & current_block : part_blocks)
     {
@@ -468,6 +467,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         profile_events_scope.reset();
         UInt64 elapsed_ns = watch.elapsed();
 
+        size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
         if (!support_parallel_write || settings.max_insert_delayed_streams_for_parallel_write.changed)
             max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
 
@@ -495,21 +495,17 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             std::move(part_counters) /// profile_events_scope must be reset here.
         ));
     }
+
+    finishDelayedChunk(zookeeper);
     delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
-    finishDelayedChunk(zookeeper);
-
-    if (streams > 0 && streams <= max_insert_delayed_streams_for_parallel_write)
-    {
-        delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
-    }
 
     /// If deduplicated data should not be inserted into MV, we need to set proper
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
     /// TODO: we can also delay commit if there is no MVs.
     if (!settings.deduplicate_blocks_in_dependent_materialized_views)
-        finishDelayedChunk(zookeeper);
+        last_block_is_duplicate=false;
 }
 
 template<>
