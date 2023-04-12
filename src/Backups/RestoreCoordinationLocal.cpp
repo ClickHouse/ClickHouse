@@ -11,7 +11,7 @@ RestoreCoordinationLocal::RestoreCoordinationLocal() : log(&Poco::Logger::get("R
 
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStage(const String &, const String &)
+void RestoreCoordinationLocal::setStage(const String &, const String &, const bool &)
 {
 }
 

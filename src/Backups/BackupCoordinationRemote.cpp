@@ -252,13 +252,17 @@ void BackupCoordinationRemote::removeAllNodes()
 }
 
 
-void BackupCoordinationRemote::setStage(const String & new_stage, const String & message)
+void BackupCoordinationRemote::setStage(const String & new_stage, const String & message, const bool & for_cluster)
 {
-    stage_sync->set(current_host, new_stage, message);
+    if (for_cluster)
+        stage_sync->setStageForCluster(new_stage);
+    else
+        stage_sync->set(current_host, new_stage, message);
 }
 
 void BackupCoordinationRemote::setError(const Exception & exception)
 {
+    stage_sync->setStageForCluster(Stage::ERROR);
     stage_sync->setError(current_host, exception);
 }
 
@@ -777,8 +781,8 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
                 String status;
                 if (zk->tryGet(root_zookeeper_path + "/" + existing_backup_path + "/stage", status))
                 {
-                    /// If status is not COMPLETED it could be because the backup failed, check if 'error' exists
-                    if (status != Stage::COMPLETED && !zk->exists(root_zookeeper_path + "/" + existing_backup_path + "/error"))
+                    /// Check if some other restore is in progress
+                    if (status == Stage::SCHEDULED_TO_START)
                     {
                         LOG_WARNING(log, "Found a concurrent backup: {}, current backup: {}", existing_backup_uuid, toString(backup_uuid));
                         result = true;

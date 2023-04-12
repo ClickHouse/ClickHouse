@@ -61,6 +61,20 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
     });
 }
 
+void BackupCoordinationStageSync::setStageForCluster(const String & new_stage)
+{
+    auto holder = with_retries.createRetriesControlHolder("setStageForCluster");
+    holder.retries_ctl.retryLoop(
+        [&, &zookeeper = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zookeeper);
+            zookeeper->trySet(zookeeper_path, new_stage);
+            auto code = zookeeper->trySet(zookeeper_path, new_stage);
+            if (code != Coordination::Error::ZOK)
+                throw zkutil::KeeperException(code, zookeeper_path);
+        });
+}
+
 void BackupCoordinationStageSync::setError(const String & current_host, const Exception & exception)
 {
     auto holder = with_retries.createRetriesControlHolder("setError");
