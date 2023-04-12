@@ -136,7 +136,9 @@ void IStorage::read(
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
-    if (output_ports > 0 && output_ports < num_streams && getName() != "SystemNumbers")
+    const auto storage_name = getName();
+    if (output_ports > 0 && output_ports < num_streams && storage_name != "SystemNumbers" && storage_name != "SourceFromSingleChunk"
+        && storage_name != "SystemOne")
         pipe.resize(num_streams);
 
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
