@@ -549,7 +549,7 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
                 if (!profile_queue->emplace(std::move(packet.block)))
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
             break;
-            
+
         case Protocol::Server::TimezoneUpdate:
             break;
 
