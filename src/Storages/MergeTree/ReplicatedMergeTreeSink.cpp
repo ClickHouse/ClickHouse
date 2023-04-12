@@ -503,7 +503,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
     /// TODO: we can also delay commit if there is no MVs.
-    if (!settings.deduplicate_blocks_in_dependent_materialized_views) {
+    if (!settings.deduplicate_blocks_in_dependent_materialized_views)
+    {
         if (!(streams > 0 && streams <= max_insert_delayed_streams_for_parallel_write))
         {
             finishDelayedChunk(zookeeper);
