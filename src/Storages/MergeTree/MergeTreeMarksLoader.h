@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MarkCache.h>
 #include <IO/ReadSettings.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 
 namespace DB

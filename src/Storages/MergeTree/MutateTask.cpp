@@ -795,8 +795,6 @@ struct MutationContext
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
     NameSet materialized_projections;
-    MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
-        = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
 
     MergeTreeData::MutableDataPartPtr new_data_part;
     IMergedBlockOutputStreamPtr out{nullptr};
@@ -911,14 +909,12 @@ public:
             if (projection.type == ProjectionDescription::Type::Aggregate)
                 projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
-            const Settings & settings = ctx->context->getSettingsRef();
-
             LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
             auto tmp_part_merge_task = ctx->mutator->mergePartsToTemporaryPart(
                 projection_future_part,
                 projection.metadata,
                 ctx->mutate_entry,
-                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part, settings),
+                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part, ctx->context),
                 *ctx->holder,
                 ctx->time_of_mutation,
                 ctx->context,
@@ -1688,7 +1684,6 @@ bool MutateTask::prepare()
             *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
-        ctx->mutation_kind = ctx->interpreter->getMutationKind();
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of rows.
         ctx->interpreter->setApplyDeletedMask(false);
@@ -1698,8 +1693,6 @@ bool MutateTask::prepare()
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
-    /// FIXME new_data_part is not used in the case when we clone part with cloneAndLoadDataPartOnSameDisk and return false
-    /// Is it possible to handle this case earlier?
 
     std::string prefix;
     if (ctx->need_prefix)
@@ -1741,7 +1734,7 @@ bool MutateTask::prepare()
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
     if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
-        || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
+        || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
@@ -1769,39 +1762,6 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             ctx->mrk_extension);
-
-        if (ctx->indices_to_recalc.empty() &&
-            ctx->projections_to_recalc.empty() &&
-            ctx->mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
-            && ctx->files_to_rename.empty())
-        {
-            LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
-            /// new_data_part is not used here, another part is created instead (see the comment above)
-            ctx->temporary_directory_lock = {};
-
-            /// In zero-copy replication checksums file path in s3 (blob path) is used for zero copy locks in ZooKeeper. If we will hardlink checksums file, we will have the same blob path
-            /// and two different parts (source and new mutated part) will use the same locks in ZooKeeper. To avoid this we copy checksums.txt to generate new blob path.
-            /// Example:
-            ///     part: all_0_0_0/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
-            ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
-            ///                                         ^ part name don't participate in lock path
-            /// In case of full hardlink we will have:
-            ///     part: all_0_0_0_1/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
-            ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
-            /// So we need to copy to have a new name
-            NameSet files_to_copy_instead_of_hardlinks;
-            auto settings_ptr = ctx->data->getSettings();
-            bool copy_checksumns = ctx->data->supportsReplication() && settings_ptr->allow_remote_fs_zero_copy_replication && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
-            if (copy_checksumns)
-                files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
-
-            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
-            part->getDataPartStorage().beginTransaction();
-
-            ctx->temporary_directory_lock = std::move(lock);
-            promise.set_value(std::move(part));
-            return false;
-        }
 
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
     }
