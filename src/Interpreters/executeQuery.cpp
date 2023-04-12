@@ -713,7 +713,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 res = interpreter->execute();
 
                 /// If
-                /// - it is a SELECT query,
+                /// - it is a SELECT query w/o totals or extremes, and
                 /// - passive (read) use of the query cache is enabled, and
                 /// - the query cache knows the query result
                 /// then replace the pipeline by a new pipeline with a single source that is populated from the query cache
@@ -721,7 +721,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 bool read_result_from_query_cache = false; /// a query must not read from *and* write to the query cache at the same time
                 if (query_cache != nullptr
                     && (can_use_query_cache && settings.enable_reads_from_query_cache)
-                    && res.pipeline.pulling())
+                    && res.pipeline.pulling()
+                    && !res.pipeline.hasTotals() && !res.pipeline.hasExtremes())
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
@@ -737,13 +738,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 /// If
-                /// - it is a SELECT query, and
+                /// - it is a SELECT query w/o totals or extremes, and
                 /// - active (write) use of the query cache is enabled
                 /// then add a processor on top of the pipeline which stores the result in the query cache.
                 if (!read_result_from_query_cache
                     && query_cache != nullptr
                     && can_use_query_cache && settings.enable_writes_to_query_cache
                     && res.pipeline.pulling()
+                    && !res.pipeline.hasTotals() && !res.pipeline.hasExtremes()
                     && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     QueryCache::Key key(
