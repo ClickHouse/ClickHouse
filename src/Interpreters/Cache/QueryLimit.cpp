@@ -15,13 +15,13 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
-FileCacheQueryLimit::LockedQueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CacheGuard::Lock & lock)
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(const CacheGuard::Lock &)
 {
     if (!isQueryInitialized())
         return nullptr;
 
     auto query_iter = query_map.find(std::string(CurrentThread::getQueryId()));
-    return (query_iter == query_map.end()) ? nullptr : std::make_unique<LockedQueryContext>(query_iter->second, lock);
+    return (query_iter == query_map.end()) ? nullptr : query_iter->second;
 }
 
 void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CacheGuard::Lock &)
@@ -49,38 +49,61 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     if (inserted)
     {
         it->second = std::make_shared<QueryContext>(
-            settings.filesystem_cache_max_download_size, !settings.skip_download_if_exceeds_query_cache);
+            settings.filesystem_cache_max_download_size,
+            !settings.skip_download_if_exceeds_query_cache);
     }
 
     return it->second;
 }
 
-void FileCacheQueryLimit::LockedQueryContext::add(const FileCacheKey & key, size_t offset, IFileCachePriority::Iterator iterator)
+FileCacheQueryLimit::QueryContext::QueryContext(
+    size_t query_cache_size,
+    bool recache_on_query_limit_exceeded_)
+    : priority(LRUFileCachePriority(query_cache_size, 0))
+    , recache_on_query_limit_exceeded(recache_on_query_limit_exceeded_)
 {
-    auto [_, inserted] = context->records.emplace(FileCacheKeyAndOffset{key, offset}, iterator);
+}
+
+void FileCacheQueryLimit::QueryContext::add(
+    const FileSegment & file_segment,
+    const CacheGuard::Lock & lock)
+{
+    const auto key = file_segment.key();
+    const auto offset = file_segment.offset();
+
+    auto it = getPriority().add(
+        key, offset, file_segment.range().size(), file_segment.getKeyMetadata(), lock);
+
+    auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key, offset}, it);
     if (!inserted)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot add offset {} to query context under key {}, it already exists",
-            offset, key.toString());
+            offset, key);
     }
 }
 
-void FileCacheQueryLimit::LockedQueryContext::remove(const FileCacheKey & key, size_t offset)
+void FileCacheQueryLimit::QueryContext::remove(
+    const Key & key,
+    size_t offset,
+    const CacheGuard::Lock & lock)
 {
-    auto record = context->records.find({key, offset});
-    if (record == context->records.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no {}:{} in query context", key.toString(), offset);
+    auto record = records.find({key, offset});
+    if (record == records.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no {}:{} in query context", key, offset);
 
-    LockedCachePriorityIterator(lock, record->second).remove();
-    context->records.erase({key, offset});
+    record->second->remove(lock);
+    records.erase({key, offset});
 }
 
-IFileCachePriority::Iterator FileCacheQueryLimit::LockedQueryContext::tryGet(const FileCacheKey & key, size_t offset)
+IFileCachePriority::Iterator FileCacheQueryLimit::QueryContext::tryGet(
+    const Key & key,
+    size_t offset,
+    const CacheGuard::Lock &)
 {
-    auto it = context->records.find({key, offset});
-    if (it == context->records.end())
+    auto it = records.find({key, offset});
+    if (it == records.end())
         return nullptr;
     return it->second;
 

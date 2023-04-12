@@ -13,7 +13,6 @@
 #include <IO/ReadSettings.h>
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Cache/LockedFileCachePriority.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -21,14 +20,12 @@
 #include <Interpreters/Cache/QueryLimit.h>
 #include <filesystem>
 
-namespace fs = std::filesystem;
-
 
 namespace DB
 {
 
-struct LockedKeyMetadata;
-using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
+struct LockedKey;
+using LockedKeyPtr = std::shared_ptr<LockedKey>;
 
 namespace ErrorCodes
 {
@@ -42,6 +39,10 @@ class FileCache : private boost::noncopyable
 public:
     using Key = DB::FileCacheKey;
     using QueryLimit = DB::FileCacheQueryLimit;
+    using Priority = IFileCachePriority;
+    using PriorityEntry = IFileCachePriority::Entry;
+    using PriorityIterator = IFileCachePriority::Iterator;
+    using PriorityIterationResult = IFileCachePriority::IterationResult;
 
     FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
 
@@ -49,9 +50,13 @@ public:
 
     void initialize();
 
-    const String & getBasePath() const { return cache_base_path; }
+    const String & getBasePath() const;
 
     static Key createKeyForPath(const String & path);
+
+    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
+
+    String getPathInLocalCache(const Key & key) const;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -85,10 +90,6 @@ public:
     /// Remove files by `key`. Will not remove files which are used at the moment.
     void removeAllReleasable();
 
-    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
-
-    String getPathInLocalCache(const Key & key) const;
-
     std::vector<String> tryGetCachePaths(const Key & key);
 
     size_t getUsedCacheSize() const;
@@ -97,7 +98,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(const FileSegment & file_segment, size_t size);
+    bool tryReserve(FileSegment & file_segment, size_t size);
 
     FileSegmentsHolderPtr getSnapshot();
 
@@ -105,15 +106,9 @@ public:
 
     FileSegmentsHolderPtr dumpQueue();
 
-    bool isInitialized() const { return is_initialized; }
-
-    CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
-
     void cleanup();
 
     void deactivateBackgroundOperations();
-
-    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata, bool return_null_if_in_cleanup_queue = true) const;
 
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
@@ -131,10 +126,11 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
 
+    CacheGuard::Lock lockCache() { return cache_guard.lock(); }
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
-    const String cache_base_path;
     const size_t max_file_segment_size;
     const bool allow_persistent_files;
     const size_t bypass_cache_threshold = 0;
@@ -162,65 +158,82 @@ private:
 
         const size_t hits_threshold;
         FileCachePriorityPtr queue;
-        using Records = std::unordered_map<KeyAndOffset, IFileCachePriority::Iterator, FileCacheKeyAndOffsetHash>;
+        using Records = std::unordered_map<KeyAndOffset, PriorityIterator, FileCacheKeyAndOffsetHash>;
         Records records;
     };
 
+    /**
+     * A HitsCountStash allows to cache certain data only after it reached
+     * a certain hit rate, e.g. if hit rate it 5, then data is cached on 6th cache hit.
+     */
     mutable std::unique_ptr<HitsCountStash> stash;
-
+    /**
+     * A QueryLimit allows to control cache write limit per query.
+     * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
+     * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
+     */
     FileCacheQueryLimitPtr query_limit;
+    /**
+     * A background cleanup task.
+     * Clears removed cache entries from metadata.
+     */
+    BackgroundSchedulePool::TaskHolder cleanup_task;
 
     void assertInitialized() const;
 
+    void assertCacheCorrectness();
+
     void loadMetadata();
 
-    FileSegments getImpl(const LockedKeyMetadata & locked_key, const FileSegment::Range & range);
+    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const;
 
-    FileSegments splitRangeInfoFileSegments(
-        LockedKeyMetadata & locked_key,
+    FileSegments splitRangeIntoFileSegments(
+        LockedKey & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings);
 
     void fillHolesWithEmptyFileSegments(
-        LockedKeyMetadata & locked_key,
+        LockedKey & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);
 
     KeyMetadata::iterator addFileSegment(
-        LockedKeyMetadata & locked_key,
+        LockedKey & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         const CacheGuard::Lock *);
 
-    static void removeFileSegment(
-        LockedKeyMetadata & locked_key,
-        FileSegmentPtr file_segment,
-        const CacheGuard::Lock &);
-
-    bool tryReserveImpl(
-        const FileSegment & file_segment,
-        size_t size,
-        IFileCachePriority & priority_queue,
-        QueryLimit::LockedQueryContext * query_context,
-        const CacheGuard::Lock &);
-
-    struct IterateAndLockResult
-    {
-        IFileCachePriority::IterationResult iteration_result;
-        bool lock_key = false;
-    };
-
-    void assertCacheCorrectness();
-
-    BackgroundSchedulePool::TaskHolder cleanup_task;
-
     void cleanupThreadFunc();
+
+    class EvictionCandidates : public std::vector<FileSegmentMetadataPtr>
+    {
+    public:
+        explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(key_metadata_) {}
+
+        KeyMetadata & getMetadata() { return *key_metadata; }
+
+        void add(FileSegmentMetadataPtr candidate)
+        {
+            candidate->removal_candidate = true;
+            push_back(candidate);
+        }
+
+        ~EvictionCandidates()
+        {
+            for (const auto & candidate : *this)
+                candidate->removal_candidate = false;
+        }
+
+    private:
+        KeyMetadataPtr key_metadata;
+};
+
 };
 
 }

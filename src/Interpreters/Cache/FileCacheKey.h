@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Types.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -42,3 +43,13 @@ struct hash<DB::FileCacheKey>
 };
 
 }
+
+template <>
+struct fmt::formatter<DB::FileCacheKey> : fmt::formatter<std::string>
+{
+    template <typename FormatCtx>
+    auto format(const DB::FileCacheKey & key, FormatCtx & ctx) const
+    {
+        return fmt::formatter<std::string>::format(key.toString(), ctx);
+    }
+};

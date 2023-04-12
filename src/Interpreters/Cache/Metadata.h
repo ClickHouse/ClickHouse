@@ -9,52 +9,43 @@ namespace DB
 {
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
-struct LockedKeyMetadata;
-using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
-class LockedCachePriority;
-struct KeysQueue;
+struct LockedKey;
+using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct CleanupQueue;
 
 
 struct FileSegmentMetadata : private boost::noncopyable
 {
-    FileSegmentMetadata(
-        FileSegmentPtr file_segment_,
-        LockedKeyMetadata & locked_key,
-        LockedCachePriority * locked_queue);
+    using Priority = IFileCachePriority;
+    using PriorityIterator = IFileCachePriority::Iterator;
 
-    /// Pointer to file segment is always hold by the cache itself.
-    /// Apart from pointer in cache, it can be hold by cache users, when they call
-    /// getorSet(), but cache users always hold it via FileSegmentsHolder.
+    explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
+
     bool releasable() const { return file_segment.unique(); }
-
-    IFileCachePriority::Iterator & getQueueIterator() const;
-
-    bool valid() const { return *evict_flag == false; }
 
     size_t size() const;
 
+    bool valid() const { return !removal_candidate.load(); }
+
     FileSegmentPtr file_segment;
-
-    using EvictFlag = std::shared_ptr<std::atomic<bool>>;
-    EvictFlag evict_flag = std::make_shared<std::atomic<bool>>(false);
-    struct EvictHolder : boost::noncopyable
-    {
-        explicit EvictHolder(EvictFlag evict_flag_) : evict_flag(evict_flag_) { *evict_flag = true; }
-        ~EvictHolder() { *evict_flag = false; }
-        EvictFlag evict_flag;
-    };
-    using EvictHolderPtr = std::unique_ptr<EvictHolder>;
-
-    EvictHolderPtr getEvictHolder() { return std::make_unique<EvictHolder>(evict_flag); }
+    std::atomic<bool> removal_candidate{false};
 };
 
-struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
+using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
+
+
+struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
+                     private boost::noncopyable,
+                     public std::enable_shared_from_this<KeyMetadata>
 {
-    friend struct LockedKeyMetadata;
-public:
-    explicit KeyMetadata(bool created_base_directory_, CleanupQueue & cleanup_queue_)
-        : created_base_directory(created_base_directory_), cleanup_queue(cleanup_queue_) {}
+    friend struct LockedKey;
+    using Key = FileCacheKey;
+
+    KeyMetadata(
+        const Key & key_,
+        const std::string & key_path_,
+        CleanupQueue & cleanup_queue_,
+        bool created_base_directory_ = false);
 
     enum class KeyState
     {
@@ -63,18 +54,22 @@ public:
         REMOVED,
     };
 
-    bool created_base_directory = false;
+    const Key key;
+    const std::string key_path;
+    std::atomic<bool> created_base_directory = false;
+
+    LockedKeyPtr lock();
+
+    std::string getFileSegmentPath(const FileSegment & file_segment);
 
 private:
-    KeyGuard::Lock lock() const { return guard.lock(); }
-
     KeyState key_state = KeyState::ACTIVE;
-
-    mutable KeyGuard guard;
+    KeyGuard guard;
     CleanupQueue & cleanup_queue;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
+
 
 struct CleanupQueue
 {
@@ -91,16 +86,26 @@ private:
     mutable std::mutex mutex;
 };
 
+
 struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
+    using IterateCacheMetadataFunc = std::function<void(const LockedKey &)>;
 
-    explicit CacheMetadata(const std::string & base_directory_) : base_directory(base_directory_) {}
+    explicit CacheMetadata(const std::string & path_);
 
-    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
+    const String & getBaseDirectory() const { return path; }
+
+    String getPathInLocalCache(
+        const Key & key,
+        size_t offset,
+        FileSegmentKind segment_kind) const;
 
     String getPathInLocalCache(const Key & key) const;
+    static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
+
+    void iterate(IterateCacheMetadataFunc && func);
 
     enum class KeyNotFoundPolicy
     {
@@ -108,62 +113,63 @@ public:
         CREATE_EMPTY,
         RETURN_NULL,
     };
-    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyNotFoundPolicy key_not_found_policy, bool is_initial_load = false);
 
-    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata, bool skip_if_in_cleanup_queue = false) const;
-
-    using IterateCacheMetadataFunc = std::function<void(const LockedKeyMetadata &)>;
-    void iterate(IterateCacheMetadataFunc && func);
+    LockedKeyPtr lockKeyMetadata(
+        const Key & key,
+        KeyNotFoundPolicy key_not_found_policy,
+        bool is_initial_load = false);
 
     void doCleanup();
 
 private:
-    const std::string base_directory;
+    const std::string path; /// Cache base path
     CacheMetadataGuard guard;
     CleanupQueue cleanup_queue;
+    Poco::Logger * log;
 };
 
 
 /**
- * `LockedKeyMetadata` is an object which makes sure that as long as it exists the following is true:
+ * `LockedKey` is an object which makes sure that as long as it exists the following is true:
  * 1. the key cannot be removed from cache
- *    (Why: this LockedKeyMetadata locks key metadata mutex in ctor, unlocks it in dtor, and so
+ *    (Why: this LockedKey locks key metadata mutex in ctor, unlocks it in dtor, and so
  *    when key is going to be deleted, key mutex is also locked.
- *    Why it cannot be the other way round? E.g. that ctor of LockedKeyMetadata locks the key
- *    right after it was deleted? This case it taken into consideration in createLockedKeyMetadata())
+ *    Why it cannot be the other way round? E.g. that ctor of LockedKey locks the key
+ *    right after it was deleted? This case it taken into consideration in createLockedKey())
  * 2. the key cannot be modified, e.g. new offsets cannot be added to key; already existing
  *    offsets cannot be deleted from the key
- * And also provides some methods which allow the owner of this LockedKeyMetadata object to do such
+ * And also provides some methods which allow the owner of this LockedKey object to do such
  * modification of the key (adding/deleting offsets) and deleting the key from cache.
  */
-struct LockedKeyMetadata : private boost::noncopyable
+struct LockedKey : private boost::noncopyable
 {
-    LockedKeyMetadata(
-        const FileCacheKey & key_,
-        std::shared_ptr<KeyMetadata> key_metadata_,
-        const std::string & key_path_);
+    using Key = FileCacheKey;
 
-    ~LockedKeyMetadata();
+    explicit LockedKey(std::shared_ptr<KeyMetadata> key_metadata_);
 
-    const FileCacheKey & getKey() const { return key; }
+    ~LockedKey();
+
+    const Key & getKey() const { return key_metadata->key; }
 
     auto begin() const { return key_metadata->begin(); }
     auto end() const { return key_metadata->end(); }
 
-    const FileSegmentMetadata * getByOffset(size_t offset) const;
-    FileSegmentMetadata * getByOffset(size_t offset);
+    std::shared_ptr<const FileSegmentMetadata> getByOffset(size_t offset) const;
+    std::shared_ptr<FileSegmentMetadata> getByOffset(size_t offset);
 
-    const FileSegmentMetadata * tryGetByOffset(size_t offset) const;
-    FileSegmentMetadata * tryGetByOffset(size_t offset);
+    std::shared_ptr<const FileSegmentMetadata> tryGetByOffset(size_t offset) const;
+    std::shared_ptr<FileSegmentMetadata> tryGetByOffset(size_t offset);
 
     KeyMetadata::KeyState getKeyState() const { return key_metadata->key_state; }
 
     KeyMetadataPtr getKeyMetadata() const { return key_metadata; }
     KeyMetadataPtr getKeyMetadata() { return key_metadata; }
 
-    void removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
+    KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
 
-    void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
+    void removeAllReleasable();
+
+    void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
 
@@ -180,8 +186,6 @@ struct LockedKeyMetadata : private boost::noncopyable
     std::string toString() const;
 
 private:
-    const FileCacheKey key;
-    const std::string key_path;
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
     Poco::Logger * log;

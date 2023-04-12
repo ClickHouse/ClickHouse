@@ -20,17 +20,17 @@ private:
 public:
     LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_) {}
 
-    size_t getSize() const override { return current_size; }
+    size_t getSize(const CacheGuard::Lock &) const override { return current_size; }
 
-    size_t getElementsCount() const override { return queue.size(); }
+    size_t getElementsCount(const CacheGuard::Lock &) const override { return queue.size(); }
 
-    Iterator add(const Key & key, size_t offset, size_t size, std::weak_ptr<KeyMetadata> key_metadata) override;
+    Iterator add(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata, const CacheGuard::Lock &) override;
 
-    void pop() override;
+    void pop(const CacheGuard::Lock &) override;
 
-    void removeAll() override;
+    void removeAll(const CacheGuard::Lock &) override;
 
-    void iterate(IterateFunc && func) override;
+    void iterate(IterateFunc && func, const CacheGuard::Lock &) override;
 
 private:
     LRUQueue queue;
@@ -50,14 +50,13 @@ public:
 
     const Entry & getEntry() const override { return *queue_iter; }
 
-protected:
     Entry & getEntry() override { return *queue_iter; }
 
-    size_t use() override;
+    size_t use(const CacheGuard::Lock &) override;
 
-    Iterator remove() override;
+    Iterator remove(const CacheGuard::Lock &) override;
 
-    void incrementSize(ssize_t size) override;
+    void updateSize(ssize_t size) override;
 
 private:
     LRUFileCachePriority * cache_priority;

@@ -489,6 +489,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
         return false;
 
     current_file_segment = &file_segments->front();
+    current_file_segment->use();
     implementation_buffer = getImplementationBuffer(*current_file_segment);
 
     if (read_type == ReadType::CACHED)
