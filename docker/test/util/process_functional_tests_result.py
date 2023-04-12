@@ -77,7 +77,14 @@ def process_test_log(log_path, broken_tests):
                 else:
                     if OK_SIGN in line and test_name in broken_tests:
                         failed += 1
-                        test_results.append((test_name, "FAIL", test_time, ["Test is expected to fail!\n"]))
+                        test_results.append(
+                            (
+                                test_name,
+                                "FAIL",
+                                test_time,
+                                ["Test is expected to fail!\n"],
+                            )
+                        )
                     else:
                         success += int(OK_SIGN in line)
                         test_results.append((test_name, "OK", test_time, []))
