@@ -1198,7 +1198,7 @@ private:
         {
             if (column->isNullAt(i))
             {
-                vec_to[i] = 42;
+                vec_to[i] = static_cast<ToType>(0xe28dbde7fe22e41c);
                 continue;
             }
             StringRef bytes = column->getDataAt(i);
@@ -1326,7 +1326,6 @@ private:
     void executeAny(const KeyType & key, const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
-
         if (icolumn->size() != vec_to.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument column '{}' size {} doesn't match result column size {} of function {}",
                     icolumn->getName(), icolumn->size(), vec_to.size(), getName());
