@@ -458,7 +458,6 @@ void TCPHandler::runImpl()
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                                 return true;
 
-                            sendTimezone();
                             sendProgress();
                             sendSelectProfileEvents();
                             sendLogs();
@@ -811,7 +810,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         {
             std::lock_guard lock(task_callback_mutex);
             sendData(header);
-            sendTimezone();
         }
     }
 
