@@ -54,8 +54,12 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
-    /** read next data and fill a buffer with it; set position to the beginning;
-      * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
+    /** read next data and fill a buffer with it; set position to the beginning of the new data
+      * (but not necessarily to the beginning of working_buffer!);
+      * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong;
+      *
+      * if an exception was thrown, is the ReadBuffer left in a usable state? this varies across implementations;
+      * can the caller retry next() after an exception, or call other methods? not recommended
       */
     bool next()
     {
