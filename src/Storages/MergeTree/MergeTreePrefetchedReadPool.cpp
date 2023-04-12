@@ -8,6 +8,7 @@
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <base/getThreadId.h>
 

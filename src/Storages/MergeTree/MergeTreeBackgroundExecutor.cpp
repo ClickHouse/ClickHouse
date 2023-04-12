@@ -1,12 +1,13 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 #include <algorithm>
 
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Common/noexcept_scope.h>
+#include <Common/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -217,13 +218,10 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
         if (item->is_currently_deleting)
         {
-            /// This is significant to order the destructors.
-            {
-                NOEXCEPT_SCOPE({
-                    ALLOW_ALLOCATIONS_IN_SCOPE;
-                    item->task.reset();
-                });
-            }
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                item->task.reset();
+            });
             item->is_done.set();
             item = nullptr;
             return;
