@@ -108,6 +108,7 @@ NULLIF
 NVME
 NYPD
 NuRaft
+Observability
 OLAP
 OLTP
 ObjectId

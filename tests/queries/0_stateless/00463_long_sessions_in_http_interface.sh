@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 echo "Using non-existent session with the 'session_check' flag will throw exception:"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=nonexistent&session_check=1" --data-binary "SELECT 1" | grep -c -F 'Session not found'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=nonexistent&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
 
 echo "Using non-existent session without the 'session_check' flag will create a new session:"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_1" --data-binary "SELECT 1"
@@ -30,7 +30,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "DROP USER IF EXISTS test_00463; CREAT
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6&session_timeout=600" --data-binary "CREATE TEMPORARY TABLE t (s String)"
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "INSERT INTO t VALUES ('Hello')"
 
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6&session_check=1" --data-binary "SELECT 1" | grep -c -F 'Session not found'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6&session_timeout=600" --data-binary "CREATE TEMPORARY TABLE t (s String)"
 ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=test_00463&session_id=${CLICKHOUSE_DATABASE}_6" --data-binary "INSERT INTO t VALUES ('World')"
 
@@ -53,7 +53,7 @@ do
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_timeout=1" --data-binary "SELECT 1"
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_check=1" --data-binary "SELECT 1"
         sleep 3
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_check=1" --data-binary "SELECT 1" | grep -c -F 'Session not found'
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_7&session_check=1" --data-binary "SELECT 1" | grep -c -F 'SESSION_NOT_FOUND'
     ) | tr -d '\n' | grep -F '111' && break || sleep 1
 done
 
@@ -82,6 +82,6 @@ do
     ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.processes WHERE query_id = '${CLICKHOUSE_DATABASE}_9'" | grep -F '1' && break || sleep 1
 done
 
-${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9" --data-binary "SELECT 1" | grep -c -F 'Session is locked'
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_9" --data-binary "SELECT 1" | grep -c -F 'SESSION_IS_LOCKED'
 ${CLICKHOUSE_CLIENT} --multiquery --query "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_9' SYNC FORMAT Null";
 wait
