@@ -6,9 +6,9 @@ CREATE TABLE 02581_trips(id UInt32, description String, id2 UInt32, PRIMARY KEY 
 
 -- Make multiple parts
 INSERT INTO 02581_trips SELECT number, '', number FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+100000, '', number FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+200000, '', number FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+300000, '', number FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+10000000, '', number FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+20000000, '', number FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+30000000, '', number FROM numbers(10000);
 
 SELECT count() from 02581_trips WHERE description = '';
 

@@ -4,9 +4,9 @@ CREATE TABLE 02581_trips(id UInt32, description String) ENGINE=MergeTree ORDER B
 
 -- Make multiple parts
 INSERT INTO 02581_trips SELECT number, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+100000, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+200000, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+300000, '' FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+10000000, '' FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+20000000, '' FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+30000000, '' FROM numbers(10000);
 
 SELECT count() from 02581_trips;
 
