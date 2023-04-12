@@ -207,7 +207,11 @@ private:
         MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
         std::unique_lock<std::mutex> & state_lock) const;
 
-    Int64 getCurrentMutationVersionImpl(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const;
+    /// Return the version (block number) of the last mutation that we don't need to apply to the part
+    /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
+    /// was created after the mutation).
+    /// If there is no such mutation or it has already been executed and deleted, return 0.
+    Int64 getCurrentMutationVersion(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under state_mutex.
@@ -385,12 +389,6 @@ public:
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, PartitionIdsHint && partition_ids_hint);
-
-    /// Return the version (block number) of the last mutation that we don't need to apply to the part
-    /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
-    /// was created after the mutation).
-    /// If there is no such mutation or it has already been executed and deleted, return 0.
-    Int64 getCurrentMutationVersion(const String & partition_id, Int64 data_version) const;
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
 
