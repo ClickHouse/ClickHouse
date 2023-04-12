@@ -1252,6 +1252,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,
+        auth_settings.server_side_encryption_kms_config,
         std::move(headers),
         S3::CredentialsConfiguration{
         auth_settings.use_environment_credentials.value_or(context->getConfigRef().getBool("s3.use_environment_credentials", true)),
