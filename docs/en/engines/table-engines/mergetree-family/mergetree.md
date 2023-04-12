@@ -1055,6 +1055,7 @@ Configuration markup:
             <access_key_id>your_access_key_id</access_key_id>
             <secret_access_key>your_secret_access_key</secret_access_key>
             <region></region>
+            <header>Authorization: Bearer SOME-TOKEN</header>
             <server_side_encryption_customer_key_base64>your_base64_encoded_customer_key</server_side_encryption_customer_key_base64>
             <proxy>
                 <uri>http://proxy1</uri>
@@ -1106,6 +1107,7 @@ Optional parameters:
 - `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
 - `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
 - `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+- `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
 - `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
 - `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
 - `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
