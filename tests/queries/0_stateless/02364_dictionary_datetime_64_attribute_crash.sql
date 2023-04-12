@@ -9,7 +9,8 @@ CREATE DICTIONARY datDictionary
 PRIMARY KEY blockNum
 SOURCE(CLICKHOUSE(TABLE 'dat'))
 LIFETIME(MIN 0 MAX 1000)
-LAYOUT(FLAT());
+LAYOUT(FLAT())
+SETTINGS(check_dictionary_primary_key = 0);
 
 select (select eventTimestamp from datDictionary);
 select count(*) from dat where eventTimestamp >= (select eventTimestamp from datDictionary);
