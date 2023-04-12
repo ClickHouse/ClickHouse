@@ -446,7 +446,6 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
-                new_context->setInsertionTable(getContext()->getInsertionTable());
 
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 

@@ -1624,6 +1624,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         else
             insert->select = create.select->clone();
 
+        getContext()->getQueryContext()->setInsertionTable(insert->table_id);
+
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
     }
