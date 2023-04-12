@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnDecimal.h>
@@ -28,6 +27,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
 }
+
+class Arena;
 
 /** Simple helper for getting default.
   * Initialized with default value and default values column.
