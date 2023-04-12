@@ -125,12 +125,14 @@ Path should be in format './' or './path' or 'path'
 list-disks	List disks names
 
 clickhouse-disks:
-  -h [ --help ]            Print common help message
-  -C [ --config-file ] arg Set config file
-  --disk arg               Set disk name
-  --command_name arg       Name for command to do
-  --save-logs              Save logs to a file
-  --log-level arg          Logging level
+  -h [ --help ]     Print common help message
+  -C [ --config-file ] arg
+                    Set config file
+  --disk arg        Set disk name
+  --command_name arg
+                    Name for command to do
+  --save-logs       Save logs to a file
+  --log-level arg   Logging level
 
 
 clickhouse extract
@@ -322,16 +324,23 @@ Usage: sudo clickhouse install [options]
                                         directory for pid file
   --user arg (=clickhouse)              clickhouse user
   --group arg (=clickhouse)             clickhouse group
+  -y [ --noninteractive ]               run non-interactively
+  --link                                create symlink to the binary instead of
+                                        copying to binary-path
 
 
 clickhouse keeper-converter
 
 Usage: clickhouse keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots
 Allowed options:
-  -h [ --help ]                 produce help message
-  --zookeeper-logs-dir arg      Path to directory with ZooKeeper logs
-  --zookeeper-snapshots-dir arg Path to directory with ZooKeeper snapshots
-  --output-dir arg              Directory to place output clickhouse-keeper snapshot
+  -h [ --help ]     produce help message
+  --zookeeper-logs-dir arg
+                    Path to directory with ZooKeeper logs
+  --zookeeper-snapshots-dir arg
+                    Path to directory with ZooKeeper 
+                    snapshots
+  --output-dir arg  Directory to place output 
+                    clickhouse-keeper snapshot
 
 
 clickhouse obfuscator
@@ -764,10 +773,12 @@ Path should be in format './' or './path' or 'path'
 list-disks	List disks names
 
 clickhouse-disks:
-  -h [ --help ]            Print common help message
-  -C [ --config-file ] arg Set config file
-  --disk arg               Set disk name
-  --command_name arg       Name for command to do
-  --save-logs              Save logs to a file
-  --log-level arg          Logging level
+  -h [ --help ]     Print common help message
+  -C [ --config-file ] arg
+                    Set config file
+  --disk arg        Set disk name
+  --command_name arg
+                    Name for command to do
+  --save-logs       Save logs to a file
+  --log-level arg   Logging level
 
