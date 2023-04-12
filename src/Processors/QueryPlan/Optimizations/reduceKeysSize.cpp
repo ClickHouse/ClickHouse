@@ -100,7 +100,7 @@ std::shared_ptr<ActionsDAG> buildSuccessorActionsDag(const Block & header, const
 
 }
 
-size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
+size_t tryReduceKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
     if (node->children.size() != 1)
         return 0;
