@@ -71,6 +71,8 @@ namespace Poco::Util
 namespace DB::S3
 {
 
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);
+
 struct AuthSettings
 {
     static AuthSettings loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config);

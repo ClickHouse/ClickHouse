@@ -70,6 +70,25 @@ namespace ErrorCodes
 namespace S3
 {
 
+HTTPHeaderEntries getHTTPHeaders(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
+{
+    HTTPHeaderEntries headers;
+    Poco::Util::AbstractConfiguration::Keys subconfig_keys;
+    config.keys(config_elem, subconfig_keys);
+    for (const std::string & subkey : subconfig_keys)
+    {
+        if (subkey.starts_with("header"))
+        {
+            auto header_str = config.getString(config_elem + "." + subkey);
+            auto delimiter = header_str.find(':');
+            if (delimiter == std::string::npos)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
+            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
+        }
+    }
+    return headers;
+}
+
 AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     auto access_key_id = config.getString(config_elem + ".access_key_id", "");
@@ -93,20 +112,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".no_sign_request"))
         no_sign_request = config.getBool(config_elem + ".no_sign_request");
 
-    HTTPHeaderEntries headers;
-    Poco::Util::AbstractConfiguration::Keys subconfig_keys;
-    config.keys(config_elem, subconfig_keys);
-    for (const std::string & subkey : subconfig_keys)
-    {
-        if (subkey.starts_with("header"))
-        {
-            auto header_str = config.getString(config_elem + "." + subkey);
-            auto delimiter = header_str.find(':');
-            if (delimiter == std::string::npos)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
-            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
-        }
-    }
+    HTTPHeaderEntries headers = getHTTPHeaders(config_elem, config);
 
     return AuthSettings
     {
