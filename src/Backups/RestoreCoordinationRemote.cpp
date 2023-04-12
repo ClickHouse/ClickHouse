@@ -90,13 +90,17 @@ void RestoreCoordinationRemote::createRootNodes()
         });
 }
 
-void RestoreCoordinationRemote::setStage(const String & new_stage, const String & message)
+void RestoreCoordinationRemote::setStage(const String & new_stage, const String & message, const bool & for_cluster)
 {
-    stage_sync->set(current_host, new_stage, message);
+    if (for_cluster)
+        stage_sync->setStageForCluster(new_stage);
+    else
+        stage_sync->set(current_host, new_stage, message);
 }
 
 void RestoreCoordinationRemote::setError(const Exception & exception)
 {
+    stage_sync->setStageForCluster(Stage::ERROR);
     stage_sync->setError(current_host, exception);
 }
 
@@ -282,8 +286,8 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
                     String status;
                     if (zk->tryGet(root_zookeeper_path + "/" + existing_restore_path + "/stage", status))
                     {
-                        /// If status is not COMPLETED it could be because the restore failed, check if 'error' exists
-                        if (status != Stage::COMPLETED && !zk->exists(root_zookeeper_path + "/" + existing_restore_path + "/error"))
+                        /// Check if some other restore is in progress
+                        if (status == Stage::SCHEDULED_TO_START)
                         {
                             LOG_WARNING(log, "Found a concurrent restore: {}, current restore: {}", existing_restore_uuid, toString(restore_uuid));
                             result = true;

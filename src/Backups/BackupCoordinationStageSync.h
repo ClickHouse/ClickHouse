@@ -16,6 +16,7 @@ public:
 
     /// Sets the stage of the current host and signal other hosts if there were other hosts waiting for that.
     void set(const String & current_host, const String & new_stage, const String & message);
+    void setStageForCluster(const String & new_stage);
     void setError(const String & current_host, const Exception & exception);
 
     /// Sets the stage of the current host and waits until all hosts come to the same stage.
