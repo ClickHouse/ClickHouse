@@ -125,7 +125,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-static bool parseOperator(IParser::Pos & pos, const std::string_view op, Expected & expected)
+static bool parseOperator(IParser::Pos & pos, std::string_view op, Expected & expected)
 {
     if (!op.empty() && isWordCharASCII(op.front()))
     {
@@ -776,14 +776,13 @@ protected:
     int state = 0;
 };
 
-
 struct ParserExpressionImpl
 {
-    static std::vector<std::pair<std::string_view, Operator>> operators_table;
-    static std::vector<std::pair<std::string_view, Operator>> unary_operators_table;
-    static std::string_view overlapping_operators_to_skip[];
+    static const std::vector<std::pair<std::string_view, Operator>> operators_table;
+    static const std::vector<std::pair<std::string_view, Operator>> unary_operators_table;
+    static const std::array<std::string_view, 1> overlapping_operators_to_skip;
 
-    static Operator finish_between_operator;
+    static const Operator finish_between_operator;
 
     ParserCompoundIdentifier identifier_parser{false, true};
     ParserNumber number_parser;
@@ -810,7 +809,6 @@ struct ParserExpressionImpl
     Action tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
     Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
 };
-
 
 class ExpressionLayer : public Layer
 {
@@ -2287,57 +2285,58 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 }
 
-std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table({
-        {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
-        {"?",             Operator("",                2,  0, OperatorType::StartIf)},
-        {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
-        {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
-        {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
-        {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
-        {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
-        {"==",            Operator("equals",          8,  2, OperatorType::Comparison)},
-        {"!=",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
-        {"<>",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
-        {"<=",            Operator("lessOrEquals",    8,  2, OperatorType::Comparison)},
-        {">=",            Operator("greaterOrEquals", 8,  2, OperatorType::Comparison)},
-        {"<",             Operator("less",            8,  2, OperatorType::Comparison)},
-        {">",             Operator("greater",         8,  2, OperatorType::Comparison)},
-        {"=",             Operator("equals",          8,  2, OperatorType::Comparison)},
-        {"LIKE",          Operator("like",            8,  2)},
-        {"ILIKE",         Operator("ilike",           8,  2)},
-        {"NOT LIKE",      Operator("notLike",         8,  2)},
-        {"NOT ILIKE",     Operator("notILike",        8,  2)},
-        {"REGEXP",        Operator("match",           8,  2)},
-        {"IN",            Operator("in",              8,  2)},
-        {"NOT IN",        Operator("notIn",           8,  2)},
-        {"GLOBAL IN",     Operator("globalIn",        8,  2)},
-        {"GLOBAL NOT IN", Operator("globalNotIn",     8,  2)},
-        {"||",            Operator("concat",          9,  2, OperatorType::Mergeable)},
-        {"+",             Operator("plus",            10, 2)},
-        {"-",             Operator("minus",           10, 2)},
-        {"*",             Operator("multiply",        11, 2)},
-        {"/",             Operator("divide",          11, 2)},
-        {"%",             Operator("modulo",          11, 2)},
-        {"MOD",           Operator("modulo",          11, 2)},
-        {"DIV",           Operator("intDiv",          11, 2)},
-        {".",             Operator("tupleElement",    13, 2, OperatorType::TupleElement)},
-        {"[",             Operator("arrayElement",    13, 2, OperatorType::ArrayElement)},
-        {"::",            Operator("CAST",            13, 2, OperatorType::Cast)},
-        {"IS NULL",       Operator("isNull",          13, 1, OperatorType::IsNull)},
-        {"IS NOT NULL",   Operator("isNotNull",       13, 1, OperatorType::IsNull)},
-    });
-
-std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table({
-        {"NOT",           Operator("not",             5,  1)},
-        {"-",             Operator("negate",          12, 1)}
-    });
-
-Operator ParserExpressionImpl::finish_between_operator = Operator("", 7, 0, OperatorType::FinishBetween);
-
-std::string_view ParserExpressionImpl::overlapping_operators_to_skip[] =
+const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
-    "IN PARTITION",
-    {}
+    {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
+    {"?",             Operator("",                2,  0, OperatorType::StartIf)},
+    {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
+    {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
+    {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
+    {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
+    {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
+    {"==",            Operator("equals",          8,  2, OperatorType::Comparison)},
+    {"!=",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
+    {"<>",            Operator("notEquals",       8,  2, OperatorType::Comparison)},
+    {"<=",            Operator("lessOrEquals",    8,  2, OperatorType::Comparison)},
+    {">=",            Operator("greaterOrEquals", 8,  2, OperatorType::Comparison)},
+    {"<",             Operator("less",            8,  2, OperatorType::Comparison)},
+    {">",             Operator("greater",         8,  2, OperatorType::Comparison)},
+    {"=",             Operator("equals",          8,  2, OperatorType::Comparison)},
+    {"LIKE",          Operator("like",            8,  2)},
+    {"ILIKE",         Operator("ilike",           8,  2)},
+    {"NOT LIKE",      Operator("notLike",         8,  2)},
+    {"NOT ILIKE",     Operator("notILike",        8,  2)},
+    {"REGEXP",        Operator("match",           8,  2)},
+    {"IN",            Operator("in",              8,  2)},
+    {"NOT IN",        Operator("notIn",           8,  2)},
+    {"GLOBAL IN",     Operator("globalIn",        8,  2)},
+    {"GLOBAL NOT IN", Operator("globalNotIn",     8,  2)},
+    {"||",            Operator("concat",          9,  2, OperatorType::Mergeable)},
+    {"+",             Operator("plus",            10, 2)},
+    {"-",             Operator("minus",           10, 2)},
+    {"*",             Operator("multiply",        11, 2)},
+    {"/",             Operator("divide",          11, 2)},
+    {"%",             Operator("modulo",          11, 2)},
+    {"MOD",           Operator("modulo",          11, 2)},
+    {"DIV",           Operator("intDiv",          11, 2)},
+    {".",             Operator("tupleElement",    13, 2, OperatorType::TupleElement)},
+    {"[",             Operator("arrayElement",    13, 2, OperatorType::ArrayElement)},
+    {"::",            Operator("CAST",            13, 2, OperatorType::Cast)},
+    {"IS NULL",       Operator("isNull",          13, 1, OperatorType::IsNull)},
+    {"IS NOT NULL",   Operator("isNotNull",       13, 1, OperatorType::IsNull)},
+};
+
+const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
+{
+    {"NOT",           Operator("not",             5,  1)},
+    {"-",             Operator("negate",          12, 1)}
+};
+
+const Operator ParserExpressionImpl::finish_between_operator("", 7, 0, OperatorType::FinishBetween);
+
+const std::array<std::string_view, 1> ParserExpressionImpl::overlapping_operators_to_skip
+{
+    "IN PARTITION"
 };
 
 bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected)
