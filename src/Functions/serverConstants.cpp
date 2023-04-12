@@ -75,7 +75,7 @@ namespace
     public:
         static constexpr auto name = "serverTimezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionServerTimezone>(context); }
-        explicit FunctionServerTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::instance("").getTimeZone()}, context->isDistributed()) {}
+        explicit FunctionServerTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::serverTimezoneInstance().getTimeZone()}, context->isDistributed()) {}
     };
 
 

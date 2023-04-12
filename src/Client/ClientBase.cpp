@@ -84,18 +84,18 @@ using namespace std::literals;
 namespace
 {
 using namespace DB;
-using ContetGetterFunc = std::function<ContextPtr(void)> const;
-const void* getContextPtrOrNull(ContetGetterFunc contextFunc)
-{
-    try
-    {
-        return contextFunc().get();
-    }
-    catch(...)
-    {
-    }
-    return nullptr;
-}
+//using ContetGetterFunc = std::function<ContextPtr(void)> const;
+//const void* getContextPtrOrNull(ContetGetterFunc contextFunc)
+//{
+//    try
+//    {
+//        return contextFunc().get();
+//    }
+//    catch(...)
+//    {
+//    }
+//    return nullptr;
+//}
 
 //void LogContextes(const std::string_view scope, const ContextPtr global_context)
 //{
@@ -1087,7 +1087,7 @@ void ClientBase::onProgress(const Progress & value)
 
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
-    std::cerr << "ClientBase::onTimezoneUpdate received new TZ from server: " <<  tz << std::endl;
+//    std::cerr << "ClientBase::onTimezoneUpdate received new TZ from server: " <<  tz << std::endl;
 
     Settings settings;
     settings.timezone = tz;

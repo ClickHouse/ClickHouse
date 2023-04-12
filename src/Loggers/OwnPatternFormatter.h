@@ -31,6 +31,6 @@ public:
     virtual void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const;
 
 private:
-    const DateLUTImpl & server_timezone = DateLUT::instance("");
+    const DateLUTImpl & server_timezone = DateLUT::serverTimezoneInstance();
     bool color;
 };
