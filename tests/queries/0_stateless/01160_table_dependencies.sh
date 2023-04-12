@@ -16,14 +16,14 @@ $CLICKHOUSE_CLIENT -q "create table dict_src (n int, m int, s String) engine=Mer
 $CLICKHOUSE_CLIENT -q "create dictionary dict1 (n int default 0, m int default 1, s String default 'qqq')
 PRIMARY KEY n
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict_src' PASSWORD '' DB '$CLICKHOUSE_DATABASE'))
-LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0);"
+LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
 
 $CLICKHOUSE_CLIENT -q "create table join(n int, m int default dictGet('$CLICKHOUSE_DATABASE.dict1', 'm', 42::UInt64)) engine=Join(any, left, n);"
 
 $CLICKHOUSE_CLIENT -q "create dictionary dict2 (n int default 0, m int DEFAULT 2)
 PRIMARY KEY n
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'join' PASSWORD '' DB '$CLICKHOUSE_DATABASE'))
-LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0);"
+LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
 
 $CLICKHOUSE_CLIENT -q "create table s (x default joinGet($CLICKHOUSE_DATABASE.join, 'm', 42::int)) engine=Set"
 
@@ -102,7 +102,7 @@ $CLICKHOUSE_CLIENT -q "create table ${CLICKHOUSE_DATABASE}_1.xdict_src (n int, m
 $CLICKHOUSE_CLIENT -q "create dictionary ${CLICKHOUSE_DATABASE}_1.ydict1 (n int default 0, m int default 1, s String default 'qqq')
 PRIMARY KEY n
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'xdict_src' PASSWORD '' DB '${CLICKHOUSE_DATABASE}_1'))
-LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0);"
+LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
 
 $CLICKHOUSE_CLIENT -q "create table ${CLICKHOUSE_DATABASE}_1.zjoin(n int, m int default dictGet('${CLICKHOUSE_DATABASE}_1.ydict1', 'm', 42::UInt64)) engine=Join(any, left, n);"
 $CLICKHOUSE_CLIENT -q "drop database ${CLICKHOUSE_DATABASE}_1"
