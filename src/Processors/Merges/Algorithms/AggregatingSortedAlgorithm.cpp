@@ -168,7 +168,7 @@ AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     if (def.allocates_memory_in_arena)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 }
 
@@ -194,10 +194,10 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
     /// To avoid this, reset arena if and only if:
     /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK),
     /// - arena was used in the previous groups.
-    if (def.allocates_memory_in_arena && arena->size() > arena_size)
+    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 
     is_group_started = true;

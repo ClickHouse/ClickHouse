@@ -1022,7 +1022,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
     }
 
     for (const auto & arena : string_arenas)
-        bytes_allocated += arena->size();
+        bytes_allocated += arena->allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
