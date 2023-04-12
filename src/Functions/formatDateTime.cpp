@@ -994,15 +994,15 @@ public:
             instructions.push_back(std::move(instruction));
         };
 
-        auto add_extra_shift_or_literal_instruction = [&](size_t amount, std::string_view literal)
+        auto add_extra_shift_or_literal_instruction = [&](std::string_view literal)
         {
             if (mysql_with_only_fixed_length_formatters)
-                add_extra_shift(amount);
+                add_extra_shift(literal.size());
             else
                 add_literal_instruction(literal);
         };
 
-        auto add_time_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncMysql && func, [[maybe_unused]] size_t amount, [[maybe_unused]] std::string_view literal)
+        auto add_time_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncMysql && func, [[maybe_unused]] std::string_view literal)
         {
             /// DateTime/DateTime64 --> insert instruction
             /// Other types cannot provide the requested data --> write out template
@@ -1013,7 +1013,7 @@ public:
                 instructions.push_back(std::move(instruction));
             }
             else
-                add_extra_shift_or_literal_instruction(amount, literal);
+                add_extra_shift_or_literal_instruction(literal);
         };
 
         Pos pos = format.data();
@@ -1028,7 +1028,7 @@ public:
                 if (pos < percent_pos)
                 {
                     /// Handle characters before next %
-                    add_extra_shift_or_literal_instruction(percent_pos - pos, std::string_view(pos, percent_pos - pos));
+                    add_extra_shift_or_literal_instruction(std::string_view(pos, percent_pos - pos));
                     out_template += String(pos, percent_pos - pos);
                 }
 
@@ -1123,7 +1123,7 @@ public:
                         else
                         {
                             static constexpr std::string_view val = "00";
-                            add_time_instruction(&Instruction<T>::mysqlMinute, 2, val);
+                            add_time_instruction(&Instruction<T>::mysqlMinute, val);
                             out_template += val;
                         }
                         break;
@@ -1286,7 +1286,7 @@ public:
                     case 'p':
                     {
                         static constexpr std::string_view val = "AM";
-                        add_time_instruction(&Instruction<T>::mysqlAMPM, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlAMPM, val);
                         out_template += val;
                         break;
                     }
@@ -1295,7 +1295,7 @@ public:
                     case 'r':
                     {
                         static constexpr std::string_view val = "12:00 AM";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM12, 8, val);
+                        add_time_instruction(&Instruction<T>::mysqlHHMM12, val);
                         out_template += val;
                         break;
                     }
@@ -1304,7 +1304,7 @@ public:
                     case 'R':
                     {
                         static constexpr std::string_view val = "00:00";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM24, 5, val);
+                        add_time_instruction(&Instruction<T>::mysqlHHMM24, val);
                         out_template += val;
                         break;
                     }
@@ -1313,7 +1313,7 @@ public:
                     case 's':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlSecond, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlSecond, val);
                         out_template += val;
                         break;
                     }
@@ -1322,7 +1322,7 @@ public:
                     case 'S':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlSecond, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlSecond, val);
                         out_template += val;
                         break;
                     }
@@ -1331,7 +1331,7 @@ public:
                     case 'T':
                     {
                         static constexpr std::string_view val = "00:00:00";
-                        add_time_instruction(&Instruction<T>::mysqlISO8601Time, 8, val);
+                        add_time_instruction(&Instruction<T>::mysqlISO8601Time, val);
                         out_template += val;
                         break;
                     }
@@ -1340,7 +1340,7 @@ public:
                     case 'h':
                     {
                         static constexpr std::string_view val = "12";
-                        add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour12, val);
                         out_template += val;
                         break;
                     }
@@ -1349,7 +1349,7 @@ public:
                     case 'H':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlHour24, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour24, val);
                         out_template += val;
                         break;
                     }
@@ -1358,7 +1358,7 @@ public:
                     case 'i':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlMinute, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlMinute, val);
                         out_template += val;
                         break;
                     }
@@ -1367,7 +1367,7 @@ public:
                     case 'I':
                     {
                         static constexpr std::string_view val = "12";
-                        add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour12, val);
                         out_template += val;
                         break;
                     }
@@ -1376,7 +1376,7 @@ public:
                     case 'k':
                     {
                         static constexpr std::string_view val = "00";
-                        add_time_instruction(&Instruction<T>::mysqlHour24, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour24, val);
                         out_template += val;
                         break;
                     }
@@ -1385,7 +1385,7 @@ public:
                     case 'l':
                     {
                         static constexpr std::string_view val = "12";
-                        add_time_instruction(&Instruction<T>::mysqlHour12, 2, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour12, val);
                         out_template += val;
                         break;
                     }
@@ -1393,7 +1393,7 @@ public:
                     case 't':
                     {
                         static constexpr std::string_view val = "\t";
-                        add_extra_shift_or_literal_instruction(1, val);
+                        add_extra_shift_or_literal_instruction(val);
                         out_template += val;
                         break;
                     }
@@ -1401,7 +1401,7 @@ public:
                     case 'n':
                     {
                         static constexpr std::string_view val = "\n";
-                        add_extra_shift_or_literal_instruction(1, val);
+                        add_extra_shift_or_literal_instruction(val);
                         out_template += val;
                         break;
                     }
@@ -1410,7 +1410,7 @@ public:
                     case '%':
                     {
                         static constexpr std::string_view val = "%";
-                        add_extra_shift_or_literal_instruction(1, val);
+                        add_extra_shift_or_literal_instruction(val);
                         out_template += val;
                         break;
                     }
@@ -1437,7 +1437,7 @@ public:
             else
             {
                 /// Handle characters after last %
-                add_extra_shift_or_literal_instruction(end - pos, std::string_view(pos, end - pos));
+                add_extra_shift_or_literal_instruction(std::string_view(pos, end - pos));
                 out_template += String(pos, end - pos);
                 break;
             }
