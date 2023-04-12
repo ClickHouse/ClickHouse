@@ -80,7 +80,6 @@ MergeInfo MergeListElement::getInfo() const
 
 MergeListElement::~MergeListElement()
 {
-    CurrentThread::get().flushUntrackedMemory();
     background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
 }
 
