@@ -1,91 +1,118 @@
 #include <cctype>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsHashing.h>
+#include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
 {
 
-/** The implementation of this algorithm is the same as most SQL language implementations.
-
-  * Soundex wiki: https://en.wikipedia.org/wiki/Soundex
-
-  * The details are as follows:
-
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+/** Soundex algorithm, https://en.wikipedia.org/wiki/Soundex
+  * Implemented similarly as in most SQL dialects:
   * 1. Save the first letter. Map all occurrences of a, e, i, o, u, y, h, w. to zero(0)
   * 2. Replace all consonants (include the first letter) with digits as follows:
-  *
   *  - b, f, p, v → 1
   *  - c, g, j, k, q, s, x, z → 2
   *  - d, t → 3
   *  - l → 4
   *  - m, n → 5
   *  - r → 6
-  *
   * 3. Replace all adjacent same digits with one digit, and then remove all the zero (0) digits
   * 4. If the saved letter's digit is the same as the resulting first digit, remove the digit (keep the letter).
   * 5. Append 3 zeros if result contains less than 3 digits. Remove all except first letter and 3 digits after it.
-  *
   */
 
 struct SoundexImpl
 {
-    static constexpr auto name = "soundex";
-    enum
-    {
-        length = 4
-    };
+    static constexpr auto length = 4z;
     static constexpr auto soundex_map = "01230120022455012623010202";
 
-    static void skipNonAlphaASCII(const char *& start, const char * end)
+    static void calculate(const char * value, size_t value_length, char * out)
     {
-        while (start < end && !isAlphaASCII(*start))
-            ++start;
-    }
-    static char getScode(char c)
-    {
-        return soundex_map[c - 'A'];
-    }
+        const char * cur = value;
+        const char * const end = value + value_length;
+        char * const out_end = out + length;
 
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        const char * in_cur = begin;
-        const char * in_end = begin + size;
-        unsigned char * out_end = out_char_data + length;
+        while (cur < end && !isAlphaASCII(*cur))
+            ++cur;
 
         char prev_code = '0';
-        skipNonAlphaASCII(in_cur, in_end);
-        if (in_cur < in_end)
+        if (cur < end)
         {
-          *out_char_data++ = toUpperIfAlphaASCII(*in_cur);
-          prev_code = getScode(toUpperIfAlphaASCII(*in_cur));
-          skipNonAlphaASCII(++in_cur, in_end);
+            *out = toUpperIfAlphaASCII(*cur);
+            ++out;
+            prev_code = soundex_map[toUpperIfAlphaASCII(*cur) - 'A'];
+            ++cur;
         }
 
-        char current_code = '0';
-        while (in_cur < in_end && out_char_data < out_end)
+        while (cur < end && !isAlphaASCII(*cur))
+            ++cur;
+
+        while (cur < end && out < out_end)
         {
-            current_code = getScode(toUpperIfAlphaASCII(*in_cur));
+            char current_code = soundex_map[toUpperIfAlphaASCII(*cur) - 'A'];
             if ((current_code != '0') && (current_code != prev_code))
             {
-                *out_char_data++ = current_code;
+                *out = current_code;
+                ++out;
             }
             prev_code = current_code;
-            skipNonAlphaASCII(++in_cur, in_end);
+            ++cur;
+
+            while (cur < end && !isAlphaASCII(*cur))
+                ++cur;
         }
-        while (out_char_data < out_end)
+
+        while (out < out_end)
         {
-            *out_char_data++ = '0';
+            *out = '0';
+            ++out;
         }
     }
+
+    static void vector(
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets)
+    {
+        const size_t size = offsets.size();
+        res_data.resize(size * (length + 1));
+        res_offsets.resize(size);
+
+        size_t prev_offset = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
+            const size_t value_length = offsets[i] - prev_offset - 1;
+            const size_t out_index = i * (length + 1);
+            calculate(value, value_length, reinterpret_cast<char *>(&res_data[out_index]));
+            res_data[out_index + length] = '\0';
+            res_offsets[i] = (out_index + length + 1);
+            prev_offset = offsets[i];
+        }
+    }
+
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by soundex function");
+    }
+};
+
+struct NameSoundex
+{
+    static constexpr auto name = "soundex";
 };
 
 REGISTER_FUNCTION(Soundex)
 {
-    factory.registerFunction<FunctionStringHashFixedString<SoundexImpl>>(
-        Documentation{"Returns soundex code of a string."}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionStringToString<SoundexImpl, NameSoundex>>(
+        Documentation{"Returns Soundex code of a string."}, FunctionFactory::CaseInsensitive);
 }
 
 

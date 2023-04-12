@@ -1193,33 +1193,33 @@ Result:
 ```
 
 ## concatWithSeparatorAssumeInjective
+
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
 
 ## soundex
 
-Returns soundex code of a string.
+Returns the [Soundex code](https://en.wikipedia.org/wiki/Soundex) of a string.
 
 **Syntax**
 
 ``` sql
-soundex(x)
+soundex(val)
 ```
 
 **Arguments**
 
-- `x` - Input Value. [String](../data-types/string.md)
+- `val` - Input value. [String](../data-types/string.md)
 
 **Returned value**
 
-- Returns soundex code of that string.
-
-Type: [FixedString](../../sql-reference/data-types/fixedstring.md)
+- The Soundex code of the input value. [String](../data-types/string.md)
 
 **Example**
 
 Query:
+
 ``` sql
 select soundex('aksel');
 ```
