@@ -330,6 +330,54 @@ WITH
 SELECT
     x; -- {serverError BAD_ARGUMENTS}
 
+-- should fail because data_column argument must be of type String
+WITH
+    extractKeyValuePairs([1, 2]) AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
+-- should fail because key_value_delimiter argument must be of type String
+WITH
+    extractKeyValuePairs('', [1, 2]) AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
+-- should fail because pair_delimiters argument must be of type String
+WITH
+    extractKeyValuePairs('', ':', [1, 2]) AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
+-- should fail because quoting_character argument must be of type String
+WITH
+    extractKeyValuePairs('', ':', ' ', [1, 2]) AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
 -- should fail because pair delimiters can contain at most 8 characters
 WITH
     extractKeyValuePairs('not_important', ':', '123456789', '\'') AS s_map,

@@ -2,6 +2,8 @@
 
 #include <Functions/FunctionHelpers.h>
 
+#include <DataTypes/DataTypeString.h>
+
 namespace DB
 {
 
@@ -11,39 +13,52 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+    auto popFrontAndGet(auto & container)
+    {
+        auto element = container.front();
+        container.pop_front();
+        return element;
+    }
+}
+
 ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithTypeAndName & arguments)
+{
+    return extract(ColumnsWithTypeAndNameList{arguments.begin(), arguments.end()});
+}
+
+ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(ColumnsWithTypeAndNameList arguments)
 {
     if (arguments.empty())
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function extractKeyValuePairs requires at least one argument");
     }
 
-    auto data_column = arguments[0].column;
+    auto data_column = extractStringColumn(popFrontAndGet(arguments), "data_column");
 
-    if (arguments.size() == 1u)
+    if (arguments.empty())
     {
         return ParsedArguments{data_column};
     }
 
-    auto key_value_delimiter = extractControlCharacter(arguments[1].column);
+    auto key_value_delimiter = extractSingleCharacter(popFrontAndGet(arguments), "key_value_delimiter");
 
-    if (arguments.size() == 2u)
+    if (arguments.empty())
     {
         return ParsedArguments {data_column, key_value_delimiter};
     }
 
-    auto pair_delimiters_characters = arguments[2].column->getDataAt(0).toView();
+    auto pair_delimiters = extractVector(popFrontAndGet(arguments), "pair_delimiters");
 
-    VectorArgument pair_delimiters {pair_delimiters_characters.begin(), pair_delimiters_characters.end()};
-
-    if (arguments.size() == 3u)
+    if (arguments.empty())
     {
         return ParsedArguments {
             data_column, key_value_delimiter, pair_delimiters
         };
     }
 
-    auto quoting_character = extractControlCharacter(arguments[3].column);
+    auto quoting_character = extractSingleCharacter(popFrontAndGet(arguments), "quoting_character");
 
     return ParsedArguments {
         data_column,
@@ -53,8 +68,13 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
     };
 }
 
-ArgumentExtractor::CharArgument ArgumentExtractor::extractControlCharacter(ColumnPtr column)
+ArgumentExtractor::CharArgument ArgumentExtractor::extractSingleCharacter(const ColumnWithTypeAndName & argument, const std::string & parameter_name)
 {
+    const auto type = argument.type;
+    const auto column = argument.column;
+
+    validateColumnType(type, parameter_name);
+
     auto view = column->getDataAt(0).toView();
 
     if (view.empty())
@@ -69,5 +89,37 @@ ArgumentExtractor::CharArgument ArgumentExtractor::extractControlCharacter(Colum
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Control character argument must either be empty or contain exactly 1 character");
 }
 
+ColumnPtr ArgumentExtractor::extractStringColumn(const ColumnWithTypeAndName & argument, const std::string & parameter_name)
+{
+    auto type = argument.type;
+    auto column = argument.column;
+
+    validateColumnType(type, parameter_name);
+
+    return column;
 }
 
+ArgumentExtractor::VectorArgument ArgumentExtractor::extractVector(const ColumnWithTypeAndName & argument, const std::string & parameter_name)
+{
+    const auto type = argument.type;
+    const auto column = argument.column;
+
+    validateColumnType(type, parameter_name);
+
+    auto view = column->getDataAt(0).toView();
+
+    return {view.begin(), view.end()};
+}
+
+void ArgumentExtractor::validateColumnType(DataTypePtr type, const std::string & parameter_name)
+{
+    if (!isStringOrFixedString(type))
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument {}. Must be String.",
+            type, parameter_name);
+    }
+}
+
+}

@@ -18,6 +18,7 @@ class ArgumentExtractor
 public:
     using CharArgument = std::optional<char>;
     using VectorArgument = std::vector<char>;
+    using ColumnsWithTypeAndNameList = std::list<ColumnWithTypeAndName>;
 
     struct ParsedArguments
     {
@@ -30,9 +31,14 @@ public:
 
 
     static ParsedArguments extract(const ColumnsWithTypeAndName & arguments);
+    static ParsedArguments extract(ColumnsWithTypeAndNameList arguments);
 
 private:
-    static ArgumentExtractor::CharArgument extractControlCharacter(ColumnPtr column);
+    static CharArgument extractSingleCharacter(const ColumnWithTypeAndName & arguments, const std::string & parameter_name);
+    static ColumnPtr extractStringColumn(const ColumnWithTypeAndName & arguments, const std::string & parameter_name);
+    static VectorArgument extractVector(const ColumnWithTypeAndName & arguments, const std::string & parameter_name);
+
+    static void validateColumnType(DataTypePtr type, const std::string & parameter_name);
 };
 
 }
