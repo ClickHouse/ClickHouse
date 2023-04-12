@@ -370,7 +370,8 @@ private:
     ProcessList * process_list;
 
     std::mutex mutex;
-    std::condition_variable cv;
+    std::condition_variable cancel_cv;
+    std::condition_variable ready_cv;
     QueryStatusPtr query_to_cancel;
 
     // Cancel reason and details

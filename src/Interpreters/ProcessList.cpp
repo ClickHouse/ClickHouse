@@ -733,19 +733,23 @@ Canceler::Canceler(ProcessList * process_list_)
 Canceler::~Canceler()
 {
     stop_flag.store(true);
-    cv.notify_all();
+    ready_cv.notify_all();
+    cancel_cv.notify_one();
     thread.join();
 }
 
 void Canceler::cancelQueryDueToMemoryLimitExceeded(const QueryStatusPtr & query, MemoryTracker * exhausted)
 {
     std::unique_lock lock(mutex);
-    cv.wait(lock, [this] { return query_to_cancel == nullptr; });
+    ready_cv.wait(lock, [this] { return query_to_cancel == nullptr || stop_flag.load(); });
+    if (stop_flag)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cancel signal due to memory limit exceeded after shutdown");
     query_to_cancel = query;
     code = ErrorCodes::MEMORY_LIMIT_EXCEEDED;
     description = exhausted ? exhausted->getDescription() : nullptr;
     memory_current = query_to_cancel->getMemoryTracker()->get();
     memory_limit = exhausted ? exhausted->getHardLimit() : 0;
+    cancel_cv.notify_one();
 }
 
 void Canceler::threadFunc()
@@ -755,7 +759,7 @@ void Canceler::threadFunc()
     std::unique_lock lock(mutex);
     while (true)
     {
-        cv.wait(lock, [this] { return query_to_cancel != nullptr || stop_flag.load(); });
+        cancel_cv.wait(lock, [this] { return query_to_cancel != nullptr || stop_flag.load(); });
         if (stop_flag.load())
             break;
         if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
@@ -771,6 +775,7 @@ void Canceler::threadFunc()
         else
             process_list->sendCancelToQuery(query_to_cancel, code, "Query was cancelled");
         query_to_cancel.reset();
+        ready_cv.notify_one();
     }
 }
 
