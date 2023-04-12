@@ -34,7 +34,7 @@ The query cache is an experimental feature that should not be used in production
 processing) where wrong results are returned.
 :::
 
-The query cache can currently not be used for aggregation queries (`GROUP BY`) with [`WITH TOTALS`](../../../../sql-reference/statements/select/group-by.md#with-totals-modifier)
+The query cache can currently not be used for aggregation queries (`GROUP BY`) with [WITH TOTALS](../../sql-reference/statements/select/group-by.md#with-totals-modifier)
 modifier. A similar restriction exists for queries with [calculated extremes](settings/settings.md#extremes).
 
 ## Configuration Settings and Usage
