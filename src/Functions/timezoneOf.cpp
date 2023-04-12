@@ -5,11 +5,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Field.h>
-#include "Poco/Logger.h"
-
-#include <Common/logger_useful.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -55,15 +50,6 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
-
-        {
-            const auto query_context = DB::CurrentThread::get().getQueryContext();
-
-            LOG_DEBUG(&Poco::Logger::get("Function timezoneOf"), "query context: {}, timezone: {} ({})",
-                reinterpret_cast<const void*>(query_context.get()),
-                query_context->getSettingsRef().timezone.toString(),
-                (query_context->getSettingsRef().timezone.changed ? "changed" : "UNCHANGED"));
-        }
 
         return DataTypeString().createColumnConst(input_rows_count,
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
