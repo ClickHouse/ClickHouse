@@ -325,9 +325,8 @@ try
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
         // which is required for client timezone (pushed as from server) to work.
-        auto thread_group = std::make_shared<ThreadGroupStatus>();
-        thread_group->global_context = global_context;
-        thread_status.attachQuery(thread_group, false);
+        auto thread_group = std::make_shared<ThreadGroup>();
+        thread_status.attachToGroup(thread_group, false);
     }
 
     /// Includes delayed_interactive.
