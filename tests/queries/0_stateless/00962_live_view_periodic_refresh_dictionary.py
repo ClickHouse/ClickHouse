@@ -38,7 +38,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client1.send(
         "CREATE DICTIONARY test.dict(a Int32, b Int32) PRIMARY KEY a LAYOUT(FLAT()) "
-        + "SOURCE(CLICKHOUSE(db 'test' table 'mt')) LIFETIME(1) SETTINGS(check_dictionary_primary_key = 0)"
+        + "SOURCE(CLICKHOUSE(db 'test' table 'mt')) LIFETIME(1)"
     )
     client1.expect(prompt)
     client1.send("CREATE LIVE VIEW test.lv WITH REFRESH 1 AS SELECT * FROM test.dict")

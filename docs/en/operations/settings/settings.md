@@ -4104,36 +4104,6 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 Possible values: `true`, `false`
 
 Default value: `false`
-
-## check_dictionary_primary_key {#check_dictionary_primary_key}
-
-Enables the check at dictionay creation, dictionaries without word complex-key* in a layout have a key with UInt64 type. The primary key data type must be one of unsigned [integer types](../../sql-reference/data-types/int-uint.md): `UInt8`, `UInt16`, `UInt32`, `UInt64`.
-Possible values:
-
--   true  — The check is enabled.
--   false — The check is disabled at dictionay creation.
-
-Default value: `true`.
-
-If you already have dictionay with incorrect primar key and do not want the server to raise an exception during startup, set `check_dictionary_primary_key` to `false`.
-
-Or you can create dictionay with settings `check_dictionary_primary_key` to `false`.
-
-**Example**
-
-```sql
-CREATE DICTIONARY test
-(
-    `id` Int128,
-    `name` String
-)
-PRIMARY KEY id
-SOURCE(CLICKHOUSE(TABLE 'test_local'))
-LIFETIME(MIN 0 MAX 300)
-LAYOUT(HASHED())
-SETTINGS(check_dictionary_primary_key = 0);
-```
-
 ## function_json_value_return_type_allow_nullable
 
 Control whether allow to return `NULL` when value is not exist for JSON_VALUE function.
