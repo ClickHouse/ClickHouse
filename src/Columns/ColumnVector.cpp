@@ -11,6 +11,8 @@
 #include <base/scope_guard.h>
 #include <base/sort.h>
 #include <base/unaligned.h>
+#include <base/types.h>
+#include <base/scope_guard.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
@@ -25,6 +27,7 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <type_traits>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -255,6 +258,38 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             /// A case for radix sort
             /// LSD RadixSort is stable
 
+            if constexpr (std::is_same_v<T, UInt8>)
+            {
+                size_t cnt[256];
+                memset(cnt, 0, sizeof(cnt));
+
+                for (size_t i = 0; i < data_size; ++i)
+                    cnt[data[i]]++;
+
+                if (direction == IColumn::PermutationSortDirection::Ascending)
+                {
+                    for (size_t i = 1; i < 256; ++i)
+                        cnt[i] += cnt[i - 1];
+                    for (size_t i = 255; i > 0; --i)
+                        cnt[i] = cnt[i - 1];
+                    cnt[0] = 0;
+                }
+                else
+                {
+                    for (size_t i = 254; i > 0; --i)
+                        cnt[i] += cnt[i + 1];
+                    cnt[0] += cnt[1];
+                    for (size_t i = 0; i < 255; ++i)
+                        cnt[i] = cnt[i + 1];
+                    cnt[255] = 0;
+                }
+
+                for (size_t i = 0; i < data_size; ++i)
+                    res[cnt[data[i]]++] = i;
+
+                return;
+            }
+
             bool reverse = direction == IColumn::PermutationSortDirection::Descending;
             bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
@@ -336,6 +371,47 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// TODO: LSD RadixSort is currently not stable if direction is descending, or value is floating point
             bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
             size_t size = end - begin;
+
+            /// A case for counting sort
+            if constexpr (std::is_same_v<T, UInt8>)
+            {
+                if (end - begin > 256)
+                {
+                    size_t cnt[256];
+                    memset(cnt, 0, sizeof(cnt));
+
+                    for (auto * it = begin; it != end; ++it)
+                        cnt[data[*it]]++;
+
+                    if (direction == IColumn::PermutationSortDirection::Ascending)
+                    {
+                        for (size_t i = 1; i < 256; ++i)
+                            cnt[i] += cnt[i - 1];
+                        for (size_t i = 255; i > 0; --i)
+                            cnt[i] = cnt[i - 1];
+                        cnt[0] = 0;
+                    }
+                    else
+                    {
+                        for (size_t i = 254; i > 0; --i)
+                            cnt[i] += cnt[i + 1];
+                        cnt[0] += cnt[1];
+                        for (size_t i = 0; i < 255; ++i)
+                            cnt[i] = cnt[i + 1];
+                        cnt[255] = 0;
+                    }
+
+                    std::vector<size_t> order(end - begin);
+
+                    for (auto * it = begin; it != end; ++it)
+                        order[cnt[data[*it]]++] = *it;
+
+                    for (auto * it = begin; it != end; ++it)
+                        *it = order[it - begin];
+
+                    return;
+                }
+            }
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
