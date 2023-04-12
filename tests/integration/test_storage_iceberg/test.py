@@ -35,10 +35,6 @@ def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config(
-            "spark.jars.packages",
-            "org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-        )
-        .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.iceberg.spark.SparkSessionCatalog",
         )
@@ -66,9 +62,10 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        if cluster.spark_session is not None:
-            cluster.spark_session.stop()
-            cluster.spark_session._instantiatedContext = None
+        pyspark.sql.SparkSession.builder.appName("spark_test").config(
+            "spark.jars.packages",
+            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+        ).master("local").getOrCreate().stop()
 
         cluster.spark_session = get_spark()
 
@@ -180,7 +177,6 @@ def test_single_iceberg_file(started_cluster, format_version):
     write_iceberg_from_file(
         spark, parquet_data_path, TABLE_NAME, format_version=format_version
     )
-    time.sleep(500)
 
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""

@@ -32,10 +32,6 @@ def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
         .config(
-            "spark.jars.packages",
-            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0",
-        )
-        .config(
             "org.apache.spark.sql.hudi.catalog.HoodieCatalog",
         )
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
@@ -45,13 +41,13 @@ def get_spark():
         .config("spark.driver.memory", "20g")
         .master("local")
     )
-    return builder.master("local").getOrCreate()
+    return builder.getOrCreate()
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
+    cluster = ClickHouseCluster(__file__)
     try:
-        cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
@@ -64,9 +60,10 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        if cluster.spark_session is not None:
-            cluster.spark_session.stop()
-            cluster.spark_session._instantiatedContext = None
+        pyspark.sql.SparkSession.builder.appName("spark_test").config(
+            "spark.jars.packages",
+            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+        ).master("local").getOrCreate().stop()
 
         cluster.spark_session = get_spark()
 
