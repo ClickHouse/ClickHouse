@@ -751,9 +751,6 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
-    /// Makes backup entries to backup the data of the storage.
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-
     /// Extract data from the backup and put it to the storage.
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
@@ -1499,6 +1496,16 @@ private:
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
         std::mutex & part_loading_mutex);
+
+    LoadPartResult loadDataPartWithRetries(
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        const DiskPtr & part_disk_ptr,
+        MergeTreeDataPartState to_state,
+        std::mutex & part_loading_mutex,
+        size_t backoff_ms,
+        size_t max_backoff_ms,
+        size_t max_tries);
 
     std::vector<LoadPartResult> loadDataPartsFromDisk(
         ThreadPool & pool,

@@ -994,7 +994,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         }
     }
 
-    auto table_join = std::make_shared<TableJoin>(settings, query_context->getTemporaryVolume());
+    auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume());
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
     table_join->getTableJoin().kind = join_kind;
 
