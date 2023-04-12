@@ -41,6 +41,8 @@ Checks: '*,
     -clang-analyzer-security.insecureAPI.strcpy,
 
     -cppcoreguidelines-avoid-c-arrays,
+    -cppcoreguidelines-avoid-const-or-ref-data-members,
+    -cppcoreguidelines-avoid-do-while,
     -cppcoreguidelines-avoid-goto,
     -cppcoreguidelines-avoid-magic-numbers,
     -cppcoreguidelines-avoid-non-const-global-variables,
@@ -108,6 +110,7 @@ Checks: '*,
     -misc-const-correctness,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
+    -misc-confusable-identifiers, # useful but slooow
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
@@ -128,6 +131,7 @@ Checks: '*,
     -portability-simd-intrinsics,
 
     -readability-braces-around-statements,
+    -readability-convert-member-functions-to-static,
     -readability-else-after-return,
     -readability-function-cognitive-complexity,
     -readability-function-size,
@@ -145,19 +149,6 @@ Checks: '*,
     -readability-use-anyofallof,
 
     -zirkon-*,
-
-    -misc-*, # temporarily disabled due to being too slow
-    # also disable checks in other categories which are aliases of checks in misc-*:
-    # https://releases.llvm.org/15.0.0/tools/clang/tools/extra/docs/clang-tidy/checks/list.html
-    -cert-dcl54-cpp,                                            # alias of misc-new-delete-overloads
-    -hicpp-new-delete-operators,                                # alias of misc-new-delete-overloads
-    -cert-fio38-c,                                              # alias of misc-non-copyable-objects
-    -cert-dcl03-c,                                              # alias of misc-static-assert
-    -hicpp-static-assert,                                       # alias of misc-static-assert
-    -cert-err09-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
-    -cert-err61-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
-    -cppcoreguidelines-c-copy-assignment-signature,             # alias of misc-unconventional-assign-operator
-    -cppcoreguidelines-non-private-member-variables-in-classes, # alias of misc-non-private-member-variables-in-classes
 '
 
 WarningsAsErrors: '*'

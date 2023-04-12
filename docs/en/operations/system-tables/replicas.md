@@ -50,6 +50,7 @@ last_queue_update:           2021-10-12 14:50:08
 absolute_delay:              99
 total_replicas:              5
 active_replicas:             5
+lost_part_count:             0
 last_queue_update_exception:
 zookeeper_exception:
 replica_is_active:           {'r1':1,'r2':1}
@@ -90,6 +91,7 @@ The next 4 columns have a non-zero value only where there is an active session w
 -   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
 -   `total_replicas` (`UInt8`) - The total number of known replicas of this table.
 -   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ClickHouse Keeper (i.e., the number of functioning replicas).
+-   `lost_part_count` (`UInt64`) - The number of data parts lost in the table by all replicas in total since table creation. Value is persisted in ClickHouse Keeper and can only increase.
 -   `last_queue_update_exception` (`String`) - When the queue contains broken entries. Especially important when ClickHouse breaks backward compatibility between versions and log entries written by newer versions aren't parseable by old versions.
 -   `zookeeper_exception` (`String`) - The last exception message, got if the error happened when fetching the info from ClickHouse Keeper.
 -   `replica_is_active` ([Map(String, UInt8)](../../sql-reference/data-types/map.md)) — Map between replica name and is replica active.

@@ -14,7 +14,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <base/scope_guard.h>
 
 
@@ -54,7 +54,7 @@ public:
     void increaseThreadsCount(size_t new_threads_count);
 
     /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
-    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_);
+    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char *thread_name_);
     ~BackgroundSchedulePool();
 
 private:
@@ -86,11 +86,12 @@ private:
     std::condition_variable delayed_tasks_cond_var;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
-    ThreadFromGlobalPoolNoTracingContextPropagation delayed_thread;
+    std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
 
     CurrentMetrics::Metric tasks_metric;
+    CurrentMetrics::Increment size_metric;
     std::string thread_name;
 };
 
