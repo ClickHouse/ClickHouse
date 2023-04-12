@@ -311,7 +311,7 @@ clickhouse git-import --skip-paths 'generated\.cpp|^(contrib|docs?|website|libs/
 
 clickhouse install
 
-Usage: sudo clickhouse install [options]
+Usage: clickhouse install [options]
   -h [ --help ]                         produce help message
   --prefix arg (=/)                     prefix for all paths
   --binary-path arg (=usr/bin)          where to install binaries
@@ -399,7 +399,7 @@ clickhouse static
 
 clickhouse start
 
-Usage: sudo clickhouse start
+Usage: clickhouse start
   -h [ --help ]                         produce help message
   --prefix arg (=/)                     prefix for all paths
   --binary-path arg (=usr/bin)          directory with binary
@@ -417,7 +417,7 @@ Usage: sudo clickhouse start
 
 clickhouse stop
 
-Usage: sudo clickhouse stop
+Usage: clickhouse stop
   -h [ --help ]                         produce help message
   --prefix arg (=/)                     prefix for all paths
   --pid-path arg (=var/run/clickhouse-server)
@@ -432,7 +432,7 @@ Usage: sudo clickhouse stop
 
 clickhouse status
 
-Usage: sudo clickhouse status
+Usage: clickhouse status
   -h [ --help ]                         produce help message
   --prefix arg (=/)                     prefix for all paths
   --pid-path arg (=var/run/clickhouse-server)
@@ -441,7 +441,7 @@ Usage: sudo clickhouse status
 
 clickhouse restart
 
-Usage: sudo clickhouse restart
+Usage: clickhouse restart
   -h [ --help ]                         produce help message
   --prefix arg (=/)                     prefix for all paths
   --binary-path arg (=usr/bin)          directory with binary
