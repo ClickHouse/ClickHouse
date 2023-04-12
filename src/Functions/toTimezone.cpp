@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -99,13 +100,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                 "Should be DateTime or DateTime64", arguments[0].type->getName(), getName());
 
-        String time_zone_name;
-        if (arguments[1].column)
-            time_zone_name = extractTimeZoneNameFromColumn(*arguments[1].column);
-
-        if (time_zone_name.empty())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                "Should be const String", arguments[1].type->getName(), getName());
+        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
 
         if (which_type.isDateTime())
             return std::make_shared<DataTypeDateTime>(time_zone_name);
