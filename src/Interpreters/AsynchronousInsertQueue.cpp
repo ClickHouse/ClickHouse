@@ -480,7 +480,7 @@ try
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
 
-    auto finish_entries = [&](bool has_data)
+    auto finish_entries = [&]
     {
         for (const auto & entry : data->entries)
         {
@@ -490,15 +490,14 @@ try
 
         if (!log_elements.empty())
         {
-            auto flush_time = has_data ? std::chrono::system_clock::now() : TimePoint{};
-            auto query_id = has_data ? insert_query_id : "";
-            appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, query_id, "");
+            auto flush_time = std::chrono::system_clock::now();
+            appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
         }
     };
 
     if (total_rows == 0)
     {
-        finish_entries(false);
+        finish_entries();
         return;
     }
 
@@ -528,7 +527,7 @@ try
         throw;
     }
 
-    finish_entries(true);
+    finish_entries();
 }
 catch (const Exception & e)
 {
