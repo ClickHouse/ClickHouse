@@ -299,10 +299,21 @@ public:
         return res;
     }
 
-    /// Size of MemoryChunks in bytes.
-    size_t size() const
+    /// Size of all MemoryChunks in bytes.
+    size_t allocatedBytes() const { return size_in_bytes; }
+
+    /// Total reserved space of all MemoryChunks in bytes.
+    size_t reservedBytes() const
     {
-        return size_in_bytes;
+        size_t used_bytes = 0;
+        auto * current = head;
+        while (current)
+        {
+            used_bytes += current->pos - current->begin;
+            current = current->prev;
+        }
+
+        return used_bytes;
     }
 
     /// Bad method, don't use it -- the MemoryChunks are not your business, the entire

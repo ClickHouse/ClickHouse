@@ -726,7 +726,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
 
-    bytes_allocated += string_arena.size();
+    bytes_allocated += string_arena.allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type>
