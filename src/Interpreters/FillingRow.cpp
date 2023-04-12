@@ -1,5 +1,6 @@
 #include <Interpreters/FillingRow.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -44,21 +45,27 @@ bool FillingRow::operator==(const FillingRow & other) const
     return true;
 }
 
+bool FillingRow::operator>=(const FillingRow & other) const
+{
+    return !(*this < other);
+}
+
 bool FillingRow::next(const FillingRow & to_row)
 {
+    const size_t row_size = size();
     size_t pos = 0;
 
     /// Find position we need to increment for generating next row.
-    for (size_t s = size(); pos < s; ++pos)
+    for (; pos < row_size; ++pos)
         if (!row[pos].isNull() && !to_row.row[pos].isNull() && !equals(row[pos], to_row.row[pos]))
             break;
 
-    if (pos == size() || less(to_row.row[pos], row[pos], getDirection(pos)))
+    if (pos == row_size || less(to_row.row[pos], row[pos], getDirection(pos)))
         return false;
 
     /// If we have any 'fill_to' value at position greater than 'pos',
     ///  we need to generate rows up to 'fill_to' value.
-    for (size_t i = size() - 1; i > pos; --i)
+    for (size_t i = row_size - 1; i > pos; --i)
     {
         if (getFillDescription(i).fill_to.isNull() || row[i].isNull())
             continue;
@@ -84,7 +91,7 @@ bool FillingRow::next(const FillingRow & to_row)
     {
         bool is_less = false;
         size_t i = pos + 1;
-        for (; i < size(); ++i)
+        for (; i < row_size; ++i)
         {
             const auto & fill_from = getFillDescription(i).fill_from;
             if (!fill_from.isNull())
@@ -105,6 +112,24 @@ void FillingRow::initFromDefaults(size_t from_pos)
 {
     for (size_t i = from_pos; i < sort_description.size(); ++i)
         row[i] = getFillDescription(i).fill_from;
+}
+
+String FillingRow::dump() const
+{
+    WriteBufferFromOwnString out;
+    for (size_t i = 0; i < row.size(); ++i)
+    {
+        if (i != 0)
+            out << ", ";
+        out << row[i].dump();
+    }
+    return out.str();
+}
+
+WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row)
+{
+    out << row.dump();
+    return out;
 }
 
 }
