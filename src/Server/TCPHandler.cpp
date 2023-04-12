@@ -767,7 +767,6 @@ void TCPHandler::processInsertQuery()
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
-        sendTimezone();
         sendLogs();
 
         while (readDataNext())
@@ -1070,24 +1069,15 @@ void TCPHandler::sendInsertProfileEvents()
 
 void TCPHandler::sendTimezone()
 {
-//    if (client_tcp_protocol_version <= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES
-//            || client_tcp_protocol_version <= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-//        return;
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES)
+        return;
 
-//    const String & tz = CurrentThread::get().getQueryContext()->getSettingsRef().timezone.toString();
-    LOG_DEBUG(log, "TCPHandler::sendTimezone() query context: {}, timezone: {} ({})",
-            reinterpret_cast<const void*>(query_context.get()),
-            query_context->getSettingsRef().timezone.toString(),
-            (query_context->getSettingsRef().timezone.changed ? "changed" : "UNCHANGED"));
+    const String & tz = query_context->getSettingsRef().timezone.toString();
 
-    const String & tz = CurrentThread::get().getQueryContext()->getSettingsRef().timezone.toString();
-//    if (!tz.empty())
-//    {
-        LOG_DEBUG(log, "Sent timezone: {}", tz);
-        writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
-        writeStringBinary(tz, *out);
-        out->next();
-//    }
+    LOG_DEBUG(log, "TCPHandler::sendTimezone(): {}", tz);
+    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
+    writeStringBinary(tz, *out);
+    out->next();
 }
 
 
