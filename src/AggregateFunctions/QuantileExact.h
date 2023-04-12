@@ -8,6 +8,8 @@
 #include <base/sort.h>
 #include <base/types.h>
 
+#define QUANTILE_EXACT_MAX_ARRAY_SIZE 1'000'000'000
+
 
 namespace DB
 {
@@ -17,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -54,6 +57,9 @@ struct QuantileExactBase
     {
         size_t size = 0;
         readVarUInt(size, buf);
+        if (unlikely(size > QUANTILE_EXACT_MAX_ARRAY_SIZE))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", QUANTILE_EXACT_MAX_ARRAY_SIZE);
         array.resize(size);
         buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }

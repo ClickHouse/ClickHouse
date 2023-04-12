@@ -20,6 +20,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryCacheTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 
@@ -129,50 +130,79 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
-
-    /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
-    std::vector<LimitTransform *> limits;
-    std::vector<RemoteSource *> remote_sources;
-
+    std::vector<IProcessor *> processors;
+    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
     std::unordered_set<IProcessor *> visited;
+    bool has_limit = false;
 
     struct QueuedEntry
     {
         IProcessor * processor;
-        bool visited_limit;
+        LimitTransform * limit_processor;
+        ssize_t limit_input_port;
     };
 
     std::queue<QueuedEntry> queue;
 
-    queue.push({ output_format, false });
+    queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);
 
     while (!queue.empty())
     {
         auto * processor = queue.front().processor;
-        auto visited_limit = queue.front().visited_limit;
+        auto * limit_processor = queue.front().limit_processor;
+        auto limit_input_port = queue.front().limit_input_port;
         queue.pop();
 
-        if (!visited_limit)
+        /// Set counter based on the following cases:
+        ///   1. Remote: Set counter on Remote
+        ///   2. Limit ... PartialSorting: Set counter on PartialSorting
+        ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
+        ///   4. Limit ... Remote: Set counter on Remote
+        ///   5. Limit ... : Set counter on the input port of Limit
+
+        /// Case 1.
+        if (typeid_cast<RemoteSource *>(processor) && !limit_processor)
         {
-            if (auto * limit = typeid_cast<LimitTransform *>(processor))
+            processors.emplace_back(processor);
+            continue;
+        }
+
+        if (auto * limit = typeid_cast<LimitTransform *>(processor))
+        {
+            has_limit = true;
+
+            /// Ignore child limits
+            if (limit_processor)
+                continue;
+
+            limit_processor = limit;
+            limit_candidates[limit_processor] = {};
+        }
+        else if (limit_processor)
+        {
+            /// Case 2.
+            if (typeid_cast<PartialSortingTransform *>(processor))
             {
-                visited_limit = true;
-                limits.emplace_back(limit);
+                processors.emplace_back(processor);
+                limit_candidates[limit_processor].push_back(limit_input_port);
+                continue;
             }
 
-            if (auto * source = typeid_cast<RemoteSource *>(processor))
-                remote_sources.emplace_back(source);
-        }
-        else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
-        {
-            if (!rows_before_limit_at_least)
-                rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
+            /// Case 3.
+            if (auto * having = typeid_cast<TotalsHavingTransform *>(processor))
+            {
+                if (having->hasFilter())
+                    continue;
+            }
 
-            sorting->setRowsBeforeLimitCounter(rows_before_limit_at_least);
-
-            /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
-            continue;
+            /// Case 4.
+            if (typeid_cast<RemoteSource *>(processor))
+            {
+                processors.emplace_back(processor);
+                limit_candidates[limit_processor].push_back(limit_input_port);
+                continue;
+            }
         }
 
         /// Skip totals and extremes port for output format.
@@ -180,37 +210,58 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
             if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, visited_limit });
+                queue.push({ child_processor, limit_processor, limit_input_port });
 
             continue;
         }
 
-        for (auto & child_port : processor->getInputs())
+        if (limit_processor == processor)
         {
-            auto * child_processor = &child_port.getOutputPort().getProcessor();
-            if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, visited_limit });
+            ssize_t i = 0;
+            for (auto & child_port : processor->getInputs())
+            {
+                auto * child_processor = &child_port.getOutputPort().getProcessor();
+                if (visited.emplace(child_processor).second)
+                    queue.push({ child_processor, limit_processor, i });
+                ++i;
+            }
+        }
+        else
+        {
+            for (auto & child_port : processor->getInputs())
+            {
+                auto * child_processor = &child_port.getOutputPort().getProcessor();
+                if (visited.emplace(child_processor).second)
+                    queue.push({ child_processor, limit_processor, limit_input_port });
+            }
         }
     }
 
-    if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty()))
+    /// Case 5.
+    for (auto && [limit, ports] : limit_candidates)
     {
-        rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
-
-        for (auto & limit : limits)
-            limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
-
-        for (auto & source : remote_sources)
-            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+        /// If there are some input ports which don't have the counter, add it to LimitTransform.
+        if (ports.size() < limit->getInputs().size())
+        {
+            processors.push_back(limit);
+            for (auto port : ports)
+                limit->setInputPortHasCounter(port);
+        }
     }
 
-    /// If there is a limit, then enable rows_before_limit_at_least
-    /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
-    if (!limits.empty())
-        rows_before_limit_at_least->add(0);
+    if (!processors.empty())
+    {
+        rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
+        for (auto & processor : processors)
+            processor->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
-    if (rows_before_limit_at_least)
+        /// If there is a limit, then enable rows_before_limit_at_least
+        /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
+        if (has_limit)
+            rows_before_limit_at_least->add(0);
+
         output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+    }
 }
 
 

@@ -17,7 +17,6 @@
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
@@ -315,12 +314,12 @@ struct Keeper::KeeperHTTPContext : public IHTTPContext
 
     Poco::Timespan getReceiveTimeout() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_receive_timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
+        return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
     }
 
     Poco::Timespan getSendTimeout() const override
     {
-        return context->getConfigRef().getUInt64("keeper_server.http_send_timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
+        return {context->getConfigRef().getInt64("keeper_server.http_send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0};
     }
 
     TinyContextPtr context;
@@ -445,6 +444,9 @@ try
         return tiny_context->getConfigRef();
     };
 
+    auto tcp_receive_timeout = config().getInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
+    auto tcp_send_timeout = config().getInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC);
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
@@ -453,8 +455,8 @@ try
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
-            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+            socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
+            socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
             servers->emplace_back(
                 listen_host,
                 port_name,
@@ -462,8 +464,7 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, tiny_context->getKeeperDispatcher(),
-                            config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
-                            config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), false), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -472,8 +473,8 @@ try
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
-            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+            socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
+            socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
             servers->emplace_back(
                 listen_host,
                 secure_port_name,
@@ -481,8 +482,7 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, tiny_context->getKeeperDispatcher(),
-                        config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC),
-                        config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC), true), server_pool, socket));
+                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -490,18 +490,18 @@ try
         });
 
         const auto & config = config_getter();
+        auto http_context = httpContext();
         Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
         Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-        http_params->setTimeout(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
+        http_params->setTimeout(http_context->getReceiveTimeout());
         http_params->setKeepAliveTimeout(keep_alive_timeout);
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+        createServer(listen_host, port_name, listen_try, [&, http_context = std::move(http_context)](UInt16 port) mutable
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
-            auto http_context = httpContext();
             socket.setReceiveTimeout(http_context->getReceiveTimeout());
             socket.setSendTimeout(http_context->getSendTimeout());
             servers->emplace_back(
