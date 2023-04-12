@@ -36,7 +36,7 @@ $CLICKHOUSE_BINARY format --help | perl -0777 -pe 's/Allowed options:.*\n\n//igs
 echo -e "\nclickhouse git-import\n"
 $CLICKHOUSE_BINARY git-import --help | perl -0777 -pe 's/Allowed options:.*\n\n//igs' 
 echo -e "\nclickhouse install\n"
-$CLICKHOUSE_BINARY install --help
+$CLICKHOUSE_BINARY install --help | perl -ne "s/sudo clickhouse/clickhouse/g; print;"
 echo -e "\nclickhouse keeper-converter\n"
 $CLICKHOUSE_BINARY keeper-converter --help
 echo -e "\nclickhouse obfuscator\n"
@@ -47,13 +47,13 @@ $CLICKHOUSE_BINARY static-files-disk-uploader --help | perl -0777 -pe 's/Allowed
 
 
 echo -e "\nclickhouse start\n"
-$CLICKHOUSE_BINARY start --help
+$CLICKHOUSE_BINARY start --help | perl -ne "s/sudo clickhouse/clickhouse/g; print;"
 echo -e "\nclickhouse stop\n"
-$CLICKHOUSE_BINARY stop --help
+$CLICKHOUSE_BINARY stop --help | perl -ne "s/sudo clickhouse/clickhouse/g; print;"
 echo -e "\nclickhouse status\n"
-$CLICKHOUSE_BINARY status --help
+$CLICKHOUSE_BINARY status --help | perl -ne "s/sudo clickhouse/clickhouse/g; print;"
 echo -e "\nclickhouse restart\n"
-$CLICKHOUSE_BINARY restart --help
+$CLICKHOUSE_BINARY restart --help | perl -ne "s/sudo clickhouse/clickhouse/g; print;"
 echo -e "\nclickhouse su\n"
 $CLICKHOUSE_BINARY su --help
 echo -e "\nclickhouse hash\n"
