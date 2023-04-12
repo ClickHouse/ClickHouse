@@ -167,13 +167,7 @@ def test_session_close_shutdown(started_cluster):
 
     eph_node = "/test_node"
     node2_zk.create(eph_node, ephemeral=True)
-
-    for _ in range(100):
-        if node1_zk.exists(eph_node) != None:
-            break
-        time.sleep(0.2)
-    else:
-        assert False, "Ephemeral zknode created on node 2 is missing from node 1"
+    node1_zk.sync(eph_node)
 
     # shutdown while session is active
     node2.stop_clickhouse()
