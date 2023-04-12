@@ -112,3 +112,7 @@ If setting `keeper_map_strict_mode` is set to `true`, fetching and updating data
 ```sql
 ALTER TABLE keeper_map_table UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
 ```
+
+## Related content
+
+- Blog: [Building a Real-time Analytics Apps with ClickHouse and Hex](https://clickhouse.com/blog/building-real-time-applications-with-clickhouse-and-hex-notebook-keeper-engine)
