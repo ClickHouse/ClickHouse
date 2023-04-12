@@ -17,6 +17,7 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
+import pyspark
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -447,7 +448,16 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
 
-        self.spark_session = None
+        self.spark_session = (
+            pyspark.sql.SparkSession.builder.appName("spark_test")
+            .config(
+                "spark.jars.packages",
+                "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+            )
+            .master("local")
+            .getOrCreate()
+            .stop()
+        )
 
         self.with_azurite = False
 
