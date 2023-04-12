@@ -1,4 +1,5 @@
 #include "Processors/Formats/Impl/FreeformRowInputFormat.h"
+#include <tuple>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include "Common/Exception.h"
@@ -163,13 +164,13 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
     matchers.emplace_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
 }
 
-std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool one_string, size_t index)
+std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, size_t index)
 {
     skipWhitespacesAndDelimiters(in);
     char * start = in.position();
     std::vector<FreeformFieldMatcher::Fields> next_fields;
 
-    if (one_string)
+    if (parse_till_newline_as_one_string)
     {
         auto fields = matchers.back()->parseFields(in, index);
         NamesAndTypes columns{{fields[0].first, matchers.back()->getDataTypeFromField(fields[0].second)}};
@@ -203,7 +204,7 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
                     type_score += scoreForType(type);
                     fields_score += scoreForField(matcher->getEscapingRule(), type);
 
-                    one_string = field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher";
+                    parse_till_newline_as_one_string = field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher";
                 }
             }
 
@@ -211,7 +212,7 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
             if (columns.size() == fields.size() && (type_score > best_type_score || best_type_score <= 1))
             {
                 best_type_score = type_score;
-                next_fields.emplace_back(columns, i, fields_score, in.position(), one_string);
+                next_fields.emplace_back(columns, i, fields_score, in.position(), parse_till_newline_as_one_string);
             }
         }
         catch (Exception & e)
@@ -227,7 +228,7 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
 }
 
 void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
-    char * current_pos, Solution current_solution, std::vector<Solution> & solutions, bool one_string)
+    char * current_pos, Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string)
 {
     char * tmp = in.position();
     in.position() = current_pos;
@@ -237,7 +238,7 @@ void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
         return;
     }
 
-    const auto next_fields = readNextFields(one_string, current_solution.size);
+    const auto next_fields = readNextFields(parse_till_newline_as_one_string, current_solution.size);
     for (const auto & fields : next_fields)
     {
         auto next = current_solution;
@@ -286,12 +287,7 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         solutions.begin(),
         solutions.end(),
         [](const Solution & first, const Solution & second)
-        {
-            if (first.score != second.score)
-                return first.score > second.score;
-
-            return first.matchers_order.size() > second.matchers_order.size();
-        });
+        { return std::tie(first.score, first.matchers_order) < std::tie(second.score, second.matchers_order); });
 
     // after finding and ranking the solutions, we now run them through max_rows_to_check and pick the first one that works for all rows
     for (const auto & solution : solutions)

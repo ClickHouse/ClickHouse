@@ -259,7 +259,7 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
     readStringUntilWhitespaceInto(s, buf);
 }
 
-void readStringUntilWhitespaceDelimiter(String &s, ReadBuffer &buf)
+void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceDelimiterInto(s, buf);
