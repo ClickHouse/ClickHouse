@@ -4163,9 +4163,10 @@ class ClickHouseInstance:
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            need_fix_log_level = self.tag != "latest"
             write_embedded_config(
-                "0_common_instance_config.xml", self.config_d_dir, need_fix_log_level
+                "0_common_instance_config.xml",
+                self.config_d_dir,
+                self.with_installed_binary,
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
