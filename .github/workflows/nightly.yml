@@ -120,7 +120,7 @@ jobs:
   SonarCloud:
     runs-on: [self-hosted, builder]
     env:
-      SONAR_SCANNER_VERSION: 4.7.0.2747
+      SONAR_SCANNER_VERSION: 4.8.0.2856
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       CC: clang-15
@@ -156,15 +156,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -yq git cmake ccache ninja-build python3 yasm
           sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-      # TODO: Remove -DCMAKE_CXX_STANDARD=20 whenever SonarCloud supports c++23
       - name: Run build-wrapper
         run: |
           mkdir build
           cd build
-          cmake -DCMAKE_CXX_STANDARD=20 ..
+          cmake ..
           cd ..
           build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build/
-      # TODO: Remove --define sonar.cfamily.reportingCppStandardOverride=c++20 \ whenever SonarCloud supports c++23
       - name: Run sonar-scanner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -173,7 +171,6 @@ jobs:
           sonar-scanner \
             --define sonar.host.url="${{ env.SONAR_SERVER_URL }}" \
             --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
-            --define sonar.cfamily.reportingCppStandardOverride=c++20 \
             --define sonar.projectKey="ClickHouse_ClickHouse" \
             --define sonar.organization="clickhouse-java" \
             --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql" \
