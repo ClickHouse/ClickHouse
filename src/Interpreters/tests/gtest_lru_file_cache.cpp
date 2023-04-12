@@ -132,6 +132,12 @@ void download(const HolderPtr & holder)
     }
 }
 
+void increasePriority(const HolderPtr & holder)
+{
+    for (auto & it : *holder)
+        it->use();
+}
+
 class FileCacheTest : public ::testing::Test
 {
 public:
@@ -198,6 +204,7 @@ TEST_F(FileCacheTest, get)
             assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
             download(holder->front());
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
+            increasePriority(holder);
         }
 
         /// Current cache:    [__________]
@@ -216,6 +223,7 @@ TEST_F(FileCacheTest, get)
             assertEqual(holder, { Range(0, 9), Range(10, 14) }, { State::DOWNLOADED, State::EMPTY });
             download(get(holder, 1));
             assertEqual(holder, { Range(0, 9), Range(10, 14) }, { State::DOWNLOADED, State::DOWNLOADED });
+            increasePriority(holder);
         }
 
         /// Current cache:    [__________][_____]
@@ -229,14 +237,24 @@ TEST_F(FileCacheTest, get)
         std::cerr << "Step 3\n";
 
         /// Get [9, 9]
-        assertEqual(cache.getOrSet(key, 9, 1, {}), { Range(0, 9) }, { State::DOWNLOADED });
+        {
+            auto holder = cache.getOrSet(key, 9, 1, {});
+            assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
+            increasePriority(holder);
+        }
+
         assertEqual(cache.dumpQueue(), { Range(10, 14), Range(0, 9) });
         /// Get [9, 10]
         assertEqual(cache.getOrSet(key, 9, 2, {}),
                     { Range(0, 9),       Range(10, 14) },
                     { State::DOWNLOADED, State::DOWNLOADED });
+
         /// Get [10, 10]
-        assertEqual(cache.getOrSet(key, 10, 1, {}), { Range(10, 14) }, { State::DOWNLOADED });
+        {
+            auto holder = cache.getOrSet(key, 10, 1, {});
+            assertEqual(holder, { Range(10, 14) }, { State::DOWNLOADED });
+            increasePriority(holder);
+        }
 
         assertEqual(cache.getSnapshot(key), { Range(0, 9), Range(10, 14) });
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
@@ -245,9 +263,23 @@ TEST_F(FileCacheTest, get)
 
         std::cerr << "Step 4\n";
 
-        download(cache.getOrSet(key, 17, 4, {})); /// Get [17, 20]
-        download(cache.getOrSet(key, 24, 3, {})); /// Get [24, 26]
-        download(cache.getOrSet(key, 27, 1, {})); /// Get [27, 27]
+        {
+            auto holder = cache.getOrSet(key, 17, 4, {});
+            download(holder); /// Get [17, 20]
+            increasePriority(holder);
+        }
+
+        {
+            auto holder = cache.getOrSet(key, 24, 3, {});
+            download(holder); /// Get [24, 26]
+            increasePriority(holder);
+        }
+
+        {
+            auto holder = cache.getOrSet(key, 27, 1, {});
+            download(holder); /// Get [27, 27]
+            increasePriority(holder);
+        }
 
         /// Current cache:    [__________][_____]   [____]    [___][]
         ///                   ^          ^^     ^   ^    ^    ^   ^^^
@@ -286,6 +318,10 @@ TEST_F(FileCacheTest, get)
             assertEqual(holder3, { Range(28, 30) }, { State::EMPTY });
             assertDownloadFails(holder3->front());
             assertEqual(holder3, { Range(28, 30) }, { State::DETACHED });
+
+            increasePriority(holder);
+            increasePriority(holder2);
+            increasePriority(holder3);
         }
 
         /// Current cache:    [__________][_____][   ][____]    [___]
@@ -308,6 +344,7 @@ TEST_F(FileCacheTest, get)
             assertEqual(holder,
                         { Range(10, 14),     Range(15, 16),     Range(17, 20),     Range(21, 21) },
                         { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED });
+            increasePriority(holder);
         }
 
         /// Current cache:    [_____][__][____][_]   [___]
@@ -326,6 +363,7 @@ TEST_F(FileCacheTest, get)
                         { State::EMPTY,  State::DOWNLOADED, State::EMPTY });
             download(get(holder, 0));
             download(get(holder, 2));
+            increasePriority(holder);
         }
 
         /// Current cache:    [____][_]  [][___][__]
@@ -365,18 +403,29 @@ TEST_F(FileCacheTest, get)
             assertDownloadFails(get(holder6, 2));
             assertDownloadFails(get(holder6, 6));
             assertDownloadFails(get(holder6, 8));
+
+            increasePriority(holder);
+            increasePriority(holder2);
+            increasePriority(holder3);
+            increasePriority(holder4);
+            increasePriority(holder5);
+            increasePriority(holder6);
         }
 
         /// Current cache:    [___]       [_][___][_]   [__]
         ///                   ^   ^       ^  ^   ^  ^   ^  ^
         ///                   2   4       23 24  26 27  30 31
         assertEqual(cache.getSnapshot(key), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
-        assertEqual(cache.dumpQueue(), { Range(27, 27), Range(24, 26), Range(23, 23), Range(30, 31), Range(2, 4) });
+        assertEqual(cache.dumpQueue(), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
 
         std::cerr << "Step 9\n";
 
         /// Get [2, 4]
-        assertEqual(cache.getOrSet(key, 2, 3, {}), { Range(2, 4) }, { State::DOWNLOADED });
+        {
+            auto holder = cache.getOrSet(key, 2, 3, {});
+            assertEqual(holder, { Range(2, 4) }, { State::DOWNLOADED });
+            increasePriority(holder);
+        }
 
 
         {
@@ -429,6 +478,8 @@ TEST_F(FileCacheTest, get)
             ASSERT_TRUE(file_segment.state() == State::DOWNLOADED);
 
             other_1.join();
+
+            increasePriority(holder);
         }
 
         /// Current cache:    [___]       [___][_][__][__]

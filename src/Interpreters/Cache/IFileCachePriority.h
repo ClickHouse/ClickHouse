@@ -14,6 +14,7 @@ class IFileCachePriority;
 using FileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
 struct KeyMetadata;
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
+struct LockedKey;
 
 namespace ErrorCodes
 {
@@ -21,34 +22,25 @@ namespace ErrorCodes
 }
 
 /// IFileCachePriority is used to maintain the priority of cached data.
-class IFileCachePriority
+class IFileCachePriority : private boost::noncopyable
 {
-friend class LockedCachePriority;
 public:
     using Key = FileCacheKey;
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     struct Entry
     {
-        Entry(const Key & key_, size_t offset_, size_t size_, std::weak_ptr<KeyMetadata> key_metadata_)
-            : key(key_) , offset(offset_) , size(size_) , key_metadata(key_metadata_) {}
+        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_)
+            : key(key_), offset(offset_), size(size_), key_metadata(key_metadata_) {}
 
-        KeyMetadataPtr getKeyMetadata() const
-        {
-            auto result = key_metadata.lock();
-            if (!result)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata expired");
-            return result;
-        }
-
-        Key key;
-        size_t offset;
+        const Key key;
+        const size_t offset;
         size_t size;
         size_t hits = 0;
         /// In fact, it is guaranteed that the lifetime of key metadata is longer
         /// than Entry, but it is made as weak_ptr to avoid cycle in shared pointer
         /// references (because entry actually lies in key metadata).
-        const std::weak_ptr<KeyMetadata> key_metadata;
+        const KeyMetadataPtr key_metadata;
     };
 
     /// Provides an iterator to traverse the cache priority. Under normal circumstances,
@@ -57,20 +49,18 @@ public:
     /// can only traverse the records in the low priority queue.
     class IIterator
     {
-    friend class LockedCachePriorityIterator;
     public:
         virtual ~IIterator() = default;
 
         virtual const Entry & getEntry() const = 0;
 
-    protected:
         virtual Entry & getEntry() = 0;
 
-        virtual size_t use() = 0;
+        virtual size_t use(const CacheGuard::Lock &) = 0;
 
-        virtual void incrementSize(ssize_t) = 0;
+        virtual void updateSize(ssize_t size) = 0;
 
-        virtual std::shared_ptr<IIterator> remove() = 0;
+        virtual std::shared_ptr<IIterator> remove(const CacheGuard::Lock &) = 0;
     };
 
     using Iterator = std::shared_ptr<IIterator>;
@@ -82,7 +72,7 @@ public:
         CONTINUE,
         REMOVE_AND_CONTINUE,
     };
-    using IterateFunc = std::function<IterationResult(const Entry &)>;
+    using IterateFunc = std::function<IterationResult(const Entry &, LockedKey &)>;
 
     IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
 
@@ -92,21 +82,23 @@ public:
 
     size_t getSizeLimit() const { return max_size; }
 
-protected:
+    virtual size_t getSize(const CacheGuard::Lock &) const = 0;
+
+    virtual size_t getElementsCount(const CacheGuard::Lock &) const = 0;
+
+    virtual Iterator add(
+        const Key & key, size_t offset, size_t size,
+        KeyMetadataPtr key_metadata, const CacheGuard::Lock &) = 0;
+
+    virtual void pop(const CacheGuard::Lock &) = 0;
+
+    virtual void removeAll(const CacheGuard::Lock &) = 0;
+
+    virtual void iterate(IterateFunc && func, const CacheGuard::Lock &) = 0;
+
+private:
     const size_t max_size = 0;
     const size_t max_elements = 0;
-
-    virtual size_t getSize() const = 0;
-
-    virtual size_t getElementsCount() const = 0;
-
-    virtual Iterator add(const Key & key, size_t offset, size_t size, std::weak_ptr<KeyMetadata> key_metadata) = 0;
-
-    virtual void pop() = 0;
-
-    virtual void removeAll() = 0;
-
-    virtual void iterate(IterateFunc && func) = 0;
 };
 
 };

@@ -1,6 +1,8 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/randomSeed.h>
+
 
 namespace CurrentMetrics
 {
@@ -17,7 +19,11 @@ namespace ErrorCodes
 }
 
 IFileCachePriority::Iterator LRUFileCachePriority::add(
-    const Key & key, size_t offset, size_t size, std::weak_ptr<KeyMetadata> key_metadata)
+    const Key & key,
+    size_t offset,
+    size_t size,
+    KeyMetadataPtr key_metadata,
+    const CacheGuard::Lock &)
 {
 #ifndef NDEBUG
     for (const auto & entry : queue)
@@ -26,7 +32,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
-                entry.key.toString(), entry.offset, entry.size);
+                entry.key, entry.offset, entry.size);
     }
 #endif
 
@@ -36,7 +42,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Not enough space to add {}:{} with size {}: current size: {}/{}",
-            key.toString(), offset, size, current_size, getSizeLimit());
+            key, offset, size, current_size, getSizeLimit());
     }
 
     current_size += size;
@@ -46,12 +52,12 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
+    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key, offset);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }
 
-void LRUFileCachePriority::removeAll()
+void LRUFileCachePriority::removeAll(const CacheGuard::Lock &)
 {
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, current_size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, queue.size());
@@ -62,7 +68,7 @@ void LRUFileCachePriority::removeAll()
     current_size = 0;
 }
 
-void LRUFileCachePriority::pop()
+void LRUFileCachePriority::pop(const CacheGuard::Lock &)
 {
     remove(queue.begin());
 }
@@ -74,7 +80,7 @@ LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIter
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Removed entry from LRU queue, key: {}, offset: {}", it->key.toString(), it->offset);
+    LOG_TEST(log, "Removed entry from LRU queue, key: {}, offset: {}", it->key, it->offset);
     return queue.erase(it);
 }
 
@@ -84,11 +90,18 @@ LRUFileCachePriority::LRUFileCacheIterator::LRUFileCacheIterator(
 {
 }
 
-void LRUFileCachePriority::iterate(IterateFunc && func)
+void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &)
 {
     for (auto it = queue.begin(); it != queue.end();)
     {
-        auto result = func(*it);
+        auto locked_key = it->key_metadata->lock();
+        if (locked_key->getKeyState() != KeyMetadata::KeyState::ACTIVE)
+        {
+            it = remove(it);
+            continue;
+        }
+
+        auto result = func(*it, *locked_key);
         switch (result)
         {
             case IterationResult::BREAK:
@@ -109,19 +122,22 @@ void LRUFileCachePriority::iterate(IterateFunc && func)
     }
 }
 
-LRUFileCachePriority::Iterator LRUFileCachePriority::LRUFileCacheIterator::remove()
+LRUFileCachePriority::Iterator LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
 {
     return std::make_shared<LRUFileCacheIterator>(cache_priority, cache_priority->remove(queue_iter));
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::incrementSize(ssize_t size)
+void LRUFileCachePriority::LRUFileCacheIterator::updateSize(ssize_t size)
 {
     cache_priority->current_size += size;
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
+    if (size > 0)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
+    else
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, size);
     queue_iter->size += size;
 }
 
-size_t LRUFileCachePriority::LRUFileCacheIterator::use()
+size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CacheGuard::Lock &)
 {
     cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, queue_iter);
     return ++queue_iter->hits;

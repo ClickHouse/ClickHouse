@@ -32,8 +32,8 @@ class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 struct FileSegmentMetadata;
-struct LockedKeyMetadata;
-using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
+struct LockedKey;
+using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct KeyMetadata;
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
@@ -73,13 +73,7 @@ struct CreateFileSegmentSettings
 
 class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
 {
-
-friend class FileCache;
-friend struct FileSegmentsHolder;
-friend class FileSegmentRangeWriter;
-friend class StorageSystemFilesystemCache;
-friend struct LockedKeyMetadata;
-friend struct FileSegmentMetadata;
+friend struct LockedKey;
 
 public:
     using Key = FileCacheKey;
@@ -87,6 +81,7 @@ public:
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
     using Downloader = std::string;
     using DownloaderId = std::string;
+    using CachePriorityIterator = IFileCachePriority::Iterator;
 
     enum class State
     {
@@ -126,11 +121,11 @@ public:
         const Key & key_,
         size_t offset_,
         size_t size_,
-        std::weak_ptr<KeyMetadata> key_metadata,
-        IFileCachePriority::Iterator queue_iterator_,
-        FileCache * cache_,
         State download_state_,
-        const CreateFileSegmentSettings & create_settings);
+        const CreateFileSegmentSettings & create_settings = {},
+        FileCache * cache_ = nullptr,
+        std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
+        CachePriorityIterator queue_iterator_ = CachePriorityIterator{});
 
     ~FileSegment() = default;
 
@@ -173,7 +168,7 @@ public:
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
 
-    String getPathInLocalCache() const { return file_path; }
+    String getPathInLocalCache() const;
 
     /**
      * ========== Methods for _any_ file segment's owner ========================
@@ -216,7 +211,7 @@ public:
     /// 2. Detached file segment can still be hold by some cache users, but it's state became
     /// immutable at the point it was detached, any non-const / stateful method will throw an
     /// exception.
-    void detach(const FileSegmentGuard::Lock &, const LockedKeyMetadata &);
+    void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
 
@@ -267,7 +262,13 @@ public:
 
     size_t getReservedSize() const;
 
-    IFileCachePriority::Iterator & getQueueIterator() const { return queue_iterator; }
+    CachePriorityIterator getQueueIterator() const;
+
+    void setQueueIterator(CachePriorityIterator iterator);
+
+    KeyMetadataPtr getKeyMetadata() const;
+
+    void use();
 
 private:
     String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
@@ -289,30 +290,29 @@ private:
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
 
-    LockedKeyMetadataPtr lockKeyMetadata(bool assert_exists = true) const;
-    KeyMetadataPtr getKeyMetadata() const;
+    LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
     KeyMetadataPtr tryGetKeyMetadata() const;
 
     /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
     /// Function might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeUnlocked(LockedKeyMetadata & locked_key, const CacheGuard::Lock &);
+    void completeUnlocked(LockedKey & locked_key);
 
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
 
     void wrapWithCacheInfo(Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
 
+    Key file_key;
     Range segment_range;
-
-    /// Iterator is put here on first reservation attempt, if successful.
-    mutable IFileCachePriority::Iterator queue_iterator;
+    const FileSegmentKind segment_kind;
+    /// Size of the segment is not known until it is downloaded and
+    /// can be bigger than max_file_segment_size.
+    const bool is_unbound = false;
 
     std::atomic<State> download_state;
-
-    /// The one who prepares the download
-    DownloaderId downloader_id;
+    DownloaderId downloader_id; /// The one who prepares the download
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;
@@ -324,24 +324,18 @@ private:
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
-    std::condition_variable cv;
-
-    Key file_key;
-    const std::string file_path;
+    mutable CachePriorityIterator queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
+    std::condition_variable cv;
 
     Poco::Logger * log;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    const FileSegmentKind segment_kind;
-
-    /// Size of the segment is not known until it is downloaded and can be bigger than max_file_segment_size.
-    const bool is_unbound = false;
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
+
 
 struct FileSegmentsHolder : private boost::noncopyable
 {
