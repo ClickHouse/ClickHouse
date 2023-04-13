@@ -448,16 +448,8 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
 
-        self.spark_session = (
-            pyspark.sql.SparkSession.builder.appName("spark_test")
-            .config(
-                "spark.jars.packages",
-                "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-            )
-            .master("local")
-            .getOrCreate()
-            .stop()
-        )
+        self.with_spark = False
+        self.spark_session = None
 
         self.with_azurite = False
 
@@ -1448,6 +1440,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
+        with_spark=False,
         hostname=None,
         env_variables=None,
         image="clickhouse/integration-test",
@@ -1771,6 +1764,18 @@ class ClickHouseCluster:
         if with_hive:
             cmds.append(
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_spark:
+            spark_session = (
+                pyspark.sql.SparkSession.builder.appName("spark_test")
+                .config(
+                    "spark.jars.packages",
+                    "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+                )
+                .master("local")
+                .getOrCreate()
+                .stop()
             )
 
         logging.debug(
