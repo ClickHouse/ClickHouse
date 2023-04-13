@@ -37,9 +37,6 @@ public:
         const size_t offset;
         size_t size;
         size_t hits = 0;
-        /// In fact, it is guaranteed that the lifetime of key metadata is longer
-        /// than Entry, but it is made as weak_ptr to avoid cycle in shared pointer
-        /// references (because entry actually lies in key metadata).
         const KeyMetadataPtr key_metadata;
     };
 
@@ -52,15 +49,17 @@ public:
     public:
         virtual ~IIterator() = default;
 
+        virtual size_t use(const CacheGuard::Lock &) = 0;
+
+        virtual std::shared_ptr<IIterator> remove(const CacheGuard::Lock &) = 0;
+
         virtual const Entry & getEntry() const = 0;
 
         virtual Entry & getEntry() = 0;
 
-        virtual size_t use(const CacheGuard::Lock &) = 0;
+        virtual void annul() = 0;
 
         virtual void updateSize(ssize_t size) = 0;
-
-        virtual std::shared_ptr<IIterator> remove(const CacheGuard::Lock &) = 0;
     };
 
     using Iterator = std::shared_ptr<IIterator>;

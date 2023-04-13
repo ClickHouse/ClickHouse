@@ -95,7 +95,8 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
     for (auto it = queue.begin(); it != queue.end();)
     {
         auto locked_key = it->key_metadata->lock();
-        if (locked_key->getKeyState() != KeyMetadata::KeyState::ACTIVE)
+        if (it->size == 0
+            || locked_key->getKeyState() != KeyMetadata::KeyState::ACTIVE)
         {
             it = remove(it);
             continue;
@@ -127,6 +128,12 @@ LRUFileCachePriority::Iterator LRUFileCachePriority::LRUFileCacheIterator::remov
     return std::make_shared<LRUFileCacheIterator>(cache_priority, cache_priority->remove(queue_iter));
 }
 
+void LRUFileCachePriority::LRUFileCacheIterator::annul()
+{
+    cache_priority->current_size -= queue_iter->size;
+    queue_iter->size = 0;
+}
+
 void LRUFileCachePriority::LRUFileCacheIterator::updateSize(ssize_t size)
 {
     cache_priority->current_size += size;
@@ -135,6 +142,9 @@ void LRUFileCachePriority::LRUFileCacheIterator::updateSize(ssize_t size)
     else
         CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, size);
     queue_iter->size += size;
+
+    chassert(cache_priority->current_size >= 0);
+    chassert(queue_iter->size >= 0);
 }
 
 size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CacheGuard::Lock &)
