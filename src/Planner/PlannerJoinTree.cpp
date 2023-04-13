@@ -33,6 +33,9 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
@@ -383,46 +386,6 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     prewhere_outputs.insert(prewhere_outputs.end(), required_output_nodes.begin(), required_output_nodes.end());
 }
 
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        SelectQueryInfo & table_expression_query_info,
-        PlannerContextPtr & planner_context)
-{
-    const auto & query_context = planner_context->getQueryContext();
-
-    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
-
-    QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
-    query_analysis_pass.run(filter_query_tree, query_context);
-
-    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression_query_info.table_expression);
-    const auto table_expression_names = table_expression_data.getColumnNames();
-    NameSet table_expression_required_names_without_filter(table_expression_names.begin(), table_expression_names.end());
-
-    collectSourceColumns(filter_query_tree, planner_context);
-    collectSets(filter_query_tree, *planner_context);
-
-    auto filter_actions_dag = std::make_shared<ActionsDAG>();
-
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
-    if (expression_nodes.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Filter actions must return single output node. Actual {}",
-            expression_nodes.size());
-
-    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
-    filter_actions_outputs = std::move(expression_nodes);
-
-    std::string filter_node_name = filter_actions_outputs[0]->result_name;
-    bool remove_filter_column = true;
-
-    for (const auto & filter_input_node : filter_actions_dag->getInputs())
-        if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
-            filter_actions_outputs.push_back(filter_input_node);
-
-    return {std::move(filter_actions_dag), std::move(filter_node_name), remove_filter_column};
-}
-
 FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context)
@@ -434,7 +397,7 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     if (!row_policy_filter)
         return {};
 
-    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info, planner_context);
+    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
 }
 
 FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
@@ -465,7 +428,48 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
             *storage,
             query_context);
 
-    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info, planner_context);
+    return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
+}
+
+/// Apply filters from additional_table_filters setting
+FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
+    const String & table_expression_alias,
+    SelectQueryInfo & table_expression_query_info,
+    PlannerContextPtr & planner_context)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto const & additional_filters = settings.additional_table_filters.value;
+    if (additional_filters.empty())
+        return {};
+
+    auto const & storage_id = storage->getStorageID();
+
+    ASTPtr additional_filter_ast;
+    for (size_t i = 0; i < additional_filters.size(); ++i)
+    {
+        const auto & tuple = additional_filters[i].safeGet<const Tuple &>();
+        auto const & table = tuple.at(0).safeGet<String>();
+        auto const & filter = tuple.at(1).safeGet<String>();
+
+        if (table == table_expression_alias ||
+            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
+            (table == storage_id.getFullNameNotQuoted()))
+        {
+            ParserExpression parser;
+            additional_filter_ast = parseQuery(
+                parser, filter.data(), filter.data() + filter.size(),
+                "additional filter", settings.max_query_size, settings.max_parser_depth);
+            break;
+        }
+    }
+
+    if (!additional_filter_ast)
+        return {};
+
+    table_expression_query_info.additional_filter_ast = additional_filter_ast;
+    return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
@@ -695,6 +699,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
                     }
                 }
+
+                const auto & table_expression_alias = table_expression->getAlias();
+                auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
+                add_filter(additional_filters_info, "additional filter");
 
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
@@ -994,7 +1002,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         }
     }
 
-    auto table_join = std::make_shared<TableJoin>(settings, query_context->getTemporaryVolume());
+    auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume());
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
     table_join->getTableJoin().kind = join_kind;
 

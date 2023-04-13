@@ -25,7 +25,7 @@ from pyspark.sql.functions import monotonically_increasing_id, row_number
 from pyspark.sql.window import Window
 
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__), with_spark=True)
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def get_spark():
@@ -46,7 +46,7 @@ def get_spark():
 
 @pytest.fixture(scope="module")
 def started_cluster():
-    cluster = ClickHouseCluster(__file__)
+    cluster = ClickHouseCluster(__file__, with_spark=True)
     try:
         cluster.add_instance(
             "node1",
