@@ -68,7 +68,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-//    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set_in_progress)
         map.add("Set", description);
 }
 

@@ -53,7 +53,7 @@ public:
 
         if (storage_set)
         {
-            /// TODO: need to handle storage_set as not-yet-built set?
+            /// Handle storage_set as ready set.
             planner_context.registerSet(set_key, PlannerSet(FutureSet(storage_set->getSet())));
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
