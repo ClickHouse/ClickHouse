@@ -5,6 +5,7 @@
 
 #include <base/hex.h>
 #include <Common/Macros.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -3223,7 +3224,14 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         auto merges_and_mutations_queued = queue.countMergesAndPartMutations();
         size_t merges_and_mutations_sum = merges_and_mutations_queued.merges + merges_and_mutations_queued.mutations;
-        if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
+        if (!canEnqueueBackgroundTask())
+        {
+            LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate."
+                "Current background tasks memory usage: {}.",
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
+        }
+        else if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
         {
             LOG_TRACE(log, "Number of queued merges ({}) and part mutations ({})"
                 " is greater than max_replicated_merges_in_queue ({}), so won't select new parts to merge or mutate.",
