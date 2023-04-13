@@ -664,6 +664,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
     file_segment.getKeyMetadata()->createBaseDirectory();
+    file_segment.reserved_size += size;
     return true;
 }
 

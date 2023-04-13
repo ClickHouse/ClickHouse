@@ -380,7 +380,7 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lock).empty());
         chassert(!isDownloaderUnlocked(lock));
 
-        [[maybe_unused]] auto ok = cv.wait_for(lock, std::chrono::seconds(60), [&, this]()
+        [[maybe_unused]] const auto ok = cv.wait_for(lock, std::chrono::seconds(60), [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset(true);
         });
@@ -467,14 +467,6 @@ bool FileSegment::reserve(size_t size_to_reserve)
             segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
         reserved = cache->tryReserve(*this, size_to_reserve);
-        if (reserved)
-        {
-            /// No lock is required because reserved size is always
-            /// mananaged (read/modified) by the downloader only
-            /// or in isLastOwnerOfFileSegment() case.
-            /// It is made atomic because of getInfoForLog.
-            reserved_size += size_to_reserve;
-        }
         chassert(assertCorrectness());
     }
 
