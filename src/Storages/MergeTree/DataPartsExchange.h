@@ -1,13 +1,12 @@
 #pragma once
 
-#include "Storages/MergeTree/MergeTreePartInfo.h"
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/Throttler.h>
 
 
@@ -21,6 +20,7 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
+class PooledReadWriteBufferFromHTTP;
 
 namespace DataPartsExchange
 {

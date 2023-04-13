@@ -18,6 +18,7 @@ main_configs = [
 
 user_configs = [
     "configs/allow_database_types.xml",
+    "configs/zookeeper_retries.xml",
 ]
 
 node1 = cluster.add_instance(
@@ -429,7 +430,7 @@ def test_replicated_database_async():
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
 
 
-# By default `backup_keeper_value_max_size` is 1 MB, but in this test we'll set it to 50 bytes just to check it works.
+# By default `backup_restore_keeper_value_max_size` is 1 MB, but in this test we'll set it to 50 bytes just to check it works.
 def test_keeper_value_max_size():
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
@@ -450,7 +451,7 @@ def test_keeper_value_max_size():
     backup_name = new_backup_name()
     node1.query(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}",
-        settings={"backup_keeper_value_max_size": 50},
+        settings={"backup_restore_keeper_value_max_size": 50},
     )
 
     node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")

@@ -81,7 +81,7 @@ struct ReadSettings
     size_t mmap_threshold = 0;
     MMappedFileCache * mmap_cache = nullptr;
 
-    /// For 'pread_threadpool' method. Lower is more priority.
+    /// For 'pread_threadpool'/'io_uring' method. Lower is more priority.
     size_t priority = 0;
 
     bool load_marks_asynchronously = true;
@@ -109,6 +109,7 @@ struct ReadSettings
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
+    ThrottlerPtr local_throttler;
 
     // Resource to be used during reading
     ResourceLink resource_link;
