@@ -19,7 +19,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>

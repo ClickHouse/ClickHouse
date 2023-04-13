@@ -6,20 +6,10 @@
 #include <Common/Exception.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/Guards.h>
+#include <Interpreters/Cache/FileCache_fwd_internal.h>
 
 namespace DB
 {
-
-class IFileCachePriority;
-using FileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
-struct KeyMetadata;
-using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
-struct LockedKey;
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// IFileCachePriority is used to maintain the priority of cached data.
 class IFileCachePriority : private boost::noncopyable
@@ -71,7 +61,7 @@ public:
         CONTINUE,
         REMOVE_AND_CONTINUE,
     };
-    using IterateFunc = std::function<IterationResult(const Entry &, LockedKey &)>;
+    using IterateFunc = std::function<IterationResult(LockedKey &, FileSegmentMetadataPtr)>;
 
     IFileCachePriority(size_t max_size_, size_t max_elements_) : max_size(max_size_), max_elements(max_elements_) {}
 

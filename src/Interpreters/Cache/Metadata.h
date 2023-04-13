@@ -4,13 +4,10 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/FileCache_fwd_internal.h>
 
 namespace DB
 {
-class FileSegment;
-using FileSegmentPtr = std::shared_ptr<FileSegment>;
-struct LockedKey;
-using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct CleanupQueue;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 

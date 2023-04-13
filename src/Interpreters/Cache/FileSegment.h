@@ -11,7 +11,7 @@
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
-#include <list>
+#include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <queue>
 
 
@@ -25,17 +25,7 @@ extern const Metric CacheFileSegments;
 namespace DB
 {
 
-class FileCache;
 class ReadBufferFromFileBase;
-
-class FileSegment;
-using FileSegmentPtr = std::shared_ptr<FileSegment>;
-using FileSegments = std::list<FileSegmentPtr>;
-struct FileSegmentMetadata;
-struct LockedKey;
-using LockedKeyPtr = std::shared_ptr<LockedKey>;
-struct KeyMetadata;
-using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
