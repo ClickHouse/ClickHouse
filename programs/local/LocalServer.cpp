@@ -9,6 +9,7 @@
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -647,7 +648,7 @@ void LocalServer::processConfig()
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    DatabaseCatalog::instance().attachDatabase(default_database, CreateClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
