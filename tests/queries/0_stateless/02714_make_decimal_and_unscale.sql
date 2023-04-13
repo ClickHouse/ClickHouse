@@ -1,0 +1,23 @@
+SELECT makeDecimal(10987654321, 40, 3);
+SELECT makeDecimal(toInt128(10987654321), 40, 3);
+SELECT makeDecimal(toInt128(10987654321), 35, 3);
+SELECT makeDecimal(toInt128(10987654321), 18, 3);
+SELECT makeDecimal(toInt128(7654321),8,3);
+SELECT makeDecimal(toInt128(10987654321),8,3); -- { serverError 407 }
+SELECT makeDecimal(toInt64(10987654321), 38, 3);
+SELECT makeDecimal(toInt32(123456), 38, 3);
+SELECT makeDecimal(toInt16(1234), 38, 3);
+SELECT makeDecimal(toInt8(123), 38, 3);
+SELECT toTypeName(makeDecimal(toInt128(10987654321), 40, 3));
+SELECT toTypeName(makeDecimal(toInt64(10987654321), 35, 3));
+SELECT toTypeName(makeDecimal(toInt128(10987654321), 18, 3));
+SELECT toTypeName(makeDecimal(toInt128(87654321), 9, 2));
+SELECT makeDecimalOrNull(toInt128(10987654321),8,3);
+SELECT unscaleValue(makeDecimal(10987654321, 40, 3));
+SELECT unscaleValue(makeDecimal(toInt128(10987654321), 35, 3));
+SELECT unscaleValue(makeDecimal(toInt128(10987654321), 18, 3));
+SELECT unscaleValue(makeDecimal(toInt128(7654321),8,3));
+SELECT toTypeName(unscaleValue(makeDecimal(10987654321, 40, 3)));
+SELECT toTypeName(unscaleValue(makeDecimal(toInt128(10987654321), 35, 3)));
+SELECT toTypeName(unscaleValue(makeDecimal(toInt128(10987654321), 18, 3)));
+SELECT toTypeName(unscaleValue(makeDecimal(toInt128(7654321),8,3)));
