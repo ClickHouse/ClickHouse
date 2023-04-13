@@ -706,6 +706,11 @@ Block HashJoin::prepareRightBlock(const Block & block) const
 
 bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 {
+    std::cout <<"addJoinedBlock, clause size: " << table_join->getClauses().size() << std::endl;
+    for (auto & clause : table_join->getClauses())
+    {
+        std::cout << "clause: " << clause.formatDebug() << std::endl;
+    }
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 

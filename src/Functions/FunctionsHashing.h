@@ -1063,7 +1063,7 @@ public:
     static constexpr auto name = Impl::name;
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
+    //bool useDefaultImplementationForNothing() const override { return false; }
 
 private:
     using ToType = typename Impl::ReturnType;
