@@ -208,6 +208,12 @@ public:
         , pool(metric_threads, metric_active_threads, max_threads)
     {}
 
+    // WARNING: all Task instances returned by `schedule()` should be destructed before AsyncLoader
+    ~AsyncLoader()
+    {
+        stop();
+    }
+
     // Start workers to execute scheduled load jobs
     void start()
     {
