@@ -67,6 +67,8 @@ public:
     /// Build this set from the result of the subquery.
     String key;
     SetPtr set_in_progress;
+    /// After set_in_progress is finished it will be put into promise_to_fill_set and thus all FutureSet's
+    /// that are referencing this set will be filled.
     std::promise<SetPtr> promise_to_fill_set;
     FutureSet set = FutureSet{promise_to_fill_set.get_future()};
 
@@ -142,8 +144,6 @@ using SharedSet = std::shared_future<SetPtr>;
 /// This set cache is used to avoid building the same set multiple times. It is different from PreparedSets in way that
 /// it can be used across multiple queries. One use case is when we execute the same mutation on multiple parts. In this
 /// case each part is processed by a separate mutation task but they can share the same set.
-
-/// TODO: need to distinguish between sets with and w/o set_elements!
 class PreparedSetsCache
 {
 public:

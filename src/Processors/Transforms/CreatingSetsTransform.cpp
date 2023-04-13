@@ -68,7 +68,7 @@ void CreatingSetsTransform::startSubquery()
             {
                 LOG_TRACE(log, "Waiting for set to be build by another thread, key: {}", subquery.key);
                 SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
-                SetPtr ready_set = set_built_by_another_thread.get();
+                const SetPtr & ready_set = set_built_by_another_thread.get();
                 if (!ready_set)
                 {
                     LOG_TRACE(log, "Failed to use set from cache, key: {}", subquery.key);

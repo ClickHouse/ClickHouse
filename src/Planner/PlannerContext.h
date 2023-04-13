@@ -67,7 +67,7 @@ public:
         , subquery_node(std::move(subquery_node_))
     {}
 
-    /// Get set
+    /// Get a reference to a set that might be not built yet
     const FutureSet & getSet() const
     {
         return set;
@@ -79,10 +79,14 @@ public:
         return subquery_node;
     }
 
-    std::promise<SetPtr> getPromiseToBuildSet() const { return std::move(promise_to_build_set); }
+    /// This promise will be fulfilled when set is built and all FutureSet objects will become ready
+    std::promise<SetPtr> extractPromiseToBuildSet()
+    {
+        return std::move(promise_to_build_set);
+    }
 
 private:
-    mutable std::promise<SetPtr> promise_to_build_set; // FIXME: mutable is a hack
+    std::promise<SetPtr> promise_to_build_set;
     FutureSet set;
 
     QueryTreeNodePtr subquery_node;
@@ -190,7 +194,7 @@ public:
     const PlannerSet & getSetOrThrow(const SetKey & key) const;
 
     /// Get set for key, if no set is registered null is returned
-    const PlannerSet * getSetOrNull(const SetKey & key) const;
+    PlannerSet * getSetOrNull(const SetKey & key);
 
     /// Get registered sets
     const SetKeyToSet & getRegisteredSets() const

@@ -632,7 +632,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     column.name = set_key;
     column.type = std::make_shared<DataTypeSet>();
 
-    /// TODO: Properly fix this to use FutureSet for non-yet-created sets.
     bool set_is_created = planner_set.getSet().isCreated();
     auto column_set = ColumnSet::create(1, planner_set.getSet());
 
