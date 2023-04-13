@@ -28,7 +28,7 @@ class AsyncLoader;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int ASYNC_LOAD_SCHEDULE_FAILED;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
     extern const int ASYNC_LOAD_DEPENDENCY_FAILED;
@@ -71,7 +71,7 @@ public:
             std::rethrow_exception(exception);
     }
 
-    const LoadJobSet dependencies; // jobs to be done before this one, with ownership
+    const LoadJobSet dependencies; // jobs to be done before this one (with ownership), it is `const` to make creation of cycles hard
     const String name;
     std::atomic<ssize_t> priority{0};
 
@@ -245,12 +245,13 @@ public:
         for (const auto & job : jobs)
         {
             if (job->status() != LoadStatus::PENDING)
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Trying to schedule already finished load job '{}'", job->name);
+                throw Exception(ErrorCodes::ASYNC_LOAD_SCHEDULE_FAILED, "Trying to schedule already finished load job '{}'", job->name);
             if (scheduled_jobs.contains(job))
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' has been already scheduled", job->name);
+                throw Exception(ErrorCodes::ASYNC_LOAD_SCHEDULE_FAILED, "Load job '{}' has been already scheduled", job->name);
         }
 
-        // TODO(serxa): ensure scheduled_jobs graph will have no cycles, otherwise we have infinite recursion and other strange stuff?
+        // Ensure scheduled_jobs graph will have no cycles. The only way to get a cycle is to add a cycle, assuming old jobs cannot reference new ones.
+        checkCycle(jobs, lock);
 
         // We do not want any exception to be throws after this point, because the following code is not exception-safe
         DENY_ALLOCATIONS_IN_SCOPE;
@@ -338,6 +339,41 @@ public:
     }
 
 private:
+    void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock)
+    {
+        LoadJobSet left = jobs;
+        LoadJobSet visited;
+        visited.reserve(left.size());
+        while (!left.empty())
+        {
+            LoadJobPtr job = *left.begin();
+            checkCycleImpl(job, left, visited, lock);
+        }
+    }
+
+    String checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock)
+    {
+        if (!left.contains(job))
+            return {}; // Do not consider external dependencies and already processed jobs
+        if (auto [_, inserted] = visited.insert(job); !inserted)
+        {
+            visited.erase(job); // Mark where cycle ends
+            return job->name;
+        }
+        for (const auto & dep : job->dependencies)
+        {
+            if (auto chain = checkCycleImpl(dep, left, visited, lock); !chain.empty())
+            {
+                if (!visited.contains(job)) // Check for cycle end
+                    throw Exception(ErrorCodes::ASYNC_LOAD_SCHEDULE_FAILED, "Load job dependency cycle detected: {} -> {}", job->name, chain);
+                else
+                    return fmt::format("{} -> {}", job->name, chain); // chain is not a cycle yet -- continue building
+            }
+        }
+        left.erase(job);
+        return {};
+    }
+
     void canceled(const LoadJobPtr & job, std::unique_lock<std::mutex> & lock)
     {
         std::exception_ptr e;
@@ -453,7 +489,6 @@ private:
 
     void spawn(std::unique_lock<std::mutex> &)
     {
-        // TODO(serxa): add metrics for number of active workers or executing jobs
         workers++;
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -520,6 +555,8 @@ private:
 
     std::mutex mutex;
     bool is_running = false;
+
+    // TODO(serxa): add metrics for number of jobs in every state
 
     // Full set of scheduled pending jobs along with scheduling info
     std::unordered_map<LoadJobPtr, Info> scheduled_jobs;
