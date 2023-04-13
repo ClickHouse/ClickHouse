@@ -96,6 +96,7 @@ enum {
     ListFiles = 19,
     ReadFile = 20,              // ---------- HARD ----------
     WriteFile = 21,             // ---------- HARD ----------
+    EndWriteFile = 121,
     RemoveFile = 22,
     RemoveFileIfExists = 23,
     RemoveDirectory = 24,
@@ -106,6 +107,7 @@ enum {
     SetReadOnly = 29,                       // Not now
     CreateHardLink = 30,
     TruncateFile = 31,                      // Not now
+    DataPacket = 55,
     Error = 255                 // OK
 };
 
@@ -304,6 +306,11 @@ void RemoteFSHandler::receivePacket()
             writeVarUInt(CreateFile, *out);
             out->next();
             break;
+        case ReadFile:
+            readFile();
+        case WriteFile:
+            writeFile();
+            break;
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
@@ -322,6 +329,52 @@ void RemoteFSHandler::receiveUnexpectedHello()
     readStringBinary(skip_string, *in);
 
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
+}
+
+void RemoteFSHandler::readFile()
+{
+    std::string strData;
+    receivePath(strData);
+    size_t offset;
+    readVarUInt(offset, *in);
+    size_t size;
+    readVarUInt(size, *in);
+    auto readBuf = disk->readFile(strData);
+    readBuf->seek(offset);
+    strData.resize(size);
+    readBuf->read(strData.data(), size);
+    writeVarUint(ReadFile, *out);
+    writeString(strData, *out);
+    out->next();
+}
+
+void RemoteFSHandler::writeFile()
+{
+    std::string path;
+    receivePath(path);
+    size_t buf_size;
+    readVarUInt(buf_size, *in);
+    WriteMode mode;
+    readIntBinary(mode, *in);
+    auto writeBuf = disk->writeFile(path, buf_size, mode);
+    UInt64 packet_type = 0;
+    while (true) {
+        readVarUInt(packet_type, *in);
+        switch (packet_type) {
+            case DataPacket:
+                std::string data;
+                readStringBinary(data, *in);
+                writeString(data, *writeBuf);
+                writeBuf->next(); // TODO проверить, нужно ли это
+            case EndWriteFile:
+                writeBuf->sync();
+                writeVarUint(EndWriteFile, *out);
+                out->next();
+                return;
+            default:
+                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
+        }
+    }
 }
 
 void RemoteFSHandler::sendHello()

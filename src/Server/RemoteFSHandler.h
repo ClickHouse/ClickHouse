@@ -84,6 +84,9 @@ private:
     void receivePath(std::string &path);
     [[noreturn]] void receiveUnexpectedHello();
 
+    void readFile();
+    void writeFile();
+
     void sendHello();
     void sendError(std::string errorMsg);
 };
