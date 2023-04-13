@@ -8,8 +8,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes
