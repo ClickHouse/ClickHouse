@@ -483,7 +483,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
-(*) For `hasTokenCaseInsensitve` and `hasTokenCaseInsensitive` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
+(*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 :::note
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
