@@ -89,7 +89,7 @@ def drop_table(cluster):
 
 
 # S3 request will be failed for an appropriate part file write.
-FILES_PER_PART_BASE = 5  # partition.dat, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
+FILES_PER_PART_BASE = 6  # partition.dat, metadata_version.txt, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
 FILES_PER_PART_WIDE = (
     FILES_PER_PART_BASE + 1 + 1 + 3 * 2
 )  # Primary index, MinMax, Mark and data file for column(s)
