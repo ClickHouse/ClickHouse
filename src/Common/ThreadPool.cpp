@@ -347,6 +347,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         }
     };
 
+    bool job_is_done = false;
+    std::exception_ptr exception_from_job;
+
     /// We'll run jobs in this worker while there are scheduled jobs and until some special event occurs (e.g. shutdown, or decreasing the number of max_threads).
     /// And if `max_free_threads > 0` we keep this number of threads even when there are no jobs for them currently.
     while (true)
@@ -359,13 +362,41 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
         /// Get a job from the queue.
         Job job;
-        std::exception_ptr exception_from_job;
-        bool need_shutdown = false;
 
         {
             std::unique_lock lock(mutex);
+
+            // Finish with previous job if any
+            if (job_is_done)
+            {
+                job_is_done = false;
+                if (exception_from_job)
+                {
+                    if (!first_exception)
+                        first_exception = exception_from_job;
+                    if (shutdown_on_exception)
+                        shutdown = true;
+                    exception_from_job = {};
+                }
+
+                --scheduled_jobs;
+
+                if (threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads))
+                {
+                    /// This thread is excessive. The worker will stop.
+                    detach_thread();
+                    job_finished.notify_all();
+                    if (shutdown)
+                        new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                    return;
+                }
+
+                job_finished.notify_all();
+                if (shutdown)
+                    new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+            }
+
             new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || (threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads)); });
-            need_shutdown = shutdown;
 
             if (jobs.empty())
             {
@@ -379,82 +410,59 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             job = std::move(const_cast<Job &>(jobs.top().job));
             parent_thead_trace_context = std::move(const_cast<DB::OpenTelemetry::TracingContextOnThread &>(jobs.top().thread_trace_context));
             jobs.pop();
-        }
 
-        /// Run the job. We don't run jobs after `shutdown` is set.
-        if (!need_shutdown)
-        {
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-
-            /// Set up tracing context for this thread by its parent context
-            DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thead_trace_context);
-
-            try
-            {
-                CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
-
-                job();
-
-                if (thread_trace_context.root_span.isTraceEnabled())
-                {
-                    /// Use the thread name as operation name so that the tracing log will be more clear.
-                    /// The thread name is usually set in jobs, we can only get the name after the job finishes
-                    std::string thread_name = getThreadName();
-                    if (!thread_name.empty() && thread_name != DEFAULT_THREAD_NAME)
-                    {
-                        thread_trace_context.root_span.operation_name = thread_name;
-                    }
-                    else
-                    {
-                        /// If the thread name is not set, use the type name of the job instead
-                        thread_trace_context.root_span.operation_name = demangle(job.target_type().name());
-                    }
-                }
-
-                /// job should be reset before decrementing scheduled_jobs to
-                /// ensure that the Job destroyed before wait() returns.
-                job = {};
-            }
-            catch (...)
-            {
-                exception_from_job = std::current_exception();
-                thread_trace_context.root_span.addAttribute(exception_from_job);
-
-                /// job should be reset before decrementing scheduled_jobs to
-                /// ensure that the Job destroyed before wait() returns.
-                job = {};
-            }
-
-            parent_thead_trace_context.reset();
-        }
-
-        /// The job is done.
-        {
-            std::lock_guard lock(mutex);
-            if (exception_from_job)
-            {
-                if (!first_exception)
-                    first_exception = exception_from_job;
-                if (shutdown_on_exception)
-                    shutdown = true;
-            }
-
-            --scheduled_jobs;
-
-            if (threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads))
-            {
-                /// This thread is excessive. The worker will stop.
-                detach_thread();
-                job_finished.notify_all();
-                if (shutdown)
-                    new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
-                return;
-            }
-
-            job_finished.notify_all();
+            /// We don't run jobs after `shutdown` is set.
             if (shutdown)
-                new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+            {
+                parent_thead_trace_context.reset();
+                continue;
+            }
         }
+
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+
+        /// Set up tracing context for this thread by its parent context.
+        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thead_trace_context);
+
+        /// Run the job.
+        try
+        {
+            CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
+
+            job();
+
+            if (thread_trace_context.root_span.isTraceEnabled())
+            {
+                /// Use the thread name as operation name so that the tracing log will be more clear.
+                /// The thread name is usually set in jobs, we can only get the name after the job finishes
+                std::string thread_name = getThreadName();
+                if (!thread_name.empty() && thread_name != DEFAULT_THREAD_NAME)
+                {
+                    thread_trace_context.root_span.operation_name = thread_name;
+                }
+                else
+                {
+                    /// If the thread name is not set, use the type name of the job instead
+                    thread_trace_context.root_span.operation_name = demangle(job.target_type().name());
+                }
+            }
+
+            /// job should be reset before decrementing scheduled_jobs to
+            /// ensure that the Job destroyed before wait() returns.
+            job = {};
+        }
+        catch (...)
+        {
+            exception_from_job = std::current_exception();
+            thread_trace_context.root_span.addAttribute(exception_from_job);
+
+            /// job should be reset before decrementing scheduled_jobs to
+            /// ensure that the Job destroyed before wait() returns.
+            job = {};
+        }
+
+        job_is_done = true;
+        parent_thead_trace_context.reset();
     }
 }
 
