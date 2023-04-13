@@ -98,6 +98,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     assert(request.size);
 
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
+    std::promise<Result> promise;
+    std::future<Result> future = promise.get_future();
 
 #if defined(OS_LINUX)
     /// Check if data is already in page cache with preadv2 syscall.
@@ -123,9 +125,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitElapsedMicroseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
         });
-
-        std::promise<Result> promise;
-        std::future<Result> future = promise.get_future();
 
         size_t bytes_read = 0;
         while (!bytes_read)
@@ -201,9 +200,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunner<Result>(*pool, "ThreadPoolRead");
-
-    return schedule([request, fd]() -> Result
     {
         Stopwatch watch(CLOCK_MONOTONIC);
         SCOPE_EXIT({
@@ -230,7 +226,11 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             if (-1 == res && errno != EINTR)
             {
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                throwFromErrno(fmt::format("Cannot read from file {}", fd), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                promise.set_exception(std::make_exception_ptr(ErrnoException(
+                    fmt::format("Cannot read from file {}, {}", fd, errnoToString()),
+                    ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                    errno)));
+                return future;
             }
 
             bytes_read += res;
@@ -241,8 +241,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
 
-        return Result{ .size = bytes_read, .offset = request.ignore };
-    }, request.priority);
+        promise.set_value({bytes_read, request.ignore, nullptr});
+        return future;
+    }
 }
 
 void ThreadPoolReader::wait()
