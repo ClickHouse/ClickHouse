@@ -632,6 +632,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
                 bytes_to_predownload = 0;
                 file_segment.setBroken();
+                chassert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
 
