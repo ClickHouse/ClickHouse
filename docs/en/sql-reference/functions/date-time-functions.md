@@ -645,7 +645,7 @@ For an alternative to `date\_diff`, see function `age`.
 date_diff('unit', startdate, enddate, [timezone])
 ```
 
-Aliases: `dateDiff`, `DATE_DIFF`.
+Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_DIFF`.
 
 **Arguments**
 
