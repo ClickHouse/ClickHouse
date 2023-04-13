@@ -49,12 +49,11 @@ def get_spark():
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster = ClickHouseCluster(__file__)
+        cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
             with_minio=True,
-            with_spark=True,
         )
 
         logging.info("Starting cluster...")
@@ -63,9 +62,6 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        pyspark.sql.SparkSession.builder.appName("spark_test").master(
-            "local"
-        ).getOrCreate().stop()
         cluster.spark_session = get_spark()
 
         yield cluster
