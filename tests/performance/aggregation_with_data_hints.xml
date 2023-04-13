@@ -10,9 +10,9 @@
         </substitution>
     </substitutions>
 
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 255 group by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 350 group by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 20000 group by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 65536 group by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 100000 group by k]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 255 group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 350 group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 20000 group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 65536 group by k format Null]]></query>
+    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 100000 group by k format Null]]></query>
 </test>

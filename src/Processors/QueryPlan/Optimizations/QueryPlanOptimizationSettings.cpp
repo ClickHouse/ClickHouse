@@ -19,7 +19,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.remove_redundant_distinct = from.query_plan_remove_redundant_distinct;
     settings.optimize_projection = from.allow_experimental_projection_optimization && from.query_plan_optimize_projection;
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
-    settings.aggregation_with_data_hints = aggregation_with_data_hints;
+    settings.aggregation_with_data_hints = from.optimize_aggregation_with_data_hints && aggregation_with_data_hints;
     return settings;
 }
 
