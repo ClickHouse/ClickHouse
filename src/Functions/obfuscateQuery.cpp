@@ -43,28 +43,63 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
 {
 
-struct Obfuscate
+class ObfuscateQueryImpl : public IFunction
 {
+public:
     static constexpr auto name = "obfuscateQuery";
-    static void vector(const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
-        ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+
+    String getName() const override { return name; }
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<ObfuscateQueryImpl>(); }
+
+    bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least one argument: the size of resulting string", getName());
+
+        if (arguments.size() > 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
+
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have string type", getName());
+        
+        if (arguments.size() == 2 && !isStringOrFixedString(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must have string type", getName());
+        
+        return std::make_shared<DataTypeString>();
+    }
+
+    bool isDeterministic() const override { return false; }
+
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         WordMap obfuscated_words_map;
         WordSet used_nouns;
         SipHash hash_func;
 
-        // if (options.count("seed"))
-        // {
-        //     std::string seed;
-        //     hash_func.update(options["seed"].as<std::string>());
-        // }
+        const ColumnPtr & query_column = arguments[0].column;
+        String query = getStringColumnValue(query_column);
+        if (arguments.size() == 2) {
+            hash_func.update(getStringColumnValue(arguments[1].column));
+        }
+
         std::unordered_set<std::string> additional_names;
 
         auto all_known_storage_names = StorageFactory::instance().getAllRegisteredNames();
@@ -85,61 +120,49 @@ struct Obfuscate
                 || additional_names.contains(what);
         };
 
-        size_t size = offsets.size();
-        res_offsets.resize(size + 1);
-            
+        auto res_col = ColumnString::create();
+        ColumnString::Chars & res_data = res_col->getChars();
+        ColumnString::Offsets & res_offsets = res_col->getOffsets();
+
         WriteBufferFromOwnString buffer;
-        std::string_view query(reinterpret_cast<const char *>(data.data() + offsets[- 1]), offsets[0] - offsets[- 1] - 1);
+        res_offsets.resize(1);
         obfuscateQueries(query, buffer, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
 
         std::string res = buffer.str();
         // Obfuscated queries are usually don't take more than x2 characters.
-        res_data.reserve(res.size());
-        for (size_t i = 0; i < res.size(); ++i) {
-            res_data[i] = res[i];
-        }
-        res_offsets[-1] = 0;
+        res_data.reserve(res.size() * 2);
+
+        memcpySmallAllowReadWriteOverflow15(res_data.data(), res.c_str(), res.size());
         res_offsets[0] = res.size() + 1;
-        // for (size_t i = 0; i < size; ++i) {
-        //     res_offsets[i] = offsets[i];
-        // }
-        // res_offsets[0] = res_data.size();
-
-        // for (size_t j = 0; j < res.size(); ++j) {
-        //     res_data[j] = res[j];
-        // }
-        // if (res_data[0]) {
-        //     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{}, {}, {}, {}, {}::: {}, {}, {}, {}.", res, res_offsets.size(), res_offsets[-1], res_offsets[0], res_offsets[1], offsets.size(), offsets[-1], offsets[0], offsets[1]);
-        // }
-        // for (size_t i = 0; i < size; ++i)
-        // {
-        //     WriteBufferFromOwnString buffer;
-        //     std::string_view query(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1] - 1);
-        //     obfuscateQueries(query, buffer, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
-
-        //     std::string res = buffer.str();
-        //     for (size_t j = 0; j < res.size(); ++j) {
-        //         res_data[j + offsets[i - 1]] = res[j];
-        //     }
-        //     res_offsets[i] = res_data.size();
-        // }
-        
+        return res_col;
     }
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply function normalizeUTF8 to fixed string.");
-    }
+private:
+    String getStringColumnValue(const ColumnPtr & column) const
+    { 
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        {
+            const ColumnString::Chars & data = *(&col->getChars());
+            const ColumnString::Offsets & offsets = *(&col->getOffsets());
+            return reinterpret_cast<const char *>(data.data() + offsets[- 1]);
+        }
+        if (const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(column.get()))
+        {
+            const ColumnString::Chars & data = fixed_col->getChars();
+            return reinterpret_cast<const char *>(data.data());
+        }
+        if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
+        {
+            return const_col->getValue<String>();
+        }
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            column->getName(), getName()); 
+    }    
 };
-
 }
 
 REGISTER_FUNCTION(ObfuscateQuery)
 {
-    factory.registerFunction<FunctionStringToString<Obfuscate, Obfuscate>>();
+    factory.registerFunction<ObfuscateQueryImpl>({}, FunctionFactory::CaseInsensitive);
 }
 
 }
-
-            // auto col_to = ColumnString::create();
-            // ColumnString::Chars & data_to = col_to->getChars();
-            // ColumnString::Offsets & offsets_to = col_to->getOffsets();
