@@ -195,13 +195,13 @@ static void renameNoReplaceFallback(const std::string & old_path, const std::str
 }
 
 /// Do not use [[noreturn]] to avoid warnings like "code will never be executed" in other places
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-noreturn"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
 static void renameExchangeFallback(const std::string &, const std::string &)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "System call renameat2() is not supported");
 }
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {
