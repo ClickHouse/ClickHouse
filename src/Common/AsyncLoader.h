@@ -61,12 +61,6 @@ public:
     {
         std::unique_lock lock{mutex};
         finished.wait(lock, [this] { return is_finished; });
-    }
-
-    void get()
-    {
-        std::unique_lock lock{mutex};
-        finished.wait(lock, [this] { return is_finished; });
         if (exception)
             std::rethrow_exception(exception);
     }
@@ -186,9 +180,16 @@ public:
 
         ~Task()
         {
-            // Remove jobs that are not ready and wait for jobs that are in progress
+            remove();
+        }
+
+        void remove()
+        {
             if (loader)
+            {
                 loader->remove(jobs);
+                detach();
+            }
         }
 
         // Do not track jobs in this task
