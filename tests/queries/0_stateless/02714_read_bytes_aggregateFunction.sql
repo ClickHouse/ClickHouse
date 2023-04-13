@@ -38,6 +38,16 @@ WHERE
     type = 2 AND event_date >= yesterday()
 ORDER BY event_time_microseconds;
 
+-- Size of ColumnAggregateFunction: Number of pointers * pointer size + arena size
+-- 1 * 8 + AggregateFunction(argMax, String, DateTime)
+--
+-- Size of AggregateFunction(argMax, String, DateTime):
+-- SingleValueDataString() + SingleValueDataFixed(DateTime)
+-- SingleValueDataString = 64B for small strings, 64B + string size + 1 for larger
+-- SingleValueDataFixed(DateTime) = 1 + 4. With padding = 8
+-- SingleValueDataString Total: 72B
+--
+-- ColumnAggregateFunction total: 8 + 72 = 80
 SELECT 'AggregateFunction(argMax, String, DateTime)',
        read_rows,
        read_bytes
