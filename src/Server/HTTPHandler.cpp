@@ -624,7 +624,7 @@ void HTTPHandler::processQuery(
 
             auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return tmp_data->createRawStream(0);
+                return tmp_data->createRawStream();
             };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
