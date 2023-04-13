@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <mutex>
 #include <vector>
 #include <thread>
 #include <pcg_random.hpp>
@@ -22,6 +24,40 @@ namespace CurrentMetrics
 struct AsyncLoaderTest
 {
     AsyncLoader loader;
+
+    std::mutex rng_mutex;
+    pcg64 rng{randomSeed()};
+
+    template <typename T>
+    T randomInt(T from, T to)
+    {
+        std::uniform_int_distribution<T> distribution(from, to);
+        std::scoped_lock lock(rng_mutex);
+        return distribution(rng);
+    }
+
+    void randomSleepUs(UInt64 min_us, UInt64 max_us, int probability_percent)
+    {
+        if (randomInt(0, 99) < probability_percent)
+            std::this_thread::sleep_for(std::chrono::microseconds(randomInt(min_us, max_us)));
+    }
+
+    template <typename JobFunc>
+    LoadJobSet randomJobSet(int job_count, int dep_probability_percent, JobFunc job_func)
+    {
+        std::vector<LoadJobPtr> jobs;
+        for (int j = 0; j < job_count; j++)
+        {
+            LoadJobSet deps;
+            for (int d = 0; d < j; d++)
+            {
+                if (randomInt(0, 99) < dep_probability_percent)
+                    deps.insert(jobs[d]);
+            }
+            jobs.push_back(makeLoadJob(std::move(deps), fmt::format("job{}", j), job_func));
+        }
+        return {jobs.begin(), jobs.end()};
+    }
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
         : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads)
@@ -108,3 +144,24 @@ TEST(AsyncLoader, CycleDetection)
 
     const_cast<LoadJobSet &>(cycle_breaker->dependencies).clear();
 }
+
+TEST(AsyncLoader, RandomTasks)
+{
+    AsyncLoaderTest t(16);
+    t.loader.start();
+
+    auto job_func = [&] (const LoadJob &)
+    {
+        t.randomSleepUs(100, 500, 5);
+    };
+
+    std::vector<AsyncLoader::Task> tasks;
+    for (int i = 0; i < 512; i++)
+    {
+        int job_count = t.randomInt(1, 32);
+        tasks.push_back(t.loader.schedule(t.randomJobSet(job_count, 5, job_func)));
+        t.randomSleepUs(100, 900, 20); // avg=100us
+    }
+    t.loader.wait();
+}
+
