@@ -53,8 +53,8 @@ template <bool oneline>
 struct Format
 {
     static constexpr auto name = oneline ? "formatQueryOneLine" : "formatQuery";
-    // static constexpr size_t max_query_size = 32768;
-    // static constexpr size_t max_parser_depth = 2048;
+    static constexpr size_t max_query_size = 32768;
+    static constexpr size_t max_parser_depth = 2048;
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
@@ -67,7 +67,7 @@ struct Format
         WriteBufferFromOwnString buffer;
         ParserQuery parser(end, false);
         ASTPtr res = parseQueryAndMovePosition(
-            parser, pos, end, "query", false, 1024, 1024);
+            parser, pos, end, "query", false, max_query_size, max_parser_depth);
         /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
         /// should throw exception early and make exception message more readable.
         if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
@@ -100,7 +100,3 @@ REGISTER_FUNCTION(FormatQuery)
 }
 
 }
-
-            // auto col_to = ColumnString::create();
-            // ColumnString::Chars & data_to = col_to->getChars();
-            // ColumnString::Offsets & offsets_to = col_to->getOffsets();

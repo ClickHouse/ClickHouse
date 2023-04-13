@@ -109,6 +109,21 @@ public:
             : begin(begin_), pos(begin_), end(end_), max_query_size(max_query_size_) {}
     Token nextToken();
 
+    const char * getBegin()
+    {
+        return begin;
+    }
+
+    const char * getPos()
+    {
+        return pos;
+    }
+
+    const char * getEnd()
+    {
+        return end;
+    }
+
 private:
     const char * const begin;
     const char * pos;

@@ -1113,3 +1113,155 @@ A text with tags .
 The content within <b>CDATA</b>
 Do Nothing for 2 Minutes 2:00 &nbsp;
 ```
+
+## formatQuery {#formatted-query}
+
+Форматирует запрос, переданный в функцию в многострочный формат.
+
+**Синтаксис**
+
+``` sql
+formatQuery(x)
+```
+
+**Аргументы**
+
+-   `x` — последовательность символов. Дожна представлять из себя валидный запрос. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Отформатированный запрос.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatQuery('select number from numbers(10) where number%2 order by number desc;') AS query;
+```
+
+Результат:
+
+``` text
+┌─query─────────────────────────────────────────────────────────────┐
+│ SELECT number                                                     │
+│FROM numbers(10)                                                   │
+│WHERE number % 2                                                   │
+│ORDER BY number DESC                                               │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## formatQueryOneLine {#formatted-query-one-line}
+
+Форматирует запрос, переданный в функцию в однострочный формат.
+
+**Синтаксис**
+
+``` sql
+formatQueryOneLine(x)
+```
+
+**Аргументы**
+
+-   `x` — последовательность символов. Дожна представлять из себя валидный запрос. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Отформатированный запрос.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT formatQueryOneLine('select number from numbers(10) where number%2 order by number desc;') AS query;
+```
+
+Результат:
+
+``` text
+┌─query────────────────────────────────────────────────────────────────┐
+│ SELECT number FROM numbers(10) WHERE number % 2 ORDER BY number DESC │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+## obfuscateQuery {#obfuscated-query}
+
+Обфусцирует запрос, переданный в функцию в сложночитаемый формат. Идемпотентна по переданному seed.
+
+**Синтаксис**
+
+``` sql
+formatQueryOneLine(x, [, seed])
+```
+
+**Аргументы**
+
+-   `x` — последовательность символов. Строка для обфускации. [String](../../sql-reference/data-types/string.md).
+-   `seed` — последовательность символов. Строка, определяющая результат обфускации. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Обфусцированный запрос.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT obfuscate('select number from numbers(10) where number%2 order by number desc;', 'World') AS query;
+```
+
+Результат:
+
+``` text
+┌─query────────────────────────────────────────────────────────┐
+│ select curl from numbers(10) where curl%3 order by curl desc │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## tokenizeQuery {#tokenized-query}
+
+Токенизирует запрос, переданный в функцию.
+
+**Синтаксис**
+
+``` sql
+formatQueryOneLine(x)
+```
+
+**Аргументы**
+
+-   `x` — последовательность символов, представляющая собой запрос для токенизации. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Кортежи токенов, каждый состоящий из 3 элементов: строки токена, позиция первого символа токена в строке начиная с 1, расстояние от последнего символа токена до конца строки.
+
+Типы: 
+    [String](../../sql-reference/data-types/string.md).
+    [UInt32](../data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT tokenizeQuery('SELECT 1') as query;
+```
+
+Результат:
+
+``` text
+┌─query──────────┐
+│ ('SELECT',1,2) │
+│ ('1',7,1)      │
+│ ('\0',8,0)     │
+└────────────────┘
+```

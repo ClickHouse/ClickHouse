@@ -1,4 +1,10 @@
+#include <Columns/ColumnArray.h>
+
+#include <DataTypes/DataTypeArray.h>
+
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
@@ -40,6 +46,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -49,92 +56,98 @@ namespace ErrorCodes
 
 namespace
 {
-
-class ObfuscateQueryImpl : public IFunction
+class TokenizeQueryImpl : public IFunction
 {
+
 public:
-    static constexpr auto name = "obfuscateQuery";
+    static constexpr auto name = "tokenizeQuery";
 
     String getName() const override { return name; }
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<ObfuscateQueryImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<TokenizeQueryImpl>(); }
 
-    bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty())
+        if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least one argument: query to be obfuscated", getName());
-
-        if (arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at most two arguments: query to be obfuscated and optional seed", getName());
+                "Function {} requires one argument: query to be tokenized", getName());
 
         if (!isStringOrFixedString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have string type", getName());
-        
-        if (arguments.size() == 2 && !isStringOrFixedString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must have string type", getName());
-        
-        return std::make_shared<DataTypeString>();
+
+        std::vector<DataTypePtr> tupleTypes(3);
+        tupleTypes = {std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeUInt32>()};
+        return std::make_shared<DataTypeTuple>(tupleTypes);
     }
 
     bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        WordMap obfuscated_words_map;
-        WordSet used_nouns;
-        SipHash hash_func;
+        auto query = getStringColumnValue(arguments[0].column);
+        Lexer lexer(query.data(), query.data() + query.size());
+        Token token = lexer.nextToken();
+        size_t iter = 0;
 
-        const ColumnPtr & query_column = arguments[0].column;
-        String query = getStringColumnValue(query_column);
-        if (arguments.size() == 2) {
-            hash_func.update(getStringColumnValue(arguments[1].column));
-        }
+        auto col_0 = ColumnString::create();
+        auto col_1 = ColumnUInt32::create();
+        auto col_2 = ColumnUInt32::create();
 
-        std::unordered_set<std::string> additional_names;
-
-        auto all_known_storage_names = StorageFactory::instance().getAllRegisteredNames();
-        auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
-
-        additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
-        additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
-
-        KnownIdentifierFunc is_known_identifier = [&](std::string_view obj_name)
+        ColumnString::Chars & data = col_0->getChars();
+        ColumnString::Offsets & offsets = col_0->getOffsets();
+        typename ColumnUInt32::Container & vec_res_1 = col_1->getData();
+        typename ColumnUInt32::Container & vec_res_2 = col_2->getData();
+        data.reserve(query.size());
+        for (size_t i = 0; i < query.size(); ++i)
         {
-            std::string what(obj_name);
+            data[i] = query[i];
+        }
+        // memcpySmallAllowReadWriteOverflow15(data.data(), query.c_str(), query.size());
+        size_t last_offset = 0;
+        while (!token.isEnd()) 
+        {
+            offsets.resize(iter + 1);
+            if (token.size() != 0)
+            {
+            offsets[iter] = last_offset + token.size() + 1;
+            last_offset = offsets[iter];
+            } else 
+            {
+                offsets[iter] = last_offset;
+            }
+            vec_res_1.resize(iter + 1);
+            vec_res_1[iter] = static_cast<uint32_t>(lexer.getPos() - lexer.getBegin() - token.size()) + 1;
 
-            return FunctionFactory::instance().has(what)
-                || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
-                || TableFunctionFactory::instance().isTableFunctionName(what)
-                || FormatFactory::instance().isOutputFormat(what)
-                || FormatFactory::instance().isInputFormat(what)
-                || additional_names.contains(what);
-        };
+            vec_res_2.resize(iter + 1);
+            vec_res_2[iter] = static_cast<uint32_t>(lexer.getEnd() - lexer.getPos());
 
-        auto res_col = ColumnString::create();
-        ColumnString::Chars & res_data = res_col->getChars();
-        ColumnString::Offsets & res_offsets = res_col->getOffsets();
+            token = lexer.nextToken();
+            ++iter;
+        } 
+        Columns tuple_columns(3);
+        tuple_columns[0] = std::move(col_0);
+        tuple_columns[1] = std::move(col_1);
+        tuple_columns[2] = std::move(col_2);
+        auto tuple =  ColumnTuple::create(std::move(tuple_columns));
 
-        WriteBufferFromOwnString buffer;
-        res_offsets.resize(1);
-        obfuscateQueries(query, buffer, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
-
-        std::string res = buffer.str();
-        // Obfuscated queries are usually don't take more than x2 characters.
-        res_data.reserve(res.size() * 2);
-
-        memcpySmallAllowReadWriteOverflow15(res_data.data(), res.c_str(), res.size());
-        res_offsets[0] = res.size();
-        return res_col;
+        auto offsets_arr = ColumnArray::ColumnOffsets::create(offsets.size());
+        auto & arr_out_offsets = offsets_arr->getData();
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            arr_out_offsets[i] = i + 1;
+        }
+        return tuple;
     }
 private:
     String getStringColumnValue(const ColumnPtr & column) const
@@ -156,13 +169,15 @@ private:
         }
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
             column->getName(), getName()); 
-    }    
+    } 
 };
 }
 
-REGISTER_FUNCTION(ObfuscateQuery)
+REGISTER_FUNCTION(TokenizeQuery)
 {
-    factory.registerFunction<ObfuscateQueryImpl>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<TokenizeQueryImpl>({}, FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

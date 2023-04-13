@@ -1129,3 +1129,7 @@
 "quantileExactWeighted"
 "groupBitXor"
 "quantile"
+"obfuscateQuery"
+"tokenizeQuery"
+"formatQueryOneLine"
+"formatQuery"

@@ -919,3 +919,7 @@ xxHash32
 xxHash64
 yesterday
 zookeeperSessionUptime
+obfuscateQuery
+tokenizeQuery
+formatQueryOneLine
+formatQuery

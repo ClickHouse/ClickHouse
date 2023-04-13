@@ -1196,3 +1196,155 @@ Result:
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+
+## formatQuery
+
+Formats request given to the function in multiline format.
+
+**Syntax**
+
+``` sql
+formatQuery(x)
+```
+
+**Arguments**
+
+-   `x` — char sequence. Should be correct query. [String](../../sql-reference/data-types/string.md).
+
+**Returned values**
+
+-   Formatted request.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatQuery('select number from numbers(10) where number%2 order by number desc;') AS query;
+```
+
+Result:
+
+``` text
+┌─query─────────────────────────────────────────────────────────────┐
+│ SELECT number                                                     │
+│FROM numbers(10)                                                   │
+│WHERE number % 2                                                   │
+│ORDER BY number DESC                                               │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## formatQueryOneLine
+
+Formats request given to the function in single-line format.
+
+**Syntax**
+
+``` sql
+formatQueryOneLine(x)
+```
+
+**Arguments**
+
+-   `x` — char sequence. Should be correct query. [String](../../sql-reference/data-types/string.md).
+
+**Returned values**
+
+-   Formatted request.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatQueryOneLine('select number from numbers(10) where number%2 order by number desc;') AS query;
+```
+
+Result:
+
+``` text
+┌─query────────────────────────────────────────────────────────────────┐
+│ SELECT number FROM numbers(10) WHERE number % 2 ORDER BY number DESC │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+## obfuscateQuery
+
+Obfuscates request given to the function to hardly readable format. Is as idempotent operation based on given seed.
+
+**Syntax**
+
+``` sql
+formatQueryOneLine(x, [, seed])
+```
+
+**Arguments**
+
+-   `x` — char sequence used for obsucation. [String](../../sql-reference/data-types/string.md).
+-   `seed` — char sequence used as seed for obfuscation. [String](../../sql-reference/data-types/string.md).
+
+**Returned values**
+
+-   Obfuscated request.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT obfuscate('select number from numbers(10) where number%2 order by number desc;', 'World') AS query;
+```
+
+Result:
+
+``` text
+┌─query────────────────────────────────────────────────────────┐
+│ select curl from numbers(10) where curl%3 order by curl desc │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## tokenizeQuery
+
+Tokenizes request given to the function.
+
+**Syntax**
+
+``` sql
+formatQueryOneLine(x)
+```
+
+**Arguments**
+
+-   `x` — char sequence used for tokenization. [String](../../sql-reference/data-types/string.md).
+
+**Returned values**
+
+-   Token tuples, each contains 3 elements: token chars, first token char position in string (starting from 1), distance from last token char to the end of the string.
+
+Types: 
+    [String](../../sql-reference/data-types/string.md).
+    [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Result:
+
+``` sql
+SELECT tokenizeQuery('SELECT 1') as query;
+```
+
+Query:
+
+``` text
+┌─query──────────┐
+│ ('SELECT',1,2) │
+│ ('1',7,1)      │
+│ ('\0',8,0)     │
+└────────────────┘
+```

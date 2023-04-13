@@ -1471,3 +1471,7 @@
 "YY"
 "YYYY"
 "zookeeperSessionUptime"
+"obfuscateQuery"
+"tokenizeQuery"
+"formatQueryOneLine"
+"formatQuery"
