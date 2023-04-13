@@ -1,3 +1,4 @@
+#include <memory>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
 #include <IO/Operators.h>
@@ -299,11 +300,8 @@ ZooKeeper::~ZooKeeper()
     {
         finalize(false, false, "Destructor called");
 
-        if (send_thread.joinable())
-            send_thread.join();
-
-        if (receive_thread.joinable())
-            receive_thread.join();
+        send_thread->joinIfJoinable();
+        receive_thread->joinIfJoinable();
     }
     catch (...)
     {
@@ -354,8 +352,8 @@ ZooKeeper::ZooKeeper(
 
     try
     {
-        send_thread = ThreadFromGlobalPool([this] { sendThread(); });
-        receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
+        send_thread = std::make_unique<ConcurrentlyJoinableThreadFromGlobalPool>([this] { sendThread(); });
+        receive_thread = std::make_unique<ConcurrentlyJoinableThreadFromGlobalPool>([this] { receiveThread(); });
 
         initApiVersion();
 
@@ -365,11 +363,8 @@ ZooKeeper::ZooKeeper(
     {
         tryLogCurrentException(log, "Failed to connect to ZooKeeper");
 
-        if (send_thread.joinable())
-            send_thread.join();
-
-        if (receive_thread.joinable())
-            receive_thread.join();
+        send_thread->joinIfJoinable();
+        receive_thread->joinIfJoinable();
 
         throw;
     }
@@ -914,8 +909,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             }
 
             /// Send thread will exit after sending close request or on expired flag
-            if (send_thread.joinable())
-                send_thread.join();
+            send_thread->joinIfJoinable();
         }
 
         /// Set expired flag after we sent close event
@@ -932,8 +926,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             tryLogCurrentException(log);
         }
 
-        if (!error_receive && receive_thread.joinable())
-            receive_thread.join();
+        if (!error_receive)
+            receive_thread->joinIfJoinable();
 
         {
             std::lock_guard lock(operations_mutex);

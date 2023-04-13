@@ -255,8 +255,8 @@ private:
     Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
-    ThreadFromGlobalPool send_thread;
-    ThreadFromGlobalPool receive_thread;
+    std::unique_ptr<ConcurrentlyJoinableThreadFromGlobalPool> send_thread;
+    std::unique_ptr<ConcurrentlyJoinableThreadFromGlobalPool> receive_thread;
 
     Poco::Logger * log;
 

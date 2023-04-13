@@ -304,6 +304,30 @@ protected:
     }
 };
 
+
+class ConcurrentlyJoinableThreadFromGlobalPool : private ThreadFromGlobalPoolImpl<true>
+{
+public:
+    using ThreadFromGlobalPoolImpl::ThreadFromGlobalPoolImpl;
+
+    /// Meant for the cases when the thread could be joined multiple times from different threads.
+    /// In this case calling joinable() and then join() has a potential race condition because it isn't an atomic operation.
+    /// This method guarantees that all subsequent calls to joinIfJoinable() will be essentially noop-s after the first call to joinIfJoinable().
+    void joinIfJoinable()
+    {
+        bool wasnt = false;
+        if (!join_attempted.compare_exchange_strong(wasnt, true))
+            return;
+
+        if (joinable())
+            join();
+    }
+
+private:
+    std::atomic_bool join_attempted{false};
+};
+
+
 /// Schedule jobs/tasks on global thread pool without implicit passing tracing context on current thread to underlying worker as parent tracing context.
 ///
 /// If you implement your own job/task scheduling upon global thread pool or schedules a long time running job in a infinite loop way,

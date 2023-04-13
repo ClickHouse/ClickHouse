@@ -144,7 +144,14 @@ void DDLWorker::shutdown()
 
 DDLWorker::~DDLWorker()
 {
-    DDLWorker::shutdown();
+    try
+    {
+        DDLWorker::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "DDLWorker wasn't finished successfully");
+    }
 }
 
 
