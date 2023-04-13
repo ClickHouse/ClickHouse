@@ -76,11 +76,13 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &);
 
-size_t tryReduceKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+size_t tryReduceAggregationKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+
+size_t tryReduceSortingKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 11> optimizations = {{
+    static const std::array<Optimization, 12> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -91,7 +93,8 @@ inline const auto & getOptimizations()
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
-        {tryReduceKeysSize, "reduceKeysSize", &QueryPlanOptimizationSettings::aggregation_with_data_hints},
+        {tryReduceAggregationKeysSize, "reduceAggregationKeysSize", &QueryPlanOptimizationSettings::aggregation_with_data_hints},
+        {tryReduceSortingKeysSize, "reduceSortingKeysSize", &QueryPlanOptimizationSettings::sorting_with_data_hints}
     }};
 
     return optimizations;
