@@ -12,7 +12,7 @@ sidebar_label: SHOW
 SHOW [CREATE] [TEMPORARY] [TABLE|DICTIONARY|VIEW|DATABASE] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
+Returns a single column of type String containing the CREATE query used for creating the specified object.
 
 `SHOW TABLE t`, `SHOW CREATE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
 
