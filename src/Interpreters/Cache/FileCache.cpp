@@ -315,9 +315,9 @@ void FileCache::fillHolesWithEmptyFileSegments(
         }
         else
         {
-            auto splitted = splitRangeIntoFileSegments(
+            auto split = splitRangeIntoFileSegments(
                 locked_key, current_pos, hole_size, FileSegment::State::EMPTY, settings);
-            file_segments.splice(it, std::move(splitted));
+            file_segments.splice(it, std::move(split));
         }
 
         current_pos = segment_range.right + 1;
@@ -342,9 +342,9 @@ void FileCache::fillHolesWithEmptyFileSegments(
         }
         else
         {
-            auto splitted = splitRangeIntoFileSegments(
+            auto split = splitRangeIntoFileSegments(
                 locked_key, current_pos, hole_size, FileSegment::State::EMPTY, settings);
-            file_segments.splice(file_segments.end(), std::move(splitted));
+            file_segments.splice(file_segments.end(), std::move(split));
         }
     }
 }
@@ -556,29 +556,25 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     size_t removed_size = 0;
     std::unordered_map<Key, EvictionCandidates> to_delete;
 
-    auto iterate_func = [&](const PriorityEntry & entry, LockedKey & locked_key)
+    auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
-        auto file_segment_metadata = locked_key.tryGetByOffset(entry.offset);
-        if (!file_segment_metadata)
-            return PriorityIterationResult::REMOVE_AND_CONTINUE;
-
-        chassert(file_segment_metadata->file_segment->getQueueIterator());
-        const bool is_persistent = allow_persistent_files && file_segment_metadata->file_segment->isPersistent();
-        const bool releasable = file_segment_metadata->releasable() && !is_persistent;
+        chassert(segment_metadata->file_segment->getQueueIterator());
+        const bool is_persistent = allow_persistent_files && segment_metadata->file_segment->isPersistent();
+        const bool releasable = segment_metadata->releasable() && !is_persistent;
 
         if (releasable)
         {
-            removed_size += entry.size;
+            removed_size += segment_metadata->size();
             --queue_size;
 
-            auto segment = file_segment_metadata->file_segment;
+            auto segment = segment_metadata->file_segment;
             if (segment->state() == FileSegment::State::DOWNLOADED)
             {
                 const auto & key = segment->key();
                 auto it = to_delete.find(key);
                 if (it == to_delete.end())
                     it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
-                it->second.add(file_segment_metadata);
+                it->second.add(segment_metadata);
                 return PriorityIterationResult::CONTINUE;
             }
 
@@ -598,8 +594,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         };
 
         query_priority->iterate(
-            [&](const auto & entry, LockedKey & locked_key)
-            { return is_query_priority_overflow() ? iterate_func(entry, locked_key) : PriorityIterationResult::BREAK; },
+            [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+            { return is_query_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
             cache_lock);
 
         if (is_query_priority_overflow())
@@ -615,8 +611,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     };
 
     main_priority->iterate(
-        [&](const auto & entry, LockedKey & locked_key)
-        { return is_main_priority_overflow() ? iterate_func(entry, locked_key) : PriorityIterationResult::BREAK; },
+        [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
+        { return is_main_priority_overflow() ? iterate_func(locked_key, segment_metadata) : PriorityIterationResult::BREAK; },
         cache_lock);
 
     if (is_main_priority_overflow())
@@ -696,15 +692,11 @@ void FileCache::removeAllReleasable()
 
     auto lock = cache_guard.lock();
 
-    main_priority->iterate([&](const PriorityEntry & entry, LockedKey & locked_key)
+    main_priority->iterate([&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
-        auto file_segment_metadata = locked_key.tryGetByOffset(entry.offset);
-        if (!file_segment_metadata)
-            return PriorityIterationResult::REMOVE_AND_CONTINUE;
-
-        if (file_segment_metadata->releasable())
+        if (segment_metadata->releasable())
         {
-            auto file_segment = file_segment_metadata->file_segment;
+            auto file_segment = segment_metadata->file_segment;
             locked_key.removeFileSegment(file_segment->offset(), file_segment->lock());
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
         }
@@ -933,13 +925,9 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
     assertInitialized();
 
     FileSegments file_segments;
-    main_priority->iterate([&](const PriorityEntry & entry, LockedKey & locked_key)
+    main_priority->iterate([&](LockedKey &, FileSegmentMetadataPtr segment_metadata)
     {
-        auto file_segment_metadata = locked_key.tryGetByOffset(entry.offset);
-        if (!file_segment_metadata)
-            return PriorityIterationResult::REMOVE_AND_CONTINUE;
-
-        file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
+        file_segments.push_back(FileSegment::getSnapshot(segment_metadata->file_segment));
         return PriorityIterationResult::CONTINUE;
     }, cache_guard.lock());
 

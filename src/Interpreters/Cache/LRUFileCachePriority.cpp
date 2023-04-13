@@ -102,7 +102,22 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
             continue;
         }
 
-        auto result = func(*it, *locked_key);
+        auto metadata = locked_key->tryGetByOffset(it->offset);
+        if (!metadata)
+        {
+            it = remove(it);
+            continue;
+        }
+
+        if (metadata->size() != it->size)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mismatch of file segment size in file segment metadata and priority queue: {} != {}",
+                it->size, metadata->size());
+        }
+
+        auto result = func(*locked_key, metadata);
         switch (result)
         {
             case IterationResult::BREAK:

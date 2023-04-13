@@ -380,10 +380,11 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lock).empty());
         chassert(!isDownloaderUnlocked(lock));
 
-        cv.wait_for(lock, std::chrono::seconds(60), [&, this]()
+        [[maybe_unused]] auto ok = cv.wait_for(lock, std::chrono::seconds(60), [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset(true);
         });
+        chassert(ok);
     }
 
     return download_state;

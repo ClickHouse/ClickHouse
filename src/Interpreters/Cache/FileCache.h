@@ -18,14 +18,12 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/QueryLimit.h>
+#include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <filesystem>
 
 
 namespace DB
 {
-
-struct LockedKey;
-using LockedKeyPtr = std::shared_ptr<LockedKey>;
 
 namespace ErrorCodes
 {
