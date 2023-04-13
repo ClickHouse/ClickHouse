@@ -32,6 +32,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageTableFunction.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -1424,7 +1425,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
     }
 
-    if (!create.attach && !typeid_cast<StorageDistributed *>(res.get()) && !typeid_cast<StorageMerge *>(res.get()))
+    if (!create.attach &&
+        !typeid_cast<StorageDistributed *>(res.get()) &&
+        !typeid_cast<StorageMerge *>(res.get()) &&
+        !typeid_cast<StorageTableFunctionProxy *>(res.get()))
     {
         std::unordered_set<std::string_view> all_columns;
         all_columns.reserve(properties.columns.size());
