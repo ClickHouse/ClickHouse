@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
