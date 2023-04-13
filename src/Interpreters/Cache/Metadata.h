@@ -12,6 +12,7 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 struct LockedKey;
 using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct CleanupQueue;
+using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 
 
 struct FileSegmentMetadata : private boost::noncopyable
@@ -56,9 +57,10 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
 
     const Key key;
     const std::string key_path;
-    std::atomic<bool> created_base_directory = false;
 
     LockedKeyPtr lock();
+
+    void createBaseDirectory();
 
     std::string getFileSegmentPath(const FileSegment & file_segment);
 
@@ -66,25 +68,10 @@ private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
     CleanupQueue & cleanup_queue;
+    std::atomic<bool> created_base_directory = false;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
-
-
-struct CleanupQueue
-{
-    friend struct CacheMetadata;
-public:
-    void add(const FileCacheKey & key);
-    void remove(const FileCacheKey & key);
-    size_t getSize() const;
-
-private:
-    bool tryPop(FileCacheKey & key);
-
-    std::unordered_set<FileCacheKey> keys;
-    mutable std::mutex mutex;
-};
 
 
 struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
@@ -124,7 +111,7 @@ public:
 private:
     const std::string path; /// Cache base path
     CacheMetadataGuard guard;
-    CleanupQueue cleanup_queue;
+    const CleanupQueuePtr cleanup_queue;
     Poco::Logger * log;
 };
 
@@ -162,26 +149,20 @@ struct LockedKey : private boost::noncopyable
 
     KeyMetadata::KeyState getKeyState() const { return key_metadata->key_state; }
 
-    KeyMetadataPtr getKeyMetadata() const { return key_metadata; }
-    KeyMetadataPtr getKeyMetadata() { return key_metadata; }
-
-    KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
+    std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
+    std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
     void removeAllReleasable();
+
+    KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
 
-    void assertFileSegmentCorrectness(const FileSegment & file_segment) const;
-
-    bool isRemovalCandidate() const;
-
-    bool markAsRemovalCandidate(size_t offset);
-
     void removeFromCleanupQueue();
 
-    bool markAsRemoved();
+    void markAsRemoved();
 
     std::string toString() const;
 

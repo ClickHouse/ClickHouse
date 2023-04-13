@@ -138,11 +138,6 @@ size_t FileSegment::getDownloadedSize(bool sync) const
 void FileSegment::setDownloadedSize(size_t delta)
 {
     auto lock = segment_guard.lock();
-    setDownloadedSizeUnlocked(delta, lock);
-}
-
-void FileSegment::setDownloadedSizeUnlocked(size_t delta, const FileSegmentGuard::Lock &)
-{
     downloaded_size += delta;
     assert(downloaded_size == std::filesystem::file_size(getPathInLocalCache()));
 }
@@ -196,7 +191,7 @@ String FileSegment::getOrSetDownloader()
     return current_downloader;
 }
 
-void FileSegment::resetDownloadingStateUnlocked([[maybe_unused]] const FileSegmentGuard::Lock & lock)
+void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
 {
     assert(isDownloaderUnlocked(lock));
     assert(download_state == State::DOWNLOADING);
@@ -213,6 +208,8 @@ void FileSegment::resetDownloader()
 {
     auto lock = segment_guard.lock();
 
+    SCOPE_EXIT({ cv.notify_all(); });
+
     assertNotDetachedUnlocked(lock);
     assertIsDownloaderUnlocked("resetDownloader", lock);
 
@@ -224,7 +221,6 @@ void FileSegment::resetDownloaderUnlocked(const FileSegmentGuard::Lock &)
 {
     LOG_TEST(log, "Resetting downloader from {}", downloader_id);
     downloader_id.clear();
-    cv.notify_all();
 }
 
 void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock & lock) const
@@ -292,17 +288,6 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     remote_file_reader = remote_file_reader_;
 }
 
-void FileSegment::resetRemoteFileReader()
-{
-    auto lock = segment_guard.lock();
-    assertIsDownloaderUnlocked("resetRemoteFileReader", lock);
-
-    if (!remote_file_reader)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote file reader does not exist");
-
-    remote_file_reader.reset();
-}
-
 void FileSegment::write(const char * from, size_t size, size_t offset)
 {
     if (!size)
@@ -366,7 +351,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     {
         auto lock = segment_guard.lock();
 
-        wrapWithCacheInfo(e, "while writing into cache", lock);
+        e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lock)));
 
         setDownloadFailedUnlocked(lock);
 
@@ -382,7 +367,7 @@ FileSegment::State FileSegment::wait(size_t offset)
 {
     auto lock = segment_guard.lock();
 
-    if (downloader_id.empty())
+    if (downloader_id.empty() || offset < getCurrentWriteOffset(true))
         return download_state;
 
     if (download_state == State::EMPTY)
@@ -395,7 +380,7 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lock).empty());
         chassert(!isDownloaderUnlocked(lock));
 
-        [[maybe_unused]] const bool ok = cv.wait_for(lock, std::chrono::seconds(60), [&, this]()
+        cv.wait_for(lock, std::chrono::seconds(60), [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset(true);
         });
@@ -444,8 +429,6 @@ bool FileSegment::reserve(size_t size_to_reserve)
     bool is_file_segment_size_exceeded;
     {
         auto lock = segment_guard.lock();
-
-        LOG_TRACE(log, "Try reserve for {}", getInfoForLogUnlocked(lock));
 
         assertNotDetachedUnlocked(lock);
         assertIsDownloaderUnlocked("reserve", lock);
@@ -497,7 +480,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
     return reserved;
 }
 
-void FileSegment::setDownloadedUnlocked([[maybe_unused]] const FileSegmentGuard::Lock & lock)
+void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
 {
     if (download_state == State::DOWNLOADED)
         return;
@@ -517,7 +500,9 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] const FileSegmentGuard:
 
 void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 {
-    LOG_INFO(log, "Settings download as failed: {}", getInfoForLogUnlocked(lock));
+    LOG_INFO(log, "Setting download as failed: {}", getInfoForLogUnlocked(lock));
+
+    SCOPE_EXIT({ cv.notify_all(); });
 
     setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lock);
 
@@ -532,11 +517,9 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 void FileSegment::completePartAndResetDownloader()
 {
     auto lock = segment_guard.lock();
-    completePartAndResetDownloaderUnlocked(lock);
-}
 
-void FileSegment::completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & lock)
-{
+    SCOPE_EXIT({ cv.notify_all(); });
+
     assertNotDetachedUnlocked(lock);
     assertIsDownloaderUnlocked("completePartAndResetDownloader", lock);
 
@@ -549,6 +532,8 @@ void FileSegment::completePartAndResetDownloaderUnlocked(const FileSegmentGuard:
 void FileSegment::setBroken()
 {
     auto lock = segment_guard.lock();
+
+    SCOPE_EXIT({ cv.notify_all(); });
 
     assertNotDetachedUnlocked(lock);
     assertIsDownloaderUnlocked("setBroken", lock);
@@ -566,35 +551,27 @@ void FileSegment::complete()
         return;
 
     auto locked_key = lockKeyMetadata(false);
-    if (locked_key)
+    if (!locked_key)
     {
-        completeUnlocked(*locked_key);
-        return;
+        /// If we failed to lock a key, it must be in detached state.
+        if (isDetached())
+            return;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", getInfoForLog());
     }
 
-    /// If we failed to lock a key, it must be in detached state.
-    if (isDetached())
-        return;
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", getInfoForLog());
-}
-
-void FileSegment::completeUnlocked(LockedKey & locked_key)
-{
     auto segment_lock = segment_guard.lock();
 
     if (isCompleted(false))
         return;
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
-    const bool is_last_holder = locked_key.isLastOwnerOfFileSegment(offset());
+    const bool is_last_holder = locked_key->isLastOwnerOfFileSegment(offset());
     const size_t current_downloaded_size = getDownloadedSize(true);
 
     SCOPE_EXIT({
         if (is_downloader)
-        {
             cv.notify_all();
-        }
     });
 
     LOG_TEST(
@@ -618,9 +595,9 @@ void FileSegment::completeUnlocked(LockedKey & locked_key)
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
-        detach(segment_lock, locked_key);
+        detach(segment_lock, *locked_key);
         setDownloadState(State::DETACHED, segment_lock);
-        locked_key.removeFileSegment(offset(), segment_lock);
+        locked_key->removeFileSegment(offset(), segment_lock);
         return;
     }
 
@@ -644,12 +621,10 @@ void FileSegment::completeUnlocked(LockedKey & locked_key)
         {
             if (is_last_holder)
             {
-                setDownloadState(State::DETACHED, segment_lock);
-
                 if (current_downloaded_size == 0)
                 {
                     LOG_TEST(log, "Remove file segment {} (nothing downloaded)", range().toString());
-                    locked_key.removeFileSegment(offset(), segment_lock);
+                    locked_key->removeFileSegment(offset(), segment_lock);
                 }
                 else
                 {
@@ -666,13 +641,13 @@ void FileSegment::completeUnlocked(LockedKey & locked_key)
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
-                    locked_key.shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
+                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
 
                     /// We mark current file segment with state DETACHED, even though the data is still in cache
                     /// (but a separate file segment) because is_last_holder is satisfied, so it does not matter.
                 }
 
-                detachAssumeStateFinalized(segment_lock);
+                setDetachedState(segment_lock);
             }
             break;
         }
@@ -705,11 +680,6 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
     info << "unbound: " << is_unbound;
 
     return info.str();
-}
-
-void FileSegment::wrapWithCacheInfo(Exception & e, const String & message, const FileSegmentGuard::Lock & lock) const
-{
-    e.addMessage(fmt::format("{}, current cache state: {}", message, getInfoForLogUnlocked(lock)));
 }
 
 String FileSegment::stateToString(FileSegment::State state)
@@ -755,15 +725,6 @@ bool FileSegment::assertCorrectness() const
     return true;
 }
 
-void FileSegment::throwIfDetachedUnlocked(const FileSegmentGuard::Lock & lock) const
-{
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Cache file segment is in detached state, operation not allowed. "
-        "It can happen when cache was concurrently dropped with SYSTEM DROP FILESYSTEM CACHE FORCE. "
-        "Please, retry. File segment info: {}", getInfoForLogUnlocked(lock));
-}
-
 void FileSegment::assertNotDetached() const
 {
     auto lock = segment_guard.lock();
@@ -773,7 +734,13 @@ void FileSegment::assertNotDetached() const
 void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock) const
 {
     if (download_state == State::DETACHED)
-        throwIfDetachedUnlocked(lock);
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cache file segment is in detached state, operation not allowed. "
+            "It can happen when cache was concurrently dropped with SYSTEM DROP FILESYSTEM CACHE FORCE. "
+            "Please, retry. File segment info: {}", getInfoForLogUnlocked(lock));
+    }
 }
 
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
@@ -785,14 +752,12 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
         file_segment->offset(),
         file_segment->range().size(),
         State::DETACHED,
-        CreateFileSegmentSettings(file_segment->getKind()));
+        CreateFileSegmentSettings(file_segment->getKind(), file_segment->is_unbound));
 
     snapshot->hits_count = file_segment->getHitsCount();
     snapshot->downloaded_size = file_segment->getDownloadedSize(false);
     snapshot->download_state = file_segment->download_state.load();
-
     snapshot->ref_count = file_segment.use_count();
-    snapshot->is_unbound = file_segment->is_unbound;
 
     return snapshot;
 }
@@ -822,27 +787,32 @@ bool FileSegment::isCompleted(bool sync) const
     return is_completed_state();
 }
 
+void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
+{
+    setDownloadState(State::DETACHED, lock);
+    key_metadata.reset();
+    cache = nullptr;
+}
+
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 {
     if (download_state == State::DETACHED)
         return;
 
-    setDownloadState(State::DETACHED, lock);
     resetDownloaderUnlocked(lock);
-
-    detachAssumeStateFinalized(lock);
-}
-
-void FileSegment::detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock)
-{
-    key_metadata.reset();
-    LOG_TEST(log, "Detached file segment: {}", getInfoForLogUnlocked(lock));
+    setDetachedState(lock);
 }
 
 void FileSegment::use()
 {
+    if (!cache)
+    {
+        chassert(isCompleted(true));
+        return;
+    }
+
     auto it = getQueueIterator();
-    if (it && cache)
+    if (it)
     {
         auto cache_lock = cache->lockCache();
         it->use(cache_lock);
@@ -869,7 +839,7 @@ String FileSegmentsHolder::toString()
         if (!ranges.empty())
             ranges += ", ";
         ranges += file_segment->range().toString();
-        if (file_segment->is_unbound)
+        if (file_segment->isUnbound())
             ranges += "(unbound)";
     }
     return ranges;

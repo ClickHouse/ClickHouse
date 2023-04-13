@@ -163,11 +163,10 @@ public:
     size_t offset() const { return range().left; }
 
     FileSegmentKind getKind() const { return segment_kind; }
-    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
-    bool isUnbound() const { return is_unbound; }
 
-    using UniqueId = std::pair<FileCacheKey, size_t>;
-    UniqueId getUniqueId() const { return std::pair(key(), offset()); }
+    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
+
+    bool isUnbound() const { return is_unbound; }
 
     String getPathInLocalCache() const;
 
@@ -198,6 +197,8 @@ public:
 
     size_t getDownloadedSize(bool sync) const;
 
+    size_t getReservedSize() const;
+
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
     ///    && it does not need this segment anymore
@@ -218,11 +219,39 @@ public:
 
     bool isDetached() const;
 
-    /// File segment has a completed state, if this state is final and is not going to be changed.
-    /// Completed states: DOWNALODED, DETACHED.
+    /// File segment has a completed state, if this state is final and
+    /// is not going to be changed. Completed states: DOWNALODED, DETACHED.
     bool isCompleted(bool sync = false) const;
 
+    void use();
+
+    /**
+     * ========== Methods used by `cache` ========================
+     */
+
+    FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
+
+    CachePriorityIterator getQueueIterator() const;
+
+    void setQueueIterator(CachePriorityIterator iterator);
+
+    KeyMetadataPtr tryGetKeyMetadata() const;
+
+    KeyMetadataPtr getKeyMetadata() const;
+
     bool assertCorrectness() const;
+
+    /**
+     * ========== Methods that must do cv.notify() ==================
+     */
+
+    void setBroken();
+
+    void complete();
+
+    void completePartAndResetDownloader();
+
+    void resetDownloader();
 
     /**
      * ========== Methods for _only_ file segment's `downloader` ==================
@@ -240,70 +269,33 @@ public:
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
 
-    void setBroken();
-
-    void complete();
-
-    /// Complete file segment's part which was last written.
-    void completePartAndResetDownloader();
-
-    void resetDownloader();
-
     RemoteFileReaderPtr getRemoteFileReader();
 
     RemoteFileReaderPtr extractRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
-    void resetRemoteFileReader();
-
-    FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
-
     void setDownloadedSize(size_t delta);
 
-    size_t getReservedSize() const;
-
-    CachePriorityIterator getQueueIterator() const;
-
-    void setQueueIterator(CachePriorityIterator iterator);
-
-    KeyMetadataPtr getKeyMetadata() const;
-
-    void use();
-
 private:
-    String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
+    bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
-    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
-    void setDownloadedSizeUnlocked(size_t delta, const FileSegmentGuard::Lock &);
+    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
+    void setDetachedState(const FileSegmentGuard::Lock &);
+
+    String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
-
-    bool isDetached(const FileSegmentGuard::Lock &) const { return download_state == State::DETACHED; }
-    void detachAssumeStateFinalized(const FileSegmentGuard::Lock &);
-    [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock &) const;
 
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
-    KeyMetadataPtr tryGetKeyMetadata() const;
-
-    /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
-    /// Function might check if the caller of the method
-    /// is the last alive holder of the segment. Therefore, completion and destruction
-    /// of the file segment pointer must be done under the same cache mutex.
-    void completeUnlocked(LockedKey & locked_key);
-
-    void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
-    bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
-
-    void wrapWithCacheInfo(Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
 
     Key file_key;
     Range segment_range;

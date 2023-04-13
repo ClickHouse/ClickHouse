@@ -513,8 +513,6 @@ KeyMetadata::iterator FileCache::addFileSegment(
                 "Failed to insert {}:{}: entry already exists", key, offset);
         }
 
-        if (state == FileSegment::State::DOWNLOADED)
-            chassert(file_segment_metadata_it->second->file_segment->getQueueIterator());
         return file_segment_metadata_it;
     }
     catch (...)
@@ -565,37 +563,30 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
 
         chassert(file_segment_metadata->file_segment->getQueueIterator());
-        chassert(entry.offset == file_segment_metadata->file_segment->offset());
-
-        auto iteration_result = PriorityIterationResult::CONTINUE;
-
         const bool is_persistent = allow_persistent_files && file_segment_metadata->file_segment->isPersistent();
         const bool releasable = file_segment_metadata->releasable() && !is_persistent;
+
         if (releasable)
         {
-            auto current_file_segment = file_segment_metadata->file_segment;
-            const size_t file_segment_size = entry.size;
+            removed_size += entry.size;
+            --queue_size;
 
-            if (current_file_segment->state() == FileSegment::State::DOWNLOADED)
+            auto segment = file_segment_metadata->file_segment;
+            if (segment->state() == FileSegment::State::DOWNLOADED)
             {
-                const auto & key = current_file_segment->key();
+                const auto & key = segment->key();
                 auto it = to_delete.find(key);
                 if (it == to_delete.end())
                     it = to_delete.emplace(key, locked_key.getKeyMetadata()).first;
                 it->second.add(file_segment_metadata);
-            }
-            else
-            {
-                /// TODO: we can resize if partially downloaded instead.
-                iteration_result = PriorityIterationResult::REMOVE_AND_CONTINUE;
-                locked_key.removeFileSegment(current_file_segment->offset(), current_file_segment->lock());
+                return PriorityIterationResult::CONTINUE;
             }
 
-            removed_size += file_segment_size;
-            --queue_size;
+            /// TODO: we can resize if partially downloaded instead.
+            locked_key.removeFileSegment(segment->offset(), segment->lock());
+            return PriorityIterationResult::REMOVE_AND_CONTINUE;
         }
-
-        return iteration_result;
+        return PriorityIterationResult::CONTINUE;
     };
 
     if (query_priority)
@@ -676,12 +667,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
-    const auto & key_metadata = file_segment.getKeyMetadata();
-    if (!key_metadata->created_base_directory.exchange(true))
-    {
-        fs::create_directories(metadata.getPathInLocalCache(file_segment.key()));
-    }
-
+    file_segment.getKeyMetadata()->createBaseDirectory();
     return true;
 }
 
@@ -994,7 +980,16 @@ void FileCache::assertCacheCorrectness()
     {
         for (const auto & [offset, file_segment_metadata] : locked_key)
         {
-            locked_key.assertFileSegmentCorrectness(*file_segment_metadata->file_segment);
+            const auto & file_segment = *file_segment_metadata->file_segment;
+
+            if (file_segment.key() != locked_key.getKey())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected {} = {}", file_segment.key(), locked_key.getKey());
+            }
+
+            file_segment.assertCorrectness();
         }
     });
 }

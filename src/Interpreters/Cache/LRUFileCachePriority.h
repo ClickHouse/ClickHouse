@@ -56,6 +56,8 @@ public:
 
     Iterator remove(const CacheGuard::Lock &) override;
 
+    void annul() override;
+
     void updateSize(ssize_t size) override;
 
 private:

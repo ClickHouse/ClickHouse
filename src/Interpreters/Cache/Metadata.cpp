@@ -49,9 +49,11 @@ KeyMetadata::KeyMetadata(
     bool created_base_directory_)
     : key(key_)
     , key_path(key_path_)
-    , created_base_directory(created_base_directory_)
     , cleanup_queue(cleanup_queue_)
+    , created_base_directory(created_base_directory_)
 {
+    if (created_base_directory)
+        chassert(fs::exists(key_path));
 }
 
 LockedKeyPtr KeyMetadata::lock()
@@ -65,14 +67,40 @@ LockedKeyPtr KeyMetadata::lock()
         "Cannot lock key {} (state: {})", key, magic_enum::enum_name(key_state));
 }
 
+void KeyMetadata::createBaseDirectory()
+{
+    if (!created_base_directory.exchange(true))
+    {
+        fs::create_directories(key_path);
+    }
+}
+
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
 {
     return fs::path(key_path)
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
 }
 
+
+struct CleanupQueue
+{
+    friend struct CacheMetadata;
+public:
+    void add(const FileCacheKey & key);
+    void remove(const FileCacheKey & key);
+    size_t getSize() const;
+
+private:
+    bool tryPop(FileCacheKey & key);
+
+    std::unordered_set<FileCacheKey> keys;
+    mutable std::mutex mutex;
+};
+
+
 CacheMetadata::CacheMetadata(const std::string & path_)
     : path(path_)
+    , cleanup_queue(std::make_unique<CleanupQueue>())
     , log(&Poco::Logger::get("CacheMetadata"))
 {
 }
@@ -128,7 +156,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
 
             it = emplace(
                 key, std::make_shared<KeyMetadata>(
-                    key, getPathInLocalCache(key), cleanup_queue, is_initial_load)).first;
+                    key, getPathInLocalCache(key), *cleanup_queue, is_initial_load)).first;
         }
 
         key_metadata = it->second;
@@ -198,7 +226,7 @@ void CacheMetadata::doCleanup()
     /// we perform this delayed removal.
 
     FileCacheKey cleanup_key;
-    while (cleanup_queue.tryPop(cleanup_key))
+    while (cleanup_queue->tryPop(cleanup_key))
     {
         auto it = find(cleanup_key);
         if (it == end())
@@ -259,15 +287,9 @@ void LockedKey::removeFromCleanupQueue()
     key_metadata->key_state = KeyMetadata::KeyState::ACTIVE;
 }
 
-bool LockedKey::markAsRemoved()
+void LockedKey::markAsRemoved()
 {
-    chassert(key_metadata->key_state != KeyMetadata::KeyState::REMOVED);
-
-    if (key_metadata->key_state == KeyMetadata::KeyState::ACTIVE)
-        return false;
-
     key_metadata->key_state = KeyMetadata::KeyState::REMOVED;
-    return true;
 }
 
 bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
@@ -301,13 +323,13 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, const FileSegm
 
     auto file_segment = it->second->file_segment;
     if (file_segment->queue_iterator)
-        file_segment->queue_iterator->updateSize(-file_segment->queue_iterator->getEntry().size);
+        file_segment->queue_iterator->annul();
 
-    const auto path = key_metadata->getFileSegmentPath(*it->second->file_segment);
+    const auto path = key_metadata->getFileSegmentPath(*file_segment);
     if (fs::exists(path))
         fs::remove(path);
 
-    it->second->file_segment->detach(segment_lock, *this);
+    file_segment->detach(segment_lock, *this);
     return key_metadata->erase(it);
 }
 
@@ -326,6 +348,8 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     const size_t downloaded_size = file_segment->getDownloadedSize(false);
     const size_t full_size = file_segment->range().size();
 
+    chassert(downloaded_size <= file_segment->reserved_size);
+
     if (downloaded_size == full_size)
     {
         throw Exception(
@@ -334,34 +358,20 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    auto queue_iterator = metadata->file_segment->queue_iterator;
-
-    chassert(downloaded_size <= file_segment->reserved_size);
-    chassert(queue_iterator->getEntry().size == file_segment->reserved_size);
-
     CreateFileSegmentSettings create_settings(file_segment->getKind());
+    auto queue_iterator = file_segment->queue_iterator;
+
     metadata->file_segment = std::make_shared<FileSegment>(
         getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED, create_settings,
-        file_segment->cache, key_metadata, file_segment->queue_iterator);
+        file_segment->cache, key_metadata, queue_iterator);
 
+    chassert(queue_iterator->getEntry().size == file_segment->reserved_size);
     ssize_t diff = file_segment->reserved_size - file_segment->downloaded_size;
     if (diff)
         queue_iterator->updateSize(-diff);
 
     chassert(file_segment->reserved_size == downloaded_size);
     chassert(metadata->size() == queue_iterator->getEntry().size);
-}
-
-void LockedKey::assertFileSegmentCorrectness(const FileSegment & file_segment) const
-{
-    if (file_segment.key() != getKey())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected {} = {}", file_segment.key(), getKey());
-    }
-
-    file_segment.assertCorrectness();
 }
 
 std::shared_ptr<const FileSegmentMetadata> LockedKey::getByOffset(size_t offset) const
