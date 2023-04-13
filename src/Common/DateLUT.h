@@ -28,11 +28,11 @@ public:
     /// If it is not set, server's timezone (the one which server has) is being used.
     static ALWAYS_INLINE const DateLUTImpl & instance()
     {
-        std::string effective_time_zone;
         const auto & date_lut = getInstance();
 
         if (DB::CurrentThread::isInitialized())
         {
+            std::string effective_time_zone;
             const auto query_context = DB::CurrentThread::get().getQueryContext();
 
             if (query_context)
@@ -43,6 +43,8 @@ public:
                     return date_lut.getImplementation(effective_time_zone);
             }
 
+            /// Timezone is passed in query_context, but on CH-Client we have no query context,
+            /// and each time we modify client's global context
             const auto global_context = DB::CurrentThread::get().getGlobalContext();
             if (global_context)
             {
@@ -56,15 +58,12 @@ public:
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
-    /// Return singleton DateLUTImpl instance for a given time zone. If timezone is an empty string,
-    /// server's timezone is used. The `timezone` setting is not considered here.
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
-        const auto & date_lut = getInstance();
-
         if (time_zone.empty())
-            return *date_lut.default_impl.load(std::memory_order_acquire);
+            return instance();
 
+        const auto & date_lut = getInstance();
         return date_lut.getImplementation(time_zone);
     }
 

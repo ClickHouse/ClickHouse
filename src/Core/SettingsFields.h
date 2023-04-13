@@ -576,10 +576,10 @@ struct SettingFieldTimezone
 
 private:
     cctz::time_zone validated_tz;
-    void validateTimezone(const std::string & str)
+    void validateTimezone(const std::string & tz_str)
     {
-        if (str != "" && !cctz::load_time_zone(str, &validated_tz))
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", str);
+        if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
     }
 };
 
