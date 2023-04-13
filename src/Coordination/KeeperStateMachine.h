@@ -8,7 +8,6 @@
 
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
