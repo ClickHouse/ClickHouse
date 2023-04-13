@@ -260,7 +260,7 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
         auto columns = ParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
-        columns.filterOut(NameSet{"add", "remove"});
+        columns.filterColumns(NameSet{"add", "remove"});
         Block header;
         for (const auto & column : columns)
             header.insert({column.type->createColumn(), column.type, column.name});

@@ -71,23 +71,23 @@ struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 
             const auto partition = key_file.parent_path().stem();
-            const auto file_id = file_parts[0];
+            const auto & file_id = file_parts[0];
             const auto timestamp = parse<UInt64>(file_parts[2]);
 
             auto & file_info = data_files[partition][file_id];
             if (file_info.timestamp == 0 || file_info.timestamp < timestamp)
             {
-                file_info.key = key;
+                file_info.key = std::move(key);
                 file_info.timestamp = timestamp;
             }
         }
 
         Strings result;
-        for (const auto & [partition, partition_data] : data_files)
+        for (auto & [partition, partition_data] : data_files)
         {
             LOG_TRACE(log, "Adding {} data files from partition {}", partition, partition_data.size());
-            for (const auto & [file_id, file_data] : partition_data)
-                result.push_back(file_data.key);
+            for (auto & [file_id, file_data] : partition_data)
+                result.push_back(std::move(file_data.key));
         }
         return result;
     }
