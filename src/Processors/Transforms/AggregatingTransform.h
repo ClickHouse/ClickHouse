@@ -6,6 +6,14 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DestroyAggregatesThreads;
+    extern const Metric DestroyAggregatesThreadsActive;
+}
 
 namespace DB
 {
@@ -84,7 +92,10 @@ struct ManyAggregatedData
             // Aggregation states destruction may be very time-consuming.
             // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
             // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(variants.size());
+            const auto pool = std::make_unique<ThreadPool>(
+                CurrentMetrics::DestroyAggregatesThreads,
+                CurrentMetrics::DestroyAggregatesThreadsActive,
+                variants.size());
 
             for (auto && variant : variants)
             {

@@ -60,6 +60,8 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 /// Helper functions for formatted input.
@@ -127,13 +129,13 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
-inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
+inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
 {
     size_t size = 0;
     readVarUInt(size, buf);
 
-    if (size > MAX_STRING_SIZE)
-        throw Poco::Exception("Too large string size.");
+    if (size > max_string_size)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
 
     s.resize(size);
     buf.readStrict(s.data(), size);
@@ -145,6 +147,9 @@ inline StringRef readStringBinaryInto(Arena & arena, ReadBuffer & buf)
     size_t size = 0;
     readVarUInt(size, buf);
 
+    if (unlikely(size > DEFAULT_MAX_STRING_SIZE))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
     char * data = arena.alloc(size);
     buf.readStrict(data, size);
 
@@ -153,13 +158,14 @@ inline StringRef readStringBinaryInto(Arena & arena, ReadBuffer & buf)
 
 
 template <typename T>
-void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SIZE = DEFAULT_MAX_STRING_SIZE)
+void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
 
-    if (size > MAX_VECTOR_SIZE)
-        throw Poco::Exception("Too large vector size.");
+    if (size > DEFAULT_MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
 
     v.resize(size);
     for (size_t i = 0; i < size; ++i)
@@ -1021,12 +1027,15 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
-        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    {
+        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_multiplier;
+    }
     else
+    {
         is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
-
-    datetime64 *= negative_multiplier;
-
+        if (is_ok)
+            datetime64 *= negative_multiplier;
+    }
 
     return ReturnType(is_ok);
 }
