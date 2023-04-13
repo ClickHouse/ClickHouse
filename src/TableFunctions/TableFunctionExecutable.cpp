@@ -25,7 +25,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
 }
 
 std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -56,9 +56,14 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto args = function->arguments->children;
 
-    if (args.size() < 3 || args[2]->as<ASTSetQuery>())
+    if (args.size() < 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{}' requires minimum 3 arguments: script_name, format, structure, [input_query...]",
+            getName());
+
+    if (args[2]->as<ASTSetQuery>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table function '{}' requires 3 mandatory arguments: script_name, format, structure",
             getName());
 
     for (size_t i = 0; i <= 2; ++i)
@@ -83,15 +88,18 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         }
         else
         {
-            ASTPtr query = args[i]->children.at(0);
-            if (query->as<ASTSelectWithUnionQuery>())
+            ASTPtr query;
+            if (!args[i]->children.empty())
+                query = args[i]->children.at(0);
+
+            if (query && query->as<ASTSelectWithUnionQuery>())
             {
                 input_queries.emplace_back(std::move(query));
             }
             else
             {
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
+                    ErrorCodes::BAD_ARGUMENTS,
                     "Table function '{}' argument is invalid {}",
                     getName(),
                     args[i]->formatForErrorMessage());
