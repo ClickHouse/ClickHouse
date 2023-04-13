@@ -919,14 +919,13 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
 {
-    auto lock = getLock();
-
-    if (shared->root_temp_data_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
-
     auto disk_ptr = getDisk(cache_disk_name);
     if (!disk_ptr)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
+
+    auto lock = getLock();
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
     const auto * disk_object_storage_ptr = dynamic_cast<const DiskObjectStorage *>(disk_ptr.get());
     if (!disk_object_storage_ptr)

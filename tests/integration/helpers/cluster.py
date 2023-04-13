@@ -370,7 +370,9 @@ class ClickHouseCluster:
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
-        self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
+        # Problems with glibc 2.36+ [1]
+        #
+        #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
@@ -4161,9 +4163,10 @@ class ClickHouseInstance:
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            need_fix_log_level = self.tag != "latest"
             write_embedded_config(
-                "0_common_instance_config.xml", self.config_d_dir, need_fix_log_level
+                "0_common_instance_config.xml",
+                self.config_d_dir,
+                self.with_installed_binary,
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
