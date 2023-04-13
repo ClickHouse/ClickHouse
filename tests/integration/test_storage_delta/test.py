@@ -54,6 +54,7 @@ def started_cluster():
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
             with_minio=True,
+            with_spark=True,
         )
 
         logging.info("Starting cluster...")
@@ -61,7 +62,9 @@ def started_cluster():
 
         prepare_s3_bucket(cluster)
 
-        pyspark.sql.SparkSession.builder.appName("spark_test").master("local").getOrCreate().stop()
+        pyspark.sql.SparkSession.builder.appName("spark_test").master(
+            "local"
+        ).getOrCreate().stop()
         cluster.spark_session = get_spark()
 
         yield cluster
