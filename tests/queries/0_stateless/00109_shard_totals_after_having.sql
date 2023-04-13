@@ -16,7 +16,7 @@ SET totals_mode = 'after_having_inclusive';
 SELECT intDiv(number, 2) AS k, count(), argMax(toString(number), number) FROM remote('127.0.0.{2,3}', currentDatabase(), numbers500k) GROUP BY k WITH TOTALS ORDER BY k LIMIT 10;
 
 SET totals_mode = 'after_having_exclusive';
-SELECT intDiv(number, 2) AS k, count(), argMax(toString(number), number) FROM remote('127.0.0.{2,3}', currentDatabase(), numbers500k) GROUP BY k WITH TOTALS ORDER BY k LIMIT 10;
+SELECT intDiv(number, 2) AS k, count(), argMax(toString(number), number) FROM (SELECT * FROM remote('127.0.0.{2,3}', currentDatabase(), numbers500k) ORDER BY number) GROUP BY k WITH TOTALS ORDER BY k LIMIT 10;
 
 SET totals_mode = 'before_having';
 SELECT intDiv(number, 2) AS k, count(), argMax(toString(number), number) FROM remote('127.0.0.{2,3}', currentDatabase(), numbers500k) GROUP BY k WITH TOTALS ORDER BY k LIMIT 10;
