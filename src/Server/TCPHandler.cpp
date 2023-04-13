@@ -183,8 +183,11 @@ void TCPHandler::runImpl()
     /// User will be authenticated here. It will also set settings from user profile into connection_context.
     try
     {
+        LOG_DEBUG(log, "Before receiveHello");
         receiveHello();
+        LOG_DEBUG(log, "Before sendHello");
         sendHello();
+        LOG_DEBUG(log, "Before receiveAddendum");
         if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             receiveAddendum();
 
@@ -499,7 +502,6 @@ void TCPHandler::runImpl()
 
             {
                 std::lock_guard lock(task_callback_mutex);
-                sendTimezone();
                 sendLogs();
                 sendEndOfStream();
             }
