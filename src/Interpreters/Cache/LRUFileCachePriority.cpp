@@ -113,8 +113,8 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Mismatch of file segment size in file segment metadata and priority queue: {} != {}",
-                it->size, metadata->size());
+                "Mismatch of file segment size in file segment metadata and priority queue: {} != {} ({})",
+                it->size, metadata->size(), metadata->file_segment->getInfoForLog());
         }
 
         auto result = func(*locked_key, metadata);
