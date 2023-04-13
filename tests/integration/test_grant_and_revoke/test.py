@@ -600,7 +600,7 @@ def test_grant_current_grants():
     )
 
     instance.query("CREATE USER B")
-    instance.query("GRANT CURRENT GRANTS TO B", user="A")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO B"]
     )
@@ -638,7 +638,7 @@ def test_grant_current_grants_with_partial_revoke():
     )
 
     instance.query("CREATE USER B")
-    instance.query("GRANT CURRENT GRANTS TO B", user="A")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
             "GRANT SELECT ON *.* TO B",
@@ -649,7 +649,7 @@ def test_grant_current_grants_with_partial_revoke():
 
     instance.query("DROP USER IF EXISTS B")
     instance.query("CREATE USER B")
-    instance.query("GRANT CURRENT GRANTS TO B WITH GRANT OPTION", user="A")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH GRANT OPTION", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
             "GRANT SELECT ON *.* TO B WITH GRANT OPTION",
@@ -661,11 +661,20 @@ def test_grant_current_grants_with_partial_revoke():
     instance.query("DROP USER IF EXISTS C")
     instance.query("CREATE USER C")
     instance.query("GRANT SELECT ON test.* TO B")
-    instance.query("GRANT CURRENT GRANTS TO C", user="B")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO C", user="B")
     assert instance.query("SHOW GRANTS FOR C") == TSV(
         [
             "GRANT SELECT ON *.* TO C",
             "GRANT CREATE TABLE ON test.table TO C",
+        ]
+    )
+
+    instance.query("DROP USER IF EXISTS B")
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS ON test.* TO B WITH GRANT OPTION", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT, CREATE TABLE ON test.table TO B WITH GRANT OPTION",
         ]
     )
 
@@ -687,7 +696,7 @@ def test_current_grants_override():
         ["GRANT SELECT ON test.table TO B"]
     )
 
-    instance.query("GRANT CURRENT GRANTS TO B", user="A")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
             "GRANT SELECT ON *.* TO B",
@@ -703,7 +712,7 @@ def test_current_grants_override():
         ["GRANT SELECT ON test.table TO B"]
     )
 
-    instance.query("GRANT CURRENT GRANTS TO B WITH REPLACE OPTION", user="A")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
             "GRANT SELECT ON *.* TO B",

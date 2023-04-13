@@ -346,11 +346,21 @@ namespace
     /// Grants current user's grants with grant options to specified user.
     void grantCurrentGrants(
         IAccessEntity & grantee,
-        const AccessRightsElements & elements_to_grant,
-        const AccessRightsElements & elements_to_revoke,
-        std::shared_ptr<const ContextAccess> current_user_access)
+        const AccessRights & new_rights,
+        const AccessRightsElements & elements_to_revoke)
     {
-        /// We need to collect all current user's grant and filter them by grant option.
+        if (auto * user = typeid_cast<User *>(&grantee))
+            grantCurrentGrantsTemplate(*user, new_rights, elements_to_revoke);
+        else if (auto * role = typeid_cast<Role *>(&grantee))
+            grantCurrentGrantsTemplate(*role, new_rights, elements_to_revoke);
+    }
+
+    /// Calculates all available rights to grant with current user intersection.
+    void calculateCurrentGrantRightsWithIntersection(
+        AccessRights & rights,
+        std::shared_ptr<const ContextAccess> current_user_access,
+        const AccessRightsElements & elements_to_grant)
+    {
         AccessRightsElements current_user_grantable_elements;
         auto available_grant_elements = current_user_access->getAccessRights()->getElements();
         std::copy_if(
@@ -368,13 +378,8 @@ namespace
                 current_user_rights.grant(element);
         }
 
-        AccessRights new_rights(elements_to_grant);
-        new_rights.makeIntersection(current_user_rights);
-
-        if (auto * user = typeid_cast<User *>(&grantee))
-            grantCurrentGrantsTemplate(*user, new_rights, elements_to_revoke);
-        else if (auto * role = typeid_cast<Role *>(&grantee))
-            grantCurrentGrantsTemplate(*role, new_rights, elements_to_revoke);
+        rights.grant(elements_to_grant);
+        rights.makeIntersection(current_user_rights);
     }
 
     /// Updates grants of a specified user or role.
@@ -445,12 +450,16 @@ BlockIO InterpreterGrantQuery::execute()
     if (need_check_grantees_are_allowed)
         current_user_access->checkGranteesAreAllowed(grantees);
 
+    AccessRights new_rights;
+    if (query.current_grants)
+        calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
+
     /// Update roles and users listed in `grantees`.
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
         auto clone = entity->clone();
         if (query.current_grants)
-            grantCurrentGrants(*clone, elements_to_grant, elements_to_revoke, current_user_access);
+            grantCurrentGrants(*clone, new_rights, elements_to_revoke);
         else
             updateGrantedAccessRightsAndRoles(*clone, elements_to_grant, elements_to_revoke, roles_to_grant, roles_to_revoke, query.admin_option);
         return clone;
