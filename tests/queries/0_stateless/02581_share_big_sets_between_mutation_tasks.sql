@@ -4,15 +4,18 @@ CREATE TABLE 02581_trips(id UInt32, description String) ENGINE=MergeTree ORDER B
 
 -- Make multiple parts
 INSERT INTO 02581_trips SELECT number, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+10000000, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+20000000, '' FROM numbers(10000);
-INSERT INTO 02581_trips SELECT number+30000000, '' FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+10000, '' FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+20000, '' FROM numbers(10000);
+INSERT INTO 02581_trips SELECT number+30000, '' FROM numbers(10000);
 
-SELECT count() from 02581_trips;
-
-SELECT name FROM system.parts WHERE database=currentDatabase() AND table = '02581_trips' AND active ORDER BY name;
+-- { echoOn }
+SELECT count(), _part FROM 02581_trips GROUP BY _part ORDER BY _part;
 
 -- Run mutation with a 'IN big subquery'
-ALTER TABLE 02581_trips UPDATE description='' WHERE id IN (SELECT (number+5)::UInt32 FROM numbers(10000000)) SETTINGS mutations_sync=2;
+ALTER TABLE 02581_trips UPDATE description='1' WHERE id IN (SELECT (number*10+1)::UInt32 FROM numbers(10000000)) SETTINGS mutations_sync=2;
+SELECT count(), _part FROM 02581_trips WHERE description = '' GROUP BY _part ORDER BY _part;
+ALTER TABLE 02581_trips UPDATE description='2' WHERE id IN (SELECT (number*10+2)::UInt32 FROM numbers(10000)) SETTINGS mutations_sync=2;
+SELECT count(), _part FROM 02581_trips WHERE description = '' GROUP BY _part ORDER BY _part;
+-- { echoOff }
 
 DROP TABLE 02581_trips;
