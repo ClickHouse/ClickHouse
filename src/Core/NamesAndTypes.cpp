@@ -159,7 +159,7 @@ DataTypes NamesAndTypesList::getTypes() const
     return res;
 }
 
-void NamesAndTypesList::filterOut(const NameSet & names)
+void NamesAndTypesList::filterColumns(const NameSet & names)
 {
     for (auto it = begin(); it != end();)
     {
