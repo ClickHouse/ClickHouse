@@ -179,8 +179,6 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
     storage.clearOldWriteAheadLogs();
-    if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
-        storage.clearOldBrokenPartsFromDetachedDirectory();
 
     storage.createNewZooKeeperNodes();
     storage.syncPinnedPartUUIDs();
