@@ -95,19 +95,15 @@ inline char parseEscapeSequence(char c)
 }
 
 
-/// These functions are located in VarInt.h
-/// inline void throwReadAfterEOF()
+/// Function throwReadAfterEOF is located in VarInt.h
 
 
 inline void readChar(char & x, ReadBuffer & buf)
 {
-    if (!buf.eof())
-    {
-        x = *buf.position();
-        ++buf.position();
-    }
-    else
+    if (buf.eof()) [[unlikely]]
         throwReadAfterEOF();
+    x = *buf.position();
+    ++buf.position();
 }
 
 
@@ -257,7 +253,7 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
 
 inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case = false)
 {
-    if (buf.eof())
+    if (buf.eof()) [[unlikely]]
         throwReadAfterEOF();
 
     switch (*buf.position())
@@ -312,7 +308,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 
     bool negative = false;
     UnsignedT res{};
-    if (buf.eof())
+    if (buf.eof()) [[unlikely]]
     {
         if constexpr (throw_exception)
             throwReadAfterEOF();
@@ -487,14 +483,14 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             throwReadAfterEOF();
     };
 
-    if (unlikely(buf.eof()))
+    if (buf.eof()) [[unlikely]]
         return on_error();
 
     if (is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
-        if (unlikely(buf.eof()))
+        if (buf.eof()) [[unlikely]]
             return on_error();
     }
 
@@ -1248,7 +1244,7 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 template <typename T>
 inline void readCSVSimple(T & x, ReadBuffer & buf)
 {
-    if (buf.eof())
+    if (buf.eof()) [[unlikely]]
         throwReadAfterEOF();
 
     char maybe_quote = *buf.position();
