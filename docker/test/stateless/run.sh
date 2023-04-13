@@ -156,7 +156,11 @@ ls -la ./
 echo "Files in root directory"
 ls -la /
 
-/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
+    /process_functional_tests_result.py --broken-tests=/broken_tests.txt || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+else
+    /process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+fi
 
 clickhouse-client -q "system flush logs" ||:
 
