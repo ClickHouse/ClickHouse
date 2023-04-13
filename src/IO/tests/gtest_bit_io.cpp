@@ -16,7 +16,6 @@
 #include <vector>
 #include <typeinfo>
 #include <iostream>
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 using namespace DB;

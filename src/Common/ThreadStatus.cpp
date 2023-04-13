@@ -2,12 +2,12 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
-#include <base/getThreadId.h>
-#include <base/getPageSize.h>
 
 #include <csignal>
 #include <sys/mman.h>
@@ -63,7 +63,7 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroupStatus::ThreadGroupStatus()
+ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
 {}
 
@@ -121,7 +121,7 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
-ThreadGroupStatusPtr ThreadStatus::getThreadGroup() const
+ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
     return thread_group;
 }
@@ -141,7 +141,7 @@ ContextPtr ThreadStatus::getGlobalContext() const
     return global_context.lock();
 }
 
-void ThreadGroupStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
+void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
 {
     std::lock_guard lock(mutex);
     shared_data.logs_queue_ptr = logs_queue;
@@ -216,6 +216,20 @@ void ThreadStatus::updatePerformanceCounters()
     catch (...)
     {
         tryLogCurrentException(log);
+    }
+}
+
+void ThreadStatus::updatePerformanceCountersIfNeeded()
+{
+    if (last_rusage->thread_id == 0)
+        return; // Performance counters are not initialized, so there is no need to update them
+
+    constexpr UInt64 performance_counters_update_period_microseconds = 10 * 1000; // 10 milliseconds
+    UInt64 total_elapsed_microseconds = stopwatch.elapsedMicroseconds();
+    if (last_performance_counters_update_time + performance_counters_update_period_microseconds < total_elapsed_microseconds)
+    {
+        updatePerformanceCounters();
+        last_performance_counters_update_time = total_elapsed_microseconds;
     }
 }
 

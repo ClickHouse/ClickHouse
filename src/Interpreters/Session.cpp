@@ -107,7 +107,7 @@ public:
         if (it == sessions.end())
         {
             if (throw_if_not_found)
-                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session not found.");
+                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
             /// Create a new session from current context.
             auto context = Context::createCopy(global_context);
@@ -129,7 +129,7 @@ public:
             LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
-                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session is locked by a concurrent client.");
+                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
             return {session, false};
         }
     }
@@ -140,9 +140,12 @@ public:
         scheduleCloseSession(session, lock);
     }
 
-    void closeSession(const UUID & user_id, const String & session_id)
+    void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
     {
         std::unique_lock lock(mutex);
+        scheduleCloseSession(*session_data, lock);
+        session_data = nullptr;
+
         Key key{user_id, session_id};
         auto it = sessions.find(key);
         if (it == sessions.end())
@@ -559,8 +562,7 @@ void Session::closeSession(const String & session_id)
     if (!named_session)
         return;
 
-    releaseSessionID();
-    NamedSessionsStorage::instance().closeSession(*user_id, session_id);
+    NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
 }
 
 }

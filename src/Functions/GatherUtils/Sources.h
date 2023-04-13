@@ -28,8 +28,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility push(hidden)
-
 template <typename T> struct NumericArraySink;
 struct StringSink;
 struct FixedStringSink;
@@ -828,6 +826,4 @@ struct NullableValueSource : public ValueSource
 };
 
 }
-
-#pragma GCC visibility pop
 }

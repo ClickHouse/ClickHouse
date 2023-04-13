@@ -135,6 +135,7 @@ namespace CurrentMetrics
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
 }
@@ -815,7 +816,8 @@ try
         }
     );
 
-    bool has_zookeeper = config().has("zookeeper");
+    zkutil::validateZooKeeperConfig(config());
+    bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -980,7 +982,7 @@ try
 
     StatusFile status{path / "status", StatusFile::write_full_info};
 
-    DB::ServerUUID::load(path / "uuid", log);
+    ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -1224,6 +1226,25 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            size_t merges_mutations_memory_usage_soft_limit = server_settings.merges_mutations_memory_usage_soft_limit;
+
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(memory_amount * server_settings.merges_mutations_memory_usage_to_ram_ratio);
+            if (merges_mutations_memory_usage_soft_limit == 0 || merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
+            {
+                merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+                LOG_WARNING(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
+                    " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    server_settings.merges_mutations_memory_usage_to_ram_ratio);
+            }
+
+            LOG_INFO(log, "Merges and mutations memory limit is set to {}",
+                formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit));
+            background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
+            background_memory_tracker.setDescription("(background)");
+            background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
+
             total_memory_tracker.setAllowUseJemallocMemory(server_settings.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
@@ -1271,7 +1292,7 @@ try
             {
                 auto new_pool_size = server_settings.background_pool_size;
                 auto new_ratio = server_settings.background_merges_mutations_concurrency_ratio;
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings.background_merges_mutations_scheduling_policy.toString());
             }
 
@@ -1307,7 +1328,7 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (config->has("zookeeper"))
+                if (zkutil::hasZooKeeperConfig(*config))
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
@@ -1456,7 +1477,7 @@ try
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -1481,7 +1502,7 @@ try
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     if (server_settings.index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);

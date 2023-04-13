@@ -76,7 +76,8 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter_ast));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter_ast));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
+    UInt64 log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
 std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
@@ -141,7 +142,7 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     /** We are only considering conditions of form `equals(one, another)` or `one = another`,
       * especially if either `one` or `another` is ASTIdentifier
       */
-    if (function_node.getFunctionName() != "equals")
+    if (function_node.getFunctionName() != "equals" || function_node.getArgumentsSize() != 2)
         return false;
 
     auto lhs_argument = function_node.getArgumentAt(0);
