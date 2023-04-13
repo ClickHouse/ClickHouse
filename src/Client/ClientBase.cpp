@@ -1074,13 +1074,9 @@ void ClientBase::onProgress(const Progress & value)
 
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
-//    std::cerr << "ClientBase::onTimezoneUpdate received new TZ from server: " <<  tz << std::endl;
-
     Settings settings;
     settings.timezone = tz;
     global_context->applySettingsChanges(settings.changes());
-
-//    LogContextes("ClientBase::onTimezoneUpdate", global_context);
 }
 
 
