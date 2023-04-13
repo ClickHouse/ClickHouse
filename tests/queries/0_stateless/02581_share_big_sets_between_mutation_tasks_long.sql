@@ -46,16 +46,12 @@ WHERE
 SETTINGS mutations_sync=2;
 SELECT count() from 02581_trips WHERE description = '';
 
-
-
-CREATE TABLE 02581_set (id UInt32) ENGINE = Set;
-
-INSERT INTO 02581_set SELECT number*10+6 FROM numbers(200000000);
-
--- Run mutation with non-PK `id2` IN big subquery
-ALTER TABLE 02581_trips UPDATE description='d' WHERE id IN 02581_set SETTINGS mutations_sync=2;
+-- Run mutation with PK and non-PK IN big subquery
+ALTER TABLE 02581_trips UPDATE description='c'
+WHERE
+    (id::UInt32 IN (SELECT (number*10 + 6)::UInt32 FROM numbers(200000000))) OR
+    ((id2+1)::String IN (SELECT (number*10 + 6)::UInt32 FROM numbers(200000000)))
+SETTINGS mutations_sync=2;
 SELECT count() from 02581_trips WHERE description = '';
 
-
-DROP TABLE 02581_set;
 DROP TABLE 02581_trips;
