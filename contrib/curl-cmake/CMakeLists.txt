@@ -38,7 +38,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/easy.c"
     "${LIBRARY_DIR}/lib/curl_fnmatch.c"
     "${LIBRARY_DIR}/lib/fileinfo.c"
-#    "${LIBRARY_DIR}/lib/wildcard.c"
     "${LIBRARY_DIR}/lib/krb5.c"
     "${LIBRARY_DIR}/lib/memdebug.c"
     "${LIBRARY_DIR}/lib/http_chunks.c"
@@ -147,9 +146,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vtls/keylog.c"
     "${LIBRARY_DIR}/lib/vtls/x509asn1.c"
     "${LIBRARY_DIR}/lib/vtls/hostcheck.c"
-#    "${LIBRARY_DIR}/lib/vquic/ngtcp2.c"
-#    "${LIBRARY_DIR}/lib/vquic/quiche.c"
-#    "${LIBRARY_DIR}/lib/vquic/msh3.c"
     "${LIBRARY_DIR}/lib/vssh/libssh2.c"
     "${LIBRARY_DIR}/lib/vssh/libssh.c"
 )
