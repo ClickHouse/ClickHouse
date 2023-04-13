@@ -1,6 +1,7 @@
 #include "MergeTreeDataPartCloner.h"
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
