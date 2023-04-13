@@ -346,7 +346,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         setThreadName(DEFAULT_THREAD_NAME);
 
         /// A copy of parent trace context
-        DB::OpenTelemetry::TracingContextOnThread parent_thead_trace_context;
+        DB::OpenTelemetry::TracingContextOnThread parent_thread_trace_context;
 
         /// Get a job from the queue.
         Job job;
@@ -378,6 +378,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (jobs.empty() || threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads))
             {
+                // We enter here if:
+                //  - either this thread is not needed anymore due to max_free_threads excess;
+                //  - or shutdown happened AND all jobs are already handled.
                 if (threads_remove_themselves)
                 {
                     thread_it->detach();
@@ -389,21 +392,18 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// boost::priority_queue does not provide interface for getting non-const reference to an element
             /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
             job = std::move(const_cast<Job &>(jobs.top().job));
-            parent_thead_trace_context = std::move(const_cast<DB::OpenTelemetry::TracingContextOnThread &>(jobs.top().thread_trace_context));
+            parent_thread_trace_context = std::move(const_cast<DB::OpenTelemetry::TracingContextOnThread &>(jobs.top().thread_trace_context));
             jobs.pop();
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
-            {
-                parent_thead_trace_context.reset();
                 continue;
-            }
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
 
         /// Set up tracing context for this thread by its parent context.
-        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thead_trace_context);
+        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thread_trace_context);
 
         /// Run the job.
         try
@@ -443,7 +443,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         }
 
         job_is_done = true;
-        parent_thead_trace_context.reset();
     }
 }
 
