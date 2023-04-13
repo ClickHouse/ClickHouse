@@ -781,7 +781,7 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
                 String status;
                 if (zk->tryGet(root_zookeeper_path + "/" + existing_backup_path + "/stage", status))
                 {
-                    /// Check if some other restore is in progress
+                    /// Check if some other backup is in progress
                     if (status == Stage::SCHEDULED_TO_START)
                     {
                         LOG_WARNING(log, "Found a concurrent backup: {}, current backup: {}", existing_backup_uuid, toString(backup_uuid));
