@@ -16,10 +16,8 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
-#if defined(__GNUC__)
-    /// GCC mistakenly warns about the names in enum class.
-    #pragma GCC diagnostic ignored "-Wshadow"
-#endif
+/// Clang mistakenly warns about the names in enum class.
+#pragma clang diagnostic ignored "-Wshadow"
 
 namespace DB
 {

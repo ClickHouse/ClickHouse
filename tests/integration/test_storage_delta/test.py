@@ -29,7 +29,7 @@ from pyspark.sql.window import Window
 
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__), with_spark=True)
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def get_spark():
@@ -49,7 +49,7 @@ def get_spark():
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster = ClickHouseCluster(__file__)
+        cluster = ClickHouseCluster(__file__, with_spark=True)
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],

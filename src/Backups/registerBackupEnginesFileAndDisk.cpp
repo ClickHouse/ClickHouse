@@ -178,9 +178,9 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             std::shared_ptr<IBackupWriter> writer;
             if (engine_name == "File")
-                writer = std::make_shared<BackupWriterFile>(path);
+                writer = std::make_shared<BackupWriterFile>(path, params.context);
             else
-                writer = std::make_shared<BackupWriterDisk>(disk, path);
+                writer = std::make_shared<BackupWriterDisk>(disk, path, params.context);
             return std::make_unique<BackupImpl>(
                 backup_name_for_logging,
                 archive_params,

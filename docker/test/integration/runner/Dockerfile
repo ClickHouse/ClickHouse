@@ -114,6 +114,12 @@ RUN set -x \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
 
+# Same options as in test/base/Dockerfile
+# (in case you need to override them in tests)
+ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
+ENV UBSAN_OPTIONS='print_stacktrace=1'
+ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
+
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
