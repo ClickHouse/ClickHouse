@@ -353,8 +353,7 @@ protected:
 };
 
 // Encapsulate a thread that do query cancellations.
-// This is needed to perform asynchronously cancel of a query from context where allocations are not possible,
-// such as OvercommitTracker.
+// This is needed to perform cancel of a query from context where allocations are not possible (such as OvercommitTracker).
 class Canceler
 {
 public:
@@ -365,7 +364,8 @@ public:
     void cancelQueryDueToMemoryLimitExceeded(const QueryStatusPtr & query, MemoryTracker * exhausted);
 
 private:
-    void threadFunc();
+    void threadFunction();
+    void doCancel(std::unique_lock<std::mutex> &);
 
     ProcessList * process_list;
 

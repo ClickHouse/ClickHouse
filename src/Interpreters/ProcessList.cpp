@@ -8,6 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/CurrentThread.h>
@@ -415,6 +416,7 @@ CancellationCode QueryStatus::cancelQuery(int code, const String & msg)
     {
         /// Create a snapshot of executors under a mutex.
         std::lock_guard lock(executors_mutex);
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global); // We do not want this tiny allocation to throw
         executors_snapshot.reserve(executors.size());
         for (const auto & [_, e] : executors)
             executors_snapshot.push_back(e);
@@ -727,7 +729,7 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
 
 Canceler::Canceler(ProcessList * process_list_)
     : process_list(process_list_)
-    , thread([this] { threadFunc(); })
+    , thread([this] { threadFunction(); })
 {}
 
 Canceler::~Canceler()
@@ -752,8 +754,9 @@ void Canceler::cancelQueryDueToMemoryLimitExceeded(const QueryStatusPtr & query,
     cancel_cv.notify_one();
 }
 
-void Canceler::threadFunc()
+void Canceler::threadFunction()
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     setThreadName("Canceler");
     OvercommitTrackerBlockerInThread blocker;
     std::unique_lock lock(mutex);
@@ -762,21 +765,34 @@ void Canceler::threadFunc()
         cancel_cv.wait(lock, [this] { return query_to_cancel != nullptr || stop_flag.load(); });
         if (stop_flag.load())
             break;
-        if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            process_list->sendCancelToQuery(query_to_cancel, code,
-                fmt::format(
-                    "Memory limit{}{} exceeded: "
-                    "current: {}, maximum: {}. "
-                    "Query was selected to stop by OvercommitTracker.",
-                    description ? " " : "",
-                    description ? description : "",
-                    formatReadableSizeWithBinarySuffix(memory_current),
-                    formatReadableSizeWithBinarySuffix(memory_limit)));
-        else
-            process_list->sendCancelToQuery(query_to_cancel, code, "Query was cancelled");
+
+        try {
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            doCancel(lock);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         query_to_cancel.reset();
         ready_cv.notify_one();
     }
+}
+
+void Canceler::doCancel(std::unique_lock<std::mutex> &)
+{
+    if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        process_list->sendCancelToQuery(query_to_cancel, code,
+            fmt::format(
+                "Memory limit{}{} exceeded: "
+                "current: {}, maximum: {}. "
+                "Query was selected to stop by OvercommitTracker.",
+                description ? " " : "",
+                description ? description : "",
+                formatReadableSizeWithBinarySuffix(memory_current),
+                formatReadableSizeWithBinarySuffix(memory_limit)));
+    else
+        process_list->sendCancelToQuery(query_to_cancel, code, "Query was cancelled");
 }
 
 

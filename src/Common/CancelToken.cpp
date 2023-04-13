@@ -1,3 +1,6 @@
+#include <Common/noexcept_scope.h>
+#include <Common/MemoryTracker.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/CancelToken.h>
 #include <base/getThreadId.h>
 
@@ -35,6 +38,7 @@ namespace
 void CancelToken::Registry::insert(CancelToken * token)
 {
     std::lock_guard lock(mutex);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global); // Registry should be exception-safe
     threads[token->thread_id] = token;
 }
 
@@ -101,6 +105,7 @@ void CancelToken::throwIfCanceled()
 
 bool CancelToken::wait(UInt32 * address, UInt32 value)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     chassert((reinterpret_cast<UInt64>(address) & canceled) == 0); // An `address` must be 2-byte aligned
     if (value & signaled) // Can happen after spurious wake-up due to cancel of other thread
         return true; // Spin-wait unless signal is handled
@@ -150,8 +155,12 @@ bool CancelToken::wait(UInt32 * address, UInt32 value)
 void CancelToken::raise()
 {
     std::unique_lock lock(signal_mutex);
+
+    // We should at least be able to create an exception without memory exception
+    LockMemoryExceptionInThread noexcept_lock_memory_tracker(VariableContext::Global);
+
     if (exception_code != 0)
-        throw DB::Exception::createRuntime(
+        throw DB::Exception::createRuntime( // NOTE: we have no format string here, so we have to use createRuntime()
             std::exchange(exception_code, 0),
             std::exchange(exception_message, {}));
     else
@@ -177,6 +186,8 @@ std::mutex CancelToken::signal_mutex;
 
 void CancelToken::signalImpl(int code, const String & message)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+
     // Serialize all signaling threads to avoid races due to concurrent signal()/raise() calls
     std::unique_lock lock(signal_mutex);
 
@@ -189,8 +200,12 @@ void CancelToken::signalImpl(int code, const String & message)
             break; // It is the canceling thread - should deliver signal if necessary
     }
 
-    exception_code = code;
-    exception_message = message;
+    // We do not want allocations to throw here, because CancelToken::signalImpl is not exception-safe
+    NOEXCEPT_SCOPE({
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        exception_code = code;
+        exception_message = message;
+    });
 
     if ((s & disabled) == disabled)
         return; // cancellation is disabled - just signal token for later, but don't wake

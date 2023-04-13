@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/CancelToken.h>
-#include "base/types.h"
+#include <Common/LockMemoryExceptionInThread.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -50,12 +50,17 @@ public:
         std::unique_lock lock(mutex);
         if (canceled)
             return; // repeated cancel signals are ignored
-        canceled = [=] (CancelToken & token)
+
         {
-            // Note that if thread signals itself, this would not throw an exception
-            // Throwing is postponed until `CancelToken::raise()` is called at some cancellation point
-            CancelToken::signal(token.thread_id, args...);
-        };
+            // We do not want this tiny allocation to throw
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+            canceled = [=] (CancelToken & token)
+            {
+                // Note that if thread signals itself, this would not throw an exception
+                // Throwing is postponed until `CancelToken::raise()` is called at some cancellation point
+                CancelToken::signal(token.thread_id, args...);
+            };
+        }
         for (auto & [token, _] : tokens)
             canceled(*token);
     }

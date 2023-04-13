@@ -69,17 +69,17 @@ void ThreadGroup::linkThread(UInt64 thread_it)
     }
 }
 
-void ThreadGroupStatus::enterGroup()
+void ThreadGroup::enterGroup()
 {
     cancel_tokens.enterGroup();
 }
 
-void ThreadGroupStatus::exitGroup()
+void ThreadGroup::exitGroup()
 {
     cancel_tokens.exitGroup();
 }
 
-void ThreadGroupStatus::cancelGroup(int code, const String & msg)
+void ThreadGroup::cancelGroup(int code, const String & msg)
 {
     cancel_tokens.cancelGroup(code, msg);
 }
