@@ -38,7 +38,7 @@ The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or
 
 ## Grant Current Grants Syntax
 ``` sql
-GRANT CURRENT GRANTS[(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*})] TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 -   `privilege` — Type of privilege.
