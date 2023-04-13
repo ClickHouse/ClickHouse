@@ -4,6 +4,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {
@@ -70,6 +71,7 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         const Block & query_sample_block,
         ThreadStatusesHolderPtr thread_status_holder,
+        ThreadGroupPtr running_group,
         std::atomic_uint64_t * elapsed_counter_ms);
 };
 

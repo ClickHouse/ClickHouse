@@ -1,4 +1,5 @@
 #pragma once
+#include <Interpreters/ProcessList.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -35,7 +36,8 @@ struct ZooKeeperRetriesInfo
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_) : name(std::move(name_)), retries_info(retries_info_)
+    ZooKeeperRetriesControl(std::string name_, ZooKeeperRetriesInfo & retries_info_, QueryStatusPtr elem)
+        : name(std::move(name_)), retries_info(retries_info_), process_list_element(elem)
     {
     }
 
@@ -166,6 +168,9 @@ private:
         if (0 == iteration_count)
             return true;
 
+        if (process_list_element && !process_list_element->checkTimeLimitSoft())
+            return false;
+
         if (unconditional_retry)
         {
             unconditional_retry = false;
@@ -266,6 +271,7 @@ private:
     bool unconditional_retry = false;
     bool iteration_succeeded = true;
     bool stop_retries = false;
+    QueryStatusPtr process_list_element;
 };
 
 }
