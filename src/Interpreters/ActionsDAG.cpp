@@ -761,6 +761,102 @@ NameSet ActionsDAG::foldActionsByProjection(
     return next_required_columns;
 }
 
+
+ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
+{
+    auto dag = std::make_unique<ActionsDAG>();
+    std::unordered_map<const Node *, const Node *> inputs_mapping;
+    std::unordered_map<const Node *, const Node *> mapping;
+    struct Frame
+    {
+        const Node * node;
+        size_t next_child = 0;
+    };
+
+    std::vector<Frame> stack;
+    for (const auto * output : required_outputs)
+    {
+        if (mapping.contains(output))
+            continue;
+
+        stack.push_back({.node = output});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                auto it = new_inputs.find(frame.node);
+                if (it != new_inputs.end())
+                {
+                    const auto & [new_input, rename] = *it;
+
+                    auto & node = mapping[frame.node];
+
+                    if (!node)
+                    {
+                        /// It is possible to have a few aliases on the same column.
+                        /// We may want to replace all the aliases,
+                        /// in this case they should have a single input as a child.
+                        auto & mapped_input = inputs_mapping[rename];
+
+                        if (!mapped_input)
+                        {
+                            bool should_rename = new_input->result_name != rename->result_name;
+                            const auto & input_name = should_rename ? rename->result_name : new_input->result_name;
+                            mapped_input = &dag->addInput(input_name, new_input->result_type);
+                            if (should_rename)
+                                mapped_input = &dag->addAlias(*mapped_input, new_input->result_name);
+                        }
+
+                        node = mapped_input;
+                    }
+
+                    stack.pop_back();
+                    continue;
+                }
+            }
+
+            const auto & children = frame.node->children;
+
+            while (frame.next_child < children.size() && !mapping.emplace(children[frame.next_child], nullptr).second)
+                ++frame.next_child;
+
+            if (frame.next_child < children.size())
+            {
+                const auto * child = children[frame.next_child];
+                ++frame.next_child;
+                stack.push_back({.node = child});
+                continue;
+            }
+
+            if (frame.node->type == ActionType::INPUT)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot fold actions for projection. Node {} requires input {} which does not belong to projection",
+                    stack.front().node->result_name, frame.node->result_name);
+
+            auto & node = dag->nodes.emplace_back(*frame.node);
+            for (auto & child : node.children)
+                child = mapping[child];
+
+            mapping[frame.node] = &node;
+            stack.pop_back();
+        }
+    }
+
+    for (const auto * output : required_outputs)
+    {
+        /// Keep the names for outputs.
+        /// Add an alias if the mapped node has a different result name.
+        const auto * mapped_output = mapping[output];
+        if (output->result_name != mapped_output->result_name)
+            mapped_output = &dag->addAlias(*mapped_output, output->result_name);
+        dag->outputs.push_back(mapped_output);
+    }
+
+    return dag;
+}
+
 void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
 {
     ::sort(outputs.begin(), outputs.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
@@ -971,7 +1067,7 @@ ActionsDAGPtr ActionsDAG::clone() const
 void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
-    removeUnusedActions();
+    removeUnusedActions(/*allow_remove_inputs = */ false);
 }
 #endif
 
@@ -2415,6 +2511,64 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     }
 
     return result_dag;
+}
+
+FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
+    :actions(actions_)
+{
+    const auto & actions_outputs = actions->getOutputs();
+    for (const auto * output_node : actions_outputs)
+    {
+        /// find input node which refers to the output node
+        /// consider only aliases on the path
+        const auto * node = output_node;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            /// alias has only one child
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            index.emplace(output_node->result_name, node);
+    }
+}
+
+const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
+{
+    const auto it = index.find(output_name);
+    if (it == index.end())
+        return nullptr;
+
+    return it->second;
+}
+
+FindAliasForInputName::FindAliasForInputName(const ActionsDAGPtr & actions_)
+    :actions(actions_)
+{
+    const auto & actions_outputs = actions->getOutputs();
+    for (const auto * output_node : actions_outputs)
+    {
+        /// find input node which corresponds to alias
+        const auto * node = output_node;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            /// alias has only one child
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            /// node can have several aliases but we consider only the first one
+            index.emplace(node->result_name, output_node);
+    }
+}
+
+const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
+{
+    const auto it = index.find(name);
+    if (it == index.end())
+        return nullptr;
+
+    return it->second;
 }
 
 }

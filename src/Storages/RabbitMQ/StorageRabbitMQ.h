@@ -112,6 +112,7 @@ private:
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
     std::vector<RabbitMQConsumerPtr> consumers; /// available RabbitMQ consumers
+    std::vector<std::weak_ptr<RabbitMQConsumer>> consumers_ref;
 
     String unique_strbase; /// to make unique consumer channel id
 
@@ -191,8 +192,9 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    bool streamToViews();
-    bool checkDependencies(const StorageID & table_id);
+    /// Return true on successful stream attempt.
+    bool tryStreamToViews();
+    bool hasDependencies(const StorageID & table_id);
 
     static String getRandomName()
     {

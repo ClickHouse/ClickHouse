@@ -182,8 +182,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         else if (!disk.empty())
             print_identifier(disk);
 
-        if (strict_sync)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STRICT" << (settings.hilite ? hilite_none : "");
+        if (sync_replica_mode != SyncReplicaMode::DEFAULT)
+            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << magic_enum::enum_name(sync_replica_mode)
+                          << (settings.hilite ? hilite_none : "");
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)
     {
