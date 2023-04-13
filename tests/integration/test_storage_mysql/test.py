@@ -519,21 +519,23 @@ def test_settings_connection_wait_timeout(started_cluster):
         )
     )
 
+    worker_started_event = threading.Event()
     def worker():
-        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
+        worker_started_event.set()
+        node1.query("SELECT sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(table_name))
 
     worker_thread = threading.Thread(target=worker)
     worker_thread.start()
 
     # ensure that first query started in worker_thread
-    time.sleep(1)
+    worker_started_event.wait(10)
 
     started = time.time()
     with pytest.raises(
         QueryRuntimeException,
         match=r"Exception: mysqlxx::Pool is full \(connection_wait_timeout is exceeded\)",
     ):
-        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
+        node1.query("SELECT sleepEachRow(1) FROM {} settings max_threads=1".format(table_name))
     ended = time.time()
     assert (ended - started) >= wait_timeout
 
