@@ -216,7 +216,15 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
 
     const auto & settings = context->getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == connections->size())
+    {
+        /// To avoid sending the query again in the read(), we need to update the following flags:
+        std::lock_guard guard(was_cancelled_mutex);
+        was_cancelled = true;
+        finished = true;
+        sent_query = true;
+
         return;
+    }
 
     /// Query cannot be canceled in the middle of the send query,
     /// since there are multiple packets:
