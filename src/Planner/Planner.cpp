@@ -1,6 +1,7 @@
 #include <Planner/Planner.h>
 
 #include <Core/ProtocolDefines.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -33,8 +34,11 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
@@ -525,7 +529,8 @@ void addMergeSortingStep(QueryPlan & query_plan,
     auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(),
         sort_description,
         max_block_size,
-        query_analysis_result.partial_sorting_limit);
+        query_analysis_result.partial_sorting_limit,
+        settings.exact_rows_before_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
@@ -910,6 +915,46 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
     addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
 }
 
+/// Support for `additional_result_filter` setting
+void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
+    const QueryNode & query_node,
+    const SelectQueryOptions & select_query_options,
+    PlannerContextPtr & planner_context
+)
+{
+    if (select_query_options.subquery_depth != 0)
+        return;
+
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto additional_result_filter_ast = parseAdditionalResultFilter(settings);
+    if (!additional_result_filter_ast)
+        return;
+
+    ColumnsDescription fake_column_descriptions;
+    NameSet fake_name_set;
+    for (const auto & column : query_node.getProjectionColumns())
+    {
+        fake_column_descriptions.add(ColumnDescription(column.name, column.type));
+        fake_name_set.emplace(column.name);
+    }
+
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+    auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
+
+    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
+    if (!filter_info.actions || !query_plan.isInitialized())
+        return;
+
+    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
+        filter_info.actions,
+        filter_info.column_name,
+        filter_info.do_remove_column);
+    filter_step->setStepDescription("additional result filter");
+    query_plan.addStep(std::move(filter_step));
+}
+
 }
 
 PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
@@ -1104,11 +1149,7 @@ void Planner::buildPlanForQueryNode()
             query_node.getWhere() = {};
     }
 
-    SelectQueryInfo select_query_info;
-    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
-    select_query_info.query = select_query_info.original_query;
-    select_query_info.query_tree = query_tree;
-    select_query_info.planner_context = planner_context;
+    SelectQueryInfo select_query_info = buildSelectQueryInfo();
 
     StorageLimitsList current_storage_limits = storage_limits;
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
@@ -1132,6 +1173,19 @@ void Planner::buildPlanForQueryNode()
     checkStoragesSupportTransactions(planner_context);
     collectSets(query_tree, *planner_context);
     collectTableExpressionData(query_tree, planner_context);
+
+    const auto & settings = query_context->getSettingsRef();
+
+    if (planner_context->getTableExpressionNodeToData().size() > 1
+        && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    {
+        LOG_WARNING(
+            &Poco::Logger::get("Planner"), "Joins are not supported with parallel replicas. Query will be executed without using them.");
+
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+        mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+    }
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
@@ -1399,10 +1453,18 @@ void Planner::buildPlanForQueryNode()
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", result_actions_to_execute);
         }
+
+        // For additional_result_filter setting
+        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+}
+
+SelectQueryInfo Planner::buildSelectQueryInfo() const
+{
+    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)

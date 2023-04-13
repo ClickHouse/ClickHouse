@@ -22,15 +22,6 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 Lightweight deletes are asynchronous by default. Set `mutations_sync` equal to 1 to wait for one replica to process the statement, and set `mutations_sync` to 2 to wait for all replicas.
 
 :::note
-This feature is experimental and requires you to set `allow_experimental_lightweight_delete` to true:
-
-```sql
-SET allow_experimental_lightweight_delete = true;
-```
-
-:::
-
-:::note
 `DELETE FROM` requires the `ALTER DELETE` privilege:
 ```sql
 grant ALTER DELETE ON db.table to username;
@@ -64,6 +55,7 @@ With the described implementation now we can see what can negatively affect 'DEL
 - Table having a very large number of data parts
 - Having a lot of data in Compact parts—in a Compact part, all columns are stored in one file.
 
-:::note
-This implementation might change in the future.
-:::
+
+## Related content
+
+- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

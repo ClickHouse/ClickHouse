@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <base/types.h>
+#include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -11,29 +12,36 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int BAD_ARGUMENTS;
 }
 
 
-/** Write UInt64 in variable length format (base128) NOTE Only up to 2^63 - 1 are supported. */
+/// Variable-Length Quantity (VLQ) Base-128 compression, also known as Variable Byte (VB) or Varint encoding.
+
+/// Write UInt64 in variable length format (base128)
 void writeVarUInt(UInt64 x, std::ostream & ostr);
 void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 char * writeVarUInt(UInt64 x, char * ostr);
 
+/// NOTE: Due to historical reasons, only values up to 1<<63-1 can be safely encoded/decoded (bigger values are not idempotent under
+/// encoding/decoding). This cannot be changed without breaking backward compatibility (some drivers, e.g. clickhouse-rs (Rust), have the
+/// same limitation, others support the full 1<<64 range, e.g. clickhouse-driver (Python))
+constexpr UInt64 VAR_UINT_MAX = (1ULL<<63) - 1;
 
-/** Read UInt64, written in variable length format (base128) */
+/// Read UInt64, written in variable length format (base128)
 void readVarUInt(UInt64 & x, std::istream & istr);
 void readVarUInt(UInt64 & x, ReadBuffer & istr);
 const char * readVarUInt(UInt64 & x, const char * istr, size_t size);
 
 
-/** Get the length of UInt64 in VarUInt format */
+/// Get the length of UInt64 in VarUInt format
 size_t getLengthOfVarUInt(UInt64 x);
 
-/** Get the Int64 length in VarInt format */
+/// Get the Int64 length in VarInt format
 size_t getLengthOfVarInt(Int64 x);
 
 
-/** Write Int64 in variable length format (base128) */
+/// Write Int64 in variable length format (base128)
 template <typename OUT>
 inline void writeVarInt(Int64 x, OUT & ostr)
 {
@@ -46,7 +54,7 @@ inline char * writeVarInt(Int64 x, char * ostr)
 }
 
 
-/** Read Int64, written in variable length format (base128) */
+/// Read Int64, written in variable length format (base128)
 template <typename IN>
 inline void readVarInt(Int64 & x, IN & istr)
 {
@@ -183,9 +191,20 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
     return istr;
 }
 
+[[noreturn]] inline void throwValueTooLargeForVarIntEncodingException(UInt64 x)
+{
+    /// Under practical circumstances, we should virtually never end up here but AST Fuzzer manages to create superlarge input integers
+    /// which trigger this exception. Intentionally not throwing LOGICAL_ERROR or calling abort() or [ch]assert(false), so AST Fuzzer
+    /// can swallow the exception and continue to run.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value {} is too large for VarInt encoding", x);
+}
 
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
+#ifndef NDEBUG
+    if (x > VAR_UINT_MAX)
+        throwValueTooLargeForVarIntEncodingException(x);
+#endif
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
@@ -205,6 +224,10 @@ inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 
 inline void writeVarUInt(UInt64 x, std::ostream & ostr)
 {
+#ifndef NDEBUG
+    if (x > VAR_UINT_MAX)
+        throwValueTooLargeForVarIntEncodingException(x);
+#endif
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
@@ -222,6 +245,10 @@ inline void writeVarUInt(UInt64 x, std::ostream & ostr)
 
 inline char * writeVarUInt(UInt64 x, char * ostr)
 {
+#ifndef NDEBUG
+    if (x > VAR_UINT_MAX)
+        throwValueTooLargeForVarIntEncodingException(x);
+#endif
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
