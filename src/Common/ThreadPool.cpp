@@ -381,19 +381,17 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
                 --scheduled_jobs;
 
+                job_finished.notify_all();
+                if (shutdown)
+                    new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+
                 if (threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads))
                 {
                     /// This thread is excessive. The worker will stop.
                     detach_thread();
-                    job_finished.notify_all();
-                    if (shutdown)
-                        new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
                     return;
                 }
 
-                job_finished.notify_all();
-                if (shutdown)
-                    new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
             new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || (threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads)); });
