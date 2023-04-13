@@ -21,6 +21,14 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderThreadsActive;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int ASYNC_LOAD_SCHEDULE_FAILED;
+    extern const int ASYNC_LOAD_FAILED;
+    extern const int ASYNC_LOAD_CANCELED;
+    extern const int ASYNC_LOAD_DEPENDENCY_FAILED;
+}
+
 struct AsyncLoaderTest
 {
     AsyncLoader loader;
@@ -90,9 +98,18 @@ TEST(AsyncLoader, Smoke)
         auto job5 = makeLoadJob({ job3, job4 }, "job5", job_func);
         task2.merge(t.loader.schedule({ job5 }, low_priority));
 
+        std::thread waiter_thread([=] { job5->wait(); });
+
         t.loader.start();
 
+        job3->wait();
         t.loader.wait();
+        job4->wait();
+
+        waiter_thread.join();
+
+        ASSERT_EQ(job1->status(), LoadStatus::SUCCESS);
+        ASSERT_EQ(job2->status(), LoadStatus::SUCCESS);
     }
 
     ASSERT_EQ(jobs_done, 5);
@@ -143,6 +160,29 @@ TEST(AsyncLoader, CycleDetection)
     }
 
     const_cast<LoadJobSet &>(cycle_breaker->dependencies).clear();
+}
+
+TEST(AsyncLoader, CancelPendingJob)
+{
+    AsyncLoaderTest t;
+
+    auto job_func = [&] (const LoadJob &) {};
+
+    auto job = makeLoadJob({}, "job", job_func);
+    auto task = t.loader.schedule({job});
+
+    task.remove(); // this cancels pending the job (async loader was not started to execute it)
+
+    ASSERT_EQ(job->status(), LoadStatus::FAILED);
+    try
+    {
+        job->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+    }
 }
 
 TEST(AsyncLoader, RandomTasks)
