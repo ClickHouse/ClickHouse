@@ -538,7 +538,8 @@ void FileSegment::setBroken()
     assertNotDetachedUnlocked(lock);
     assertIsDownloaderUnlocked("setBroken", lock);
 
-    resetDownloadingStateUnlocked(lock);
+    if (download_state == State::DOWNLOADING)
+        resetDownloadingStateUnlocked(lock);
     if (download_state != State::DOWNLOADED)
         download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
