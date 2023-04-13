@@ -156,8 +156,7 @@ private:
     /// The goal is to avoiding consuming a lot of memory when the same big sets are used by multiple tasks at the same time.
     /// If the tasks are executed without time overlap, we will destroy the cache to free memory, and the next task might rebuild the same sets.
     std::mutex mutation_prepared_sets_cache_mutex;
-    PreparedSetsCachePtr::weak_type mutation_prepared_sets_cache;
-    Int64 mutation_id_of_prepared_sets_cache = 0;
+    std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
 
     void loadMutations();
 
