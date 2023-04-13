@@ -649,7 +649,7 @@ TEST_F(FileCacheTest, writeBuffer)
     FileCache cache(cache_base_path, settings);
     cache.initialize();
 
-    auto write_to_cache = [&cache](const String & key, const Strings & data)
+    auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
     {
         CreateFileSegmentSettings segment_settings;
         segment_settings.kind = FileSegmentKind::Temporary;
@@ -662,14 +662,31 @@ TEST_F(FileCacheTest, writeBuffer)
         EXPECT_EQ(holder->size(), 1);
         auto & segment = holder->front();
         WriteBufferToFileSegment out(&segment);
+        std::list<std::thread> threads;
+        std::mutex mu;
         for (const auto & s : data)
-            out.write(s.data(), s.size());
+        {
+            /// Write from diffetent threads to check
+            /// that no assertions inside cache related to downloaderId are triggered
+            threads.emplace_back([&]
+            {
+                std::unique_lock lock(mu);
+                out.write(s.data(), s.size());
+                /// test different buffering scenarios
+                if (flush)
+                {
+                    out.next();
+                }
+            });
+        }
+        for (auto & t : threads)
+            t.join();
         return holder;
     };
 
     std::vector<fs::path> file_segment_paths;
     {
-        auto holder = write_to_cache("key1", {"abc", "defg"});
+        auto holder = write_to_cache("key1", {"abc", "defg"}, false);
         file_segment_paths.emplace_back(holder->front().getPathInLocalCache());
 
         ASSERT_EQ(fs::file_size(file_segment_paths.back()), 7);
@@ -677,7 +694,7 @@ TEST_F(FileCacheTest, writeBuffer)
         ASSERT_EQ(cache.getUsedCacheSize(), 7);
 
         {
-            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"});
+            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"}, true);
             file_segment_paths.emplace_back(holder2->front().getPathInLocalCache());
 
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);

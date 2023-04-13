@@ -2,7 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
-
+#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {

@@ -17,7 +17,8 @@ CREATE DICTIONARY dictdb_01043.dict
 PRIMARY KEY key
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dicttbl' DB 'dictdb_01043'))
 LAYOUT(FLAT())
-LIFETIME(1);
+LIFETIME(1)
+SETTINGS(check_dictionary_primary_key = 0);
 
 
 SELECT dictGetString('dictdb_01043.dict', 'value_default', toUInt64(12));
