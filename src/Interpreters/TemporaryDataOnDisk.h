@@ -94,6 +94,7 @@ public:
     /// Differences from `createStream`:
     ///   1) it doesn't account data in parent scope
     ///   2) returned buffer owns resources (instead of TemporaryDataOnDisk itself)
+    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
     WriteBufferPtr createRawStream(size_t max_file_size = 0);
 
     std::vector<TemporaryFileStream *> getStreams() const;
