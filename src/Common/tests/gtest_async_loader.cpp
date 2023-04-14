@@ -3,6 +3,7 @@
 #include <barrier>
 #include <chrono>
 #include <mutex>
+#include <string_view>
 #include <vector>
 #include <thread>
 #include <pcg_random.hpp>
@@ -28,7 +29,6 @@ namespace DB::ErrorCodes
     extern const int ASYNC_LOAD_SCHEDULE_FAILED;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
-    extern const int ASYNC_LOAD_DEPENDENCY_FAILED;
 }
 
 struct AsyncLoaderTest
@@ -39,7 +39,7 @@ struct AsyncLoaderTest
     pcg64 rng{randomSeed()};
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
-        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads)
+        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads, /* log_failures = */ false)
     {}
 
     template <typename T>
@@ -229,8 +229,7 @@ TEST(AsyncLoader, CancelPendingTask)
     }
     catch (Exception & e)
     {
-        // Result depend on non-deterministic cancel order
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED || e.code() == ErrorCodes::ASYNC_LOAD_DEPENDENCY_FAILED);
+        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
     }
 }
 
@@ -267,7 +266,7 @@ TEST(AsyncLoader, CancelPendingDependency)
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_DEPENDENCY_FAILED);
+        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
     }
 }
 
@@ -355,6 +354,83 @@ TEST(AsyncLoader, CancelExecutingTask)
             if (job != blocker_job)
                 ASSERT_EQ(job->status(), LoadStatus::CANCELED);
         }
+    }
+}
+
+TEST(AsyncLoader, JobFailure)
+{
+    AsyncLoaderTest t;
+    t.loader.start();
+
+    std::string_view error_message = "test job failure";
+
+    auto job_func = [&] (const LoadJobPtr &) {
+        throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
+    };
+
+    auto job = makeLoadJob({}, "job", job_func);
+    auto task = t.loader.schedule({ job });
+
+    t.loader.wait();
+
+    ASSERT_EQ(job->status(), LoadStatus::FAILED);
+    try
+    {
+        job->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_FAILED);
+        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+    }
+}
+
+TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
+{
+    AsyncLoaderTest t;
+    t.loader.start();
+
+    std::string_view error_message = "test job failure";
+
+    auto failed_job_func = [&] (const LoadJobPtr &) {
+        throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
+    };
+
+    auto failed_job = makeLoadJob({}, "failed_job", failed_job_func);
+    auto failed_task = t.loader.schedule({ failed_job });
+
+    t.loader.wait();
+
+    auto job_func = [&] (const LoadJobPtr &) {};
+
+    auto job1 = makeLoadJob({ failed_job }, "job1", job_func);
+    auto job2 = makeLoadJob({ job1 }, "job2", job_func);
+    auto task = t.loader.schedule({ job1, job2 });
+
+    t.loader.wait();
+
+    ASSERT_EQ(job1->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
+    try
+    {
+        job1->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+    }
+    try
+    {
+        job2->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_TRUE(e.message().find(error_message) != String::npos);
     }
 }
 
