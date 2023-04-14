@@ -9,6 +9,7 @@
 
 #include <base/types.h>
 #include <base/sleep.h>
+#include <Common/Exception.h>
 #include <Common/AsyncLoader.h>
 #include <Common/randomSeed.h>
 
@@ -290,6 +291,61 @@ TEST(AsyncLoader, CancelExecutingJob)
 
     ASSERT_EQ(job->status(), LoadStatus::SUCCESS);
     job->wait();
+}
+
+TEST(AsyncLoader, CancelExecutingTask)
+{
+    AsyncLoaderTest t(16);
+    t.loader.start();
+    std::barrier sync(2);
+
+    auto blocker_job_func = [&] (const LoadJob &)
+    {
+        sync.arrive_and_wait(); // (A) sync with main thread
+        sync.arrive_and_wait(); // (B) wait for waiter
+        // signals (C)
+    };
+
+    auto job_to_cancel_func = [&] (const LoadJob &)
+    {
+        FAIL(); // this job should be canceled
+    };
+
+    auto job_to_succeed_func = [&] (const LoadJob &)
+    {
+    };
+
+    // Make several iterations to catch the race (if any)
+    for (int iteration = 0; iteration < 10; iteration++) {
+        std::vector<LoadJobPtr> task1_jobs;
+        auto blocker_job = makeLoadJob({}, "blocker_job", blocker_job_func);
+        task1_jobs.push_back(blocker_job);
+        for (int i = 0; i < 100; i++)
+            task1_jobs.push_back(makeLoadJob({ blocker_job }, "job_to_cancel", job_to_cancel_func));
+        auto task1 = t.loader.schedule({ task1_jobs.begin(), task1_jobs.end() });
+        auto job_to_succeed = makeLoadJob({ blocker_job }, "job_to_succeed", job_to_succeed_func);
+        auto task2 = t.loader.schedule({ job_to_succeed });
+
+        sync.arrive_and_wait(); // (A) wait for job to start executing
+        std::thread canceler([&]
+        {
+            task1.remove(); // waits for (C)
+        });
+        while (blocker_job->waiters_count() == 0)
+            std::this_thread::yield();
+        ASSERT_EQ(blocker_job->status(), LoadStatus::PENDING);
+        sync.arrive_and_wait(); // (B) sync with job
+        canceler.join();
+        t.loader.wait();
+
+        ASSERT_EQ(blocker_job->status(), LoadStatus::SUCCESS);
+        ASSERT_EQ(job_to_succeed->status(), LoadStatus::SUCCESS);
+        for (const auto & job : task1_jobs)
+        {
+            if (job != blocker_job)
+                ASSERT_EQ(job->status(), LoadStatus::FAILED);
+        }
+    }
 }
 
 TEST(AsyncLoader, RandomTasks)
