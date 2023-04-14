@@ -94,9 +94,8 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
 {
     for (auto it = queue.begin(); it != queue.end();)
     {
-        auto locked_key = it->key_metadata->lock();
-        if (it->size == 0
-            || locked_key->getKeyState() != KeyMetadata::KeyState::ACTIVE)
+        auto locked_key = it->key_metadata->tryLock();
+        if (!locked_key || it->size == 0)
         {
             it = remove(it);
             continue;

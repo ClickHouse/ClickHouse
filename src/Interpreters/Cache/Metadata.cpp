@@ -58,13 +58,22 @@ KeyMetadata::KeyMetadata(
 
 LockedKeyPtr KeyMetadata::lock()
 {
-    auto locked = std::make_unique<LockedKey>(shared_from_this());
-    if (key_state == KeyMetadata::KeyState::ACTIVE)
+    auto locked = tryLock();
+    if (locked)
         return locked;
 
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "Cannot lock key {} (state: {})", key, magic_enum::enum_name(key_state));
+}
+
+LockedKeyPtr KeyMetadata::tryLock()
+{
+    auto locked = std::make_unique<LockedKey>(shared_from_this());
+    if (key_state == KeyMetadata::KeyState::ACTIVE)
+        return locked;
+
+    return nullptr;
 }
 
 void KeyMetadata::createBaseDirectory()
