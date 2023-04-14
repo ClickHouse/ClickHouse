@@ -36,7 +36,7 @@ private:
     LRUQueue queue;
     Poco::Logger * log = &Poco::Logger::get("LRUFileCachePriority");
 
-    size_t current_size = 0;
+    std::atomic<size_t> current_size = 0;
 
     LRUQueueIterator remove(LRUQueueIterator it);
 };

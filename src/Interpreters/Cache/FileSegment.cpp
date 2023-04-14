@@ -392,7 +392,7 @@ FileSegment::State FileSegment::wait(size_t offset)
 
 KeyMetadataPtr FileSegment::getKeyMetadata() const
 {
-    auto metadata = key_metadata.lock();
+    auto metadata = tryGetKeyMetadata();
     if (metadata)
         return metadata;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key, key metadata is not set ({})", stateToString(download_state));
@@ -613,6 +613,8 @@ void FileSegment::complete()
         case State::PARTIALLY_DOWNLOADED:
         case State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
         {
+            chassert(current_downloaded_size != range().size());
+
             if (is_last_holder)
             {
                 if (current_downloaded_size == 0)
@@ -821,6 +823,9 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 
 FileSegmentsHolder::~FileSegmentsHolder()
 {
+    if (!complete_on_dtor)
+        return;
+
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
         file_segment_it = completeAndPopFrontImpl();
 }
