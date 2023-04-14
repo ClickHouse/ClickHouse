@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #  shellcheck source=../shell_config.sh
@@ -11,3 +12,4 @@ cp "$CUR_DIR"/data_csv/10m_rows.csv.xz $USER_FILES_PATH/
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM file('10m_rows.csv.xz' , 'CSVWithNames') order by identifier, number, name, surname, birthday LIMIT 1 settings max_threads=1, max_memory_usage=1000000000"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM file('10m_rows.csv.xz' , 'CSVWithNames') order by identifier, number, name, surname, birthday LIMIT 1 settings max_threads=1, max_memory_usage=100000000"
 
+rm $USER_FILES_PATH/10m_rows.csv.xz
