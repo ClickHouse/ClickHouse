@@ -21,6 +21,7 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageMemory.h>
 
 
 namespace ProfileEvents
@@ -235,11 +236,8 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
-    {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
-        if (!duplicated_part_uuids.empty())
-            connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
-    }
+    if (!duplicated_part_uuids.empty())
+        connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
@@ -470,7 +468,6 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 
     if (!duplicates.empty())
     {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
         duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
         return false;
     }
@@ -602,6 +599,9 @@ void RemoteQueryExecutor::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
+                /// Send only temporary tables with StorageMemory
+                if (!std::dynamic_pointer_cast<StorageMemory>(cur))
+                    continue;
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;

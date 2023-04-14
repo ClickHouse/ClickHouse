@@ -74,7 +74,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL `Array` types are converted into ClickHouse arrays.
 
-:::warning
+:::note
 Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 :::
 
@@ -174,7 +174,9 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 -   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
--   [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+-   [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
 
 ## Related content
+
 - Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

@@ -1,14 +1,7 @@
-import socket
 import pytest
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
-from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_eq_with_retry
-from io import StringIO
 import csv
 import re
 
@@ -23,7 +16,7 @@ node3 = cluster.add_instance(
     "node3", main_configs=["configs/enable_keeper3.xml"], stay_alive=True
 )
 
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 
 def wait_nodes():
@@ -285,8 +278,9 @@ def test_cmd_conf(started_cluster):
         assert result["fresh_log_gap"] == "200"
 
         assert result["max_requests_batch_size"] == "100"
+        assert result["max_requests_batch_bytes_size"] == "102400"
         assert result["max_request_queue_size"] == "100000"
-        assert result["max_requests_quick_batch_size"] == "10"
+        assert result["max_requests_quick_batch_size"] == "100"
         assert result["quorum_reads"] == "false"
         assert result["force_sync"] == "true"
 

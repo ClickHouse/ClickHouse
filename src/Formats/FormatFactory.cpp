@@ -194,6 +194,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.max_binary_string_size = settings.format_binary_max_string_size;
+    format_settings.max_binary_array_size = settings.format_binary_max_array_size;
     format_settings.native.allow_types_conversion = settings.input_format_native_allow_types_conversion;
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
@@ -226,9 +227,7 @@ InputFormatPtr FormatFactory::getInput(
         ? *_format_settings : getFormatSettings(context);
 
     if (!getCreators(name).input_creator)
-    {
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
-    }
 
     const Settings & settings = context->getSettingsRef();
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
@@ -270,21 +269,19 @@ InputFormatPtr FormatFactory::getInput(
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
+
         auto format = std::make_shared<ParallelParsingInputFormat>(params);
         if (!settings.input_format_record_errors_file_path.toString().empty())
-        {
             format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
-        }
         return format;
     }
-
-
-    auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
-    if (!settings.input_format_record_errors_file_path.toString().empty())
+    else
     {
-        format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+        auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
+        if (!settings.input_format_record_errors_file_path.toString().empty())
+             format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+        return format;
     }
-    return format;
 }
 
 InputFormatPtr FormatFactory::getInputFormat(

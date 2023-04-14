@@ -3,6 +3,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -28,14 +30,19 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/CollectSets.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
@@ -192,7 +199,9 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node, const ColumnsWithTypeAndName & input_columns, const PlannerContextPtr & planner_context)
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context)
 {
     ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
@@ -402,6 +411,73 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
     query_node->setIsSubquery(true);
 
     return query_node;
+}
+
+SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+{
+    SelectQueryInfo select_query_info;
+    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
+    select_query_info.query = select_query_info.original_query;
+    select_query_info.query_tree = query_tree;
+    select_query_info.planner_context = planner_context;
+    return select_query_info;
+}
+
+FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter)
+{
+    const auto & query_context = planner_context->getQueryContext();
+
+    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
+
+    QueryAnalysisPass query_analysis_pass(table_expression);
+    query_analysis_pass.run(filter_query_tree, query_context);
+
+    if (table_expression_required_names_without_filter.empty())
+    {
+        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+        const auto & table_expression_names = table_expression_data.getColumnNames();
+        table_expression_required_names_without_filter.insert(table_expression_names.begin(), table_expression_names.end());
+    }
+
+    collectSourceColumns(filter_query_tree, planner_context);
+    collectSets(filter_query_tree, *planner_context);
+
+    auto filter_actions_dag = std::make_shared<ActionsDAG>();
+
+    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
+    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
+    if (expression_nodes.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Filter actions must return single output node. Actual {}",
+            expression_nodes.size());
+
+    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
+    filter_actions_outputs = std::move(expression_nodes);
+
+    std::string filter_node_name = filter_actions_outputs[0]->result_name;
+    bool remove_filter_column = true;
+
+    for (const auto & filter_input_node : filter_actions_dag->getInputs())
+        if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
+            filter_actions_outputs.push_back(filter_input_node);
+
+    return {std::move(filter_actions_dag), std::move(filter_node_name), remove_filter_column};
+}
+
+ASTPtr parseAdditionalResultFilter(const Settings & settings)
+{
+    const String & additional_result_filter = settings.additional_result_filter;
+    if (additional_result_filter.empty())
+        return {};
+
+    ParserExpression parser;
+    auto additional_result_filter_ast = parseQuery(
+                parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
+                "additional result filter", settings.max_query_size, settings.max_parser_depth);
+    return additional_result_filter_ast;
 }
 
 }

@@ -4,15 +4,16 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
-#include "Storages/MergeTree/DataPartStorageOnDiskFull.h"
 #include <sys/time.h>
 
 namespace DB
@@ -229,7 +230,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
 
             part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
-            part->setColumns(block.getNamesAndTypesList(), {});
+            part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 

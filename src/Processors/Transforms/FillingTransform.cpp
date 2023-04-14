@@ -8,10 +8,28 @@
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
 {
+
+constexpr bool debug_logging_enabled = false;
+
+template <typename T>
+void logDebug(String key, const T & value, const char * separator = " : ")
+{
+    if constexpr (debug_logging_enabled)
+    {
+        WriteBufferFromOwnString ss;
+        if constexpr (std::is_pointer_v<T>)
+            ss << *value;
+        else
+            ss << value;
+
+        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
+    }
+}
 
 namespace ErrorCodes
 {
@@ -233,138 +251,251 @@ FillingTransform::FillingTransform(
             interpolate_column_positions.push_back(header_.getPositionByName(name));
 }
 
+/// prepare() is overrididen to call transform() after all chunks are processed
+/// it can be necessary for suffix generation in case of WITH FILL .. TO is provided
 IProcessor::Status FillingTransform::prepare()
 {
-    if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
+    if (input.isFinished() && !output.isFinished() && !has_input && !all_chunks_processed)
     {
-        should_insert_first = next_row < filling_row || first;
+        logDebug("prepare()", "all chunks processed");
+        all_chunks_processed = true;
 
-        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-            next_row[i] = filling_row.getFillDescription(i).fill_to;
-
-        if (first || filling_row < next_row)
+        /// push output data to output port if we can
+        if (has_output && output.canPush())
         {
-            /// Output if has data.
-            if (has_output)
-            {
-                output.pushData(std::move(output_data));
-                has_output = false;
-            }
-
-            generate_suffix = true;
-            return Status::Ready;
+            output.pushData(std::move(output_data));
+            has_output = false;
         }
+
+        /// return Ready to call transform() for generating filling rows after latest chunk was processed
+        return Status::Ready;
     }
 
     return ISimpleTransform::prepare();
 }
 
+void FillingTransform::interpolate(const MutableColumns & result_columns, Block & interpolate_block)
+{
+    if (interpolate_description)
+    {
+        interpolate_block.clear();
+
+        if (!input_positions.empty())
+        {
+            /// populate calculation block with required columns with values from previous row
+            for (const auto & [col_pos, name_type] : input_positions)
+            {
+                MutableColumnPtr column = name_type.type->createColumn();
+                const auto * res_column = result_columns[col_pos].get();
+                size_t size = res_column->size();
+                if (size == 0) /// this is the first row in current chunk
+                {
+                    /// take value from last row of previous chunk if exists, else use default
+                    if (last_row.size() > col_pos && !last_row[col_pos]->empty())
+                        column->insertFrom(*last_row[col_pos], 0);
+                    else
+                        column->insertDefault();
+                }
+                else /// take value from previous row of current chunk
+                    column->insertFrom(*res_column, size - 1);
+
+                interpolate_block.insert({std::move(column), name_type.type, name_type.name});
+            }
+            interpolate_actions->execute(interpolate_block);
+        }
+        else /// all INTERPOLATE expressions are constants
+        {
+            size_t n = 1;
+            interpolate_actions->execute(interpolate_block, n);
+        }
+    }
+}
+
+using MutableColumnRawPtrs = std::vector<IColumn*>;
+
+static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, const MutableColumnRawPtrs & interpolate_columns, const MutableColumnRawPtrs & other_columns,
+    const FillingRow & filling_row, const Block & interpolate_block)
+{
+    for (size_t i = 0, size = filling_columns.size(); i < size; ++i)
+    {
+        if (filling_row[i].isNull())
+            filling_columns[i]->insertDefault();
+        else
+            filling_columns[i]->insert(filling_row[i]);
+    }
+
+    if (size_t size = interpolate_block.columns())
+    {
+        Columns columns = interpolate_block.getColumns();
+        for (size_t i = 0; i < size; ++i)
+            interpolate_columns[i]->insertFrom(*columns[i]->convertToFullColumnIfConst(), 0);
+    }
+    else
+    {
+        for (auto * interpolate_column : interpolate_columns)
+            interpolate_column->insertDefault();
+    }
+
+    for (auto * other_column : other_columns)
+        other_column->insertDefault();
+}
+
+static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
+{
+    for (size_t i = 0, size = source.size(); i < size; ++i)
+        dest[i]->insertFrom(*source[i], row_num);
+}
+
+static void initColumnsByPositions(
+    const Columns & input_columns,
+    Columns & input_columns_by_positions,
+    const MutableColumns & output_columns,
+    MutableColumnRawPtrs & output_columns_by_position,
+    const std::vector<size_t> & positions)
+{
+    for (size_t pos : positions)
+    {
+        input_columns_by_positions.push_back(input_columns[pos]);
+        output_columns_by_position.push_back(output_columns[pos].get());
+    }
+}
+
+void FillingTransform::initColumns(
+    const Columns & input_columns,
+    Columns & input_fill_columns,
+    Columns & input_interpolate_columns,
+    Columns & input_other_columns,
+    MutableColumns & output_columns,
+    MutableColumnRawPtrs & output_fill_columns,
+    MutableColumnRawPtrs & output_interpolate_columns,
+    MutableColumnRawPtrs & output_other_columns)
+{
+    Columns non_const_columns;
+    non_const_columns.reserve(input_columns.size());
+
+    for (const auto & column : input_columns)
+        non_const_columns.push_back(column->convertToFullColumnIfConst());
+
+    for (const auto & column : non_const_columns)
+        output_columns.push_back(column->cloneEmpty()->assumeMutable());
+
+    initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
+    initColumnsByPositions(
+        non_const_columns, input_interpolate_columns, output_columns, output_interpolate_columns, interpolate_column_positions);
+    initColumnsByPositions(non_const_columns, input_other_columns, output_columns, output_other_columns, other_column_positions);
+}
+
+bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, MutableColumns & result_columns)
+{
+    logDebug("generateSuffixIfNeeded() filling_row", filling_row);
+    logDebug("generateSuffixIfNeeded() next_row", next_row);
+    logDebug("generateSuffixIfNeeded() first", first);
+
+    /// Determines should we insert filling row before start generating next rows.
+    bool should_insert_first = next_row < filling_row || first;
+
+    for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+        next_row[i] = filling_row.getFillDescription(i).fill_to;
+
+    logDebug("generateSuffixIfNeeded() next_row updated", next_row);
+
+    if (!first && filling_row >= next_row)
+    {
+        logDebug("generateSuffixIfNeeded()", "no need to generate suffix");
+        return false;
+    }
+
+    Columns input_fill_columns;
+    Columns input_interpolate_columns;
+    Columns input_other_columns;
+    MutableColumnRawPtrs res_fill_columns;
+    MutableColumnRawPtrs res_interpolate_columns;
+    MutableColumnRawPtrs res_other_columns;
+
+    initColumns(
+        input_columns,
+        input_fill_columns,
+        input_interpolate_columns,
+        input_other_columns,
+        result_columns,
+        res_fill_columns,
+        res_interpolate_columns,
+        res_other_columns);
+
+    if (first)
+        filling_row.initFromDefaults();
+
+    Block interpolate_block;
+    if (should_insert_first && filling_row < next_row)
+    {
+        interpolate(result_columns, interpolate_block);
+        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+    }
+
+    while (filling_row.next(next_row))
+    {
+        interpolate(result_columns, interpolate_block);
+        insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+    }
+
+    return true;
+}
 
 void FillingTransform::transform(Chunk & chunk)
 {
-    if (!chunk.hasRows() && !generate_suffix)
+    logDebug("new chunk rows", chunk.getNumRows());
+    logDebug("all chunks processed", all_chunks_processed);
+
+    /// if got chunk with no rows and it's not for suffix generation, then just skip it
+    /// Note: ExpressionTransform can return chunk with no rows, see 02579_fill_empty_chunk.sql for example
+    if (!chunk.hasRows() && !all_chunks_processed)
         return;
 
-    Columns old_fill_columns;
-    Columns old_interpolate_columns;
-    Columns old_other_columns;
-    MutableColumns res_fill_columns;
-    MutableColumns res_interpolate_columns;
-    MutableColumns res_other_columns;
-
-    std::vector<std::pair<MutableColumns *, size_t>> res_map;
-    res_map.resize(input.getHeader().columns());
-
-    auto init_columns_by_positions = [&res_map](const Columns & old_columns, Columns & new_columns,
-        MutableColumns & new_mutable_columns, const Positions & positions)
-    {
-        for (size_t pos : positions)
-        {
-            auto old_column = old_columns[pos]->convertToFullColumnIfConst();
-            new_columns.push_back(old_column);
-            res_map[pos] = {&new_mutable_columns, new_mutable_columns.size()};
-            new_mutable_columns.push_back(old_column->cloneEmpty()->assumeMutable());
-        }
-    };
+    Columns input_fill_columns;
+    Columns input_interpolate_columns;
+    Columns input_other_columns;
+    MutableColumnRawPtrs res_fill_columns;
+    MutableColumnRawPtrs res_interpolate_columns;
+    MutableColumnRawPtrs res_other_columns;
+    MutableColumns result_columns;
 
     Block interpolate_block;
 
-    auto interpolate = [&]()
+    if (all_chunks_processed)
     {
-        if (interpolate_description)
+        chassert(!chunk.hasRows());
+
+        /// if all chunks are processed, then we may need to generate suffix for the following cases:
+        /// (1) when all data are processed and WITH FILL .. TO is provided
+        /// (2) for empty result set when WITH FILL FROM .. TO is provided (see PR #30888)
+        if (generateSuffixIfNeeded(input.getHeader().getColumns(), result_columns))
         {
-            interpolate_block.clear();
-
-            if (!input_positions.empty())
-            {
-                /// populate calculation block with required columns with values from previous row
-                for (const auto & [col_pos, name_type] : input_positions)
-                {
-                    MutableColumnPtr column = name_type.type->createColumn();
-                    auto [res_columns, pos] = res_map[col_pos];
-                    size_t size = (*res_columns)[pos]->size();
-                    if (size == 0) /// this is the first row in current chunk
-                    {
-                        /// take value from last row of previous chunk if exists, else use default
-                        if (last_row.size() > col_pos && !last_row[col_pos]->empty())
-                            column->insertFrom(*last_row[col_pos], 0);
-                        else
-                            column->insertDefault();
-                    }
-                    else /// take value from previous row of current chunk
-                        column->insertFrom(*(*res_columns)[pos], size - 1);
-
-                    interpolate_block.insert({std::move(column), name_type.type, name_type.name});
-                }
-                interpolate_actions->execute(interpolate_block);
-            }
-            else /// all INTERPOLATE expressions are constants
-            {
-                size_t n = 1;
-                interpolate_actions->execute(interpolate_block, n);
-            }
-        }
-    };
-
-    if (generate_suffix)
-    {
-        const auto & empty_columns = input.getHeader().getColumns();
-        init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
-        init_columns_by_positions(empty_columns, old_interpolate_columns, res_interpolate_columns, interpolate_column_positions);
-        init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
-
-        if (first)
-            filling_row.initFromDefaults();
-
-        if (should_insert_first && filling_row < next_row)
-        {
-            interpolate();
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            size_t num_output_rows = result_columns[0]->size();
+            chunk.setColumns(std::move(result_columns), num_output_rows);
         }
 
-        interpolate();
-        while (filling_row.next(next_row))
-        {
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-            interpolate();
-        }
-
-        setResultColumns(chunk, res_fill_columns, res_interpolate_columns, res_other_columns);
         return;
     }
 
-    size_t num_rows = chunk.getNumRows();
-    auto old_columns = chunk.detachColumns();
+    chassert(chunk.hasRows());
 
-    init_columns_by_positions(old_columns, old_fill_columns, res_fill_columns, fill_column_positions);
-    init_columns_by_positions(old_columns, old_interpolate_columns, res_interpolate_columns, interpolate_column_positions);
-    init_columns_by_positions(old_columns, old_other_columns, res_other_columns, other_column_positions);
+    const size_t num_rows = chunk.getNumRows();
+    auto input_columns = chunk.detachColumns();
+    initColumns(
+        input_columns,
+        input_fill_columns,
+        input_interpolate_columns,
+        input_other_columns,
+        result_columns,
+        res_fill_columns,
+        res_interpolate_columns,
+        res_other_columns);
 
     if (first)
     {
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*old_fill_columns[i])[0];
+            auto current_value = (*input_fill_columns[i])[0];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
             if (!fill_from.isNull() && !equals(current_value, fill_from))
@@ -372,7 +503,7 @@ void FillingTransform::transform(Chunk & chunk)
                 filling_row.initFromDefaults(i);
                 if (less(fill_from, current_value, filling_row.getDirection(i)))
                 {
-                    interpolate();
+                    interpolate(result_columns, interpolate_block);
                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
                 }
                 break;
@@ -384,11 +515,16 @@ void FillingTransform::transform(Chunk & chunk)
 
     for (size_t row_ind = 0; row_ind < num_rows; ++row_ind)
     {
-        should_insert_first = next_row < filling_row;
+        logDebug("row", row_ind);
+        logDebug("filling_row", filling_row);
+        logDebug("next_row", next_row);
 
-        for (size_t i = 0; i < filling_row.size(); ++i)
+        bool should_insert_first = next_row < filling_row;
+        logDebug("should_insert_first", should_insert_first);
+
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*old_fill_columns[i])[row_ind];
+            auto current_value = (*input_fill_columns[i])[row_ind];
             const auto & fill_to = filling_row.getFillDescription(i).fill_to;
 
             if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
@@ -396,76 +532,45 @@ void FillingTransform::transform(Chunk & chunk)
             else
                 next_row[i] = fill_to;
         }
+        logDebug("next_row updated", next_row);
 
         /// A case, when at previous step row was initialized from defaults 'fill_from' values
         ///  and probably we need to insert it to block.
         if (should_insert_first && filling_row < next_row)
         {
-            interpolate();
+            interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        interpolate();
         while (filling_row.next(next_row))
         {
+            interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-            interpolate();
         }
 
-        copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
-        copyRowFromColumns(res_interpolate_columns, old_interpolate_columns, row_ind);
-        copyRowFromColumns(res_other_columns, old_other_columns, row_ind);
+        copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
+        copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
+        copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
     }
 
-    saveLastRow(res_fill_columns, res_interpolate_columns, res_other_columns);
-    setResultColumns(chunk, res_fill_columns, res_interpolate_columns, res_other_columns);
+    saveLastRow(result_columns);
+    size_t num_output_rows = result_columns[0]->size();
+    chunk.setColumns(std::move(result_columns), num_output_rows);
 }
 
-void FillingTransform::setResultColumns(Chunk & chunk, MutableColumns & fill_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns) const
-{
-    MutableColumns result_columns(fill_columns.size() + interpolate_columns.size() + other_columns.size());
-    /// fill_columns always non-empty.
-    size_t num_rows = fill_columns[0]->size();
-
-    for (size_t i = 0, size = fill_columns.size(); i < size; ++i)
-        result_columns[fill_column_positions[i]] = std::move(fill_columns[i]);
-    for (size_t i = 0, size = interpolate_columns.size(); i < size; ++i)
-        result_columns[interpolate_column_positions[i]] = std::move(interpolate_columns[i]);
-    for (size_t i = 0, size = other_columns.size(); i < size; ++i)
-        result_columns[other_column_positions[i]] = std::move(other_columns[i]);
-
-    chunk.setColumns(std::move(result_columns), num_rows);
-}
-
-void FillingTransform::saveLastRow(const MutableColumns & fill_columns, const MutableColumns & interpolate_columns, const MutableColumns & other_columns)
+void FillingTransform::saveLastRow(const MutableColumns & result_columns)
 {
     last_row.clear();
-    last_row.resize(fill_columns.size() + interpolate_columns.size() + other_columns.size());
 
-    size_t num_rows = fill_columns[0]->size();
+    const size_t num_rows = result_columns[0]->size();
     if (num_rows == 0)
         return;
 
-    for (size_t i = 0, size = fill_columns.size(); i < size; ++i)
+    for (const auto & result_column : result_columns)
     {
-        auto column = fill_columns[i]->cloneEmpty();
-        column->insertFrom(*fill_columns[i], num_rows - 1);
-        last_row[fill_column_positions[i]] = std::move(column);
-    }
-
-    for (size_t i = 0, size = interpolate_columns.size(); i < size; ++i)
-    {
-        auto column = interpolate_columns[i]->cloneEmpty();
-        column->insertFrom(*interpolate_columns[i], num_rows - 1);
-        last_row[interpolate_column_positions[i]] = std::move(column);
-    }
-
-    for (size_t i = 0, size = other_columns.size(); i < size; ++i)
-    {
-        auto column = other_columns[i]->cloneEmpty();
-        column->insertFrom(*other_columns[i], num_rows - 1);
-        last_row[other_column_positions[i]] = std::move(column);
+        auto column = result_column->cloneEmpty();
+        column->insertFrom(*result_column, num_rows - 1);
+        last_row.push_back(std::move(column));
     }
 }
-
 }

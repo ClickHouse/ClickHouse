@@ -1866,8 +1866,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
 
-            auto required_columns = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-            NameSet required_source_columns(required_columns.begin(), required_columns.end());
+            auto required_columns_ = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            NameSet required_source_columns(required_columns_.begin(), required_columns_.end());
             /// Add required columns to required output in order not to remove them after prewhere execution.
             /// TODO: add sampling and final execution to common chain.
             for (const auto & column : additional_required_columns_after_prewhere)
