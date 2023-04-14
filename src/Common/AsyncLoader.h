@@ -619,10 +619,7 @@ private:
                 else if (job)
                     finish(lock, job, LoadStatus::OK);
 
-                if (!is_running)
-                    return;
-
-                if (ready_queue.empty())
+                if (!is_running || ready_queue.empty())
                 {
                     workers--;
                     return;
