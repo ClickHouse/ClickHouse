@@ -98,6 +98,7 @@ public:
 
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_);
 
     ~MemoryTracker();
 
