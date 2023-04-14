@@ -35,6 +35,7 @@
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
