@@ -12,7 +12,6 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Types.h>
-#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Cache/IFileCachePriority.h>

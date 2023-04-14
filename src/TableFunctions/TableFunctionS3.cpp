@@ -150,6 +150,8 @@ void TableFunctionS3::parseArgumentsImpl(
         s3_configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
+    s3_configuration.keys = {s3_configuration.url.key};
+
     /// For DataLake table functions, we should specify default format.
     if (s3_configuration.format == "auto" && get_format_from_file)
         s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
@@ -175,6 +177,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
+        configuration.update(context);
         return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
@@ -198,11 +201,11 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 
     StoragePtr storage = std::make_shared<StorageS3>(
         configuration,
+        context,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
         String{},
-        context,
         /// No format_settings for table function S3
         std::nullopt);
 

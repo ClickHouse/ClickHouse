@@ -7,12 +7,12 @@ file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-7
-7
+8
+8
 0
 2
 2
-7
+8
 Row 1:
 ──────
 file_segment_range_begin: 0
@@ -37,12 +37,12 @@ file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-7
-7
+8
+8
 0
 2
 2
-7
+8
 Row 1:
 ──────
 file_segment_range_begin: 0
