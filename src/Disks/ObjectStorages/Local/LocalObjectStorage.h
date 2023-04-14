@@ -79,11 +79,13 @@ public:
 
     bool supportsAppend() const override { return true; }
 
-    std::string generateBlobNameForPath(const std::string & path) override { return path; }
-
     std::string getUniqueId(const std::string & path) const override;
 
+    std::string generateBlobNameForPath(const std::string & path) override;
+
     bool isRemote() const override { return false; }
+
+    ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
 private:
     Poco::Logger * log;

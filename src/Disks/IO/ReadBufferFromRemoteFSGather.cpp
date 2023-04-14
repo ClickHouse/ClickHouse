@@ -122,6 +122,8 @@ void ReadBufferFromRemoteFSGather::initialize()
 
         if (object.bytes_size > current_buf_offset)
         {
+            LOG_TEST(log, "Reading from file: {} ({})", object.absolute_path, object.getMappedPath());
+
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || current_buf_idx != i)
             {
@@ -173,6 +175,7 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
     ++current_buf_idx;
 
     const auto & object = blobs_to_read[current_buf_idx];
+    LOG_TEST(log, "Reading from next file: {} ({})", object.absolute_path, object.getMappedPath());
     current_buf = createImplementationBuffer(object);
 
     return true;

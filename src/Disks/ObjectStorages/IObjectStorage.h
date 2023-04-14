@@ -207,13 +207,13 @@ public:
 
     virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
 
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
+    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
 protected:
     /// Should be called from implementation of applyNewSettings()
     void applyRemoteThrottlingSettings(ContextPtr context);
-
-    /// Should be used by implementation of read* and write* methods
-    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
-    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
 private:
     mutable std::mutex throttlers_mutex;
