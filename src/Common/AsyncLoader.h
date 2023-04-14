@@ -373,6 +373,12 @@ public:
             finished_jobs.erase(job);
     }
 
+    size_t getMaxThreads() const
+    {
+        std::unique_lock lock{mutex};
+        return pool.getMaxThreads();
+    }
+
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock)
     {
@@ -588,7 +594,7 @@ private:
         }
     }
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     bool is_running = false;
 
     // TODO(serxa): add metrics for number of jobs in every state
