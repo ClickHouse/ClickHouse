@@ -1,18 +1,7 @@
 <test>
-    <substitutions>
-        <substitution>
-            <name>modulos</name>
-            <values>
-                <value>256</value>
-                <value>65536</value>
-                <value>1000000</value>
-            </values>
-        </substitution>
-    </substitutions>
-
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 255 order by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 350 order by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 20000 order by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 65536 order by k]]></query>
-    <query><![CDATA[select k from (select number % {modulos} as k from numbers(100000000)) where k >= 5 and k < 100000 order by k]]></query>
+    <query><![CDATA[select k from (select number % 256 as k from numbers(100000000)) where k >= 5 and k <= 255 order by k format Null]]></query>
+    <query><![CDATA[select k from (select toUInt32(number % 256 + 65536) as k from numbers(100000000)) where k >= 65536 and k <= 65791 order by k format Null]]></query>
+    <query><![CDATA[select k from (select number % 256 + 10000000000 as k from numbers(100000000)) where k >= 10000000000 and k <= 10000000255 order by k format Null]]></query>
+    <query><![CDATA[select k from (select toUInt128(number % 65536 + 1000) as k from numbers(10000000)) where k >= 1000 and k <= 66535 order by k format Null]]></query>
+    <query><![CDATA[select k from (select toUInt128(number % 256 + 1000) as k from numbers(100000000)) where k >= 1000 and k <= 1255 order by k format Null]]></query>
 </test>

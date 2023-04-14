@@ -44,6 +44,10 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
             !maybe_constant_column->result_type->isValueRepresentedByInteger())
         return std::nullopt;
 
+    const auto & constant_type_name = maybe_constant_column->result_type->getName();
+    if (constant_type_name == "UInt128" || constant_type_name == "Int128" || constant_type_name == "UInt256" || constant_type_name == "Int256")
+        return std::nullopt;
+
     ProcessedPredicate result;
     result.column_name = maybe_input_column->result_name;
     if (maybe_constant_column->result_type->isValueRepresentedByUnsignedInteger())
