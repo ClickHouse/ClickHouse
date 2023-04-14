@@ -49,10 +49,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    /// FIXME: enable parallelization later, currently it makes mysql intergation test flaky,
-    ///        see test_storage_mysql/test.py::test_settings_connection_wait_timeout
-    bool parallelizeOutputAfterReading() const override { return false; }
-
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     struct Configuration
