@@ -926,7 +926,7 @@ public:
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 
-    std::shared_ptr<Clusters> getClusters() const;
+    std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
@@ -1158,6 +1158,8 @@ private:
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
 
     DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
+
+    std::shared_ptr<Clusters> getClustersImpl() const;
 
     /// Throttling
 public:

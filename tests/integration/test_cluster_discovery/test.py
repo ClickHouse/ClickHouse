@@ -95,6 +95,12 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards
     )
 
+    nodes["node1"].query("SYSTEM DROP DNS CACHE")
+    nodes["node0"].query("SYSTEM DROP DNS CACHE")
+    check_shard_num(
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards
+    )
+
     nodes["node1"].stop_clickhouse(kill=True)
     check_nodes_count(
         [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes - 1
