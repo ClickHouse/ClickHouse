@@ -26,20 +26,24 @@ else:
 
 DRY_RUN_MARK = "<no url, dry run>"
 
-MAX_FAILURES_DEFAULT = 50
+MAX_FAILURES_DEFAULT = 40
 SLACK_URL_DEFAULT = DRY_RUN_MARK
 
-EXTENDED_CHECK_PERIOD_MUL = 3
 FLAKY_ALERT_PROBABILITY = 0.20
 
-# Find tests that failed in master during the last check_period * 12 hours,
+MAX_TESTS_TO_REPORT = 4
+
+# Slack has a stupid limitation on message size, it splits long messages into multiple ones breaking formatting
+MESSAGE_LENGTH_LIMIT = 4000
+
+# Find tests that failed in master during the last check_period * 24 hours,
 # but did not fail during the last 2 weeks. Assuming these tests were broken recently.
-# Counts number of failures in check_period and check_period * 12 time windows
+# Counts number of failures in check_period and check_period * 24 time windows
 # to distinguish rare flaky tests from completely broken tests
 NEW_BROKEN_TESTS_QUERY = """
 WITH
     1 AS check_period,
-    check_period * 12 AS extended_check_period,
+    check_period * 24 AS extended_check_period,
     now() as now
 SELECT
     test_name,
@@ -62,6 +66,7 @@ WHERE 1
         AND test_status LIKE 'F%')
     AND test_context_raw NOT LIKE '%CannotSendRequest%' and test_context_raw NOT LIKE '%Server does not respond to health check%'
 GROUP BY test_name
+ORDER BY (count_prev_periods + count) DESC
 """
 
 # Returns total number of failed checks during the last 24 hours
@@ -153,11 +158,17 @@ def format_failed_tests_list(failed_tests, failure_type):
     else:
         res = "There are {} new {} tests:\n".format(len(failed_tests), failure_type)
 
-    for name, report in failed_tests:
+    for name, report in failed_tests[:MAX_TESTS_TO_REPORT]:
         cidb_url = get_play_url(ALL_RECENT_FAILURES_QUERY.format(name))
-        res += " - *{}*  -  <{}|Report>  -  <{}|CI DB> \n".format(
+        res += "-   *{}*  -  <{}|Report>  -  <{}|CI DB> \n".format(
             name, report, cidb_url
         )
+
+    if MAX_TESTS_TO_REPORT < len(failed_tests):
+        res += "-   and {} other tests... :this-is-fine-fire:".format(
+            len(failed_tests) - MAX_TESTS_TO_REPORT
+        )
+
     return res
 
 
@@ -173,11 +184,14 @@ def get_new_broken_tests_message(failed_tests):
     if len(broken_tests) > 0:
         msg += format_failed_tests_list(broken_tests, "*BROKEN*")
     elif random.random() > FLAKY_ALERT_PROBABILITY:
-        # Should we report fuzzers unconditionally?
-        print("Will not report flaky tests to avoid noise: ", flaky_tests)
-        return None
+        looks_like_fuzzer = [x[0].count(" ") > 2 for x in flaky_tests]
+        if not any(looks_like_fuzzer):
+            print("Will not report flaky tests to avoid noise: ", flaky_tests)
+            return None
 
     if len(flaky_tests) > 0:
+        if len(msg) > 0:
+            msg += "\n"
         msg += format_failed_tests_list(flaky_tests, "flaky")
 
     return msg
@@ -187,14 +201,14 @@ def get_too_many_failures_message_impl(failures_count):
     MAX_FAILURES = int(os.environ.get("MAX_FAILURES", MAX_FAILURES_DEFAULT))
     curr_failures = int(failures_count[0][0])
     prev_failures = int(failures_count[0][1])
-    if curr_failures == 0:
+    if curr_failures == 0 and prev_failures != 0:
         return (
             "Looks like CI is completely broken: there are *no failures* at all... 0_o"
         )
     if curr_failures < MAX_FAILURES:
         return None
     if prev_failures < MAX_FAILURES:
-        return "*CI is broken: there are {} failures during the last 24 hours*".format(
+        return ":alert: *CI is broken: there are {} failures during the last 24 hours*".format(
             curr_failures
         )
     if curr_failures < prev_failures:
@@ -213,7 +227,22 @@ def get_too_many_failures_message(failures_count):
     return msg
 
 
-def send_to_slack(message):
+def split_slack_message(long_message):
+    lines = long_message.split("\n")
+    messages = []
+    curr_msg = ""
+    for line in lines:
+        if len(curr_msg) + len(line) < MESSAGE_LENGTH_LIMIT:
+            curr_msg += "\n"
+            curr_msg += line
+        else:
+            messages.append(curr_msg)
+            curr_msg = line
+    messages.append(curr_msg)
+    return messages
+
+
+def send_to_slack_impl(message):
     SLACK_URL = os.environ.get("SLACK_URL", SLACK_URL_DEFAULT)
     if SLACK_URL == DRY_RUN_MARK:
         return
@@ -228,6 +257,12 @@ def send_to_slack(message):
                 res.status_code, res.content
             )
         )
+
+
+def send_to_slack(message):
+    messages = split_slack_message(message)
+    for msg in messages:
+        send_to_slack_impl(msg)
 
 
 def query_and_alert_if_needed(query, get_message_func):

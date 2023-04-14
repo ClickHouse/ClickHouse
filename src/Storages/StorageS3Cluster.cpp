@@ -58,18 +58,14 @@ StorageS3Cluster::StorageS3Cluster(
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
     StorageInMemoryMetadata storage_metadata;
-    StorageS3::updateConfiguration(context_, s3_configuration);
+    updateConfigurationIfChanged(context_);
 
     if (columns_.empty())
     {
-        const auto & filename = configuration_.url.uri.getPath();
-        const bool is_key_with_globs = filename.find_first_of("*?{") != std::string::npos;
-
         /// `distributed_processing` is set to false, because this code is executed on the initiator, so there is no callback set
         /// for asking for the next tasks.
         /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
-        auto columns = StorageS3::getTableStructureFromDataImpl(
-            format_name, s3_configuration, compression_method, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
+        auto columns = StorageS3::getTableStructureFromDataImpl(s3_configuration, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -88,6 +84,11 @@ StorageS3Cluster::StorageS3Cluster(
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
 }
 
+void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
+{
+    s3_configuration.update(local_context);
+}
+
 /// The code executes on initiator
 Pipe StorageS3Cluster::read(
     const Names & column_names,
@@ -98,7 +99,7 @@ Pipe StorageS3Cluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    StorageS3::updateConfiguration(context, s3_configuration);
+    updateConfigurationIfChanged(context);
 
     auto cluster = getCluster(context);
     auto extension = getTaskIteratorExtension(query_info.query, context);

@@ -138,6 +138,8 @@
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
+    M(QueryPipelineExecutorThreads, "Number of threads in the PipelineExecutor thread pool.") \
+    M(QueryPipelineExecutorThreadsActive, "Number of threads in the PipelineExecutor thread pool running a task.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
     M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
