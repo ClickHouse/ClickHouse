@@ -5,10 +5,18 @@
 #include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/EventNotifier.h>
 #include <Common/Config/ConfigProcessor.h>
+#include "IO/WriteBufferFromFile.h"
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int BAD_ARGUMENTS;
 }
 
 Runner::Runner(
@@ -40,41 +48,41 @@ Runner::Runner(
         parseHostsFromConfig(*config);
     }
 
-    std::cout << "---- Run options ---- " << std::endl;
+    std::cerr << "---- Run options ---- " << std::endl;
     static constexpr uint64_t DEFAULT_CONCURRENCY = 1;
     if (concurrency_)
         concurrency = *concurrency_;
     else
         concurrency = config->getUInt64("concurrency", DEFAULT_CONCURRENCY);
-    std::cout << "Concurrency: " << concurrency << std::endl;
+    std::cerr << "Concurrency: " << concurrency << std::endl;
 
     static constexpr uint64_t DEFAULT_ITERATIONS = 0;
     if (max_iterations_)
         max_iterations = *max_iterations_;
     else
         max_iterations = config->getUInt64("iterations", DEFAULT_ITERATIONS);
-    std::cout << "Iterations: " << max_iterations << std::endl;
+    std::cerr << "Iterations: " << max_iterations << std::endl;
 
     static constexpr double DEFAULT_DELAY = 1.0;
     if (delay_)
         delay = *delay_;
     else
         delay = config->getDouble("report_delay", DEFAULT_DELAY);
-    std::cout << "Report delay: " << delay << std::endl;
+    std::cerr << "Report delay: " << delay << std::endl;
 
-    static constexpr double DEFAULT_TIME_LIMIT = 1.0;
+    static constexpr double DEFAULT_TIME_LIMIT = 0.0;
     if (max_time_)
         max_time = *max_time_;
     else
         max_time = config->getDouble("timelimit", DEFAULT_TIME_LIMIT);
-    std::cout << "Time limit: " << max_time << std::endl;
+    std::cerr << "Time limit: " << max_time << std::endl;
 
     if (continue_on_error_)
         continue_on_error = *continue_on_error_;
     else
         continue_on_error = config->getBool("continue_on_error", false);
-    std::cout << "Continue on error: " << continue_on_error << std::endl;
-    std::cout << "---- Run options ----\n" << std::endl;
+    std::cerr << "Continue on error: " << continue_on_error << std::endl;
+    std::cerr << "---- Run options ----\n" << std::endl;
 
     pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency);
     queue.emplace(concurrency);
@@ -173,7 +181,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             else if (response.error == Coordination::Error::ZNONODE)
             {
                 /// remove can fail with ZNONODE because of different order of execution
-                /// of generated create and remove requests 
+                /// of generated create and remove requests
                 /// this is okay for concurrent runs
                 if (dynamic_cast<const Coordination::ZooKeeperRemoveResponse *>(&response))
                     set_exception = false;
@@ -203,14 +211,14 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         try
         {
             auto response_size = future.get();
-            double seconds = watch.elapsedSeconds();
+            auto microseconds = watch.elapsedMicroseconds();
 
             std::lock_guard lock(mutex);
 
             if (request->isReadRequest())
-                info->addRead(seconds, 1, request->bytesSize() + response_size);
+                info->addRead(microseconds, 1, request->bytesSize() + response_size);
             else
-                info->addWrite(seconds, 1, request->bytesSize() + response_size);
+                info->addWrite(microseconds, 1, request->bytesSize() + response_size);
         }
         catch (...)
         {
@@ -268,7 +276,7 @@ bool Runner::tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && re
     //if (i % 10000 == 0)
     //{
     //    for (const auto & [op_num, count] : counts)
-    //        std::cout << fmt::format("{}: {}", op_num, count) << std::endl;
+    //        std::cerr << fmt::format("{}: {}", op_num, count) << std::endl;
     //}
 
     bool inserted = false;
@@ -285,13 +293,13 @@ bool Runner::tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && re
 
         if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
         {
-            std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
+            std::cerr << "Stopping launch of queries. Requested time limit is exhausted.\n";
             return false;
         }
 
         if (interrupt_listener.check())
         {
-            std::cout << "Stopping launch of queries. SIGINT received." << std::endl;
+            std::cerr << "Stopping launch of queries. SIGINT received." << std::endl;
             return false;
         }
 
@@ -300,7 +308,7 @@ bool Runner::tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && re
             printNumberOfRequestsExecuted(requests_executed);
 
             std::lock_guard lock(mutex);
-            report(info, concurrency);
+            info->report(concurrency);
             delay_watch.restart();
         }
     }
@@ -350,18 +358,21 @@ void Runner::runBenchmark()
     printNumberOfRequestsExecuted(requests_executed);
 
     std::lock_guard lock(mutex);
-    report(info, concurrency);
+    info->report(concurrency);
+
+    DB::WriteBufferFromFile out("result.json");
+    info->writeJSON(out, concurrency);
 }
 
 
 void Runner::createConnections()
 {
     DB::EventNotifier::init();
-    std::cout << "---- Creating connections ---- " << std::endl;
+    std::cerr << "---- Creating connections ---- " << std::endl;
     for (size_t connection_info_idx = 0; connection_info_idx < connection_infos.size(); ++connection_info_idx)
     {
         const auto & connection_info = connection_infos[connection_info_idx];
-        std::cout << fmt::format("Creating {} session(s) for:\n"
+        std::cerr << fmt::format("Creating {} session(s) for:\n"
                                  "- host: {}\n"
                                  "- secure: {}\n"
                                  "- session timeout: {}ms\n"
@@ -380,7 +391,7 @@ void Runner::createConnections()
             connections_to_info_map[connections.size() - 1] = connection_info_idx;
         }
     }
-    std::cout << "---- Done creating connections ----\n" << std::endl;
+    std::cerr << "---- Done creating connections ----\n" << std::endl;
 }
 
 std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info)

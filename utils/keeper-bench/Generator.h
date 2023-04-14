@@ -180,6 +180,9 @@ private:
         StringGetter name;
         std::optional<StringGetter> data;
         std::vector<std::shared_ptr<Node>> children;
+        size_t repeat_count = 0;
+
+        std::shared_ptr<Node> clone() const;
 
         void createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
         void dumpTree(int level = 0) const;
