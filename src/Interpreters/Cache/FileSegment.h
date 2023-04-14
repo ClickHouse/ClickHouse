@@ -159,6 +159,7 @@ public:
 
     FileSegmentKind getKind() const { return segment_kind; }
     bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
+    bool isUnbound() const { return is_unbound; }
 
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
