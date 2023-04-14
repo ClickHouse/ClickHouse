@@ -93,9 +93,9 @@ TEST(AsyncLoader, Smoke)
     std::atomic<size_t> jobs_done{0};
     std::atomic<size_t> low_priority_jobs_done{0};
 
-    auto job_func = [&] (const LoadJob & self) {
+    auto job_func = [&] (const LoadJobPtr & self) {
         jobs_done++;
-        if (self.priority == low_priority)
+        if (self->priority == low_priority)
             low_priority_jobs_done++;
     };
 
@@ -134,7 +134,7 @@ TEST(AsyncLoader, CycleDetection)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJob &) {};
+    auto job_func = [&] (const LoadJobPtr &) {};
 
     LoadJobPtr cycle_breaker; // To avoid memleak we introduce with a cycle
 
@@ -178,7 +178,7 @@ TEST(AsyncLoader, CancelPendingJob)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJob &) {};
+    auto job_func = [&] (const LoadJobPtr &) {};
 
     auto job = makeLoadJob({}, "job", job_func);
     auto task = t.loader.schedule({ job });
@@ -201,7 +201,7 @@ TEST(AsyncLoader, CancelPendingTask)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJob &) {};
+    auto job_func = [&] (const LoadJobPtr &) {};
 
     auto job1 = makeLoadJob({}, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
@@ -238,7 +238,7 @@ TEST(AsyncLoader, CancelPendingDependency)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJob &) {};
+    auto job_func = [&] (const LoadJobPtr &) {};
 
     auto job1 = makeLoadJob({}, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
@@ -278,7 +278,7 @@ TEST(AsyncLoader, CancelExecutingJob)
 
     std::barrier sync(2);
 
-    auto job_func = [&] (const LoadJob &)
+    auto job_func = [&] (const LoadJobPtr &)
     {
         sync.arrive_and_wait(); // (A) sync with main thread
         sync.arrive_and_wait(); // (B) wait for waiter
@@ -309,19 +309,19 @@ TEST(AsyncLoader, CancelExecutingTask)
     t.loader.start();
     std::barrier sync(2);
 
-    auto blocker_job_func = [&] (const LoadJob &)
+    auto blocker_job_func = [&] (const LoadJobPtr &)
     {
         sync.arrive_and_wait(); // (A) sync with main thread
         sync.arrive_and_wait(); // (B) wait for waiter
         // signals (C)
     };
 
-    auto job_to_cancel_func = [&] (const LoadJob &)
+    auto job_to_cancel_func = [&] (const LoadJobPtr &)
     {
         FAIL(); // this job should be canceled
     };
 
-    auto job_to_succeed_func = [&] (const LoadJob &)
+    auto job_to_succeed_func = [&] (const LoadJobPtr &)
     {
     };
 
@@ -358,25 +358,6 @@ TEST(AsyncLoader, CancelExecutingTask)
     }
 }
 
-TEST(AsyncLoader, RandomTasks)
-{
-    AsyncLoaderTest t(16);
-    t.loader.start();
-
-    auto job_func = [&] (const LoadJob &)
-    {
-        t.randomSleepUs(100, 500, 5);
-    };
-
-    std::vector<AsyncLoader::Task> tasks;
-    for (int i = 0; i < 512; i++)
-    {
-        int job_count = t.randomInt(1, 32);
-        tasks.push_back(t.loader.schedule(t.randomJobSet(job_count, 5, job_func)));
-        t.randomSleepUs(100, 900, 20); // avg=100us
-    }
-}
-
 TEST(AsyncLoader, TestConcurrency)
 {
     AsyncLoaderTest t(10);
@@ -387,7 +368,7 @@ TEST(AsyncLoader, TestConcurrency)
         std::barrier sync(concurrency);
 
         std::atomic<int> executing{0};
-        auto job_func = [&] (const LoadJob &)
+        auto job_func = [&] (const LoadJobPtr &)
         {
             executing++;
             ASSERT_LE(executing, concurrency);
@@ -413,7 +394,7 @@ TEST(AsyncLoader, TestOverload)
 
     for (int concurrency = 4; concurrency <= 8; concurrency++)
     {
-        auto job_func = [&] (const LoadJob &)
+        auto job_func = [&] (const LoadJobPtr &)
         {
             executing++;
             t.randomSleepUs(100, 200, 100);
@@ -428,5 +409,26 @@ TEST(AsyncLoader, TestOverload)
         t.loader.start();
         t.loader.wait();
         ASSERT_EQ(executing, 0);
+    }
+}
+
+TEST(AsyncLoader, RandomTasks)
+{
+    AsyncLoaderTest t(16);
+    t.loader.start();
+
+    auto job_func = [&] (const LoadJobPtr & self)
+    {
+        for (const auto & dep : self->dependencies)
+            ASSERT_EQ(dep->status(), LoadStatus::SUCCESS);
+        t.randomSleepUs(100, 500, 5);
+    };
+
+    std::vector<AsyncLoader::Task> tasks;
+    for (int i = 0; i < 512; i++)
+    {
+        int job_count = t.randomInt(1, 32);
+        tasks.push_back(t.loader.schedule(t.randomJobSet(job_count, 5, job_func)));
+        t.randomSleepUs(100, 900, 20); // avg=100us
     }
 }
