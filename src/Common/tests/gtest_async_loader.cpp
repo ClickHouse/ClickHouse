@@ -120,8 +120,8 @@ TEST(AsyncLoader, Smoke)
 
         waiter_thread.join();
 
-        ASSERT_EQ(job1->status(), LoadStatus::SUCCESS);
-        ASSERT_EQ(job2->status(), LoadStatus::SUCCESS);
+        ASSERT_EQ(job1->status(), LoadStatus::OK);
+        ASSERT_EQ(job2->status(), LoadStatus::OK);
     }
 
     ASSERT_EQ(jobs_done, 5);
@@ -185,7 +185,7 @@ TEST(AsyncLoader, CancelPendingJob)
 
     task.remove(); // this cancels pending the job (async loader was not started to execute it)
 
-    ASSERT_EQ(job->status(), LoadStatus::FAILED);
+    ASSERT_EQ(job->status(), LoadStatus::CANCELED);
     try
     {
         job->wait();
@@ -209,8 +209,8 @@ TEST(AsyncLoader, CancelPendingTask)
 
     task.remove(); // this cancels both jobs (async loader was not started to execute it)
 
-    ASSERT_EQ(job1->status(), LoadStatus::FAILED);
-    ASSERT_EQ(job2->status(), LoadStatus::FAILED);
+    ASSERT_EQ(job1->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
 
     try
     {
@@ -247,8 +247,8 @@ TEST(AsyncLoader, CancelPendingDependency)
 
     task1.remove(); // this cancels both jobs, due to dependency (async loader was not started to execute it)
 
-    ASSERT_EQ(job1->status(), LoadStatus::FAILED);
-    ASSERT_EQ(job2->status(), LoadStatus::FAILED);
+    ASSERT_EQ(job1->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
 
     try
     {
@@ -299,7 +299,7 @@ TEST(AsyncLoader, CancelExecutingJob)
     sync.arrive_and_wait(); // (B) sync with job
     canceler.join();
 
-    ASSERT_EQ(job->status(), LoadStatus::SUCCESS);
+    ASSERT_EQ(job->status(), LoadStatus::OK);
     job->wait();
 }
 
@@ -348,12 +348,12 @@ TEST(AsyncLoader, CancelExecutingTask)
         canceler.join();
         t.loader.wait();
 
-        ASSERT_EQ(blocker_job->status(), LoadStatus::SUCCESS);
-        ASSERT_EQ(job_to_succeed->status(), LoadStatus::SUCCESS);
+        ASSERT_EQ(blocker_job->status(), LoadStatus::OK);
+        ASSERT_EQ(job_to_succeed->status(), LoadStatus::OK);
         for (const auto & job : task1_jobs)
         {
             if (job != blocker_job)
-                ASSERT_EQ(job->status(), LoadStatus::FAILED);
+                ASSERT_EQ(job->status(), LoadStatus::CANCELED);
         }
     }
 }
@@ -420,7 +420,7 @@ TEST(AsyncLoader, RandomTasks)
     auto job_func = [&] (const LoadJobPtr & self)
     {
         for (const auto & dep : self->dependencies)
-            ASSERT_EQ(dep->status(), LoadStatus::SUCCESS);
+            ASSERT_EQ(dep->status(), LoadStatus::OK);
         t.randomSleepUs(100, 500, 5);
     };
 
