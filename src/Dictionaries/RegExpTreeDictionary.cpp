@@ -198,22 +198,22 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         Array keys = (*keys_column)[i].safeGet<Array>();
         Array values = (*values_column)[i].safeGet<Array>();
         size_t keys_size = keys.size();
-        for (size_t i = 0; i < keys_size; i++)
+        for (size_t j = 0; j < keys_size; j++)
         {
-            const String & name = keys[i].safeGet<String>();
-            const String & value = values[i].safeGet<String>();
-            if (structure.hasAttribute(name))
+            const String & name_ = keys[j].safeGet<String>();
+            const String & value = values[j].safeGet<String>();
+            if (structure.hasAttribute(name_))
             {
-                const auto & attr = structure.getAttribute(name);
+                const auto & attr = structure.getAttribute(name_);
                 auto string_pieces = createStringPieces(value, num_captures, regex, logger);
                 if (!string_pieces.empty())
                 {
-                    node->attributes[name] = RegexTreeNode::AttributeValue{.field = values[i], .pieces = std::move(string_pieces)};
+                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = values[j], .pieces = std::move(string_pieces)};
                 }
                 else
                 {
-                    Field field = parseStringToField(values[i].safeGet<String>(), attr.type);
-                    node->attributes[name] = RegexTreeNode::AttributeValue{.field = std::move(field)};
+                    Field field = parseStringToField(values[j].safeGet<String>(), attr.type);
+                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = std::move(field)};
                 }
             }
         }
@@ -424,23 +424,23 @@ bool RegExpTreeDictionary::setAttributes(
         return attributes_to_set.size() == attributes.size();
     visited_nodes.emplace(id);
     const auto & node_attributes = regex_nodes.at(id)->attributes;
-    for (const auto & [name, value] : node_attributes)
+    for (const auto & [name_, value] : node_attributes)
     {
-        if (!attributes.contains(name) || attributes_to_set.contains(name))
+        if (!attributes.contains(name_) || attributes_to_set.contains(name_))
             continue;
         if (value.containsBackRefs())
         {
             auto [updated_str, use_default] = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
             if (use_default)
             {
-                DefaultValueProvider default_value(attributes.at(name).null_value, defaults.at(name));
-                attributes_to_set[name] = default_value.getDefaultValue(key_index);
+                DefaultValueProvider default_value(attributes.at(name_).null_value, defaults.at(name_));
+                attributes_to_set[name_] = default_value.getDefaultValue(key_index);
             }
             else
-                attributes_to_set[name] = parseStringToField(updated_str, attributes.at(name).type);
+                attributes_to_set[name_] = parseStringToField(updated_str, attributes.at(name_).type);
         }
         else
-            attributes_to_set[name] = value.field;
+            attributes_to_set[name_] = value.field;
     }
 
     auto parent_id = regex_nodes.at(id)->parent_id;
@@ -541,11 +541,11 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     std::unordered_map<String, MutableColumnPtr> columns;
 
     /// initialize columns
-    for (const auto & [name, attr] : attributes)
+    for (const auto & [name_, attr] : attributes)
     {
         auto col_ptr = attr.type->createColumn();
         col_ptr->reserve(keys_offsets.size());
-        columns[name] = std::move(col_ptr);
+        columns[name_] = std::move(col_ptr);
     }
 
     UInt64 offset = 0;
@@ -628,25 +628,25 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                 break;
         }
 
-        for (const auto & [name, attr] : attributes)
+        for (const auto & [name_, attr] : attributes)
         {
-            if (attributes_to_set.contains(name))
+            if (attributes_to_set.contains(name_))
                 continue;
 
-            DefaultValueProvider default_value(attr.null_value, defaults.at(name));
-            columns[name]->insert(default_value.getDefaultValue(key_idx));
+            DefaultValueProvider default_value(attr.null_value, defaults.at(name_));
+            columns[name_]->insert(default_value.getDefaultValue(key_idx));
         }
 
         /// insert to columns
-        for (const auto & [name, value] : attributes_to_set)
-            columns[name]->insert(value);
+        for (const auto & [name_, value] : attributes_to_set)
+            columns[name_]->insert(value);
 
         offset = key_offset;
     }
 
     std::unordered_map<String, ColumnPtr> result;
-    for (auto & [name, mutable_ptr] : columns)
-        result.emplace(name, std::move(mutable_ptr));
+    for (auto & [name_, mutable_ptr] : columns)
+        result.emplace(name_, std::move(mutable_ptr));
 
     return result;
 }
@@ -684,8 +684,8 @@ Columns RegExpTreeDictionary::getColumns(
         defaults);
 
     Columns result;
-    for (const String & name : attribute_names)
-        result.push_back(columns_map.at(name));
+    for (const String & name_ : attribute_names)
+        result.push_back(columns_map.at(name_));
 
     return result;
 }
