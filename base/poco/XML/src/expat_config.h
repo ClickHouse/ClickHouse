@@ -17,9 +17,7 @@
 #include "Poco/Platform.h"
 
 
-#if !defined(POCO_VXWORKS)
 #    include <memory.h>
-#endif
 #include <string.h>
 
 

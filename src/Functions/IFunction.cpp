@@ -20,11 +20,9 @@
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    include <llvm/IR/IRBuilder.h>
-#    pragma GCC diagnostic pop
 #endif
+
 
 namespace DB
 {
@@ -66,12 +64,12 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
 
             if (!low_cardinality_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Incompatible type for low cardinality column: {}",
+                    "Incompatible type for LowCardinality column: {}",
                     column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
-                /// Normal case, when function can be executed on values's default.
+                /// Normal case, when function can be executed on values' default.
                 column.column = low_cardinality_column->getDictionary().getNestedColumn();
                 indexes = low_cardinality_column->getIndexesPtr();
             }
@@ -280,6 +278,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
+
             auto keys = res_is_constant
                 ? res->cloneResized(1)->convertToFullColumnIfConst()
                 : res;
@@ -321,7 +320,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
             /// In rare case, when sparse column doesn't have default values,
             /// it's more convenient to convert it to full before execution of function.
-            if (column_sparse && column_sparse->getNumberOfDefaults())
+            if (column_sparse && column_sparse->getNumberOfDefaultRows())
             {
                 sparse_column_position = i;
                 ++num_sparse_columns;
@@ -359,7 +358,9 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
                 return res->cloneResized(input_rows_count);
 
             /// If default of sparse column is changed after execution of function, convert to full column.
-            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0))
+            /// If there are any default in non-zero position after execution of function, convert to full column.
+            /// Currently there is no easy way to rebuild sparse column with new offsets.
+            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0) || res->getNumberOfDefaultRows() != 1)
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
                 return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);

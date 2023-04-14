@@ -26,7 +26,6 @@
 #include <arrow/util/decimal.h>
 
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
-        M(UInt8, arrow::UInt8Builder) \
         M(Int8, arrow::Int8Builder) \
         M(UInt16, arrow::UInt16Builder) \
         M(Int16, arrow::Int16Builder) \
@@ -65,8 +64,10 @@ namespace DB
     {
         {"UInt8", arrow::uint8()},
         {"Int8", arrow::int8()},
+        {"Enum8", arrow::int8()},
         {"UInt16", arrow::uint16()},
         {"Int16", arrow::int16()},
+        {"Enum16", arrow::int16()},
         {"UInt32", arrow::uint32()},
         {"Int32", arrow::int32()},
         {"UInt64", arrow::uint64()},
@@ -80,6 +81,11 @@ namespace DB
 
         {"String", arrow::binary()},
         {"FixedString", arrow::binary()},
+
+        {"Int128", arrow::fixed_size_binary(sizeof(Int128))},
+        {"UInt128", arrow::fixed_size_binary(sizeof(UInt128))},
+        {"Int256", arrow::fixed_size_binary(sizeof(Int256))},
+        {"UInt256", arrow::fixed_size_binary(sizeof(UInt256))},
     };
 
 
@@ -148,7 +154,7 @@ namespace DB
     }
 
     static void fillArrowArrayWithDateTime64ColumnData(
-        const DataTypeDateTime64 * type,
+        const DataTypePtr & type,
         ColumnPtr write_column,
         const PaddedPODArray<UInt8> * null_bytemap,
         const String & format_name,
@@ -156,11 +162,12 @@ namespace DB
         size_t start,
         size_t end)
     {
+        const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(type.get());
         const auto & column = assert_cast<const ColumnDecimal<DateTime64> &>(*write_column);
         arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
         arrow::Status status;
 
-        auto scale = type->getScale();
+        auto scale = datetime64_type->getScale();
         bool need_rescale = scale % 3;
         auto rescale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(3 - scale % 3);
         for (size_t value_i = start; value_i < end; ++value_i)
@@ -186,7 +193,7 @@ namespace DB
     static void fillArrowArray(
         const String & column_name,
         ColumnPtr & column,
-        const std::shared_ptr<const IDataType> & column_type,
+        const DataTypePtr & column_type,
         const PaddedPODArray<UInt8> * null_bytemap,
         arrow::ArrayBuilder * array_builder,
         String format_name,
@@ -200,7 +207,7 @@ namespace DB
     static void fillArrowArrayWithArrayColumnData(
         const String & column_name,
         ColumnPtr & column,
-        const std::shared_ptr<const IDataType> & column_type,
+        const DataTypePtr & column_type,
         const PaddedPODArray<UInt8> * null_bytemap,
         arrow::ArrayBuilder * array_builder,
         String format_name,
@@ -231,7 +238,7 @@ namespace DB
     static void fillArrowArrayWithTupleColumnData(
         const String & column_name,
         ColumnPtr & column,
-        const std::shared_ptr<const IDataType> & column_type,
+        const DataTypePtr & column_type,
         const PaddedPODArray<UInt8> * null_bytemap,
         arrow::ArrayBuilder * array_builder,
         String format_name,
@@ -303,7 +310,7 @@ namespace DB
     static void fillArrowArrayWithLowCardinalityColumnDataImpl(
         const String & column_name,
         ColumnPtr & column,
-        const std::shared_ptr<const IDataType> & column_type,
+        const DataTypePtr & column_type,
         const PaddedPODArray<UInt8> *,
         arrow::ArrayBuilder * array_builder,
         String format_name,
@@ -359,7 +366,7 @@ namespace DB
     static void fillArrowArrayWithLowCardinalityColumnData(
         const String & column_name,
         ColumnPtr & column,
-        const std::shared_ptr<const IDataType> & column_type,
+        const DataTypePtr & column_type,
         const PaddedPODArray<UInt8> * null_bytemap,
         arrow::ArrayBuilder * array_builder,
         String format_name,
@@ -424,13 +431,50 @@ namespace DB
         const auto & internal_data = internal_column.getChars();
         size_t fixed_length = internal_column.getN();
         arrow::FixedSizeBinaryBuilder & builder = assert_cast<arrow::FixedSizeBinaryBuilder &>(*array_builder);
-        arrow::Status status;
 
         PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
         const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
 
         const uint8_t * data_start = reinterpret_cast<const uint8_t *>(internal_data.data() + start * fixed_length);
-        status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        arrow::Status status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        checkStatus(status, write_column->getName(), format_name);
+    }
+
+    static void fillArrowArrayWithIPv6ColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto & internal_column = assert_cast<const ColumnIPv6 &>(*write_column);
+        const auto & internal_data = internal_column.getData();
+        size_t fixed_length = sizeof(IPv6);
+        arrow::FixedSizeBinaryBuilder & builder = assert_cast<arrow::FixedSizeBinaryBuilder &>(*array_builder);
+
+        PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
+        const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
+
+        const uint8_t * data_start = reinterpret_cast<const uint8_t *>(internal_data.data()) + start * fixed_length;
+        arrow::Status status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        checkStatus(status, write_column->getName(), format_name);
+    }
+
+    static void fillArrowArrayWithIPv4ColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto & internal_data = assert_cast<const ColumnIPv4 &>(*write_column).getData();
+        auto & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
+
+        PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
+        const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
+        arrow::Status status = builder.AppendValues(&(internal_data.data() + start)->toUnderType(), end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         checkStatus(status, write_column->getName(), format_name);
     }
 
@@ -501,126 +545,6 @@ namespace DB
         }
     }
 
-    static void fillArrowArray(
-        const String & column_name,
-        ColumnPtr & column,
-        const std::shared_ptr<const IDataType> & column_type,
-        const PaddedPODArray<UInt8> * null_bytemap,
-        arrow::ArrayBuilder * array_builder,
-        String format_name,
-        size_t start,
-        size_t end,
-        bool output_string_as_string,
-        bool output_fixed_string_as_fixed_byte_array,
-        std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values)
-    {
-        const String column_type_name = column_type->getFamilyName();
-
-        if (column_type->isNullable())
-        {
-            const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
-            ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
-            DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
-            const ColumnPtr & null_column = column_nullable->getNullMapColumnPtr();
-            const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
-            fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
-        }
-        else if (isString(column_type))
-        {
-            if (output_string_as_string)
-                fillArrowArrayWithStringColumnData<ColumnString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
-            else
-                fillArrowArrayWithStringColumnData<ColumnString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
-        }
-        else if (isFixedString(column_type))
-        {
-            if (output_fixed_string_as_fixed_byte_array)
-                fillArrowArrayWithFixedStringColumnData(column, null_bytemap, format_name, array_builder, start, end);
-            else if (output_string_as_string)
-                fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
-            else
-                fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
-        }
-        else if (isDate(column_type))
-        {
-            fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end);
-        }
-        else if (isDateTime(column_type))
-        {
-            fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
-        }
-        else if (isDate32(column_type))
-        {
-            fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
-        }
-        else if (isArray(column_type))
-        {
-            fillArrowArrayWithArrayColumnData<arrow::ListBuilder>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
-        }
-        else if (isTuple(column_type))
-        {
-            fillArrowArrayWithTupleColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
-        }
-        else if (column_type->getTypeId() == TypeIndex::LowCardinality)
-        {
-            fillArrowArrayWithLowCardinalityColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
-        }
-        else if (isMap(column_type))
-        {
-            ColumnPtr column_array = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
-            DataTypePtr array_type = assert_cast<const DataTypeMap *>(column_type.get())->getNestedType();
-            fillArrowArrayWithArrayColumnData<arrow::MapBuilder>(column_name, column_array, array_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
-        }
-        else if (isDecimal(column_type))
-        {
-            auto fill_decimal = [&](const auto & types) -> bool
-            {
-                using Types = std::decay_t<decltype(types)>;
-                using ToDataType = typename Types::LeftType;
-                if constexpr (
-                    std::is_same_v<ToDataType,DataTypeDecimal<Decimal32>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>
-                    || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
-                {
-                    fillArrowArrayWithDecimalColumnData<ToDataType, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
-                    return true;
-                }
-                if constexpr (std::is_same_v<ToDataType,DataTypeDecimal<Decimal256>>)
-                {
-                    fillArrowArrayWithDecimalColumnData<ToDataType, Int256, arrow::Decimal256, arrow::Decimal256Builder>(column, null_bytemap, array_builder, format_name, start, end);
-                    return true;
-                }
-
-                return false;
-            };
-
-            if (!callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal))
-                throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with decimal data with type {}", column_type_name};
-        }
-        else if (isDateTime64(column_type))
-        {
-            const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
-            fillArrowArrayWithDateTime64ColumnData(datetime64_type, column, null_bytemap, format_name, array_builder, start, end);
-        }
-        else if (isBool(column_type))
-        {
-            fillArrowArrayWithBoolColumnData(column, null_bytemap, format_name, array_builder, start, end);
-        }
-    #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
-        else if (#CPP_NUMERIC_TYPE == column_type_name) \
-        { \
-            fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
-        }
-
-        FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
-    #undef DISPATCH
-        else
-        {
-            throw Exception(ErrorCodes::UNKNOWN_TYPE,
-                    "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name);
-        }
-    }
-
     template <typename DataType, typename FieldType, typename ArrowDecimalType, typename ArrowBuilder>
     static void fillArrowArrayWithDecimalColumnData(
         ColumnPtr write_column,
@@ -647,6 +571,157 @@ namespace DB
             checkStatus(status, write_column->getName(), format_name);
         }
         checkStatus(status, write_column->getName(), format_name);
+    }
+
+    template <typename ColumnType>
+    static void fillArrowArrayWithBigIntegerColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto & internal_column = assert_cast<const ColumnType &>(*write_column);
+        const auto & internal_data = internal_column.getData();
+        size_t fixed_length = sizeof(typename ColumnType::ValueType);
+        arrow::FixedSizeBinaryBuilder & builder = assert_cast<arrow::FixedSizeBinaryBuilder &>(*array_builder);
+
+        PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
+        const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
+
+        const uint8_t * data_start = reinterpret_cast<const uint8_t *>(internal_data.data()) + start * fixed_length;
+        arrow::Status status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        checkStatus(status, write_column->getName(), format_name);
+    }
+
+    static void fillArrowArray(
+        const String & column_name,
+        ColumnPtr & column,
+        const DataTypePtr & column_type,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        arrow::ArrayBuilder * array_builder,
+        String format_name,
+        size_t start,
+        size_t end,
+        bool output_string_as_string,
+        bool output_fixed_string_as_fixed_byte_array,
+        std::unordered_map<String, std::shared_ptr<arrow::Array>> & dictionary_values)
+    {
+        const String column_type_name = column_type->getFamilyName();
+        WhichDataType which(column_type);
+
+        switch (column_type->getTypeId())
+        {
+            case TypeIndex::Nullable:
+            {
+                const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+                ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
+                DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
+                const ColumnPtr & null_column = column_nullable->getNullMapColumnPtr();
+                const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
+                fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+                break;
+            }
+            case TypeIndex::String:
+            {
+                if (output_string_as_string)
+                    fillArrowArrayWithStringColumnData<ColumnString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                else
+                    fillArrowArrayWithStringColumnData<ColumnString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            }
+            case TypeIndex::FixedString:
+            {
+                if (output_fixed_string_as_fixed_byte_array)
+                    fillArrowArrayWithFixedStringColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                else if (output_string_as_string)
+                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                else
+                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            }
+            case TypeIndex::IPv6:
+                fillArrowArrayWithIPv6ColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::IPv4:
+                fillArrowArrayWithIPv4ColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Date:
+                fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::DateTime:
+                fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Date32:
+                fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Array:
+                fillArrowArrayWithArrayColumnData<arrow::ListBuilder>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+                break;
+            case TypeIndex::Tuple:
+                fillArrowArrayWithTupleColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+                break;
+            case TypeIndex::LowCardinality:
+                fillArrowArrayWithLowCardinalityColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+                break;
+            case TypeIndex::Map:
+            {
+                ColumnPtr column_array = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
+                DataTypePtr array_type = assert_cast<const DataTypeMap *>(column_type.get())->getNestedType();
+                fillArrowArrayWithArrayColumnData<arrow::MapBuilder>(column_name, column_array, array_type, null_bytemap, array_builder, format_name, start, end, output_string_as_string, output_fixed_string_as_fixed_byte_array, dictionary_values);
+                break;
+            }
+            case TypeIndex::Decimal32:
+                fillArrowArrayWithDecimalColumnData<DataTypeDecimal32, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                break;
+            case TypeIndex::Decimal64:
+                fillArrowArrayWithDecimalColumnData<DataTypeDecimal64, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                break;
+            case TypeIndex::Decimal128:
+                fillArrowArrayWithDecimalColumnData<DataTypeDecimal128, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                break;
+            case TypeIndex::Decimal256:
+                fillArrowArrayWithDecimalColumnData<DataTypeDecimal256, Int256, arrow::Decimal256, arrow::Decimal256Builder>(column, null_bytemap, array_builder, format_name, start, end);
+                break;
+            case TypeIndex::DateTime64:
+                fillArrowArrayWithDateTime64ColumnData(column_type, column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::UInt8:
+            {
+                if (isBool(column_type))
+                    fillArrowArrayWithBoolColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                else
+                    fillArrowArrayWithNumericColumnData<UInt8, arrow::UInt8Builder>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            }
+            case TypeIndex::Enum8:
+                fillArrowArrayWithNumericColumnData<Int8, arrow::Int8Builder>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Enum16:
+                fillArrowArrayWithNumericColumnData<Int16, arrow::Int16Builder>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Int128:
+                fillArrowArrayWithBigIntegerColumnData<ColumnInt128>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::UInt128:
+                fillArrowArrayWithBigIntegerColumnData<ColumnUInt128>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::Int256:
+                fillArrowArrayWithBigIntegerColumnData<ColumnInt256>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+            case TypeIndex::UInt256:
+                fillArrowArrayWithBigIntegerColumnData<ColumnUInt256>(column, null_bytemap, format_name, array_builder, start, end);
+                break;
+#define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
+            case TypeIndex::CPP_NUMERIC_TYPE: \
+                fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
+                break;
+                FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+            default:
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name);
+        }
     }
 
     static std::shared_ptr<arrow::DataType> getArrowTypeForLowCardinalityIndexes(ColumnPtr indexes_column)
@@ -780,6 +855,12 @@ namespace DB
 
         if (isBool(column_type))
             return arrow::boolean();
+
+        if (isIPv6(column_type))
+            return arrow::fixed_size_binary(sizeof(IPv6));
+
+        if (isIPv4(column_type))
+            return arrow::uint32();
 
         const std::string type_name = column_type->getFamilyName();
         if (const auto * arrow_type_it = std::find_if(

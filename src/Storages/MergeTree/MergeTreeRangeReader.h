@@ -1,6 +1,5 @@
 #pragma once
 #include <Core/Block.h>
-#include <Common/logger_useful.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -35,6 +34,8 @@ struct PrewhereExprInfo
     std::vector<PrewhereExprStep> steps;
 
     std::string dump() const;
+
+    std::string dumpConditions() const;
 };
 
 class FilterWithCachedCount

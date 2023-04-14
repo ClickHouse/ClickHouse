@@ -86,11 +86,7 @@ protected:
     static int getType(const Message & msg);
     static int getCategory(const Message & msg);
     void setUpRegistry() const;
-#if defined(POCO_WIN32_UTF8)
-    static std::wstring findLibrary(const wchar_t * name);
-#else
     static std::string findLibrary(const char * name);
-#endif
 
 private:
     std::string _name;

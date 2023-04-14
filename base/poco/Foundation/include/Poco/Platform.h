@@ -86,27 +86,12 @@
 #elif defined(sun) || defined(__sun)
 #    define POCO_OS_FAMILY_UNIX 1
 #    define POCO_OS POCO_OS_SOLARIS
-#elif defined(__QNX__)
-#    define POCO_OS_FAMILY_UNIX 1
-#    define POCO_OS POCO_OS_QNX
-#elif defined(__CYGWIN__)
-#    define POCO_OS_FAMILY_UNIX 1
-#    define POCO_OS POCO_OS_CYGWIN
-#elif defined(POCO_VXWORKS)
-#    define POCO_OS_FAMILY_UNIX 1
-#    define POCO_OS POCO_OS_VXWORKS
 #elif defined(unix) || defined(__unix) || defined(__unix__)
 #    define POCO_OS_FAMILY_UNIX 1
 #    define POCO_OS POCO_OS_UNKNOWN_UNIX
-#elif defined(_WIN32_WCE)
-#    define POCO_OS_FAMILY_WINDOWS 1
-#    define POCO_OS POCO_OS_WINDOWS_CE
 #elif defined(_WIN32) || defined(_WIN64)
 #    define POCO_OS_FAMILY_WINDOWS 1
 #    define POCO_OS POCO_OS_WINDOWS_NT
-#elif defined(__VMS)
-#    define POCO_OS_FAMILY_VMS 1
-#    define POCO_OS POCO_OS_VMS
 #endif
 
 
@@ -155,10 +140,7 @@
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #elif defined(__mips__) || defined(__mips) || defined(__MIPS__) || defined(_M_MRX000)
 #    define POCO_ARCH POCO_ARCH_MIPS
-#    if defined(POCO_OS_FAMILY_WINDOWS)
-// Is this OK? Supports windows only little endian??
-#        define POCO_ARCH_LITTLE_ENDIAN 1
-#    elif defined(__MIPSEB__) || defined(_MIPSEB) || defined(__MIPSEB)
+#    if   defined(__MIPSEB__) || defined(_MIPSEB) || defined(__MIPSEB)
 #        define POCO_ARCH_BIG_ENDIAN 1
 #    elif defined(__MIPSEL__) || defined(_MIPSEL) || defined(__MIPSEL)
 #        define POCO_ARCH_LITTLE_ENDIAN 1
@@ -230,37 +212,6 @@
 #endif
 
 
-#if defined(__clang__)
-#    define POCO_COMPILER_CLANG
-#elif defined(_MSC_VER)
-#    define POCO_COMPILER_MSVC
-#elif defined(__GNUC__)
-#    define POCO_COMPILER_GCC
-#elif defined(__MINGW32__) || defined(__MINGW64__)
-#    define POCO_COMPILER_MINGW
-#elif defined(__INTEL_COMPILER) || defined(__ICC) || defined(__ECC) || defined(__ICL)
-#    define POCO_COMPILER_INTEL
-#elif defined(__SUNPRO_CC)
-#    define POCO_COMPILER_SUN
-#elif defined(__MWERKS__) || defined(__CWCC__)
-#    define POCO_COMPILER_CODEWARRIOR
-#elif defined(__sgi) || defined(sgi)
-#    define POCO_COMPILER_SGI
-#elif defined(__HP_aCC)
-#    define POCO_COMPILER_HP_ACC
-#elif defined(__BORLANDC__) || defined(__CODEGEARC__)
-#    define POCO_COMPILER_CBUILDER
-#elif defined(__DMC__)
-#    define POCO_COMPILER_DMARS
-#elif defined(__DECCXX)
-#    define POCO_COMPILER_COMPAC
-#elif (defined(__xlc__) || defined(__xlC__)) && defined(__IBMCPP__)
-#    define POCO_COMPILER_IBM_XLC // IBM XL C++
-#elif defined(__IBMCPP__) && defined(__COMPILER_VER__)
-#    define POCO_COMPILER_IBM_XLC_ZOS // IBM z/OS C++
-#endif
-
-
 #ifdef __GNUC__
 #    define POCO_UNUSED __attribute__((unused))
 #else
@@ -273,11 +224,7 @@
 #endif
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#    define POCO_DEFAULT_NEWLINE_CHARS "\r\n"
-#else
 #    define POCO_DEFAULT_NEWLINE_CHARS "\n"
-#endif
 
 
 #endif // Foundation_Platform_INCLUDED

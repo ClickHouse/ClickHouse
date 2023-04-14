@@ -32,9 +32,6 @@
 #    include <sys/select.h>
 #endif
 #include <errno.h>
-#if defined(POCO_VXWORKS)
-#    include <cstring>
-#endif
 
 
 namespace Poco
@@ -116,11 +113,6 @@ private:
             , started(false)
             , joined(false)
         {
-#if defined(POCO_VXWORKS)
-            // This workaround is for VxWorks 5.x where
-            // pthread_init() won't properly initialize the thread.
-            std::memset(&thread, 0, sizeof(thread));
-#endif
         }
 
         SharedPtr<Runnable> pRunnableTarget;

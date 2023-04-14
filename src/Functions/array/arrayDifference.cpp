@@ -35,10 +35,10 @@ struct ArrayDifferenceImpl
         if (which.isUInt8() || which.isInt8())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>());
 
-        if (which.isUInt16() || which.isInt16())
+        if (which.isUInt16() || which.isInt16() || which.isDate())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>());
 
-        if (which.isUInt32() || which.isUInt64() || which.isInt32() || which.isInt64())
+        if (which.isUInt32() || which.isUInt64() || which.isInt32() || which.isInt64() || which.isDate32() || which.isDateTime())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 
         if (which.isFloat32() || which.isFloat64())
@@ -46,6 +46,14 @@ struct ArrayDifferenceImpl
 
         if (which.isDecimal())
             return std::make_shared<DataTypeArray>(expression_return);
+
+        if (which.isDateTime64())
+        {
+            UInt32 scale = getDecimalScale(*expression_return);
+            UInt32 precision = getDecimalPrecision(*expression_return);
+
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale));
+        }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayDifference cannot process values of type {}", expression_return->getName());
     }
@@ -145,7 +153,9 @@ struct ArrayDifferenceImpl
             executeType<Float64,Float64>(mapped, array, res) ||
             executeType<Decimal32, Decimal32>(mapped, array, res) ||
             executeType<Decimal64, Decimal64>(mapped, array, res) ||
-            executeType<Decimal128, Decimal128>(mapped, array, res))
+            executeType<Decimal128, Decimal128>(mapped, array, res) ||
+            executeType<Decimal256, Decimal256>(mapped, array, res) ||
+            executeType<DateTime64, Decimal64>(mapped, array, res))
             return res;
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayDifference: {}", mapped->getName());
@@ -161,4 +171,3 @@ REGISTER_FUNCTION(ArrayDifference)
 }
 
 }
-

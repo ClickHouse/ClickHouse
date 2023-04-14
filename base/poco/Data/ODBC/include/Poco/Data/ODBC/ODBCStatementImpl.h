@@ -29,9 +29,6 @@
 #include "Poco/Data/StatementImpl.h"
 #include "Poco/Format.h"
 #include "Poco/SharedPtr.h"
-#ifdef POCO_OS_FAMILY_WINDOWS
-#    include <windows.h>
-#endif
 #include <sqltypes.h>
 
 

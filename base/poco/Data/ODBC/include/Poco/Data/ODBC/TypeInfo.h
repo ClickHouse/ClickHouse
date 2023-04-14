@@ -23,9 +23,6 @@
 #include "Poco/Data/ODBC/ODBC.h"
 #include "Poco/DynamicAny.h"
 #include "Poco/NamedTuple.h"
-#ifdef POCO_OS_FAMILY_WINDOWS
-#    include <windows.h>
-#endif
 #include <sqlext.h>
 
 

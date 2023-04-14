@@ -55,7 +55,10 @@ struct SettingFieldNumber
 
 using SettingFieldUInt64 = SettingFieldNumber<UInt64>;
 using SettingFieldInt64 = SettingFieldNumber<Int64>;
+using SettingFieldUInt32 = SettingFieldNumber<UInt32>;
+using SettingFieldInt32 = SettingFieldNumber<Int32>;
 using SettingFieldFloat = SettingFieldNumber<float>;
+using SettingFieldDouble = SettingFieldNumber<double>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
 /** Wraps any SettingField to support special value 'auto' that can be checked with `is_auto` flag.
@@ -129,6 +132,9 @@ struct SettingAutoWrapper
 using SettingFieldUInt64Auto = SettingAutoWrapper<SettingFieldUInt64>;
 using SettingFieldInt64Auto = SettingAutoWrapper<SettingFieldInt64>;
 using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
+using SettingFieldUInt32Auto = SettingAutoWrapper<SettingFieldUInt32>;
+using SettingFieldInt32Auto = SettingAutoWrapper<SettingFieldInt32>;
+using SettingFieldDoubleAuto = SettingAutoWrapper<SettingFieldDouble>;
 
 /* Similar to SettingFieldUInt64Auto with small differences to behave like regular UInt64, supported to compatibility.
  * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
@@ -447,8 +453,8 @@ struct SettingFieldMultiEnum
     explicit operator StorageType() const { return value.getValue(); }
     explicit operator Field() const { return toString(); }
 
-    SettingFieldMultiEnum & operator= (StorageType x) { changed = x != value.getValue(); value.setValue(x); return *this; }
-    SettingFieldMultiEnum & operator= (ValueType x) { changed = !(x == value); value = x; return *this; }
+    SettingFieldMultiEnum & operator= (StorageType x) { changed = true; value.setValue(x); return *this; }
+    SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
 
     String toString() const

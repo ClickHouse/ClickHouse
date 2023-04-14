@@ -20,7 +20,6 @@ NEED_RERUN_ON_EDITED = {
 }
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
-    "DocsReleaseChecks",
     "BackportPR",
 }.union(NEED_RERUN_ON_EDITED)
 

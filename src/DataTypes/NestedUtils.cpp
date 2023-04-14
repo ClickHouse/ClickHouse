@@ -25,7 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace Nested
@@ -242,7 +242,7 @@ void validateArraySizes(const Block & block)
                     const ColumnArray & another_array_column = assert_cast<const ColumnArray &>(*elem.column);
 
                     if (!first_array_column.hasEqualOffsets(another_array_column))
-                        throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                        throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                                         "Elements '{}' and '{}' "
                                         "of Nested data structure '{}' (Array columns) have different array sizes.",
                                         block.getByPosition(it->second).name, elem.name, split.first);

@@ -71,13 +71,10 @@ Chunk ArrowBlockInputFormat::generate()
 
     ++record_batch_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, (*table_result)->num_rows());
-
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
-    if (format_settings.defaults_for_omitted_fields)
-        for (const auto & column_idx : missing_columns)
-            block_missing_values.setBits(column_idx, res.getNumRows());
+    BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, (*table_result)->num_rows(), block_missing_values_ptr);
 
     return res;
 }
@@ -143,8 +140,8 @@ void ArrowBlockInputFormat::prepareReader()
         "Arrow",
         format_settings.arrow.import_nested,
         format_settings.arrow.allow_missing_columns,
+        format_settings.null_as_default,
         format_settings.arrow.case_insensitive_column_matching);
-    missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     if (stream)
         record_batch_total = -1;

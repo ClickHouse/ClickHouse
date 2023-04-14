@@ -19,13 +19,10 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"readonly", std::make_shared<DataTypeUInt8>()},
         {"type", std::make_shared<DataTypeString>()},
+        {"default", std::make_shared<DataTypeString>()},
         {"alias_for", std::make_shared<DataTypeString>()},
     };
 }
-
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
 
 void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
@@ -53,6 +50,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[5]->insert(max);
         res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
+        res_columns[8]->insert(setting.getDefaultValueString());
     };
 
     const auto & settings_to_aliases = Settings::Traits::settingsToAliases();
@@ -62,7 +60,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[0]->insert(setting_name);
 
         fill_data_for_setting(setting_name, setting);
-        res_columns[8]->insert("");
+        res_columns[9]->insert("");
 
         if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
@@ -70,7 +68,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
             {
                 res_columns[0]->insert(alias);
                 fill_data_for_setting(alias, setting);
-                res_columns[8]->insert(setting_name);
+                res_columns[9]->insert(setting_name);
             }
         }
     }

@@ -109,10 +109,6 @@ namespace Net
         IPAddress(unsigned prefix, Family family);
         /// Creates an IPAddress mask with the given length of prefix.
 
-#if defined(_WIN32)
-        IPAddress(const SOCKET_ADDRESS & socket_address);
-        /// Creates an IPAddress from Windows SOCKET_ADDRESS structure.
-#endif
 
         IPAddress(const struct sockaddr & sockaddr);
         /// Same for struct sock_addr on POSIX.

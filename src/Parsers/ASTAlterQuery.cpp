@@ -533,6 +533,24 @@ bool ASTAlterQuery::isDropPartitionAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
 }
 
+bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
+{
+    if (command_list)
+    {
+        if (command_list->children.empty())
+            return false;
+        for (const auto & child : command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type != ASTAlterCommand::MOVE_PARTITION ||
+                (command.move_destination_type != DataDestinationType::DISK && command.move_destination_type != DataDestinationType::VOLUME))
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
@@ -593,8 +611,16 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
-    frame_nested.expression_list_always_start_on_new_line = true;
-    static_cast<ASTExpressionList *>(command_list)->formatImplMultiline(settings, state, frame_nested);
+    if (settings.one_line)
+    {
+        frame_nested.expression_list_prepend_whitespace = true;
+        command_list->formatImpl(settings, state, frame_nested);
+    }
+    else
+    {
+        frame_nested.expression_list_always_start_on_new_line = true;
+        command_list->as<ASTExpressionList &>().formatImplMultiline(settings, state, frame_nested);
+    }
 }
 
 }

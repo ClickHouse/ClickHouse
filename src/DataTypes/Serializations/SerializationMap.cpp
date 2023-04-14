@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils/StringUtils.h>
@@ -19,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_MAP_FROM_TEXT;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 SerializationMap::SerializationMap(const SerializationPtr & key_, const SerializationPtr & value_, const SerializationPtr & nested_)
@@ -53,6 +55,13 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_array_size",
+            size,
+            settings.max_binary_array_size);
     field = Map();
     Map & map = field.get<Map &>();
     map.reserve(size);
@@ -211,7 +220,10 @@ void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextJSONImpl(subcolumn, buf, settings, subcolumn_serialization);
+            else
+                subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
         });
 }
 

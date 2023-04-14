@@ -7,7 +7,6 @@
 #include <Disks/createVolume.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -281,7 +280,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.version_column, block_size + 1);
+                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
@@ -465,7 +464,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns, infos);
+    new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
@@ -587,7 +586,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns, infos);
+    new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
     if (new_data_part->isStoredOnDisk())
     {

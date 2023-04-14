@@ -6,22 +6,57 @@ sidebar_label: Type Conversion
 
 # Type Conversion Functions
 
-## Common Issues of Numeric Conversions
+## Common Issues with Data Conversion
 
-When you convert a value from one to another data type, you should remember that if you try to fit a value from a larger data type to a smaller one (for example Int64 to Int32), or convert from one data type to another (for example `String` to `Int`), you could have data loss.  Test beforehand.
+Be aware of potential data loss if values of a datatype are converted to a smaller datatype (for example from `Int64` to `Int32`) or between
+incompatible datatypes (for example from `String` to `Int`). Make sure to check carefully if the result is as expected.
 
-ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
+ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
+
+`to<type>` functions and [cast](#castx-t) have different behaviour in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
+
+Example:
+
+```sql
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+    
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
 
 ## toInt(8\|16\|32\|64\|128\|256)
 
-Converts an input value to the [Int](/docs/en/sql-reference/data-types/int-uint.md) data type. This function family includes:
+Converts an input value to a value the [Int](/docs/en/sql-reference/data-types/int-uint.md) data type. This function family includes:
 
--   `toInt8(expr)` — Results in the `Int8` data type.
--   `toInt16(expr)` — Results in the `Int16` data type.
--   `toInt32(expr)` — Results in the `Int32` data type.
--   `toInt64(expr)` — Results in the `Int64` data type.
--   `toInt128(expr)` — Results in the `Int128` data type.
--   `toInt256(expr)` — Results in the `Int256` data type.
+-   `toInt8(expr)` — Converts to a value of data type `Int8`.
+-   `toInt16(expr)` — Converts to a value of data type `Int16`.
+-   `toInt32(expr)` — Converts to a value of data type `Int32`.
+-   `toInt64(expr)` — Converts to a value of data type `Int64`.
+-   `toInt128(expr)` — Converts to a value of data type `Int128`.
+-   `toInt256(expr)` — Converts to a value of data type `Int256`.
 
 **Arguments**
 
@@ -53,7 +88,7 @@ Result:
 
 ## toInt(8\|16\|32\|64\|128\|256)OrZero
 
-It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns 0.
+Takes an argument of type [String](/docs/en/sql-reference/data-types/string.md) and tries to parse it into an Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If unsuccessful, returns `0`.
 
 **Example**
 
@@ -73,7 +108,7 @@ Result:
 
 ## toInt(8\|16\|32\|64\|128\|256)OrNull
 
-It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns NULL.
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If unsuccessful, returns `NULL`.
 
 **Example**
 
@@ -93,7 +128,7 @@ Result:
 
 ## toInt(8\|16\|32\|64\|128\|256)OrDefault
 
-It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If failed, returns the default type value.
+It takes an argument of type String and tries to parse it into Int (8 \| 16 \| 32 \| 64 \| 128 \| 256). If unsuccessful, returns the default type value.
 
 **Example**
 
@@ -116,11 +151,11 @@ Result:
 
 Converts an input value to the [UInt](/docs/en/sql-reference/data-types/int-uint.md) data type. This function family includes:
 
--   `toUInt8(expr)` — Results in the `UInt8` data type.
--   `toUInt16(expr)` — Results in the `UInt16` data type.
--   `toUInt32(expr)` — Results in the `UInt32` data type.
--   `toUInt64(expr)` — Results in the `UInt64` data type.
--   `toUInt256(expr)` — Results in the `UInt256` data type.
+-   `toUInt8(expr)` — Converts to a value of data type `UInt8`.
+-   `toUInt16(expr)` — Converts to a value of data type `UInt16`.
+-   `toUInt32(expr)` — Converts to a value of data type `UInt32`.
+-   `toUInt64(expr)` — Converts to a value of data type `UInt64`.
+-   `toUInt256(expr)` — Converts to a value of data type `UInt256`.
 
 **Arguments**
 
@@ -128,7 +163,7 @@ Converts an input value to the [UInt](/docs/en/sql-reference/data-types/int-uint
 
 **Returned value**
 
-Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data type.
+-   Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
@@ -166,26 +201,30 @@ Result:
 
 ## toDate
 
-Converts the argument to `Date` data type. 
+Converts the argument to [Date](/docs/en/sql-reference/data-types/date.md) data type. 
 
-If the argument is `DateTime` or `DateTime64`, it truncates it, leaving the date component of the DateTime:
+If the argument is [DateTime](/docs/en/sql-reference/data-types/datetime.md) or [DateTime64](/docs/en/sql-reference/data-types/datetime64.md), it truncates it and leaves the date component of the DateTime:
+
 ```sql
 SELECT
     now() AS x,
     toDate(x)
 ```
+
 ```response
 ┌───────────────────x─┬─toDate(now())─┐
 │ 2022-12-30 13:44:17 │    2022-12-30 │
 └─────────────────────┴───────────────┘
 ```
 
-If the argument is a string, it is parsed as Date or DateTime. If it was parsed as DateTime, the date component is being used:
+If the argument is a [String](/docs/en/sql-reference/data-types/string.md), it is parsed as [Date](/docs/en/sql-reference/data-types/date.md) or [DateTime](/docs/en/sql-reference/data-types/datetime.md). If it was parsed as [DateTime](/docs/en/sql-reference/data-types/datetime.md), the date component is being used:
+
 ```sql
 SELECT
     toDate('2022-12-30') AS x,
     toTypeName(x)
 ```
+
 ```response
 ┌──────────x─┬─toTypeName(toDate('2022-12-30'))─┐
 │ 2022-12-30 │ Date                             │
@@ -193,18 +232,20 @@ SELECT
 
 1 row in set. Elapsed: 0.001 sec. 
 ```
+
 ```sql
 SELECT
     toDate('2022-12-30 01:02:03') AS x,
     toTypeName(x)
 ```
+
 ```response
 ┌──────────x─┬─toTypeName(toDate('2022-12-30 01:02:03'))─┐
 │ 2022-12-30 │ Date                                      │
 └────────────┴───────────────────────────────────────────┘
 ```
 
-If the argument is a number and it looks like a UNIX timestamp (is greater than 65535), it is interpreted as a DateTime, then truncated to Date in the current timezone. The timezone argument can be specified as a second argument of the function. The truncation to Date depends on the timezone:
+If the argument is a number and looks like a UNIX timestamp (is greater than 65535), it is interpreted as a [DateTime](/docs/en/sql-reference/data-types/datetime.md), then truncated to [Date](/docs/en/sql-reference/data-types/date.md) in the current timezone. The timezone argument can be specified as a second argument of the function. The truncation to [Date](/docs/en/sql-reference/data-types/date.md) depends on the timezone:
 
 ```sql
 SELECT
@@ -217,6 +258,7 @@ SELECT
     toDate(ts) AS date_Amsterdam_2,
     toDate(ts, 'Pacific/Apia') AS date_Samoa_2
 ```
+
 ```response
 Row 1:
 ──────
@@ -232,7 +274,7 @@ date_Samoa_2:     2022-12-31
 
 The example above demonstrates how the same UNIX timestamp can be interpreted as different dates in different time zones.
 
-If the argument is a number and it is smaller than 65536, it is interpreted as the number of days since 1970-01-01 (a UNIX day) and converted to Date. It corresponds to the internal numeric representation of the `Date` data type. Example:
+If the argument is a number and it is smaller than 65536, it is interpreted as the number of days since 1970-01-01 (the first UNIX day) and converted to [Date](/docs/en/sql-reference/data-types/date.md). It corresponds to the internal numeric representation of the `Date` data type. Example:
 
 ```sql
 SELECT toDate(12345)
@@ -270,8 +312,6 @@ SELECT
 └─────────────────────┴───────────────┴─────────────┴─────────────────────┘
 ```
 
-Have a nice day working with dates and times.
-
 ## toDateOrZero
 
 ## toDateOrNull
@@ -288,7 +328,7 @@ Have a nice day working with dates and times.
 
 ## toDate32
 
-Converts the argument to the [Date32](/docs/en/sql-reference/data-types/date32.md) data type. If the value is outside the range, `toDate32` returns the border values supported by `Date32`. If the argument has [Date](/docs/en/sql-reference/data-types/date.md) type, borders of `Date` are taken into account.
+Converts the argument to the [Date32](/docs/en/sql-reference/data-types/date32.md) data type. If the value is outside the range, `toDate32` returns the border values supported by [Date32](/docs/en/sql-reference/data-types/date32.md). If the argument has [Date](/docs/en/sql-reference/data-types/date.md) type, it's borders are taken into account.
 
 **Syntax**
 
@@ -302,9 +342,7 @@ toDate32(expr)
 
 **Returned value**
 
--   A calendar date.
-
-Type: [Date32](/docs/en/sql-reference/data-types/date32.md).
+-   A calendar date. Type [Date32](/docs/en/sql-reference/data-types/date32.md).
 
 **Example**
 
@@ -332,7 +370,7 @@ SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 └────────────┴────────────────────────────────────┘
 ```
 
-3. With `Date`-type argument:
+3. With [Date](/docs/en/sql-reference/data-types/date.md) argument:
 
 ``` sql
 SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
@@ -386,7 +424,7 @@ Result:
 
 ## toDate32OrDefault
 
-Converts the argument to the [Date32](/docs/en/sql-reference/data-types/date32.md) data type. If the value is outside the range, `toDate32OrDefault` returns the lower border value supported by `Date32`. If the argument has [Date](/docs/en/sql-reference/data-types/date.md) type, borders of `Date` are taken into account. Returns default value if an invalid argument is received.
+Converts the argument to the [Date32](/docs/en/sql-reference/data-types/date32.md) data type. If the value is outside the range, `toDate32OrDefault` returns the lower border value supported by [Date32](/docs/en/sql-reference/data-types/date32.md). If the argument has [Date](/docs/en/sql-reference/data-types/date.md) type, it's borders are taken into account. Returns default value if an invalid argument is received.
 
 **Example**
 
@@ -666,7 +704,7 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing ‘toDate(unix_timestamp)’, which otherwise would be an error and would require writing the more cumbersome ‘toDate(toDateTime(unix_timestamp))’.
+As an exception, if converting from UInt32, Int32, UInt64, or Int64 numeric types to Date, and if the number is greater than or equal to 65536, the number is interpreted as a Unix timestamp (and not as the number of days) and is rounded to the date. This allows support for the common occurrence of writing `toDate(unix_timestamp)`, which otherwise would be an error and would require writing the more cumbersome `toDate(toDateTime(unix_timestamp))`.
 
 Conversion between a date and a date with time is performed the natural way: by adding a null time or dropping the time.
 
@@ -696,7 +734,7 @@ Also see the `toUnixTimestamp` function.
 
 ## toFixedString(s, N)
 
-Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant.
+Converts a [String](/docs/en/sql-reference/data-types/string.md) type argument to a [FixedString(N)](/docs/en/sql-reference/data-types/fixedstring.md) type (a string of fixed length N).
 If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
 ## toStringCutToZero(s)
@@ -731,6 +769,44 @@ Result:
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
+```
+
+## toDecimalString
+
+Converts a numeric value to String with the number of fractional digits in the output specified by the user.
+
+**Syntax**
+
+``` sql
+toDecimalString(number, scale)
+```
+
+**Parameters**
+
+-   `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+-   `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+    * Maximum scale for [Decimal](/docs/en/sql-reference/data-types/decimal.md) and [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+    * Maximum scale for [Float](/docs/en/sql-reference/data-types/float.md) is 60.
+
+**Returned value**
+
+-   Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
+    The number is rounded up or down according to common arithmetics in case requested scale is smaller than original number's scale.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
+```
+
+Result:
+
+```response
+┌toDecimalString(CAST('64.32', 'Float64'), 5)─┐
+│ 64.32000                                    │
+└─────────────────────────────────────────────┘
 ```
 
 ## reinterpretAsUInt(8\|16\|32\|64)
@@ -914,7 +990,7 @@ Result:
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-Conversion to FixedString(N) only works for arguments of type [String](/docs/en/sql-reference/data-types/string.md) or [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+Conversion to [FixedString (N)](/docs/en/sql-reference/data-types/fixedstring.md) only works for arguments of type [String](/docs/en/sql-reference/data-types/string.md) or [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
 
 Type conversion to [Nullable](/docs/en/sql-reference/data-types/nullable.md) and back is supported.
 
@@ -952,7 +1028,7 @@ Result:
 
 **See also**
 
--   [cast_keep_nullable](/docs/en/operations/settings/settings.md/#cast_keep_nullable) setting
+-   [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting
 
 ## accurateCast(x, T)
 
@@ -1144,6 +1220,102 @@ Result:
 └───────────────────────────┴──────────────────────────────┘
 ```
 
+## parseDateTime {#type_conversion_functions-parseDateTime}
+
+Converts a [String](/docs/en/sql-reference/data-types/string.md) to [DateTime](/docs/en/sql-reference/data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+
+This function is the opposite operation of function [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime).
+
+**Syntax**
+
+``` sql
+parseDateTime(str, format[, timezone])
+```
+
+**Arguments**
+
+-   `str` — the String to be parsed
+-   `format` — the format string
+-   `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
+
+**Returned value(s)**
+
+Returns DateTime values parsed from input string according to a MySQL style format string.
+
+**Supported format specifiers**
+
+All format specifiers listed in [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) except:
+- %Q: Quarter (1-4) 
+
+**Example**
+
+``` sql
+SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+
+┌─parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                       2021-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────┘
+```
+
+Alias: `TO_TIMESTAMP`.
+
+## parseDateTimeOrZero
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeOrNull
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+Alias: `str_to_date`.
+
+## parseDateTimeInJodaSyntax {#type_conversion_functions-parseDateTimeInJodaSyntax}
+
+Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
+
+This function is the opposite operation of function [formatDateTimeInJodaSyntax](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTimeInJodaSyntax).
+
+**Syntax**
+
+``` sql
+parseDateTimeInJodaSyntax(str, format[, timezone])
+```
+
+**Arguments**
+
+-   `str` — the String to be parsed
+-   `format` — the format string
+-   `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
+
+**Returned value(s)**
+
+Returns DateTime values parsed from input string according to a Joda style format.
+
+**Supported format specifiers**
+
+All format specifiers listed in [formatDateTimeInJoda](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) are supported, except:
+- S: fraction of second
+- z: time zone
+- Z: time zone offset/id
+
+**Example**
+
+``` sql
+SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')
+
+┌─parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')─┐
+│                                                                     2023-02-24 14:53:31 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## parseDateTimeInJodaSyntaxOrZero
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeInJodaSyntaxOrNull
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
 
@@ -1174,7 +1346,7 @@ For all of the formats with separator the function parses months names expressed
 
 **Returned value**
 
--   `time_string` converted to the `DateTime` data type.
+-   `time_string` converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
 
 **Examples**
 
@@ -1254,10 +1426,10 @@ Result:
 
 **See Also**
 
--   [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
+-   [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
 
 ## parseDateTimeBestEffortUS
 
@@ -1346,7 +1518,6 @@ Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that
 ## parseDateTime64BestEffortUSOrZero
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns zero date or zero date time when it encounters a date format that cannot be processed.
-
 
 ## toLowCardinality
 

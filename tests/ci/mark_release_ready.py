@@ -43,7 +43,7 @@ def main():
         description = "the release can be created from the commit"
         args.token = args.token or get_best_robot_token()
 
-    gh = GitHub(args.token, create_cache_dir=False, per_page=100)
+    gh = GitHub(args.token, create_cache_dir=False)
     # Get the rate limits for a quick fail
     gh.get_rate_limit()
     commit = get_commit(gh, args.commit)

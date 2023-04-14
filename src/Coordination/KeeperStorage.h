@@ -47,7 +47,7 @@ public:
 
         const auto & getData() const noexcept { return data; }
 
-        void addChild(StringRef child_path);
+        void addChild(StringRef child_path, bool update_size = true);
 
         void removeChild(StringRef child_path);
 
@@ -63,6 +63,8 @@ public:
         // copy only necessary information for preprocessing and digest calculation
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
+
+        void recalculateSize();
 
     private:
         String data;
@@ -102,6 +104,8 @@ public:
 
         return first.value == second.value;
     }
+
+    static String generateDigest(const String & userdata);
 
     struct RequestForSession
     {
@@ -260,6 +264,8 @@ public:
 
             return check_auth(auth_it->second);
         }
+
+        void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
         std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path) const;
 
@@ -466,6 +472,7 @@ public:
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 
+    void recalculateStats();
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);

@@ -4,8 +4,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
-#include <Common/hex.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
+#include <base/hex.h>
 #include <Interpreters/Context.h>
 
 
@@ -616,6 +617,10 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                     continue_predownload = false;
                 }
             }
+            else
+            {
+                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+            }
 
             if (!continue_predownload)
             {
@@ -635,8 +640,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 /// TODO: allow seek more than once with seek avoiding.
 
                 bytes_to_predownload = 0;
-                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
+                chassert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 LOG_TEST(log, "Bypassing cache because for {}", file_segment->getInfoForLog());
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
@@ -1184,7 +1189,7 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         implementation_buffer_read_range_str = "None";
 
     String current_file_segment_info;
-    if (current_file_segment_it == file_segments_holder->file_segments.end())
+    if (current_file_segment_it != file_segments_holder->file_segments.end())
         current_file_segment_info = (*current_file_segment_it)->getInfoForLog();
     else
         current_file_segment_info = "None";

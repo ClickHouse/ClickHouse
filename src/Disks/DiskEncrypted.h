@@ -276,6 +276,10 @@ public:
         return delegate->getMetadataStorage();
     }
 
+    DiskPtr getDelegateDiskIfExists() const override
+    {
+        return delegate;
+    }
 
 private:
     String wrappedPath(const String & path) const

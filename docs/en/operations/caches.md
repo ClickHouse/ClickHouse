@@ -3,6 +3,7 @@ slug: /en/operations/caches
 sidebar_position: 65
 sidebar_label: Caches
 title: "Cache Types"
+description: When performing queries, ClickHouse uses different caches.
 ---
 
 When performing queries, ClickHouse uses different caches.

@@ -94,6 +94,7 @@ const std::unordered_set<std::string_view> keywords
     "CHAR",
     "CHARACTER",
     "CHECK",
+    "CLEANUP",
     "CLEAR",
     "CLUSTER",
     "CLUSTER_HOST_IDS",

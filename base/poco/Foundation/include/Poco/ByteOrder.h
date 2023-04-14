@@ -18,9 +18,6 @@
 
 #include "Poco/Foundation.h"
 #include "Poco/Types.h"
-#if defined(_MSC_VER)
-#    include <stdlib.h> // builtins
-#endif
 
 
 namespace Poco
@@ -37,77 +34,55 @@ public:
     static UInt16 flipBytes(UInt16 value);
     static Int32 flipBytes(Int32 value);
     static UInt32 flipBytes(UInt32 value);
-#if defined(POCO_HAVE_INT64)
     static Int64 flipBytes(Int64 value);
     static UInt64 flipBytes(UInt64 value);
-#endif
 
     static Int16 toBigEndian(Int16 value);
     static UInt16 toBigEndian(UInt16 value);
     static Int32 toBigEndian(Int32 value);
     static UInt32 toBigEndian(UInt32 value);
-#if defined(POCO_HAVE_INT64)
     static Int64 toBigEndian(Int64 value);
     static UInt64 toBigEndian(UInt64 value);
-#endif
 
     static Int16 fromBigEndian(Int16 value);
     static UInt16 fromBigEndian(UInt16 value);
     static Int32 fromBigEndian(Int32 value);
     static UInt32 fromBigEndian(UInt32 value);
-#if defined(POCO_HAVE_INT64)
     static Int64 fromBigEndian(Int64 value);
     static UInt64 fromBigEndian(UInt64 value);
-#endif
 
     static Int16 toLittleEndian(Int16 value);
     static UInt16 toLittleEndian(UInt16 value);
     static Int32 toLittleEndian(Int32 value);
     static UInt32 toLittleEndian(UInt32 value);
-#if defined(POCO_HAVE_INT64)
     static Int64 toLittleEndian(Int64 value);
     static UInt64 toLittleEndian(UInt64 value);
-#endif
 
     static Int16 fromLittleEndian(Int16 value);
     static UInt16 fromLittleEndian(UInt16 value);
     static Int32 fromLittleEndian(Int32 value);
     static UInt32 fromLittleEndian(UInt32 value);
-#if defined(POCO_HAVE_INT64)
     static Int64 fromLittleEndian(Int64 value);
     static UInt64 fromLittleEndian(UInt64 value);
-#endif
 
     static Int16 toNetwork(Int16 value);
     static UInt16 toNetwork(UInt16 value);
     static Int32 toNetwork(Int32 value);
     static UInt32 toNetwork(UInt32 value);
-#if defined(POCO_HAVE_INT64)
     static Int64 toNetwork(Int64 value);
     static UInt64 toNetwork(UInt64 value);
-#endif
 
     static Int16 fromNetwork(Int16 value);
     static UInt16 fromNetwork(UInt16 value);
     static Int32 fromNetwork(Int32 value);
     static UInt32 fromNetwork(UInt32 value);
-#if defined(POCO_HAVE_INT64)
     static Int64 fromNetwork(Int64 value);
     static UInt64 fromNetwork(UInt64 value);
-#endif
 };
 
 
 #if !defined(POCO_NO_BYTESWAP_BUILTINS)
-#    if defined(_MSC_VER)
-#        if (POCO_MSVC_VERSION > 71)
-#            define POCO_HAVE_MSC_BYTESWAP 1
-#        endif
-#    elif defined(__clang__)
-#        if __has_builtin(__builtin_bswap32)
-#            define POCO_HAVE_GCC_BYTESWAP 1
-#        endif
-#    elif defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))
+#    if __has_builtin(__builtin_bswap32)
 #        define POCO_HAVE_GCC_BYTESWAP 1
 #    endif
 #endif
@@ -150,7 +125,6 @@ inline Int32 ByteOrder::flipBytes(Int32 value)
 }
 
 
-#if defined(POCO_HAVE_INT64)
 inline UInt64 ByteOrder::flipBytes(UInt64 value)
 {
 #    if defined(POCO_HAVE_MSC_BYTESWAP)
@@ -169,7 +143,6 @@ inline Int64 ByteOrder::flipBytes(Int64 value)
 {
     return Int64(flipBytes(UInt64(value)));
 }
-#endif // POCO_HAVE_INT64
 
 
 //
@@ -187,7 +160,6 @@ inline Int64 ByteOrder::flipBytes(Int64 value)
     }
 
 
-#if defined(POCO_HAVE_INT64)
 #    define POCO_IMPLEMENT_BYTEORDER_NOOP(op) \
         POCO_IMPLEMENT_BYTEORDER_NOOP_(op, Int16) \
         POCO_IMPLEMENT_BYTEORDER_NOOP_(op, UInt16) \
@@ -202,18 +174,6 @@ inline Int64 ByteOrder::flipBytes(Int64 value)
         POCO_IMPLEMENT_BYTEORDER_FLIP_(op, UInt32) \
         POCO_IMPLEMENT_BYTEORDER_FLIP_(op, Int64) \
         POCO_IMPLEMENT_BYTEORDER_FLIP_(op, UInt64)
-#else
-#    define POCO_IMPLEMENT_BYTEORDER_NOOP(op) \
-        POCO_IMPLEMENT_BYTEORDER_NOOP_(op, Int16) \
-        POCO_IMPLEMENT_BYTEORDER_NOOP_(op, UInt16) \
-        POCO_IMPLEMENT_BYTEORDER_NOOP_(op, Int32) \
-        POCO_IMPLEMENT_BYTEORDER_NOOP_(op, UInt32)
-#    define POCO_IMPLEMENT_BYTEORDER_FLIP(op) \
-        POCO_IMPLEMENT_BYTEORDER_FLIP_(op, Int16) \
-        POCO_IMPLEMENT_BYTEORDER_FLIP_(op, UInt16) \
-        POCO_IMPLEMENT_BYTEORDER_FLIP_(op, Int32) \
-        POCO_IMPLEMENT_BYTEORDER_FLIP_(op, UInt32)
-#endif
 
 
 #if defined(POCO_ARCH_BIG_ENDIAN)
