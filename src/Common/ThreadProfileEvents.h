@@ -2,11 +2,13 @@
 
 #include <base/types.h>
 #include <base/getThreadId.h>
+#include <base/defines.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <Common/logger_useful.h>
+#include <boost/noncopyable.hpp>
 
 
 #if defined(OS_LINUX)
