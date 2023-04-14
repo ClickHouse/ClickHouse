@@ -31,6 +31,8 @@ SLACK_URL_DEFAULT = DRY_RUN_MARK
 
 FLAKY_ALERT_PROBABILITY = 0.20
 
+MAX_TESTS_TO_REPORT = 4
+
 # Slack has a stupid limitation on message size, it splits long messages into multiple ones breaking formatting
 MESSAGE_LENGTH_LIMIT = 4000
 
@@ -64,6 +66,7 @@ WHERE 1
         AND test_status LIKE 'F%')
     AND test_context_raw NOT LIKE '%CannotSendRequest%' and test_context_raw NOT LIKE '%Server does not respond to health check%'
 GROUP BY test_name
+ORDER BY (count_prev_periods + count) DESC
 """
 
 # Returns total number of failed checks during the last 24 hours
@@ -155,11 +158,17 @@ def format_failed_tests_list(failed_tests, failure_type):
     else:
         res = "There are {} new {} tests:\n".format(len(failed_tests), failure_type)
 
-    for name, report in failed_tests:
+    for name, report in failed_tests[:MAX_TESTS_TO_REPORT]:
         cidb_url = get_play_url(ALL_RECENT_FAILURES_QUERY.format(name))
         res += "-   *{}*  -  <{}|Report>  -  <{}|CI DB> \n".format(
             name, report, cidb_url
         )
+
+    if MAX_TESTS_TO_REPORT < len(failed_tests):
+        res += "-   and {} other tests... :this-is-fine-fire:".format(
+            len(failed_tests) - MAX_TESTS_TO_REPORT
+        )
+
     return res
 
 
@@ -199,7 +208,7 @@ def get_too_many_failures_message_impl(failures_count):
     if curr_failures < MAX_FAILURES:
         return None
     if prev_failures < MAX_FAILURES:
-        return "*CI is broken: there are {} failures during the last 24 hours*".format(
+        return ":alert: *CI is broken: there are {} failures during the last 24 hours*".format(
             curr_failures
         )
     if curr_failures < prev_failures:
