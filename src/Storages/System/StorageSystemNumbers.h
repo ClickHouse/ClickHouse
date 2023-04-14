@@ -40,6 +40,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// TODO: introduce a setting to enable parallelization for numbers()?
+    /// a bit controversial since from one side there is number_mt(),
+    /// from other side, in general, there is no guarantee regarding order until ORDER BY is provided
+    /// enabling parallelization here will break some tests, so better do it in a separate PR
+    bool parallelizeOutputAfterReading() const override { return false; }
+
     bool hasEvenlyDistributedRead() const override { return true; }
     bool isSystemStorage() const override { return true; }
     bool supportsTransactions() const override { return true; }
