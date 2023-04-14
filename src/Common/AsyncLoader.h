@@ -31,7 +31,6 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_SCHEDULE_FAILED;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
-    extern const int ASYNC_LOAD_DEPENDENCY_FAILED;
 }
 
 enum class LoadStatus
@@ -58,14 +57,20 @@ public:
         return load_status;
     }
 
+    std::exception_ptr exception() const
+    {
+        std::unique_lock lock{mutex};
+        return load_exception;
+    }
+
     void wait() const
     {
         std::unique_lock lock{mutex};
         waiters++;
         finished.wait(lock, [this] { return load_status != LoadStatus::PENDING; });
         waiters--;
-        if (exception)
-            std::rethrow_exception(exception);
+        if (load_exception)
+            std::rethrow_exception(load_exception);
     }
 
     void waitNoThrow() const
@@ -101,7 +106,7 @@ private:
     {
         std::unique_lock lock{mutex};
         load_status = LoadStatus::FAILED;
-        exception = ptr;
+        load_exception = ptr;
         if (waiters > 0)
             finished.notify_all();
     }
@@ -110,7 +115,7 @@ private:
     {
         std::unique_lock lock{mutex};
         load_status = LoadStatus::CANCELED;
-        exception = ptr;
+        load_exception = ptr;
         if (waiters > 0)
             finished.notify_all();
     }
@@ -123,7 +128,7 @@ private:
     mutable std::condition_variable finished;
     mutable size_t waiters = 0;
     LoadStatus load_status{LoadStatus::PENDING};
-    std::exception_ptr exception;
+    std::exception_ptr load_exception;
 };
 
 template <class Func>
@@ -241,8 +246,9 @@ public:
         LoadJobSet jobs;
     };
 
-    AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_)
-        : max_threads(max_threads_)
+    AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_)
+        : log_failures(log_failures_)
+        , max_threads(max_threads_)
         , pool(metric_threads, metric_active_threads, max_threads)
     {}
 
@@ -310,7 +316,7 @@ public:
             job->priority.store(priority); // Set user-facing priority
         }
 
-        // Process incoming dependencies
+        // Process dependencies on scheduled pending jobs
         for (const auto & job : jobs)
         {
             Info & info = scheduled_jobs.find(job)->second;
@@ -324,19 +330,66 @@ public:
                         dep_info->second.dependent_jobs.insert(job);
                     });
                     info.dependencies_left++;
-                }
-                else
-                {
-                    // TODO(serxa): check status: (1) pending: it is wrong - throw? (2) success: good - no dep. (3) failed: propagate failure!
-                }
 
-                // Priority inheritance: prioritize deps to have at least given `priority` to avoid priority inversion
-                prioritize(dep, priority, lock);
+                    // Priority inheritance: prioritize deps to have at least given `priority` to avoid priority inversion
+                    prioritize(dep, priority, lock);
+                }
             }
 
             // Enqueue non-blocked jobs (w/o dependencies) to ready queue
             if (!info.is_blocked())
                 enqueue(info, job, lock);
+        }
+
+        // Process dependencies on other jobs. It is done in a separate pass to facilitate propagation of cancel signals (if any).
+        for (const auto & job : jobs)
+        {
+            if (auto info = scheduled_jobs.find(job); info != scheduled_jobs.end())
+            {
+                for (const auto & dep : job->dependencies)
+                {
+                    if (scheduled_jobs.contains(dep))
+                        continue; // Skip dependencies on scheduled pending jobs (already processed)
+                    LoadStatus dep_status = dep->status();
+                    if (dep_status == LoadStatus::OK)
+                        continue; // Dependency on already successfully finished job -- it's okay.
+
+                    if (dep_status == LoadStatus::PENDING)
+                    {
+                        // Dependency on not scheduled pending job -- it's bad.
+                        // Probably, there is an error in `jobs` set: not all jobs were passed to `schedule()` call.
+                        // We are not going to run any dependent job, so cancel them all.
+                        std::exception_ptr e;
+                        NOEXCEPT_SCOPE({
+                            ALLOW_ALLOCATIONS_IN_SCOPE;
+                            e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
+                                "Load job '{}' -> Load job '{}': not scheduled pending load job (it must be also scheduled), all dependent load jobs are canceled",
+                                job->name,
+                                dep->name));
+                        });
+                        finish(lock, job, LoadStatus::CANCELED, e);
+                        break; // This job is now finished, stop its dependencies processing
+                    }
+                    if (dep_status == LoadStatus::FAILED || dep_status == LoadStatus::CANCELED)
+                    {
+                        // Dependency on already failed or canceled job -- it's okay. Cancel all dependent jobs.
+                        std::exception_ptr e;
+                        NOEXCEPT_SCOPE({
+                            ALLOW_ALLOCATIONS_IN_SCOPE;
+                            e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
+                                "Load job '{}' -> {}",
+                                job->name,
+                                getExceptionMessage(dep->exception(), /* with_stack_trace = */ false)));
+                        });
+                        finish(lock, job, LoadStatus::CANCELED, e);
+                        break; // This job is now finished, stop its dependencies processing
+                    }
+                }
+            }
+            else
+            {
+                // Job was already canceled on previous iteration of this cycle -- skip
+            }
         }
 
         return Task(this, std::move(jobs));
@@ -364,20 +417,12 @@ public:
             {
                 if (info->second.is_executing())
                     continue; // Skip executing jobs on the first pass
-                if (info->second.is_ready())
-                {
-                    ready_queue.erase(info->second.key());
-                    info->second.ready_seqno = 0;
-                }
                 std::exception_ptr e;
                 NOEXCEPT_SCOPE({
                     ALLOW_ALLOCATIONS_IN_SCOPE;
-                    e = std::make_exception_ptr(
-                        Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
-                            "Load job '{}' canceled",
-                            job->name));
+                    e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "Load job '{}' canceled", job->name));
                 });
-                markNotOk(job, e, LoadStatus::CANCELED, lock);
+                finish(lock, job, LoadStatus::CANCELED, e);
             }
         }
         // On the second pass wait for executing jobs to finish
@@ -440,63 +485,64 @@ private:
         return {};
     }
 
-    void markOk(const LoadJobPtr & job, std::unique_lock<std::mutex> & lock)
+    void finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr & job, LoadStatus status, std::exception_ptr exception_from_job = {})
     {
-        // Notify waiters
-        job->ok();
-
-        // Update dependent jobs and enqueue if ready
-        chassert(scheduled_jobs.contains(job)); // Job was pending
-        for (const auto & dep : scheduled_jobs[job].dependent_jobs)
+        if (status == LoadStatus::OK)
         {
-            chassert(scheduled_jobs.contains(dep)); // All depended jobs must be pending
-            Info & dep_info = scheduled_jobs[dep];
-            dep_info.dependencies_left--;
-            if (!dep_info.is_blocked())
-                enqueue(dep_info, dep, lock);
+            // Notify waiters
+            job->ok();
+
+            // Update dependent jobs and enqueue if ready
+            chassert(scheduled_jobs.contains(job)); // Job was pending
+            for (const auto & dep : scheduled_jobs[job].dependent_jobs)
+            {
+                chassert(scheduled_jobs.contains(dep)); // All depended jobs must be pending
+                Info & dep_info = scheduled_jobs[dep];
+                dep_info.dependencies_left--;
+                if (!dep_info.is_blocked())
+                    enqueue(dep_info, dep, lock);
+            }
         }
-
-        finish(job, lock);
-    }
-
-    void markNotOk(const LoadJobPtr & job, std::exception_ptr exception_from_job, LoadStatus status, std::unique_lock<std::mutex> & lock)
-    {
-        // Notify waiters
-        if (status == LoadStatus::FAILED)
-            job->failed(exception_from_job);
-        else if (status == LoadStatus::CANCELED)
-            job->canceled(exception_from_job);
-
-        // Recurse into all dependent jobs
-        chassert(scheduled_jobs.contains(job)); // Job was pending
-        Info & info = scheduled_jobs[job];
-        LoadJobSet dependent;
-        dependent.swap(info.dependent_jobs); // To avoid container modification during recursion
-        for (const auto & dep : dependent)
+        else
         {
-            std::exception_ptr e;
-            NOEXCEPT_SCOPE({
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-                e = std::make_exception_ptr(
-                    Exception(ErrorCodes::ASYNC_LOAD_DEPENDENCY_FAILED,
-                        "Load job '{}' -> {}",
-                        dep->name,
-                        getExceptionMessage(exception_from_job, /* with_stack_trace = */ false)));
-            });
-            markNotOk(dep, e, LoadStatus::CANCELED, lock);
-        }
+            // Notify waiters
+            if (status == LoadStatus::FAILED)
+                job->failed(exception_from_job);
+            else if (status == LoadStatus::CANCELED)
+                job->canceled(exception_from_job);
 
-        // Clean dependency graph edges
-        for (const auto & dep : job->dependencies)
-            if (auto dep_info = scheduled_jobs.find(dep); dep_info != scheduled_jobs.end())
-                dep_info->second.dependent_jobs.erase(job);
+            chassert(scheduled_jobs.contains(job)); // Job was pending
+            Info & info = scheduled_jobs[job];
+            if (info.is_ready())
+            {
+                ready_queue.erase(info.key());
+                info.ready_seqno = 0;
+            }
+
+            // Recurse into all dependent jobs
+            LoadJobSet dependent;
+            dependent.swap(info.dependent_jobs); // To avoid container modification during recursion
+            for (const auto & dep : dependent)
+            {
+                std::exception_ptr e;
+                NOEXCEPT_SCOPE({
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    e = std::make_exception_ptr(
+                        Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
+                            "Load job '{}' -> {}",
+                            dep->name,
+                            getExceptionMessage(exception_from_job, /* with_stack_trace = */ false)));
+                });
+                finish(lock, dep, LoadStatus::CANCELED, e);
+            }
+
+            // Clean dependency graph edges
+            for (const auto & dep : job->dependencies)
+                if (auto dep_info = scheduled_jobs.find(dep); dep_info != scheduled_jobs.end())
+                    dep_info->second.dependent_jobs.erase(job);
+        }
 
         // Job became finished
-        finish(job, lock);
-    }
-
-    void finish(const LoadJobPtr & job, std::unique_lock<std::mutex> &)
-    {
         scheduled_jobs.erase(job);
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -569,9 +615,9 @@ private:
 
                 // Handle just executed job
                 if (exception_from_job)
-                    markNotOk(job, exception_from_job, LoadStatus::FAILED, lock);
+                    finish(lock, job, LoadStatus::FAILED, exception_from_job);
                 else if (job)
-                    markOk(job, lock);
+                    finish(lock, job, LoadStatus::OK);
 
                 if (!is_running)
                     return;
@@ -589,17 +635,18 @@ private:
                 scheduled_jobs.find(job)->second.ready_seqno = 0; // This job is no longer in the ready queue
             }
 
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+
             try
             {
-                ALLOW_ALLOCATIONS_IN_SCOPE;
                 job->func(job);
                 exception_from_job = {};
             }
             catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
                 NOEXCEPT_SCOPE({
-                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    if (log_failures)
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
                     exception_from_job = std::make_exception_ptr(
                         Exception(ErrorCodes::ASYNC_LOAD_FAILED,
                             "Load job '{}' failed: {}",
@@ -609,6 +656,8 @@ private:
             }
         }
     }
+
+    const bool log_failures;
 
     mutable std::mutex mutex;
     bool is_running = false;
