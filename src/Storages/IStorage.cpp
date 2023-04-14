@@ -137,10 +137,7 @@ void IStorage::read(
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
     const auto storage_name = getName();
-    if (output_ports > 0 && output_ports < num_streams && storage_name != "SystemNumbers" && storage_name != "SourceFromSingleChunk"
-        && storage_name != "SystemOne"
-        && storage_name != "Dictionary") /// dictionaries are disabled due to some bug, count() can return wrong result
-                                         /// see test_dictionaries_redis/test_long.py::test_redis_dict_long
+    if (parallelizeOutputAfterReading() && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());

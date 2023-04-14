@@ -368,6 +368,8 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    virtual bool parallelizeOutputAfterReading() const { return true; }
+
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
