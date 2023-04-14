@@ -135,6 +135,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vauth/oauth2.c"
     "${LIBRARY_DIR}/lib/vauth/spnego_gssapi.c"
     "${LIBRARY_DIR}/lib/vauth/spnego_sspi.c"
+    "${LIBRARY_DIR}/lib/vquic/vquic.c"
     "${LIBRARY_DIR}/lib/vtls/openssl.c"
     "${LIBRARY_DIR}/lib/vtls/gtls.c"
     "${LIBRARY_DIR}/lib/vtls/vtls.c"
