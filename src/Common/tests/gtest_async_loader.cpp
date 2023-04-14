@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <barrier>
 #include <chrono>
 #include <mutex>
 #include <vector>
@@ -169,7 +170,7 @@ TEST(AsyncLoader, CancelPendingJob)
     auto job_func = [&] (const LoadJob &) {};
 
     auto job = makeLoadJob({}, "job", job_func);
-    auto task = t.loader.schedule({job});
+    auto task = t.loader.schedule({ job });
 
     task.remove(); // this cancels pending the job (async loader was not started to execute it)
 
@@ -183,6 +184,112 @@ TEST(AsyncLoader, CancelPendingJob)
     {
         ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
     }
+}
+
+TEST(AsyncLoader, CancelPendingTask)
+{
+    AsyncLoaderTest t;
+
+    auto job_func = [&] (const LoadJob &) {};
+
+    auto job1 = makeLoadJob({}, "job1", job_func);
+    auto job2 = makeLoadJob({ job1 }, "job2", job_func);
+    auto task = t.loader.schedule({ job1, job2 });
+
+    task.remove(); // this cancels both jobs (async loader was not started to execute it)
+
+    ASSERT_EQ(job1->status(), LoadStatus::FAILED);
+    ASSERT_EQ(job2->status(), LoadStatus::FAILED);
+
+    try
+    {
+        job1->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+    }
+
+    try
+    {
+        job2->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        // Result depend on non-deterministic cancel order
+        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED || e.code() == ErrorCodes::ASYNC_LOAD_DEPENDENCY_FAILED);
+    }
+}
+
+TEST(AsyncLoader, CancelPendingDependency)
+{
+    AsyncLoaderTest t;
+
+    auto job_func = [&] (const LoadJob &) {};
+
+    auto job1 = makeLoadJob({}, "job1", job_func);
+    auto job2 = makeLoadJob({ job1 }, "job2", job_func);
+    auto task1 = t.loader.schedule({ job1 });
+    auto task2 = t.loader.schedule({ job2 });
+
+    task1.remove(); // this cancels both jobs, due to dependency (async loader was not started to execute it)
+
+    ASSERT_EQ(job1->status(), LoadStatus::FAILED);
+    ASSERT_EQ(job2->status(), LoadStatus::FAILED);
+
+    try
+    {
+        job1->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+    }
+
+    try
+    {
+        job2->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_DEPENDENCY_FAILED);
+    }
+}
+
+TEST(AsyncLoader, CancelExecutingJob)
+{
+    AsyncLoaderTest t;
+    t.loader.start();
+
+    std::barrier sync(2);
+
+    auto job_func = [&] (const LoadJob &)
+    {
+        sync.arrive_and_wait(); // (A) sync with main thread
+        sync.arrive_and_wait(); // (B) wait for waiter
+        // signals (C)
+    };
+
+    auto job = makeLoadJob({}, "job", job_func);
+    auto task = t.loader.schedule({ job });
+
+    sync.arrive_and_wait(); // (A) wait for job to start executing
+    std::thread canceler([&]
+    {
+        task.remove(); // waits for (C)
+    });
+    while (job->waiters_count() == 0)
+        std::this_thread::yield();
+    ASSERT_EQ(job->status(), LoadStatus::PENDING);
+    sync.arrive_and_wait(); // (B) sync with job
+    canceler.join();
+
+    ASSERT_EQ(job->status(), LoadStatus::SUCCESS);
+    job->wait();
 }
 
 TEST(AsyncLoader, RandomTasks)
