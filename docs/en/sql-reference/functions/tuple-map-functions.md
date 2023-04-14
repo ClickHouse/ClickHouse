@@ -102,6 +102,46 @@ select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
 └───────────────────────────────────────────┘
 ```  
 
+## mapFromString
+
+Creates a [Map(key, value)](../../sql-reference/data-types/map.md) with key and values of type [String](../../sql-reference/data-types/string.md) from an input [String](../../sql-reference/data-types/string.md) (or [FixedString]((../../sql-reference/data-types/fixedstring.md))) expression and delimiters.
+  
+**Syntax**
+
+```sql
+mapFromString(str_expr[, pair_delim[, key_value_delim]])
+```  
+
+Alias: `str_to_map(str_expr[, pair_delim[, key_value_delim]])`
+  
+**Arguments**
+- `str_expr`: a [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) expression.
+- `pair_delim`: a single byte [String](../../sql-reference/data-types/string.md) constant that has been used in str_expr as a pair delimiter, i.e., to separate the key-value pairs. Optional, with default value ','.
+- `key_value_delim`: a single byte [String](../../sql-reference/data-types/string.md) constant that has been used in the string as a key-value delimiter, i.e., to separate key and value in a particular key-value pair. Optional, with default value ':'.
+  
+**Returned value**
+
+- A map whose keys and values are of type [String](../../sql-reference/data-types/string.md) constructed by parsing the string expression, given the delimiters.
+  
+**Example**
+
+Query:
+
+```sql
+select mapFromString('a:1,b:2,c:3')
+
+┌─mapFromString('a:1,b:2,c:3')─┐
+│ {'a':'1','b':'2','c':'3'}    │
+└──────────────────────────────┘
+
+select mapFromString('a=1;b;c=3;d=',';','=')
+
+┌─mapFromString('a=1;b;c=3;d=',';','=')─┐
+│ {'a':1,'b':NULL,'c':3,'d':''}         │
+└───────────────────────────────────────┘
+
+```  
+
 ## mapAdd
 
 Collect all the keys and sum corresponding values.
