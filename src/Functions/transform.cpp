@@ -207,6 +207,7 @@ namespace
             const auto & pod = in->getData();
             const size_t size = pod.size();
             const auto & table = *cache.table_num_to_idx;
+            column_result.reserve(size);
             for (size_t i = 0; i < size; ++i)
             {
                 const auto * it = table.find(bit_cast<UInt64>(pod[i]));
@@ -231,6 +232,7 @@ namespace
             const auto & offsets = in->getOffsets();
             const size_t size = offsets.size();
             const auto & table = *cache.table_string_to_idx;
+            column_result.reserve(size);
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
