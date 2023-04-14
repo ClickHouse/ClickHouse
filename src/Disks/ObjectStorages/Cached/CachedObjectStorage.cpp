@@ -65,7 +65,7 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     if (FileCache::isReadOnly())
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
-    return IObjectStorage::patchSettings(modified_settings);
+    return object_storage->patchSettings(modified_settings);
 }
 
 void CachedObjectStorage::startup()

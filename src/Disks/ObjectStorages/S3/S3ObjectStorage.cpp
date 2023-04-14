@@ -146,7 +146,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto & reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
+            reader, disk_read_settings, std::move(s3_impl), disk_read_settings.remote_read_min_bytes_for_seek);
     }
     else
     {

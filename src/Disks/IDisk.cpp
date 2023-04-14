@@ -9,7 +9,7 @@
 #include <Core/ServerUUID.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/FakeDiskTransaction.h>
 
 namespace DB
