@@ -17,6 +17,7 @@
 #include <Common/LocalDateTime.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sort.h>
 #include <base/unit.h>
 
 #include <Core/Types.h>
@@ -37,8 +38,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
-
-#include <DataTypes/DataTypeDateTime.h>
 
 #include <double-conversion/double-conversion.h>
 
