@@ -1,4 +1,4 @@
--- Tags: long, no-tsan, no-asan, no-ubsan, no-msan
+-- Tags: long, no-debug, no-tsan, no-asan, no-ubsan, no-msan
 
 DROP TABLE IF EXISTS 02581_trips;
 
