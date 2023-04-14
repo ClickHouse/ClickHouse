@@ -19,17 +19,6 @@
 using Ports = std::vector<UInt16>;
 using Strings = std::vector<std::string>;
 
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-}
-
-namespace DB::ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 class Runner
 {
 public:
