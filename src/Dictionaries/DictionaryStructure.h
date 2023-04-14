@@ -16,9 +16,6 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
-/// Clang mistakenly warns about the names in enum class.
-#pragma clang diagnostic ignored "-Wshadow"
-
 namespace DB
 {
 using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;

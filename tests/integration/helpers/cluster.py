@@ -17,6 +17,7 @@ import urllib.parse
 import shlex
 import urllib3
 import requests
+import pyspark
 
 try:
     # Please, add modules that required for specific tests only here.
@@ -328,6 +329,7 @@ class ClickHouseCluster:
         custom_dockerd_host=None,
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
+        with_spark=False,
     ):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
@@ -376,6 +378,7 @@ class ClickHouseCluster:
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
+        self.env_variables["SPARK_PATH"] = os.environ.get("SPARK_HOME")
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(
@@ -444,6 +447,8 @@ class ClickHouseCluster:
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
+
+        self.spark_session = None
 
         self.with_azurite = False
 
@@ -614,6 +619,19 @@ class ClickHouseCluster:
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
+
+        if with_spark:
+            # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
+            (
+                pyspark.sql.SparkSession.builder.appName("spark_test")
+                .config(
+                    "spark.jars.packages",
+                    "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+                )
+                .master("local")
+                .getOrCreate()
+                .stop()
+            )
 
     @property
     def kafka_port(self):
