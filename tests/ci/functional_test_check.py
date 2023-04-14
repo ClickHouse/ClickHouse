@@ -64,8 +64,6 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
 
 
 def get_image_name(check_name):
-    if "analyzer" in check_name.lower():
-        return "clickhouse/stateless-test"
     if "stateless" in check_name.lower():
         return "clickhouse/stateless-test"
     if "stateful" in check_name.lower():
