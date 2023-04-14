@@ -57,12 +57,28 @@ public:
         return !is_finished ? LoadStatus::PENDING : (exception ? LoadStatus::FAILED : LoadStatus::SUCCESS);
     }
 
-    void wait()
+    void wait() const
     {
         std::unique_lock lock{mutex};
+        waiters++;
         finished.wait(lock, [this] { return is_finished; });
+        waiters--;
         if (exception)
             std::rethrow_exception(exception);
+    }
+
+    void waitNoThrow() const
+    {
+        std::unique_lock lock{mutex};
+        waiters++;
+        finished.wait(lock, [this] { return is_finished; });
+        waiters--;
+    }
+
+    size_t waiters_count() const
+    {
+        std::unique_lock lock{mutex};
+        return waiters;
     }
 
     const LoadJobSet dependencies; // jobs to be done before this one (with ownership), it is `const` to make creation of cycles hard
@@ -76,7 +92,8 @@ private:
     {
         std::unique_lock lock{mutex};
         is_finished = true;
-        finished.notify_all();
+        if (waiters > 0)
+            finished.notify_all();
     }
 
     void setFailure(const std::exception_ptr & ptr)
@@ -84,13 +101,15 @@ private:
         std::unique_lock lock{mutex};
         is_finished = true;
         exception = ptr;
-        finished.notify_all();
+        if (waiters > 0)
+            finished.notify_all();
     }
 
     std::function<void(const LoadJob & self)> func;
 
     mutable std::mutex mutex;
-    std::condition_variable finished;
+    mutable std::condition_variable finished;
+    mutable size_t waiters = 0;
     bool is_finished = false;
     std::exception_ptr exception;
 };
@@ -337,7 +356,7 @@ public:
                 else // Job is currently executing
                 {
                     lock.unlock();
-                    job->wait(); // Wait for job to finish
+                    job->waitNoThrow(); // Wait for job to finish
                     lock.lock();
                 }
                 finished_jobs.erase(job);
