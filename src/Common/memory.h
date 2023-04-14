@@ -1,6 +1,4 @@
 #pragma once
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 #include <new>
 #include <base/defines.h>
@@ -219,5 +217,3 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
 }
 
 }
-
-#pragma GCC diagnostic pop

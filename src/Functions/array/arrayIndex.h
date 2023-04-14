@@ -76,8 +76,8 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
 
     static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
     {
@@ -107,7 +107,7 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
 
