@@ -38,6 +38,10 @@ struct AsyncLoaderTest
     std::mutex rng_mutex;
     pcg64 rng{randomSeed()};
 
+    explicit AsyncLoaderTest(size_t max_threads = 1)
+        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads)
+    {}
+
     template <typename T>
     T randomInt(T from, T to)
     {
@@ -53,7 +57,7 @@ struct AsyncLoaderTest
     }
 
     template <typename JobFunc>
-    LoadJobSet randomJobSet(int job_count, int dep_probability_percent, JobFunc job_func)
+    LoadJobSet randomJobSet(int job_count, int dep_probability_percent, JobFunc job_func, std::string_view name_prefix = "job")
     {
         std::vector<LoadJobPtr> jobs;
         for (int j = 0; j < job_count; j++)
@@ -64,14 +68,20 @@ struct AsyncLoaderTest
                 if (randomInt(0, 99) < dep_probability_percent)
                     deps.insert(jobs[d]);
             }
-            jobs.push_back(makeLoadJob(std::move(deps), fmt::format("job{}", j), job_func));
+            jobs.push_back(makeLoadJob(std::move(deps), fmt::format("{}{}", name_prefix, j), job_func));
         }
         return {jobs.begin(), jobs.end()};
     }
 
-    explicit AsyncLoaderTest(size_t max_threads = 1)
-        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads)
-    {}
+    template <typename JobFunc>
+    LoadJobSet chainJobSet(int job_count, JobFunc job_func, std::string_view name_prefix = "job")
+    {
+        std::vector<LoadJobPtr> jobs;
+        jobs.push_back(makeLoadJob({}, fmt::format("{}{}", name_prefix, 0), job_func));
+        for (int j = 1; j < job_count; j++)
+            jobs.push_back(makeLoadJob({ jobs[j - 1] }, fmt::format("{}{}", name_prefix, j), job_func));
+        return {jobs.begin(), jobs.end()};
+    }
 };
 
 TEST(AsyncLoader, Smoke)
@@ -367,3 +377,27 @@ TEST(AsyncLoader, RandomTasks)
     }
 }
 
+TEST(AsyncLoader, TestConcurrency)
+{
+    AsyncLoaderTest t(10);
+    t.loader.start();
+
+    for (int concurrency = 1; concurrency <= 10; concurrency++)
+    {
+        std::barrier sync(concurrency);
+
+        std::atomic<int> executing{0};
+        auto job_func = [&] (const LoadJob &)
+        {
+            executing++;
+            ASSERT_LE(executing, concurrency);
+            sync.arrive_and_wait();
+            executing--;
+        };
+
+        std::vector<AsyncLoader::Task> tasks;
+        for (int i = 0; i < concurrency; i++)
+            tasks.push_back(t.loader.schedule(t.chainJobSet(5, job_func)));
+        t.loader.wait();
+    }
+}
