@@ -37,7 +37,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
     assert free_space_initial > 8 * 1024 * 1024
 
     q(
-        "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'tiny_local_cache'"
+        "CREATE TABLE t1 (x UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'tiny_local_cache'"
     )
     q("INSERT INTO t1 SELECT number FROM numbers(1024 * 1024)")
 
