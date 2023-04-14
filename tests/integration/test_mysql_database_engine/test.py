@@ -396,7 +396,7 @@ def arryToString(expected_clickhouse_values):
 
 #  if expected_clickhouse_values is "", compare MySQL and ClickHouse query results directly
 @pytest.mark.parametrize(
-    "case_name, mysql_type, expected_ch_type, mysql_values, expected_clickhouse_values , setting_mysql_datatypes_support_level",
+    "case_name, mysql_type, expected_ch_type, mysql_values, expected_clickhouse_values, setting_mysql_datatypes_support_level",
     [
         pytest.param(
             "common_types",
@@ -725,11 +725,10 @@ def arryToString(expected_clickhouse_values):
             "decimal,datetime64",
             id="datetime_6_1",
         ),
-        # right now precision bigger than 39 is not supported by ClickHouse's Decimal, hence fall back to String
         pytest.param(
             "decimal_40_6",
             "decimal(40, 6) NOT NULL",
-            "String",
+            "Decimal(40, 6)",
             decimal_values,
             "",
             "decimal,datetime64",

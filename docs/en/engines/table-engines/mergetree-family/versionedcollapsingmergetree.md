@@ -58,7 +58,7 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../.
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 

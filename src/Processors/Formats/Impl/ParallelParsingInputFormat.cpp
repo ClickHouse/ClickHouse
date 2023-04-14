@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
+void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -18,6 +18,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
         CurrentThread::attachToGroup(thread_group);
 
     setThreadName("Segmentator");
+
     try
     {
         while (!parsing_finished)
@@ -50,6 +51,9 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             if (!have_more_data)
                 break;
+
+            // Segmentator thread can be long-living, so we have to manually update performance counters for CPU progress to be correct
+            CurrentThread::updatePerformanceCountersIfNeeded();
         }
     }
     catch (...)
@@ -58,7 +62,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
     }
 }
 
-void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
+void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)

@@ -165,7 +165,8 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
     readVarUInt(size, buf);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size.");
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
 
     v.resize(size);
     for (size_t i = 0; i < size; ++i)
@@ -1027,12 +1028,15 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
-        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    {
+        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_multiplier;
+    }
     else
+    {
         is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
-
-    datetime64 *= negative_multiplier;
-
+        if (is_ok)
+            datetime64 *= negative_multiplier;
+    }
 
     return ReturnType(is_ok);
 }

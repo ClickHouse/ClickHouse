@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 
-#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
@@ -228,9 +227,7 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HTTPHeaderEntries headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request,
-        uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS);
+        CredentialsConfiguration credentials_configuration);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,

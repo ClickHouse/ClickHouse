@@ -61,11 +61,15 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     /// This is a bad approach.
     /// We'd better have a separate interpreter for projections.
     /// Now it's not obvious we didn't miss anything here.
+    ///
+    /// Setting ignoreASTOptimizations is used because some of them are invalid for projections.
+    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
+    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
         Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock())),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState});
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
     const auto & query_analyzer = interpreter.getQueryAnalyzer();
@@ -100,16 +104,25 @@ static bool hasNullableOrMissingColumn(const DAGIndex & index, const Names & nam
     return false;
 }
 
+struct AggregateFunctionMatch
+{
+    const AggregateDescription * description = nullptr;
+    DataTypes argument_types;
+};
+
+using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
-bool areAggregatesMatch(
+std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     const AggregateProjectionInfo & info,
     const AggregateDescriptions & aggregates,
     const MatchedTrees::Matches & matches,
     const DAGIndex & query_index,
     const DAGIndex & proj_index)
 {
+    AggregateFunctionMatches res;
+
     /// Index (projection agg function name) -> pos
     std::unordered_map<std::string, std::vector<size_t>> projection_aggregate_functions;
     for (size_t i = 0; i < info.aggregates.size(); ++i)
@@ -126,14 +139,20 @@ bool areAggregatesMatch(
             //     "Cannot match agg func {} by name {}",
             //     aggregate.column_name, aggregate.function->getName());
 
-            return false;
+            return {};
         }
+
+        size_t num_args = aggregate.argument_names.size();
+
+        DataTypes argument_types;
+        argument_types.reserve(num_args);
 
         auto & candidates = it->second;
         bool found_match = false;
 
         for (size_t idx : candidates)
         {
+            argument_types.clear();
             const auto & candidate = info.aggregates[idx];
 
             /// Note: this check is a bit strict.
@@ -144,9 +163,9 @@ bool areAggregatesMatch(
             /// and we can't replace one to another from projection.
             if (!candidate.function->getStateType()->equals(*aggregate.function->getStateType()))
             {
-                LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} vs {} by state {} vs {}",
-                    aggregate.column_name, candidate.column_name,
-                    candidate.function->getStateType()->getName(), aggregate.function->getStateType()->getName());
+                // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} vs {} by state {} vs {}",
+                //     aggregate.column_name, candidate.column_name,
+                //     candidate.function->getStateType()->getName(), aggregate.function->getStateType()->getName());
                 continue;
             }
 
@@ -162,6 +181,7 @@ bool areAggregatesMatch(
                 {
                     /// we can ignore arguments for count()
                     found_match = true;
+                    res.push_back({&candidate, DataTypes()});
                     break;
                 }
             }
@@ -169,7 +189,6 @@ bool areAggregatesMatch(
             /// Now, function names and types matched.
             /// Next, match arguments from DAGs.
 
-            size_t num_args = aggregate.argument_names.size();
             if (num_args != candidate.argument_names.size())
                 continue;
 
@@ -211,6 +230,7 @@ bool areAggregatesMatch(
                     break;
                 }
 
+                argument_types.push_back(query_node->result_type);
                 ++next_arg;
             }
 
@@ -218,14 +238,44 @@ bool areAggregatesMatch(
                 continue;
 
             found_match = true;
+            res.push_back({&candidate, std::move(argument_types)});
             break;
         }
 
         if (!found_match)
-            return false;
+            return {};
     }
 
-    return true;
+    return res;
+}
+
+static void appendAggregateFunctions(
+    ActionsDAG & proj_dag,
+    const AggregateDescriptions & aggregates,
+    const AggregateFunctionMatches & matched_aggregates)
+{
+    std::unordered_map<const AggregateDescription *, const ActionsDAG::Node *> inputs;
+
+    /// Just add all the aggregates to dag inputs.
+    auto & proj_dag_outputs =  proj_dag.getOutputs();
+    size_t num_aggregates = aggregates.size();
+    for (size_t i = 0; i < num_aggregates; ++i)
+    {
+        const auto & aggregate = aggregates[i];
+        const auto & match = matched_aggregates[i];
+        auto type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, match.argument_types, aggregate.parameters);
+
+        auto & input = inputs[match.description];
+        if (!input)
+            input = &proj_dag.addInput(match.description->column_name, std::move(type));
+
+        const auto * node = input;
+
+        if (node->result_name != aggregate.column_name)
+            node = &proj_dag.addAlias(*node, aggregate.column_name);
+
+        proj_dag_outputs.push_back(node);
+    }
 }
 
 ActionsDAGPtr analyzeAggregateProjection(
@@ -246,7 +296,8 @@ ActionsDAGPtr analyzeAggregateProjection(
     //         static_cast<const void *>(match.node), (match.node ? match.node->result_name : ""), match.monotonicity != std::nullopt);
     // }
 
-    if (!areAggregatesMatch(info, aggregates, matches, query_index, proj_index))
+    auto matched_aggregates = matchAggregateFunctions(info, aggregates, matches, query_index, proj_index);
+    if (!matched_aggregates)
         return {};
 
     ActionsDAG::NodeRawConstPtrs query_key_nodes;
@@ -295,7 +346,7 @@ ActionsDAGPtr analyzeAggregateProjection(
 
     std::stack<Frame> stack;
     std::unordered_set<const ActionsDAG::Node *> visited;
-    std::unordered_map<const ActionsDAG::Node *, std::string> new_inputs;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> new_inputs;
 
     for (const auto * key_node : query_key_nodes)
     {
@@ -317,7 +368,7 @@ ActionsDAGPtr analyzeAggregateProjection(
                     if (match.node && !match.monotonicity && proj_key_nodes.contains(match.node))
                     {
                         visited.insert(frame.node);
-                        new_inputs[frame.node] = match.node->result_name;
+                        new_inputs[frame.node] = match.node;
                         stack.pop();
                         continue;
                     }
@@ -347,12 +398,7 @@ ActionsDAGPtr analyzeAggregateProjection(
     // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Folding actions by projection");
 
     auto proj_dag = query.dag->foldActionsByProjection(new_inputs, query_key_nodes);
-
-    /// Just add all the aggregates to dag inputs.
-    auto & proj_dag_outputs =  proj_dag->getOutputs();
-    for (const auto & aggregate : aggregates)
-        proj_dag_outputs.push_back(&proj_dag->addInput(aggregate.column_name, aggregate.function->getResultType()));
-
+    appendAggregateFunctions(*proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
 

@@ -1,3 +1,5 @@
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -18,9 +20,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
@@ -48,7 +48,7 @@ namespace
     const std::unordered_map<String, std::pair<String, Int32>> monthMap{
         {"jan", {"uary", 1}},
         {"feb", {"ruary", 2}},
-        {"mar", {"rch", 3}},
+        {"mar", {"ch", 3}},
         {"apr", {"il", 4}},
         {"may", {"", 5}},
         {"jun", {"e", 6}},
@@ -101,16 +101,16 @@ namespace
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
         bool has_year = false; /// Whether year was explicitly specified.
 
-        /// If is_clock_hour = true, is_hour_of_half_day = true, hour's range is [1, 12]
-        /// If is_clock_hour = true, is_hour_of_half_day = false, hour's range is [1, 24]
-        /// If is_clock_hour = false, is_hour_of_half_day = true, hour's range is [0, 11]
-        /// If is_clock_hour = false, is_hour_of_half_day = false, hour's range is [0, 23]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = true, hour's range is [1, 12]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = false, hour's range is [1, 24]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = true, hour's range is [0, 11]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = false, hour's range is [0, 23]
         Int32 hour = 0;
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
 
         bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
-        bool is_clock_hour = false; /// Whether the hour is clockhour
+        bool hour_starts_at_1 = false; /// Whether the hour is clockhour
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
         bool has_time_zone_offset = false; /// If true, time zone offset is explicitly specified.
@@ -137,7 +137,7 @@ namespace
             second = 0;
 
             is_am = true;
-            is_clock_hour = false;
+            hour_starts_at_1 = false;
             is_hour_of_half_day = false;
 
             has_time_zone_offset = false;
@@ -275,23 +275,23 @@ namespace
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text);
         }
 
-        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
+        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool hour_starts_at_1_ = false)
         {
             Int32 max_hour;
             Int32 min_hour;
             Int32 new_hour = hour_;
-            if (!is_hour_of_half_day_ && !is_clock_hour_)
+            if (!is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 23;
                 min_hour = 0;
             }
-            else if (!is_hour_of_half_day_ && is_clock_hour_)
+            else if (!is_hour_of_half_day_ && hour_starts_at_1_)
             {
                 max_hour = 24;
                 min_hour = 1;
                 new_hour = hour_ % 24;
             }
-            else if (is_hour_of_half_day_ && !is_clock_hour_)
+            else if (is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 11;
                 min_hour = 0;
@@ -306,16 +306,16 @@ namespace
             if (hour_ < min_hour || hour_ > max_hour)
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_DATETIME,
-                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and is_clock_hour={}",
+                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and hour_starts_at_1={}",
                     hour,
                     max_hour,
                     min_hour,
                     is_hour_of_half_day_,
-                    is_clock_hour_);
+                    hour_starts_at_1_);
 
             hour = new_hour;
             is_hour_of_half_day = is_hour_of_half_day_;
-            is_clock_hour = is_clock_hour_;
+            hour_starts_at_1 = hour_starts_at_1_;
         }
 
         void setMinute(Int32 minute_)
@@ -452,13 +452,27 @@ namespace
         Joda
     };
 
+    enum class ErrorHandling
+    {
+        Exception,
+        Zero,
+        Null
+    };
+
     /// _FUNC_(str[, format, timezone])
-    template <typename Name, ParseSyntax parse_syntax>
+    template <typename Name, ParseSyntax parse_syntax, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
+        const bool mysql_M_is_month_name;
+
         static constexpr auto name = Name::name;
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseDateTimeImpl>(); }
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
+
+        explicit FunctionParseDateTimeImpl(ContextPtr context)
+            : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+        {
+        }
 
         String getName() const override { return name; }
 
@@ -471,40 +485,25 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
-                    getName(),
-                    arguments.size());
+            FunctionArgumentDescriptors args{
+                {"time", &isString<IDataType>, nullptr, "String"},
+                {"format", &isString<IDataType>, nullptr, "String"},
+            };
 
-            if (!isString(arguments[0].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            if (arguments.size() == 3)
+                args.emplace_back(FunctionArgumentDescriptor{"timezone", &isString<IDataType>, nullptr, "String"});
 
-            if (arguments.size() > 1 && !isString(arguments[1].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
-
-            if (arguments.size() > 2 && !isString(arguments[2].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            validateFunctionArgumentTypes(*this, arguments, args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
-            return std::make_shared<DataTypeDateTime>(time_zone_name);
+            DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            if (error_handling == ErrorHandling::Null)
+                return std::make_shared<DataTypeNullable>(date_type);
+            else
+                return date_type;
         }
 
-        ColumnPtr
-        executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
             if (!col_str)
@@ -518,8 +517,12 @@ namespace
             const auto & time_zone = getTimeZone(arguments);
             std::vector<Instruction> instructions = parseFormat(format);
 
-            auto col_res = ColumnDateTime::create();
-            col_res->reserve(input_rows_count);
+            auto col_res = ColumnDateTime::create(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map;
+            if constexpr (error_handling == ErrorHandling::Null)
+                col_null_map = ColumnUInt8::create(input_rows_count, 0);
+
             auto & res_data = col_res->getData();
 
             /// Make datetime fit in a cache line.
@@ -527,29 +530,77 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
-
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
+                bool error = false;
+
                 for (const auto & instruction : instructions)
                 {
-                    cur = instruction.perform(cur, end, datetime);
+                    try
+                    {
+                        cur = instruction.perform(cur, end, datetime);
+                    }
+                    catch (...)
+                    {
+                        if constexpr (error_handling == ErrorHandling::Zero)
+                        {
+                            res_data[i] = 0;
+                            error = true;
+                            break;
+                        }
+                        else if constexpr (error_handling == ErrorHandling::Null)
+                        {
+                            res_data[i] = 0;
+                            col_null_map->getData()[i] = 1;
+                            error = true;
+                            break;
+                        }
+                        else
+                        {
+                            static_assert(error_handling == ErrorHandling::Exception);
+                            throw;
+                        }
+                    }
                 }
 
-                // Ensure all input was consumed.
-                if (cur < end)
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Invalid format input {} is malformed at {}",
-                        str_ref.toView(),
-                        std::string_view(cur, end - cur));
+                if (error)
+                    continue;
 
-                Int64 time = datetime.buildDateTime(time_zone);
-                res_data.push_back(static_cast<UInt32>(time));
+                try
+                {
+                    /// Ensure all input was consumed
+                    if (cur < end)
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Invalid format input {} is malformed at {}",
+                            str_ref.toView(),
+                            std::string_view(cur, end - cur));
+                    Int64 time = datetime.buildDateTime(time_zone);
+                    res_data[i] = static_cast<UInt32>(time);
+                }
+                catch (...)
+                {
+                    if constexpr (error_handling == ErrorHandling::Zero)
+                        res_data[i] = 0;
+                    else if constexpr (error_handling == ErrorHandling::Null)
+                    {
+                        res_data[i] = 0;
+                        col_null_map->getData()[i] = 1;
+                    }
+                    else
+                    {
+                        static_assert(error_handling == ErrorHandling::Exception);
+                        throw;
+                    }
+                }
             }
 
-            return col_res;
-        }
+            if constexpr (error_handling == ErrorHandling::Null)
+                return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
+            else
+                return col_res;
+            }
 
 
     private:
@@ -672,13 +723,31 @@ namespace
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
 
-                if (*cur != expected)
+                if (*cur != expected) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
                         String(expected, 1),
+                        String(*cur, 1));
+
+                ++cur;
+                return cur;
+            }
+
+            template <NeedCheckSpace need_check_space>
+            static Pos assertNumber(Pos cur, Pos end, const String & fragment)
+            {
+                if constexpr (need_check_space == NeedCheckSpace::Yes)
+                    checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
+
+                if (*cur < '0' || *cur > '9') [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because {} is not a number",
+                        fragment,
+                        std::string_view(cur, end - cur),
                         String(*cur, 1));
 
                 ++cur;
@@ -721,6 +790,38 @@ namespace
 
                 date.setMonth(it->second.second);
                 cur += 3;
+                return cur;
+            }
+
+            static Pos mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment);
+                String text1(cur, 3);
+                boost::to_lower(text1);
+                auto it = monthMap.find(text1);
+                if (it == monthMap.end())
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1);
+                cur += 3;
+
+                size_t expected_remaining_size = it->second.first.size();
+                checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                String text2(cur, expected_remaining_size);
+                boost::to_lower(text2);
+                if (text2 != it->second.first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1 + text2);
+                cur += expected_remaining_size;
+
+                date.setMonth(it->second.second);
                 return cur;
             }
 
@@ -856,7 +957,7 @@ namespace
 
             static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 6, "jodaDayOfWeekText requires size >= 6", fragment);
+                checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment);
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -870,7 +971,7 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                checkSpace(cur, end, expected_remaining_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -991,6 +1092,16 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
+            {
+                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
+
+                for (size_t i = 0; i < 6; ++i)
+                    cur = assertNumber<NeedCheckSpace::No>(cur, end, fragment);
+
+                return cur;
+            }
+
             static Pos mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment);
@@ -1032,11 +1143,12 @@ namespace
                 bool allow_negative,
                 bool allow_plus_sign,
                 bool is_year,
-                int repetitions,
-                int max_digits_to_read,
+                size_t repetitions,
+                size_t max_digits_to_read,
                 const String & fragment,
                 Int32 & result)
             {
+
                 bool negative = false;
                 if (allow_negative && cur < end && *cur == '-')
                 {
@@ -1051,6 +1163,15 @@ namespace
 
                 Int64 number = 0;
                 const Pos start = cur;
+
+                /// Avoid integer overflow in (*)
+                if (max_digits_to_read >= std::numeric_limits<decltype(number)>::digits10) [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because max_digits_to_read is too big",
+                        fragment,
+                        std::string_view(start, cur - start));
+
                 if (is_year && repetitions == 2)
                 {
                     // If abbreviated two year digit is provided in format string, try to read
@@ -1059,10 +1180,10 @@ namespace
                     //                                  [70, 99] -> [1970, 1999]
                     // If more than two digits are provided, then simply read in full year
                     // normally without conversion
-                    int count = 0;
+                    size_t count = 0;
                     while (cur < end && cur < start + max_digits_to_read && *cur >= '0' && *cur <= '9')
                     {
-                        number = number * 10 + (*cur - '0');
+                        number = number * 10 + (*cur - '0'); /// (*)
                         ++cur;
                         ++count;
                     }
@@ -1077,7 +1198,7 @@ namespace
                     {
                         while (cur < end && cur < start + max_digits_to_read && *cur >= '0' && *cur <= '9')
                         {
-                            number = number * 10 + (*cur - '0');
+                            number = number * 10 + (*cur - '0'); /// (*)
                             ++cur;
                         }
                     }
@@ -1091,24 +1212,25 @@ namespace
                     }
                 }
 
+                if (negative)
+                    number *= -1;
+
                 /// Need to have read at least one digit.
-                if (cur == start)
+                if (cur == start) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because read number failed",
                         fragment,
                         std::string_view(cur, end - cur));
 
-                if (negative)
-                    number *= -1;
-
                 /// Check if number exceeds the range of Int32
-                if (number < std::numeric_limits<Int32>::lowest() || number > std::numeric_limits<Int32>::max())
+                if (number < std::numeric_limits<Int32>::min() || number > std::numeric_limits<Int32>::max()) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because number is out of range of Int32",
                         fragment,
                         std::string_view(start, cur - start));
+
                 result = static_cast<Int32>(number);
 
                 return cur;
@@ -1125,7 +1247,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaCenturyOfEra(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 century;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century);
@@ -1133,7 +1255,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaYearOfEra(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year_of_era;
                 cur = readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era);
@@ -1141,7 +1263,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaWeekYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 week_year;
                 cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year);
@@ -1149,15 +1271,15 @@ namespace
                 return cur;
             }
 
-            static Pos jodaWeekOfWeekYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 week;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, week);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week);
                 date.setWeek(week);
                 return cur;
             }
 
-            static Pos jodaDayOfWeek1Based(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_week;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week);
@@ -1197,7 +1319,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year;
                 cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year);
@@ -1205,15 +1327,15 @@ namespace
                 return cur;
             }
 
-            static Pos jodaDayOfYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_year;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), fragment, day_of_year);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year);
                 date.setDayOfYear(day_of_year);
                 return cur;
             }
 
-            static Pos jodaMonthOfYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 month;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month);
@@ -1251,11 +1373,11 @@ namespace
                 return cur;
             }
 
-            static Pos jodaDayOfMonth(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_month;
                 cur = readNumberWithVariableLength(
-                    cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, day_of_month);
+                    cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month);
                 date.setDayOfMonth(day_of_month);
                 return cur;
             }
@@ -1271,50 +1393,50 @@ namespace
                 return cur;
             }
 
-            static Pos jodaHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, true, false);
                 return cur;
             }
 
-            static Pos jodaClockHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, true, true);
                 return cur;
             }
 
-            static Pos jodaHourOfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, false, false);
                 return cur;
             }
 
-            static Pos jodaClockHourOfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour);
                 date.setHour(hour, false, true);
                 return cur;
             }
 
-            static Pos jodaMinuteOfHour(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 minute;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, minute);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute);
                 date.setMinute(minute);
                 return cur;
             }
 
-            static Pos jodaSecondOfMinute(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
+            static Pos jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 second;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, second);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second);
                 date.setSecond(second);
                 return cur;
             }
@@ -1391,6 +1513,10 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
+                        // Fractional seconds
+                        case 'f':
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMicrosecond));
+                            break;
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
@@ -1457,9 +1583,14 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
 
-                        // Minute (00-59)
+                        // Depending on a setting
+                        // - Full month [January...December]
+                        // - Minute (00-59) OR
                         case 'M':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
+                            if (mysql_M_is_month_name)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // AM or PM
@@ -1538,8 +1669,6 @@ namespace
                         /// Unimplemented
 
                         /// Fractional seconds
-                        case 'f':
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
                         case 'U':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                         case 'v':
@@ -1612,7 +1741,7 @@ namespace
                 }
                 else
                 {
-                    int repetitions = 1;
+                    size_t repetitions = 1;
                     ++pos;
                     while (pos < end && *cur_token == *pos)
                     {
@@ -1701,14 +1830,6 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            if (arguments.size() < 2)
-            {
-                if constexpr (parse_syntax == ParseSyntax::Joda)
-                    return "yyyy-MM-dd HH:mm:ss";
-                else
-                    return "%Y-%m-%d %H:%M:%S";
-            }
-
             const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!format_column)
                 throw Exception(
@@ -1742,23 +1863,50 @@ namespace
         static constexpr auto name = "parseDateTime";
     };
 
+    struct NameParseDateTimeOrZero
+    {
+        static constexpr auto name = "parseDateTimeOrZero";
+    };
+
+    struct NameParseDateTimeOrNull
+    {
+        static constexpr auto name = "parseDateTimeOrNull";
+    };
+
     struct NameParseDateTimeInJodaSyntax
     {
         static constexpr auto name = "parseDateTimeInJodaSyntax";
     };
 
+    struct NameParseDateTimeInJodaSyntaxOrZero
+    {
+        static constexpr auto name = "parseDateTimeInJodaSyntaxOrZero";
+    };
 
-    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL>;
-    using FunctionParseDateTimeInJodaSyntax
-        = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda>;
+    struct NameParseDateTimeInJodaSyntaxOrNull
+    {
+        static constexpr auto name = "parseDateTimeInJodaSyntaxOrNull";
+    };
+
+    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL, ErrorHandling::Exception>;
+    using FunctionParseDateTimeOrZero = FunctionParseDateTimeImpl<NameParseDateTimeOrZero, ParseSyntax::MySQL, ErrorHandling::Zero>;
+    using FunctionParseDateTimeOrNull = FunctionParseDateTimeImpl<NameParseDateTimeOrNull, ParseSyntax::MySQL, ErrorHandling::Null>;
+    using FunctionParseDateTimeInJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda, ErrorHandling::Exception>;
+    using FunctionParseDateTimeInJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrZero, ParseSyntax::Joda, ErrorHandling::Zero>;
+    using FunctionParseDateTimeInJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrNull, ParseSyntax::Joda, ErrorHandling::Null>;
 }
 
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name);
+    factory.registerFunction<FunctionParseDateTimeOrZero>();
+    factory.registerFunction<FunctionParseDateTimeOrNull>();
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>();
 }
 
 

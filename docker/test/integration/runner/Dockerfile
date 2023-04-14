@@ -32,6 +32,7 @@ RUN apt-get update \
     libssl-dev \
     libcurl4-openssl-dev \
     gdb \
+    default-jdk \
     software-properties-common \
     libkrb5-dev \
     krb5-user \
@@ -92,14 +93,23 @@ RUN python3 -m pip install \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
+    pyspark==3.3.2 \
+    delta-spark==2.2.0 \
     pyhdfs \
     azure-storage-blob \
-    meilisearch==0.18.3 
+    meilisearch==0.18.3
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY compose/ /compose/
 COPY misc/ /misc/
+
+RUN wget https://dlcdn.apache.org/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
+    && tar xzvf spark-3.3.2-bin-hadoop3.tgz -C /
+
+# download spark and packages
+# if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
+RUN echo ":quit" | /spark-3.3.2-bin-hadoop3/bin/spark-shell --packages "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0" > /dev/null
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -107,6 +117,12 @@ RUN set -x \
   && adduser dockremap dockremap \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
+
+# Same options as in test/base/Dockerfile
+# (in case you need to override them in tests)
+ENV TSAN_OPTIONS='halt_on_error=1 history_size=7 memory_limit_mb=46080 second_deadlock_stack=1'
+ENV UBSAN_OPTIONS='print_stacktrace=1'
+ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1'
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]

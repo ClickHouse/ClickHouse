@@ -389,6 +389,7 @@ javaHashUTF16LE
 joinGet
 joinGetOrNull
 jumpConsistentHash
+kafkaMurmurHash
 kostikConsistentHash
 lcm
 least
@@ -530,6 +531,10 @@ parseDateTimeBestEffortUS
 parseDateTimeBestEffortUSOrNull
 parseDateTimeBestEffortUSOrZero
 parseDateTimeInJodaSyntax
+parseDateTimeInJodaSyntaxOrNull
+parseDateTimeInJodaSyntaxOrZero
+parseDateTimeOrNull
+parseDateTimeOrZero
 parseTimeDelta
 partitionId
 path
