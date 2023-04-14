@@ -449,6 +449,12 @@ public:
         return pool.getMaxThreads();
     }
 
+    size_t getScheduledJobCount() const
+    {
+        std::unique_lock lock{mutex};
+        return scheduled_jobs.size();
+    }
+
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock)
     {

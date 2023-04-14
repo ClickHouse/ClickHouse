@@ -72,6 +72,25 @@ struct AsyncLoaderTest
     }
 
     template <typename JobFunc>
+    LoadJobSet randomJobSet(int job_count, int dep_probability_percent, std::vector<LoadJobPtr> external_deps, JobFunc job_func, std::string_view name_prefix = "job")
+    {
+        std::vector<LoadJobPtr> jobs;
+        for (int j = 0; j < job_count; j++)
+        {
+            LoadJobSet deps;
+            for (int d = 0; d < j; d++)
+            {
+                if (randomInt(0, 99) < dep_probability_percent)
+                    deps.insert(jobs[d]);
+            }
+            if (randomInt(0, 99) < dep_probability_percent)
+                deps.insert(external_deps[randomInt<size_t>(0, external_deps.size() - 1)]);
+            jobs.push_back(makeLoadJob(std::move(deps), fmt::format("{}{}", name_prefix, j), job_func));
+        }
+        return {jobs.begin(), jobs.end()};
+    }
+
+    template <typename JobFunc>
     LoadJobSet chainJobSet(int job_count, JobFunc job_func, std::string_view name_prefix = "job")
     {
         std::vector<LoadJobPtr> jobs;
@@ -526,7 +545,7 @@ TEST(AsyncLoader, TestOverload)
     }
 }
 
-TEST(AsyncLoader, RandomTasks)
+TEST(AsyncLoader, RandomIndependentTasks)
 {
     AsyncLoaderTest t(16);
     t.loader.start();
@@ -545,4 +564,42 @@ TEST(AsyncLoader, RandomTasks)
         tasks.push_back(t.loader.schedule(t.randomJobSet(job_count, 5, job_func)));
         t.randomSleepUs(100, 900, 20); // avg=100us
     }
+}
+
+TEST(AsyncLoader, RandomDependentTasks)
+{
+    AsyncLoaderTest t(16);
+    t.loader.start();
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::vector<AsyncLoader::Task> tasks;
+    std::vector<LoadJobPtr> all_jobs;
+
+    auto job_func = [&] (const LoadJobPtr & self)
+    {
+        for (const auto & dep : self->dependencies)
+            ASSERT_EQ(dep->status(), LoadStatus::OK);
+        cv.notify_one();
+    };
+
+    std::unique_lock lock{mutex};
+
+    int tasks_left = 1000;
+    while (tasks_left-- > 0)
+    {
+        cv.wait(lock, [&] { return t.loader.getScheduledJobCount() < 100; });
+
+        // Add one new task
+        int job_count = t.randomInt(1, 32);
+        LoadJobSet jobs = t.randomJobSet(job_count, 5, all_jobs, job_func);
+        all_jobs.insert(all_jobs.end(), jobs.begin(), jobs.end());
+        tasks.push_back(t.loader.schedule(std::move(jobs)));
+
+        // Cancel random old task
+        if (tasks.size() > 100)
+            tasks.erase(tasks.begin() + t.randomInt<size_t>(0, tasks.size() - 1));
+    }
+
+    t.loader.wait();
 }
