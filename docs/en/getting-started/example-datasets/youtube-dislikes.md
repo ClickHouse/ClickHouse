@@ -127,12 +127,6 @@ FROM s3Cluster(
     'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
     'JSONLines'
 )
-SETTINGS
-   max_download_threads = 24,
-   max_insert_threads = 64,
-   max_insert_block_size = 100000000,
-   min_insert_block_size_rows = 100000000,
-   min_insert_block_size_bytes = 500000000;
 ```
 
 Some comments about our `INSERT` command:
