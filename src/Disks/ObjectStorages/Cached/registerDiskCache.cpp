@@ -40,7 +40,10 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         FileCacheSettings file_cache_settings;
         file_cache_settings.loadFromConfig(config, config_prefix);
 
-        auto cache_base_path = config.getString(config_prefix + ".path", fs::path(context->getPath()) / "disks" / name / "cache/");
+        fs::path cache_base_path = config.getString(config_prefix + ".path", fs::path(context->getPath()) / "disks" / name / "cache/");
+        if (cache_base_path.is_relative())
+            cache_base_path = fs::path(context->getPath()) / "caches" / cache_base_path;
+
         if (!fs::exists(cache_base_path))
             fs::create_directories(cache_base_path);
 
