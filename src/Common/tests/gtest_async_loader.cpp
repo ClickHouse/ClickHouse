@@ -434,6 +434,46 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
     }
 }
 
+TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
+{
+    AsyncLoaderTest t;
+
+    auto canceled_job_func = [&] (const LoadJobPtr &) {};
+    auto canceled_job = makeLoadJob({}, "canceled_job", canceled_job_func);
+    auto canceled_task = t.loader.schedule({ canceled_job });
+    canceled_task.remove();
+
+    t.loader.start();
+
+    auto job_func = [&] (const LoadJobPtr &) {};
+    auto job1 = makeLoadJob({ canceled_job }, "job1", job_func);
+    auto job2 = makeLoadJob({ job1 }, "job2", job_func);
+    auto task = t.loader.schedule({ job1, job2 });
+
+    t.loader.wait();
+
+    ASSERT_EQ(job1->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
+    try
+    {
+        job1->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+    }
+    try
+    {
+        job2->wait();
+        FAIL();
+    }
+    catch (Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+    }
+}
+
 TEST(AsyncLoader, TestConcurrency)
 {
     AsyncLoaderTest t(10);
