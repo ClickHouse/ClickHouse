@@ -14,9 +14,7 @@
 #include <Common/AsyncLoader.h>
 #include <Common/randomSeed.h>
 
-
 using namespace DB;
-
 
 namespace CurrentMetrics
 {
