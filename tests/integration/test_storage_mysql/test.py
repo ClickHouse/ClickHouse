@@ -524,7 +524,9 @@ def test_settings_connection_wait_timeout(started_cluster):
     def worker():
         worker_started_event.set()
         node1.query(
-            "SELECT 1, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(table_name)
+            "SELECT 1, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
+                table_name
+            )
         )
 
     worker_thread = threading.Thread(target=worker)
@@ -540,7 +542,9 @@ def test_settings_connection_wait_timeout(started_cluster):
         match=r"Exception: mysqlxx::Pool is full \(connection_wait_timeout is exceeded\)",
     ):
         node1.query(
-            "SELECT 2, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(table_name)
+            "SELECT 2, sleepEachRow(1) FROM {} SETTINGS max_threads=1".format(
+                table_name
+            )
         )
     ended = time.time()
     assert (ended - started) >= wait_timeout
