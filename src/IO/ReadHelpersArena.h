@@ -1,3 +1,5 @@
+#pragma once
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
