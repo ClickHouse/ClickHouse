@@ -105,7 +105,9 @@ private:
             finished.notify_all();
     }
 
-    std::function<void(const LoadJob & self)> func;
+    // TODO(serxa): add callback/status for cancel?
+
+    std::function<void(const LoadJobPtr & self)> func;
 
     mutable std::mutex mutex;
     mutable std::condition_variable finished;
@@ -576,7 +578,7 @@ private:
             try
             {
                 ALLOW_ALLOCATIONS_IN_SCOPE;
-                job->func(*job);
+                job->func(job);
                 exception_from_job = {};
             }
             catch (...)
