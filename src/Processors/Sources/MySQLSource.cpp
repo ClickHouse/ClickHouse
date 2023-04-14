@@ -11,6 +11,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
