@@ -8,6 +8,10 @@
 
 #include <base/types.h>
 
+#include <Poco/Net/TCPServer.h>
+#include <Poco/Runnable.h>
+#include <Poco/Thread.h>
+
 
 namespace DB
 {
@@ -16,18 +20,20 @@ class Context;
 class ENetServer
 {
 public:
-    explicit ENetServer(bool _is_open);
+    explicit ENetServer();
 
-    /// Close the socket and ask existing connections to stop serving queries
-    void stop()
-    {}
+    void run();
+
+    void stop();
+
+    void start();
 
     bool isOpen() const { return is_open; }
 
     UInt16 portNumber() const { return port_number; }
 
 private:
-    //Poco::Net::ServerSocket socket;
+    Poco::Thread * thread;
     std::atomic<bool> is_open;
     UInt16 port_number;
 };

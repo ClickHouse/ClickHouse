@@ -1,10 +1,14 @@
 #include <Server/ENetServer.h>
 
+#include <Poco/Net/TCPServer.h>
+#include <Poco/Thread.h>
+
 namespace DB
 {
-ENetServer::ENetServer(
-    bool _is_open)
-    : is_open(_is_open)
-{}
+
+ENetServer::ENetServer()
+{
+    thread = new Poco::Thread("ENetServer");
+}
 
 }

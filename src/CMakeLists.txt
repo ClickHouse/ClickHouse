@@ -357,6 +357,7 @@ target_link_libraries(clickhouse_common_io
 
 if (TARGET enet_static)
     target_link_libraries(clickhouse_common_io PUBLIC enet_static)
+    target_link_libraries(dbms PUBLIC enet_static)
 endif()
 
 if (TARGET ch_contrib::cpuid)
