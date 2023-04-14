@@ -139,13 +139,13 @@ private:
     void threadWorker(size_t shard)
     {
         Block block;
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder_;
         auto & shard_queue = *shards_queues[shard];
 
         while (shard_queue.pop(block))
         {
             Stopwatch watch;
-            dictionary.blockToAttributes(block, arena_holder, shard);
+            dictionary.blockToAttributes(block, arena_holder_, shard);
             UInt64 elapsed_ms = watch.elapsedMilliseconds();
             if (elapsed_ms > 1'000)
                 LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_ms, block.rows());
