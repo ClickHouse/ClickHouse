@@ -337,13 +337,12 @@ public:
     {
         DENY_ALLOCATIONS_IN_SCOPE;
         std::unique_lock lock{mutex};
+        // On the first pass:
+        // - cancel all not executing jobs to avoid races
+        // - do not wait executing jobs (otherwise, on unlock a worker could start executing a dependent job, that should be canceled)
         for (const auto & job : jobs)
         {
-            if (auto it = finished_jobs.find(job); it != finished_jobs.end()) // Job is already finished
-            {
-                finished_jobs.erase(it);
-            }
-            else if (auto info = scheduled_jobs.find(job); info != scheduled_jobs.end())
+            if (auto info = scheduled_jobs.find(job); info != scheduled_jobs.end())
             {
                 if (info->second.dependencies_left > 0) // Job is not ready yet
                     canceled(job, lock);
@@ -353,15 +352,25 @@ public:
                     info->second.ready_seqno = 0;
                     canceled(job, lock);
                 }
-                else // Job is currently executing
-                {
-                    lock.unlock();
-                    job->waitNoThrow(); // Wait for job to finish
-                    lock.lock();
-                }
-                finished_jobs.erase(job);
             }
         }
+        // On the second pass wait for executing jobs to finish
+        for (const auto & job : jobs)
+        {
+            if (auto info = scheduled_jobs.find(job); info != scheduled_jobs.end())
+            {
+                // Job is currently executing
+                chassert(info->second.dependencies_left == 0);
+                chassert(info->second.ready_seqno == 0);
+                lock.unlock();
+                job->waitNoThrow(); // Wait for job to finish
+                lock.lock();
+            }
+        }
+        // On the third pass all jobs are finished - remove them all
+        // It is better to do it under one lock to avoid exposing intermediate states
+        for (const auto & job : jobs)
+            finished_jobs.erase(job);
     }
 
 private:
