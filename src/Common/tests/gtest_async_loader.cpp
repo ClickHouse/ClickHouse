@@ -399,5 +399,34 @@ TEST(AsyncLoader, TestConcurrency)
         for (int i = 0; i < concurrency; i++)
             tasks.push_back(t.loader.schedule(t.chainJobSet(5, job_func)));
         t.loader.wait();
+        ASSERT_EQ(executing, 0);
+    }
+}
+
+TEST(AsyncLoader, TestOverload)
+{
+    AsyncLoaderTest t(3);
+    t.loader.start();
+
+    size_t max_threads = t.loader.getMaxThreads();
+    std::atomic<int> executing{0};
+
+    for (int concurrency = 4; concurrency <= 8; concurrency++)
+    {
+        auto job_func = [&] (const LoadJob &)
+        {
+            executing++;
+            t.randomSleepUs(100, 200, 100);
+            ASSERT_LE(executing, max_threads);
+            executing--;
+        };
+
+        t.loader.stop();
+        std::vector<AsyncLoader::Task> tasks;
+        for (int i = 0; i < concurrency; i++)
+            tasks.push_back(t.loader.schedule(t.chainJobSet(5, job_func)));
+        t.loader.start();
+        t.loader.wait();
+        ASSERT_EQ(executing, 0);
     }
 }
