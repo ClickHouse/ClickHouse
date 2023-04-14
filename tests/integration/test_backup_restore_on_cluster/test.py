@@ -2,6 +2,7 @@ import pytest
 import sys
 import time
 import re
+import uuid
 import os.path
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
@@ -16,6 +17,7 @@ main_configs = [
     "configs/replicated_user_defined_sql_objects.xml",
     "configs/backups_disk.xml",
     "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
+    "configs/zookeeper_writes.xml",
 ]
 
 user_configs = [
@@ -1019,40 +1021,22 @@ def test_stop_other_host_during_backup(kill):
 
 
 def test_cleanup_stale_nodes():
-    node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x UInt8"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
-    )
+    # We won't create any backups, just write trash into [Zoo]Keeper manually
 
-    node1.query("INSERT INTO tbl VALUES (3)")
-    node2.query("INSERT INTO tbl VALUES (5)")
-    node2.query("INSERT INTO tbl VALUES (7)")
-    node2.query("INSERT INTO tbl VALUES (11)")
-    node2.query("INSERT INTO tbl VALUES (13)")
+    node1.query("DROP TABLE IF EXISTS batch_zkinsert")
+    node1.query("CREATE TABLE batch_zkinsert (name String, path String, value String) ENGINE Memory;")
 
     BACKUP_COUNT = 100
     RETRIES_COUNT = 10
-    backup_names = []
     backup_ids = []
 
     for _ in range(BACKUP_COUNT):
-        backup_name = new_backup_name()
-        backup_names.append(backup_name)
-
-        id = node1.query(
-            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
-        ).split("\t")[0]
-
+        id = str(uuid.uuid4())
         backup_ids.append(id)
+        backup_name = f"backup-{id}"
+        node1.query(f"INSERT INTO batch_zkinsert (name, path, value) values ('/clickhouse/backups/', '{backup_name}', ''), ('/clickhouse/backups/{backup_name}', 'state', ''), ('/clickhouse/backups/{backup_name}', 'parts_names', '');")
 
-    # Hard kill the node
-    node1.stop_clickhouse(kill=True)
-    node2.stop_clickhouse(kill=True)
-
-    node1.start_clickhouse()
-    node2.start_clickhouse()
+    node1.query("INSERT INTO system.zookeeper (name, path, value) SELECT name, path, value from batch_zkinsert;")
 
     number_of_tries = 0
 
@@ -1079,4 +1063,4 @@ def test_cleanup_stale_nodes():
                 print("Test failed", sys.exc_info())
                 exit(1)
 
-            time.sleep(0.5)
+            time.sleep(0.1)
