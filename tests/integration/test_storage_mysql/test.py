@@ -531,7 +531,7 @@ def test_settings_connection_wait_timeout(started_cluster):
     worker_thread.start()
 
     # ensure that first query started in worker_thread
-    worker_started_event.wait(10)
+    assert worker_started_event.wait(20)
 
     started = time.time()
     with pytest.raises(
