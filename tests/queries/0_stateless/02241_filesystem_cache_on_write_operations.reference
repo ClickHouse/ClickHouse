@@ -19,13 +19,13 @@ file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-7
-7
-7
-7
-21
-28
-35
+8
+8
+8
+8
+24
+32
+40
 5010500
 18816
 Using storage policy: local_cache
@@ -49,12 +49,12 @@ file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-7
-7
-7
-7
-21
-28
-35
+8
+8
+8
+8
+24
+32
+40
 5010500
 18816
