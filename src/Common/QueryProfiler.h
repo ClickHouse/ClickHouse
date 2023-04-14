@@ -32,7 +32,7 @@ class QueryProfilerBase
 {
 public:
     QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
-    ~QueryProfilerBase();
+    virtual ~QueryProfilerBase();
 
 private:
     void tryCleanup();
@@ -41,7 +41,7 @@ private:
 
 #if USE_UNWIND
     /// Timer id from timer_create(2)
-    std::optional<timer_t> timer_id;
+    static thread_local std::optional<timer_t> timer_id;
 #endif
 
     /// Pause signal to interrupt threads to get traces

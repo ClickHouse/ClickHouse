@@ -85,6 +85,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+#if USE_UNWIND
+template <typename ProfilerImpl>
+thread_local std::optional<timer_t> QueryProfilerBase<ProfilerImpl>::timer_id = std::optional<timer_t>(std::nullopt);
+#endif
+
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
     : log(&Poco::Logger::get("QueryProfiler"))
@@ -128,30 +133,32 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
 
     try
     {
-        struct sigevent sev {};
-        sev.sigev_notify = SIGEV_THREAD_ID;
-        sev.sigev_signo = pause_signal;
+        if (timer_id.has_value() == false)
+        {
+            struct sigevent sev {};
+            sev.sigev_notify = SIGEV_THREAD_ID;
+            sev.sigev_signo = pause_signal;
 
 #if defined(OS_FREEBSD)
-        sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
+            sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
 #elif defined(USE_MUSL)
-        sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
+            sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
 #else
-        sev._sigev_un._tid = static_cast<pid_t>(thread_id);
+            sev._sigev_un._tid = static_cast<pid_t>(thread_id);
 #endif
-        timer_t local_timer_id;
-        if (timer_create(clock_type, &sev, &local_timer_id))
-        {
-            /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
-            /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
-            if (errno == 0)
-                throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer. The function "
-                                "'timer_create' returned non-zero but didn't set errno. This is bug in your OS.");
+            timer_t local_timer_id;
+            if (timer_create(clock_type, &sev, &local_timer_id))
+            {
+                /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
+                /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
+                if (errno == 0)
+                    throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer. The function "
+                                    "'timer_create' returned non-zero but didn't set errno. This is bug in your OS.");
 
-            throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+                throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+            }
+            timer_id.emplace(local_timer_id);
         }
-        timer_id.emplace(local_timer_id);
-
         /// Randomize offset as uniform random value from 0 to period - 1.
         /// It will allow to sample short queries even if timer period is large.
         /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
@@ -187,11 +194,12 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 #if USE_UNWIND
     if (timer_id.has_value())
     {
-        int err = timer_delete(*timer_id);
+        struct timespec stop_timer{.tv_sec = 0, .tv_nsec = 0};
+        struct itimerspec timer_spec = {.it_interval = stop_timer, .it_value = stop_timer};
+        int err = timer_settime(*timer_id, 0, &timer_spec, nullptr);
         if (err)
-            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
-        chassert(!err && "Failed to delete query profiler timer");
-        timer_id.reset();
+            LOG_ERROR(log, "Failed to stop query profiler timer {}", errnoToString());
+        chassert(!err && "Failed to stop query profiler timer");
     }
 
     signal_handler_disarmed = true;
