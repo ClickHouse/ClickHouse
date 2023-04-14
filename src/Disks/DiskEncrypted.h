@@ -225,6 +225,11 @@ public:
         return delegate->getUniqueId(wrapped_path);
     }
 
+    bool checkUniqueId(const String & id) const override
+    {
+        return delegate->checkUniqueId(id);
+    }
+
     void onFreeze(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);
@@ -275,6 +280,8 @@ public:
     {
         return delegate->getMetadataStorage();
     }
+
+    std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
 
     DiskPtr getDelegateDiskIfExists() const override
     {
