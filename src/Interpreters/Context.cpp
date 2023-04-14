@@ -2966,11 +2966,20 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters()->getCluster(cluster_name);
+    auto res = getClustersImpl()->getCluster(cluster_name);
     if (res)
         return res;
+
     if (!cluster_name.empty())
         res = tryGetReplicatedDatabaseCluster(cluster_name);
+
+    if (res)
+        return res;
+
+    std::lock_guard lock(shared->clusters_mutex);
+    if (shared->cluster_discovery)
+        res = shared->cluster_discovery->getCluster(cluster_name);
+
     return res;
 }
 
@@ -3001,8 +3010,18 @@ void Context::reloadClusterConfig() const
     }
 }
 
+std::map<String, ClusterPtr> Context::getClusters() const
+{
+    auto clusters = getClustersImpl()->getContainer();
+    if (shared->cluster_discovery)
+    {
+        for (const auto & [name, cluster] : shared->cluster_discovery->getClusters())
+            clusters.emplace(name, cluster);
+    }
+    return clusters;
+}
 
-std::shared_ptr<Clusters> Context::getClusters() const
+std::shared_ptr<Clusters> Context::getClustersImpl() const
 {
     std::lock_guard lock(shared->clusters_mutex);
     if (!shared->clusters)
