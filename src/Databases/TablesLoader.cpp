@@ -177,7 +177,7 @@ void TablesLoader::removeUnresolvableDependencies()
 }
 
 
-void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool)
+void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool_)
 {
     /// Compatibility setting which should be enabled by default on attach
     /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types of columns
@@ -189,12 +189,12 @@ void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool)
 
     for (size_t level = 0; level != tables_to_load.size(); ++level)
     {
-        startLoadingTables(pool, load_context, tables_to_load[level], level);
-        pool.wait();
+        startLoadingTables(pool_, load_context, tables_to_load[level], level);
+        pool_.wait();
     }
 }
 
-void TablesLoader::startLoadingTables(ThreadPool & pool, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level)
+void TablesLoader::startLoadingTables(ThreadPool & pool_, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level)
 {
     size_t total_tables = metadata.parsed_tables.size();
 
@@ -202,7 +202,7 @@ void TablesLoader::startLoadingTables(ThreadPool & pool, ContextMutablePtr load_
 
     for (const auto & table_id : tables_to_load)
     {
-        pool.scheduleOrThrowOnError([this, load_context, total_tables, table_name = table_id.getQualifiedName()]()
+        pool_.scheduleOrThrowOnError([this, load_context, total_tables, table_name = table_id.getQualifiedName()]()
         {
             const auto & path_and_query = metadata.parsed_tables[table_name];
             databases[table_name.database]->loadTableFromMetadata(load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);
