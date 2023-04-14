@@ -365,6 +365,5 @@ TEST(AsyncLoader, RandomTasks)
         tasks.push_back(t.loader.schedule(t.randomJobSet(job_count, 5, job_func)));
         t.randomSleepUs(100, 900, 20); // avg=100us
     }
-    t.loader.wait();
 }
 
