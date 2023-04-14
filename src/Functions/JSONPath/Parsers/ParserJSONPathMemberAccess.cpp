@@ -18,7 +18,7 @@ namespace DB
  */
 bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    // There's a specical case, that a path member can begin with number
+    // There's a special case, that a path member can begin with number
     if (pos->type != TokenType::Dot && pos->type != TokenType::Number)
         return false;
     if (pos->type != TokenType::Number)
