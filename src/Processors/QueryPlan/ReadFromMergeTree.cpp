@@ -99,6 +99,7 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(
@@ -1551,7 +1552,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     if (final)
     {
         if (is_parallel_reading_from_replicas)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Final modifier is not supported with parallel replicas");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
 
         if (output_each_partition_through_separate_port)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
