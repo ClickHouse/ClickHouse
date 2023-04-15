@@ -14,7 +14,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 }

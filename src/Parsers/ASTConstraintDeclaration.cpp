@@ -19,11 +19,11 @@ ASTPtr ASTConstraintDeclaration::clone() const
     return res;
 }
 
-void ASTConstraintDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTConstraintDeclaration::formatImpl(FormattingBuffer out) const
 {
-    s.ostr << backQuoteIfNeed(name);
-    s.ostr << (s.hilite ? hilite_keyword : "") << (type == Type::CHECK ? " CHECK " : " ASSUME ") << (s.hilite ? hilite_none : "");
-    expr->formatImpl(s, state, frame);
+    out.ostr << backQuoteIfNeed(name);
+    out.writeKeyword(type == Type::CHECK ? " CHECK " : " ASSUME ");
+    expr->formatImpl(out);
 }
 
 }

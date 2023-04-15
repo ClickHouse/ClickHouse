@@ -63,7 +63,7 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
         }
 
-        void formatImpl(const FormatSettings &, FormatState &, FormatStateStacked) const override
+        void formatImpl(FormattingBuffer /*out*/) const override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
         }

@@ -1,4 +1,3 @@
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -21,26 +20,24 @@ ASTPtr ASTCreateFunctionQuery::clone() const
     return res;
 }
 
-void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
+void ASTCreateFunctionQuery::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
+    out.writeKeyword("CREATE ");
 
     if (or_replace)
-        settings.ostr << "OR REPLACE ";
+        out.writeKeyword("OR REPLACE ");
 
-    settings.ostr << "FUNCTION ";
+    out.writeKeyword("FUNCTION ");
 
     if (if_not_exists)
-        settings.ostr << "IF NOT EXISTS ";
+        out.writeKeyword("IF NOT EXISTS ");
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    out.writeProbablyBackQuotedIdentifier(getFunctionName());
 
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
+    formatOnCluster(out);
 
-    formatOnCluster(settings);
-
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
-    function_core->formatImpl(settings, state, frame);
+    out.writeKeyword(" AS ");
+    function_core->formatImpl(out);
 }
 
 String ASTCreateFunctionQuery::getFunctionName() const

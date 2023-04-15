@@ -5,32 +5,32 @@
 namespace DB
 {
 
-void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTOptimizeQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "")
-                  << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    out.writeKeyword("OPTIMIZE TABLE ");
+    out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
     if (partition)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(settings, state, frame);
+        out.writeKeyword(" PARTITION ");
+        partition->formatImpl(out);
     }
 
     if (final)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FINAL" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" FINAL");
 
     if (deduplicate)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" DEDUPLICATE");
 
     if (cleanup)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CLEANUP" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" CLEANUP");
 
     if (deduplicate_by_columns)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
-        deduplicate_by_columns->formatImpl(settings, state, frame);
+        out.writeKeyword(" BY ");
+        deduplicate_by_columns->formatImpl(out);
     }
 }
 

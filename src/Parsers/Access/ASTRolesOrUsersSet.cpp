@@ -7,25 +7,25 @@ namespace DB
 {
 namespace
 {
-    void formatNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
+    void formatNameOrID(const String & str, bool is_id, IAST::FormattingBuffer out)
     {
         if (is_id)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ID" << (settings.hilite ? IAST::hilite_none : "") << "("
-                          << quoteString(str) << ")";
+            out.writeKeyword("ID");
+            out.ostr << "(" << quoteString(str) << ")";
         }
         else
         {
-            settings.ostr << backQuoteIfNeed(str);
+            out.ostr << backQuoteIfNeed(str);
         }
     }
 }
 
-void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTRolesOrUsersSet::formatImpl(FormattingBuffer out) const
 {
     if (empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+        out.writeKeyword("NONE");
         return;
     }
 
@@ -34,44 +34,43 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
     if (all)
     {
         if (std::exchange(need_comma, true))
-            settings.ostr << ", ";
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_keyword_any ? "ANY" : "ALL")
-                      << (settings.hilite ? IAST::hilite_none : "");
+            out.ostr << ", ";
+        out.writeKeyword(use_keyword_any ? "ANY" : "ALL");
     }
     else
     {
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+                out.ostr << ", ";
+            formatNameOrID(name, id_mode, out);
         }
 
         if (current_user)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "CURRENT_USER" << (settings.hilite ? IAST::hilite_none : "");
+                out.ostr << ", ";
+            out.writeKeyword("CURRENT_USER");
         }
     }
 
     if (except_current_user || !except_names.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (settings.hilite ? IAST::hilite_none : "");
+        out.writeKeyword(" EXCEPT ");
         need_comma = false;
 
         for (const auto & name : except_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+                out.ostr << ", ";
+            formatNameOrID(name, id_mode, out);
         }
 
         if (except_current_user)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "CURRENT_USER" << (settings.hilite ? IAST::hilite_none : "");
+                out.ostr << ", ";
+            out.writeKeyword("CURRENT_USER");
         }
     }
 }

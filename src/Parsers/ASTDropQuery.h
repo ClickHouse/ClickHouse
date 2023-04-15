@@ -48,7 +48,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 };
 
 }

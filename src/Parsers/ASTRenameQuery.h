@@ -84,47 +84,44 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
+            out.writeKeyword("RENAME DATABASE ");
 
             if (elements.at(0).if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+                out.writeKeyword("IF EXISTS ");
 
-            settings.ostr << backQuoteIfNeed(elements.at(0).from.getDatabase());
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-            settings.ostr << backQuoteIfNeed(elements.at(0).to.getDatabase());
-            formatOnCluster(settings);
+            out.ostr << backQuoteIfNeed(elements.at(0).from.getDatabase());
+            out.writeKeyword(" TO ");
+            out.ostr << backQuoteIfNeed(elements.at(0).to.getDatabase());
+            formatOnCluster(out);
             return;
         }
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "");
         if (exchange && dictionary)
-            settings.ostr << "EXCHANGE DICTIONARIES ";
+            out.writeKeyword("EXCHANGE DICTIONARIES ");
         else if (exchange)
-            settings.ostr << "EXCHANGE TABLES ";
+            out.writeKeyword("EXCHANGE TABLES ");
         else if (dictionary)
-            settings.ostr << "RENAME DICTIONARY ";
+            out.writeKeyword("RENAME DICTIONARY ");
         else
-            settings.ostr << "RENAME TABLE ";
-
-        settings.ostr << (settings.hilite ? hilite_none : "");
+            out.writeKeyword("RENAME TABLE ");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {
             if (it != elements.cbegin())
-                settings.ostr << ", ";
+                out.ostr << ", ";
 
             if (it->if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
-            settings.ostr << (it->from.database ? backQuoteIfNeed(it->from.getDatabase()) + "." : "") << backQuoteIfNeed(it->from.getTable())
-                << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "")
-                << (it->to.database ? backQuoteIfNeed(it->to.getDatabase()) + "." : "") << backQuoteIfNeed(it->to.getTable());
+                out.writeKeyword("IF EXISTS ");
+            out.ostr << (it->from.database ? backQuoteIfNeed(it->from.getDatabase()) + "." : "") << backQuoteIfNeed(it->from.getTable());
+            out.writeKeyword(exchange ? " AND " : " TO ");
+            out.ostr << (it->to.database ? backQuoteIfNeed(it->to.getDatabase()) + "." : "") << backQuoteIfNeed(it->to.getTable());
         }
 
-        formatOnCluster(settings);
+        formatOnCluster(out);
     }
 };
 

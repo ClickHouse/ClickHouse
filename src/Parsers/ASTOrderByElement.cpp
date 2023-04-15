@@ -16,44 +16,40 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTOrderByElement::formatImpl(FormattingBuffer out) const
 {
-    children.front()->formatImpl(settings, state, frame);
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-        << (direction == -1 ? " DESC" : " ASC")
-        << (settings.hilite ? hilite_none : "");
+    children.front()->formatImpl(out);
+    out.writeKeyword(direction == -1 ? " DESC" : " ASC");
 
     if (nulls_direction_was_explicitly_specified)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << " NULLS "
-            << (nulls_direction == direction ? "LAST" : "FIRST")
-            << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" NULLS ");
+        out.writeKeyword(nulls_direction == direction ? "LAST" : "FIRST");
     }
 
     if (collation)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " COLLATE " << (settings.hilite ? hilite_none : "");
-        collation->formatImpl(settings, state, frame);
+        out.writeKeyword(" COLLATE ");
+        collation->formatImpl(out);
     }
 
     if (with_fill)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" WITH FILL");
         if (fill_from)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
-            fill_from->formatImpl(settings, state, frame);
+            out.writeKeyword(" FROM ");
+            fill_from->formatImpl(out);
         }
         if (fill_to)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-            fill_to->formatImpl(settings, state, frame);
+            out.writeKeyword(" TO ");
+            fill_to->formatImpl(out);
         }
         if (fill_step)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STEP " << (settings.hilite ? hilite_none : "");
-            fill_step->formatImpl(settings, state, frame);
+            out.writeKeyword(" STEP ");
+            fill_step->formatImpl(out);
         }
     }
 }

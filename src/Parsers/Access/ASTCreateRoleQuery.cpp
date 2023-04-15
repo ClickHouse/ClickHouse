@@ -8,28 +8,28 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, IAST::FormattingBuffer out)
     {
-        settings.ostr << " ";
+        out.ostr << " ";
         bool need_comma = false;
         for (const String & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(name);
+                out.ostr << ", ";
+            out.ostr << backQuoteIfNeed(name);
         }
     }
 
-    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, IAST::FormattingBuffer out)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
-                      << quoteString(new_name);
+        out.writeKeyword(" RENAME TO ");
+        out.ostr << quoteString(new_name);
     }
 
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
+    void formatSettings(const ASTSettingsProfileElements & settings, IAST::FormattingBuffer out)
     {
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
-        settings.format(format);
+        out.writeKeyword(" SETTINGS ");
+        settings.formatImpl(out);
     }
 }
 
@@ -51,33 +51,32 @@ ASTPtr ASTCreateRoleQuery::clone() const
 }
 
 
-void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTCreateRoleQuery::formatImpl(FormattingBuffer out) const
 {
     if (attach)
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (format.hilite ? hilite_none : "");
+        out.writeKeyword("ATTACH ROLE");
     }
     else
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
-                      << (format.hilite ? hilite_none : "");
+        out.writeKeyword(alter ? "ALTER ROLE" : "CREATE ROLE");
     }
 
     if (if_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
+        out.writeKeyword(" IF EXISTS");
     else if (if_not_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
+        out.writeKeyword(" IF NOT EXISTS");
     else if (or_replace)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
+        out.writeKeyword(" OR REPLACE");
 
-    formatNames(names, format);
-    formatOnCluster(format);
+    formatNames(names, out);
+    formatOnCluster(out);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, format);
+        formatRenameTo(new_name, out);
 
     if (settings && (!settings->empty() || alter))
-        formatSettings(*settings, format);
+        formatSettings(*settings, out);
 }
 
 }

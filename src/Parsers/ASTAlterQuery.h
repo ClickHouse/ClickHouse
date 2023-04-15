@@ -211,7 +211,7 @@ public:
     static const char * typeToString(Type type);
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -253,7 +253,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 

@@ -21,7 +21,7 @@ public:
     ASTPtr compression;
     ASTPtr compression_level;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
+    void formatImpl(FormattingBuffer out) const final;
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);
@@ -31,7 +31,7 @@ protected:
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
 
     /// Format only the query part of the AST (without output options).
-    virtual void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
+    virtual void formatQueryImpl(FormattingBuffer out) const = 0;
 };
 
 
@@ -52,10 +52,9 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << ASTIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(ASTIDAndQueryNames::Query);
     }
 };
 

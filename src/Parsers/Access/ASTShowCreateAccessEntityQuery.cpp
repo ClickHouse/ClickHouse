@@ -8,14 +8,14 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, IAST::FormattingBuffer out)
     {
         bool need_comma = false;
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ',';
-            settings.ostr << ' ' << backQuoteIfNeed(name);
+                out.ostr << ',';
+            out.ostr << ' ' << backQuoteIfNeed(name);
         }
     }
 }
@@ -47,29 +47,30 @@ ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 }
 
 
-void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowCreateAccessEntityQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CREATE " << getKeyword() << (settings.hilite ? hilite_none : "");
+    out.writeKeyword("SHOW CREATE ");
+    out.writeKeyword(getKeyword());
 
     if (!names.empty())
-        formatNames(names, settings);
+        formatNames(names, out);
 
     if (row_policy_names)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
+        out.ostr << " ";
+        row_policy_names->formatImpl(out);
     }
 
     if (!short_name.empty())
-        settings.ostr << " " << backQuoteIfNeed(short_name);
+        out.ostr << " " << backQuoteIfNeed(short_name);
 
     if (database_and_table_name)
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
-        settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
-        settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
+        out.writeKeyword(" ON ");
+        out.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
+        out.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }
 }
 

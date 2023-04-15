@@ -48,34 +48,39 @@ ASTPtr ASTProjectionSelectQuery::clone() const
 }
 
 
-void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTProjectionSelectQuery::formatImpl(FormattingBuffer out) const
 {
-    frame.current_select = this;
-    frame.need_parens = false;
-    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+    out.setCurrentSelect(this);
+    out.setNeedParens(false);
 
     if (with())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
-        s.one_line ? with()->formatImpl(s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        s.ostr << s.nl_or_ws;
+        out.writeIndent();
+        out.writeKeyword("WITH ");
+        out.isOneLine() ? with()->formatImpl(out) : with()->as<ASTExpressionList &>().formatImplMultiline(out);
+        out.nlOrWs();
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (s.hilite ? hilite_none : "");
+    out.writeIndent();
+    out.writeKeyword("SELECT ");
 
-    s.one_line ? select()->formatImpl(s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+    out.isOneLine() ? select()->formatImpl(out) : select()->as<ASTExpressionList &>().formatImplMultiline(out);
 
     if (groupBy())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
-        s.one_line ? groupBy()->formatImpl(s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        out.nlOrWs();
+        out.writeIndent();
+        out.writeKeyword("GROUP BY ");
+        out.isOneLine() ? groupBy()->formatImpl(out) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(out);
     }
 
     if (orderBy())
     {
-        /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
+        /// Let'out convert the ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
+        out.nlOrWs();
+        out.writeIndent();
+        out.writeKeyword("ORDER BY ");
         ASTPtr order_by;
         if (auto * func = orderBy()->as<ASTFunction>())
             order_by = func->arguments;
@@ -84,7 +89,7 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
             order_by = std::make_shared<ASTExpressionList>();
             order_by->children.push_back(orderBy());
         }
-        s.one_line ? order_by->formatImpl(s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        out.isOneLine() ? order_by->formatImpl(out) : order_by->as<ASTExpressionList &>().formatImplMultiline(out);
     }
 }
 

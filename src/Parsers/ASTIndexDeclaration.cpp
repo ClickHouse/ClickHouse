@@ -23,25 +23,25 @@ ASTPtr ASTIndexDeclaration::clone() const
 }
 
 
-void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTIndexDeclaration::formatImpl(FormattingBuffer out) const
 {
     if (part_of_create_index_query)
     {
-        s.ostr << "(";
-        expr->formatImpl(s, state, frame);
-        s.ostr << ")";
+        out.ostr << "(";
+        expr->formatImpl(out);
+        out.ostr << ")";
     }
     else
     {
-        s.ostr << backQuoteIfNeed(name);
-        s.ostr << " ";
-        expr->formatImpl(s, state, frame);
+        out.ostr << backQuoteIfNeed(name);
+        out.ostr << " ";
+        expr->formatImpl(out);
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
-    type->formatImpl(s, state, frame);
-    s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
-    s.ostr << granularity;
+    out.writeKeyword(" TYPE ");
+    type->formatImpl(out);
+    out.writeKeyword(" GRANULARITY ");
+    out.ostr << granularity;
 }
 
 }

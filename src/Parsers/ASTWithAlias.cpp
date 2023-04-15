@@ -6,38 +6,29 @@
 namespace DB
 {
 
-static void writeAlias(const String & name, const ASTWithAlias::FormatSettings & settings)
-{
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_alias : "");
-    settings.writeIdentifier(name);
-    settings.ostr << (settings.hilite ? IAST::hilite_none : "");
-}
-
-
-void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTWithAlias::formatImpl(FormattingBuffer out) const
 {
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     /// This is needed because the query can become extraordinary large after substitution of aliases.
-    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash()).second)
+    if (!alias.empty() && out.insertAlias(alias, getTreeHash()))
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_identifier : "");
-        settings.writeIdentifier(alias);
-        settings.ostr << (settings.hilite ? IAST::hilite_none : "");
+        out.writeIdentifier(alias);
     }
     else
     {
         /// If there is an alias, then parentheses are required around the entire expression, including the alias.
         /// Because a record of the form `0 AS x + 0` is syntactically invalid.
-        if (frame.need_parens && !alias.empty())
-            settings.ostr << '(';
+        if (out.needParens() && !alias.empty())
+            out.ostr << '(';
 
-        formatImplWithoutAlias(settings, state, frame);
+        formatImplWithoutAlias(out);
 
         if (!alias.empty())
         {
-            writeAlias(alias, settings);
-            if (frame.need_parens)
-                settings.ostr << ')';
+            out.writeKeyword(" AS ");
+            out.writeAlias(alias);
+            if (out.needParens())
+                out.ostr << ')';
         }
     }
 }

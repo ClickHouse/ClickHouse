@@ -30,21 +30,21 @@ ASTPtr ASTDeleteQuery::clone() const
     return res;
 }
 
-void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDeleteQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DELETE FROM " << (settings.hilite ? hilite_none : "");
+    out.writeKeyword("DELETE FROM ");
 
     if (database)
     {
-        settings.ostr << backQuoteIfNeed(getDatabase());
-        settings.ostr << ".";
+        out.ostr << backQuoteIfNeed(getDatabase());
+        out.ostr << ".";
     }
-    settings.ostr << backQuoteIfNeed(getTable());
+    out.ostr << backQuoteIfNeed(getTable());
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-    predicate->formatImpl(settings, state, frame);
+    out.writeKeyword(" WHERE ");
+    predicate->formatImpl(out);
 }
 
 }

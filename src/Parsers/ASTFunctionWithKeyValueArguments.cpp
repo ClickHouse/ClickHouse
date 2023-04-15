@@ -22,28 +22,27 @@ ASTPtr ASTPair::clone() const
 }
 
 
-void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTPair::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
+    out.writeKeyword(Poco::toUpper(first));
+    out.ostr << " ";
 
     if (second_with_brackets)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "(";
+        out.writeKeyword("(");
 
-    if (!settings.show_secrets && (first == "password"))
+    if (!out.shouldShowSecrets() && (first == "password"))
     {
         /// Hide password in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-        settings.ostr << "'[HIDDEN]'";
+        out.writeSecret();
     }
     else
     {
-        second->formatImpl(settings, state, frame);
+        second->formatImpl(out);
     }
 
     if (second_with_brackets)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ")";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(")");
 }
 
 
@@ -83,12 +82,12 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 }
 
 
-void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTFunctionWithKeyValueArguments::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
-    elements->formatImpl(settings, state, frame);
-    settings.ostr << (has_brackets ? ")" : "");
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    out.writeKeyword(Poco::toUpper(name));
+    out.ostr << (has_brackets ? "(" : "");
+    elements->formatImpl(out);
+    out.ostr << (has_brackets ? ")" : "");
 }
 
 

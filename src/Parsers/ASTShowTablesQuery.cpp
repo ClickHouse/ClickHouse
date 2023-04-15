@@ -14,77 +14,80 @@ ASTPtr ASTShowTablesQuery::clone() const
     return res;
 }
 
-void ASTShowTablesQuery::formatLike(const FormatSettings & settings) const
+void ASTShowTablesQuery::formatLike(FormattingBuffer out) const
 {
     if (!like.empty())
-        settings.ostr
-            << (settings.hilite ? hilite_keyword : "")
-            << (not_like ? " NOT" : "")
-            << (case_insensitive_like ? " ILIKE " : " LIKE ")
-            << (settings.hilite ? hilite_none : "")
-            << DB::quote << like;
-}
-
-void ASTShowTablesQuery::formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    if (limit_length)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
-        limit_length->formatImpl(settings, state, frame);
+        out.writeKeyword(not_like ? " NOT" : "");
+        out.writeKeyword(case_insensitive_like ? " ILIKE " : " LIKE ");
+        out.ostr << DB::quote << like;
     }
 }
 
-void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTShowTablesQuery::formatLimit(FormattingBuffer out) const
+{
+    if (limit_length)
+    {
+        out.writeKeyword(" LIMIT ");
+        limit_length->formatImpl(out);
+    }
+}
+
+void ASTShowTablesQuery::formatQueryImpl(FormattingBuffer out) const
 {
     if (databases)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW DATABASES" << (settings.hilite ? hilite_none : "");
-        formatLike(settings);
-        formatLimit(settings, state, frame);
+        out.writeKeyword("SHOW DATABASES");
+        formatLike(out);
+        formatLimit(out);
 
     }
     else if (clusters)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTERS" << (settings.hilite ? hilite_none : "");
-        formatLike(settings);
-        formatLimit(settings, state, frame);
+        out.writeKeyword("SHOW CLUSTERS");
+        formatLike(out);
+        formatLimit(out);
 
     }
     else if (cluster)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTER" << (settings.hilite ? hilite_none : "");
-        settings.ostr << " " << backQuoteIfNeed(cluster_str);
+        out.writeKeyword("SHOW CLUSTER");
+        out.ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else if (caches)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW FILESYSTEM CACHES" << (settings.hilite ? hilite_none : "");
-        formatLike(settings);
-        formatLimit(settings, state, frame);
+        out.writeKeyword("SHOW FILESYSTEM CACHES");
+        formatLike(out);
+        formatLimit(out);
     }
     else if (m_settings)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS" <<
-            (settings.hilite ? hilite_none : "");
-        formatLike(settings);
+        out.writeKeyword("SHOW ");
+        out.writeKeyword(changed ? "CHANGED " : "");
+        out.writeKeyword("SETTINGS");
+        formatLike(out);
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << (temporary ? "TEMPORARY " : "") <<
-             (dictionaries ? "DICTIONARIES" : "TABLES") << (settings.hilite ? hilite_none : "");
+        out.writeKeyword("SHOW ");
+        out.writeKeyword(temporary ? "TEMPORARY " : "");
+        out.writeKeyword(dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (!from.empty())
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
-                << backQuoteIfNeed(from);
+        {
+            out.writeKeyword(" FROM ");
+            out.ostr << backQuoteIfNeed(from);
+        }
 
-        formatLike(settings);
+        formatLike(out);
 
         if (where_expression)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-            where_expression->formatImpl(settings, state, frame);
+            out.writeKeyword(" WHERE ");
+            where_expression->formatImpl(out);
         }
 
-        formatLimit(settings, state, frame);
+        formatLimit(out);
     }
 }
 

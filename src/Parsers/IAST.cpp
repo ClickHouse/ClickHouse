@@ -19,15 +19,6 @@ namespace ErrorCodes
 }
 
 
-const char * IAST::hilite_keyword      = "\033[1m";
-const char * IAST::hilite_identifier   = "\033[0;36m";
-const char * IAST::hilite_function     = "\033[0;33m";
-const char * IAST::hilite_operator     = "\033[1;33m";
-const char * IAST::hilite_alias        = "\033[0;32m";
-const char * IAST::hilite_substitution = "\033[1;36m";
-const char * IAST::hilite_none         = "\033[0m";
-
-
 IAST::~IAST()
 {
     /** Create intrusive linked list of children to delete.
@@ -171,9 +162,8 @@ String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
 
-    FormatSettings settings{buf, one_line};
-    settings.show_secrets = false;
-    format(settings);
+    FormatSettings settings{.one_line = one_line, .show_secrets = false};
+    format(buf, settings);
 
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
@@ -210,14 +200,166 @@ String IAST::getColumnNameWithoutAlias() const
     return write_buffer.str();
 }
 
-
-void IAST::FormatSettings::writeIdentifier(const String & name) const
+IAST::FormatSettings IAST::FormatSettings::copyWithAlwaysQuoteIdentifiers() const
 {
-    switch (identifier_quoting_style)
+    IAST::FormatSettings copy;
+    copy.always_quote_identifiers = true;
+    return copy;
+}
+
+const char * IAST::FormattingBuffer::hilite_keyword      = "\033[1m";
+const char * IAST::FormattingBuffer::hilite_identifier   = "\033[0;36m";
+const char * IAST::FormattingBuffer::hilite_function     = "\033[0;33m";
+const char * IAST::FormattingBuffer::hilite_operator     = "\033[1;33m";
+const char * IAST::FormattingBuffer::hilite_alias        = "\033[0;32m";
+const char * IAST::FormattingBuffer::hilite_substitution = "\033[1;36m";
+const char * IAST::FormattingBuffer::hilite_metacharacter = "\033[1;35m";
+const char * IAST::FormattingBuffer::hilite_none         = "\033[0m";
+
+IAST::FormattingBuffer IAST::FormattingBuffer::copy() const
+{
+    return *this;
+}
+
+const IAST::FormatSettings & IAST::FormattingBuffer::getSettings() const
+{
+    return settings;
+}
+
+IAST::FormattingBuffer IAST::FormattingBuffer::copyWithNewSettings(const IAST::FormatSettings & settings_) const
+{
+    return IAST::FormattingBuffer(ostr, settings_, state, stacked_state);
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setIndent(UInt8 indent)
+{
+    stacked_state.indent = indent;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::increaseIndent(int extra_indent)
+{
+    stacked_state.indent += extra_indent;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setNeedParens(bool value)
+{
+    stacked_state.need_parens = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setExpressionListAlwaysStartsOnNewLine(bool value)
+{
+    stacked_state.expression_list_always_start_on_new_line = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setExpressionListPrependWhitespace(bool value)
+{
+    stacked_state.expression_list_prepend_whitespace = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setSurroundEachListElementWithParens(bool value)
+{
+    stacked_state.surround_each_list_element_with_parens = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setCurrentSelect(const IAST * select)
+{
+    stacked_state.current_select = select;
+    return *this;
+}
+
+IAST::FormattingBuffer::Hiliter::Hiliter(DB::WriteBuffer & ostr_, bool hilite_, const char * hilite_type) : ostr(ostr_), hilite(hilite_)
+{
+    if (hilite)
+        ostr << hilite_type;
+}
+
+IAST::FormattingBuffer::Hiliter::~Hiliter()
+{
+    if (hilite)
+        ostr << IAST::FormattingBuffer::hilite_none;
+}
+
+IAST::FormattingBuffer::Hiliter IAST::FormattingBuffer::createHiliter(const char * hilite_type) const
+{
+    return {ostr, settings.hilite, hilite_type};
+}
+
+void IAST::FormattingBuffer::writePossiblyHilited(std::string_view str, const char * hilite_type) const
+{
+    Hiliter hiliter = createHiliter(hilite_type);
+    ostr << str;
+}
+
+void IAST::FormattingBuffer::writeKeyword(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormattingBuffer::hilite_keyword);
+}
+
+void IAST::FormattingBuffer::writeFunction(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormattingBuffer::hilite_function);
+}
+
+void IAST::FormattingBuffer::writeOperator(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormattingBuffer::hilite_operator);
+}
+
+void IAST::FormattingBuffer::writeSubstitution(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormattingBuffer::hilite_substitution);
+}
+
+void IAST::FormattingBuffer::writeStringLiteralWithMetacharacters(const String & str, const char * metacharacters) const
+{
+    if (!settings.hilite)
+    {
+        ostr << str;
+        return;
+    }
+
+    unsigned escaping = 0;
+    for (auto c : str)
+    {
+        if (c == '\\')
+        {
+            ostr << c;
+            if (escaping == 2)
+                escaping = 0;
+            ++escaping;
+        }
+        else if (nullptr != strchr(metacharacters, c))
+        {
+            if (escaping == 2) /// Properly escaped metacharacter
+                ostr << c;
+            else /// Unescaped metacharacter
+                ostr << hilite_metacharacter << c << hilite_none;
+            escaping = 0;
+        }
+        else
+        {
+            ostr << c;
+            escaping = 0;
+        }
+    }
+}
+
+void IAST::FormattingBuffer::writeIdentifierOrAlias(const String & name, bool hilite_as_identifier) const
+{
+    const char * hilite_type = hilite_as_identifier ? IAST::FormattingBuffer::hilite_identifier : IAST::FormattingBuffer::hilite_alias;
+    Hiliter hiliter = createHiliter(hilite_type);
+
+    switch (settings.identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
         {
-            if (always_quote_identifiers)
+            if (settings.always_quote_identifiers)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Incompatible arguments: always_quote_identifiers = true && "
                                 "identifier_quoting_style == IdentifierQuotingStyle::None");
@@ -226,7 +368,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::Backticks:
         {
-            if (always_quote_identifiers)
+            if (settings.always_quote_identifiers)
                 writeBackQuotedString(name, ostr);
             else
                 writeProbablyBackQuotedString(name, ostr);
@@ -234,7 +376,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::DoubleQuotes:
         {
-            if (always_quote_identifiers)
+            if (settings.always_quote_identifiers)
                 writeDoubleQuotedString(name, ostr);
             else
                 writeProbablyDoubleQuotedString(name, ostr);
@@ -242,13 +384,82 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::BackticksMySQL:
         {
-            if (always_quote_identifiers)
+            if (settings.always_quote_identifiers)
                 writeBackQuotedStringMySQL(name, ostr);
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
         }
     }
+}
+
+void IAST::FormattingBuffer::writeIdentifier(const String & name) const
+{
+    writeIdentifierOrAlias(name, true);
+}
+
+void IAST::FormattingBuffer::writeAlias(const String & name) const
+{
+    writeIdentifierOrAlias(name, false);
+}
+
+void IAST::FormattingBuffer::writeProbablyBackQuotedIdentifier(const String & name) const
+{
+    Hiliter hiliter = createHiliter(hilite_identifier);
+    writeProbablyBackQuotedString(name, ostr);
+}
+
+bool IAST::FormattingBuffer::isOneLine() const
+{
+    return settings.one_line;
+}
+
+void IAST::FormattingBuffer::nlOrWs() const
+{
+    ostr << (settings.one_line ? ' ' : '\n');
+}
+
+void IAST::FormattingBuffer::nlOrNothing() const
+{
+    ostr << (settings.one_line ? "" : "\n");
+}
+
+void IAST::FormattingBuffer::writeSecret(const String & secret) const
+{
+    ostr << (settings.show_secrets ? secret : "'[HIDDEN]'");
+}
+
+bool IAST::FormattingBuffer::needParens() const
+{
+    return stacked_state.need_parens;
+}
+bool IAST::FormattingBuffer::getExpressionListAlwaysStartsOnNewLine() const
+{
+    return stacked_state.expression_list_always_start_on_new_line;
+}
+bool IAST::FormattingBuffer::getExpressionListPrependWhitespace() const
+{
+    return stacked_state.expression_list_prepend_whitespace;
+}
+bool IAST::FormattingBuffer::getSurroundEachListElementWithParens() const
+{
+    return stacked_state.surround_each_list_element_with_parens;
+}
+
+bool IAST::FormattingBuffer::shouldShowSecrets() const
+{
+    return settings.show_secrets;
+}
+
+void IAST::FormattingBuffer::writeIndent(int extra_indent) const
+{
+    if (!settings.one_line)
+        ostr << std::string(4 * (stacked_state.indent + extra_indent), ' ');
+}
+
+bool IAST::FormattingBuffer::insertAlias(std::string alias, Hash printed_content) const
+{
+    return !state.printed_asts_with_alias.emplace(stacked_state.current_select, alias, printed_content).second;
 }
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const

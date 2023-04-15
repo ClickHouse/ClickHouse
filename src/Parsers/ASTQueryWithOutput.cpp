@@ -25,28 +25,29 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
     }
 }
 
-void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTQueryWithOutput::formatImpl(FormattingBuffer out) const
 {
-    formatQueryImpl(s, state, frame);
-
-    std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');
+    formatQueryImpl(out);
 
     if (out_file)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
-        out_file->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("INTO OUTFILE ");
+        out_file->formatImpl(out);
     }
 
     if (format)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
-        format->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("FORMAT ");
+        format->formatImpl(out);
     }
 
     if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
-        settings_ast->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("SETTINGS ");
+        settings_ast->formatImpl(out);
     }
 }
 

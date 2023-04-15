@@ -45,23 +45,20 @@ void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsRegexpMatcher::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
-        expression->formatImpl(settings, state, frame);
-        settings.ostr << ".";
+        expression->formatImpl(out);
+        out.ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
+    out.writeKeyword("COLUMNS");
+    out.ostr << "(" << quoteString(original_pattern) << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(out);
     }
 }
 
@@ -121,31 +118,30 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsListMatcher::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
-        expression->formatImpl(settings, state, frame);
-        settings.ostr << ".";
+        expression->formatImpl(out);
+        out.ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    out.writeKeyword("COLUMNS");
+    out.ostr << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
         {
-            settings.ostr << ", ";
+            out.ostr << ", ";
         }
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(out);
     }
-    settings.ostr << ")";
+    out.ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(out);
     }
 }
 
@@ -200,19 +196,18 @@ void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) 
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTQualifiedColumnsRegexpMatcher::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    qualifier->formatImpl(out);
 
-    qualifier->formatImpl(settings, state, frame);
-
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
+    out.writeKeyword(".COLUMNS");
+    out.ostr << "(";
+    out.ostr << quoteString(original_pattern);
+    out.ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(out);
     }
 }
 
@@ -247,24 +242,25 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTQualifiedColumnsListMatcher::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    qualifier->formatImpl(settings, state, frame);
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    qualifier->formatImpl(out);
+
+    out.writeKeyword(".COLUMNS");
+    out.ostr << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
-            settings.ostr << ", ";
+            out.ostr << ", ";
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(out);
     }
-    settings.ostr << ")";
+    out.ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(out);
     }
 }
 

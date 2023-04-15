@@ -6,10 +6,8 @@ namespace DB
 
 void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
 {
-    IAST::FormatSettings settings(buf, one_line);
-    settings.hilite = hilite;
-
-    ast.format(settings);
+    IAST::FormatSettings settings{.hilite = hilite, .one_line = one_line};
+    ast.format(buf, settings);
 }
 
 String serializeAST(const IAST & ast, bool one_line)

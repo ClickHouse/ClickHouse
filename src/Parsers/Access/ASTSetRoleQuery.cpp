@@ -26,27 +26,28 @@ ASTPtr ASTSetRoleQuery::clone() const
 }
 
 
-void ASTSetRoleQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSetRoleQuery::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
     switch (kind)
     {
-        case Kind::SET_ROLE: settings.ostr << "SET ROLE"; break;
-        case Kind::SET_ROLE_DEFAULT: settings.ostr << "SET ROLE DEFAULT"; break;
-        case Kind::SET_DEFAULT_ROLE: settings.ostr << "SET DEFAULT ROLE"; break;
+        case Kind::SET_ROLE:
+            out.writeKeyword("SET ROLE"); break;
+        case Kind::SET_ROLE_DEFAULT:
+            out.writeKeyword("SET ROLE DEFAULT"); break;
+        case Kind::SET_DEFAULT_ROLE:
+            out.writeKeyword("SET DEFAULT ROLE"); break;
     }
-    settings.ostr << (settings.hilite ? hilite_none : "");
 
     if (kind == Kind::SET_ROLE_DEFAULT)
         return;
 
-    settings.ostr << " ";
-    roles->format(settings);
+    out.ostr << " ";
+    roles->formatImpl(out);
 
     if (kind == Kind::SET_ROLE)
         return;
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-    to_users->format(settings);
+    out.writeKeyword(" TO ");
+    to_users->formatImpl(out);
 }
 }

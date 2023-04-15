@@ -86,10 +86,11 @@ using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreat
 class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>
 {
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
-                    << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+        out.writeKeyword(ASTExistsDatabaseQueryIDAndQueryNames::Query);
+        out.ostr << " ";
+        out.writeKeyword(backQuoteIfNeed(getDatabase()));
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Exists; }
@@ -98,10 +99,11 @@ protected:
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
-                      << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+        out.writeKeyword(ASTShowCreateDatabaseQueryIDAndQueryNames::Query);
+        out.ostr << " ";
+        out.ostr << backQuoteIfNeed(getDatabase());
     }
 };
 
@@ -128,11 +130,10 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << "DESCRIBE TABLE" << (settings.hilite ? hilite_none : "");
-        table_expression->formatImpl(settings, state, frame);
+        out.writeKeyword("DESCRIBE TABLE");
+        table_expression->formatImpl(out);
     }
 
 };

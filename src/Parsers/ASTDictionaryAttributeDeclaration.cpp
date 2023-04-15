@@ -31,41 +31,41 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
     return res;
 }
 
-void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDictionaryAttributeDeclaration::formatImpl(FormattingBuffer out) const
 {
-    frame.need_parens = false;
+    out.setNeedParens(false);
 
-    settings.ostr << backQuote(name);
+    out.ostr << backQuote(name);
 
     if (type)
     {
-        settings.ostr << ' ';
-        type->formatImpl(settings, state, frame);
+        out.ostr << ' ';
+        type->formatImpl(out);
     }
 
     if (default_value)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "DEFAULT" << (settings.hilite ? hilite_none : "") << ' ';
-        default_value->formatImpl(settings, state, frame);
+        out.writeKeyword(" DEFAULT ");
+        default_value->formatImpl(out);
     }
 
     if (expression)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "EXPRESSION" << (settings.hilite ? hilite_none : "") << ' ';
-        expression->formatImpl(settings, state, frame);
+        out.writeKeyword(" EXPRESSION ");
+        expression->formatImpl(out);
     }
 
     if (hierarchical)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "HIERARCHICAL" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" HIERARCHICAL");
 
     if (bidirectional)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "BIDIRECTIONAL" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" BIDIRECTIONAL");
 
     if (injective)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "INJECTIVE" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" INJECTIVE");
 
     if (is_object_id)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "IS_OBJECT_ID" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" IS_OBJECT_ID");
 }
 
 }

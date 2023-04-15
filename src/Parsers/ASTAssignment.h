@@ -26,16 +26,11 @@ public:
     }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImpl(FormattingBuffer out) const override
     {
-
-        settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(column_name);
-        settings.ostr << (settings.hilite ? hilite_none : "");
-
-        settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
-
-        expression()->formatImpl(settings, state, frame);
+        out.writeIdentifier(column_name);
+        out.writeOperator(" = ");
+        expression()->formatImpl(out);
     }
 };
 

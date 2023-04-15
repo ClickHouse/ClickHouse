@@ -24,9 +24,10 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Use; }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatImpl(FormattingBuffer out) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "USE " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
+        out.writeKeyword("USE ");
+        out.ostr << backQuoteIfNeed(database);
     }
 };
 

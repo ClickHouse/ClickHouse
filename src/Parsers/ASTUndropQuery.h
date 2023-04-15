@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
@@ -24,7 +25,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Undrop; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(FormattingBuffer) const override;
 };
 
 }

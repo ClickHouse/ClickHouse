@@ -15,28 +15,25 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
     return std::make_shared<ASTCreateNamedCollectionQuery>(*this);
 }
 
-void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateNamedCollectionQuery::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE NAMED COLLECTION ";
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+    out.writeKeyword("CREATE NAMED COLLECTION ");
+    out.writeProbablyBackQuotedIdentifier(collection_name);
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    out.writeKeyword(" AS ");
     bool first = true;
     for (const auto & change : changes)
     {
         if (!first)
-            settings.ostr << ", ";
+            out.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(change.name, settings.ostr);
-
-        if (settings.show_secrets)
-            settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
-        else
-            settings.ostr << " = '[HIDDEN]'";
+        formatSettingName(change.name, out.ostr);
+        out.ostr << " = ";
+        out.writeSecret(applyVisitor(FieldVisitorToString(), change.value));
     }
 }
 

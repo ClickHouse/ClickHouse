@@ -9,37 +9,36 @@ String ASTKillQueryQuery::getID(char delim) const
     return String("KillQueryQuery") + delim + (where_expression ? where_expression->getID() : "") + delim + String(sync ? "SYNC" : "ASYNC");
 }
 
-void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTKillQueryQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "KILL ";
+    out.writeKeyword("KILL ");
 
     switch (type)
     {
         case Type::Query:
-            settings.ostr << "QUERY";
+            out.writeKeyword("QUERY");
             break;
         case Type::Mutation:
-            settings.ostr << "MUTATION";
+            out.writeKeyword("MUTATION");
             break;
         case Type::PartMoveToShard:
-            settings.ostr << "PART_MOVE_TO_SHARD";
+            out.writeKeyword("PART_MOVE_TO_SHARD");
             break;
         case Type::Transaction:
-            settings.ostr << "TRANSACTION";
+            out.writeKeyword("TRANSACTION");
             break;
     }
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
-
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
     if (where_expression)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        where_expression->formatImpl(settings, state, frame);
+        out.writeKeyword(" WHERE ");
+        where_expression->formatImpl(out);
     }
 
-    settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << (test ? "TEST" : (sync ? "SYNC" : "ASYNC")) << (settings.hilite ? hilite_none : "");
+    out.ostr << " ";
+    out.writeKeyword(test ? "TEST" : (sync ? "SYNC" : "ASYNC"));
 }
 
 }

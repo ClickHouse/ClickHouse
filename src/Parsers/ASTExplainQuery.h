@@ -114,30 +114,30 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(toString(kind));
 
         if (ast_settings)
         {
-            settings.ostr << ' ';
-            ast_settings->formatImpl(settings, state, frame);
+            out.ostr << ' ';
+            ast_settings->formatImpl(out);
         }
 
         if (query)
         {
-            settings.ostr << settings.nl_or_ws;
-            query->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            query->formatImpl(out);
         }
         if (table_function)
         {
-            settings.ostr << settings.nl_or_ws;
-            table_function->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            table_function->formatImpl(out);
         }
         if (table_override)
         {
-            settings.ostr << settings.nl_or_ws;
-            table_override->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            table_override->formatImpl(out);
         }
     }
 

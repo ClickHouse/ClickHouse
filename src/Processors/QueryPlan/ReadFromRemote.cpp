@@ -86,10 +86,7 @@ static String formattedAST(const ASTPtr & ast)
         return {};
 
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
-    ast_format_settings.hilite = false;
-    ast_format_settings.always_quote_identifiers = true;
-    ast->format(ast_format_settings);
+    ast->format(buf, {.always_quote_identifiers = true});
     return buf.str();
 }
 

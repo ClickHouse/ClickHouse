@@ -28,10 +28,8 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 }
 
 
-void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectWithUnionQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-
     auto mode_to_str = [&](auto mode)
     {
         if (mode == SelectUnionMode::UNION_DEFAULT)
@@ -58,30 +56,33 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                          << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
-                          << (settings.hilite ? hilite_none : "");
+        {
+            out.nlOrWs();
+            out.writeIndent();
+            out.writeKeyword(mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1]));
+        }
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            settings.ostr << settings.nl_or_ws << indent_str;
+            out.nlOrWs();
+            out.writeIndent();
 
             if (node->list_of_selects->children.size() == 1)
             {
-                (node->list_of_selects->children.at(0))->formatImpl(settings, state, frame);
+                (node->list_of_selects->children.at(0))->formatImpl(out);
             }
             else
             {
                 auto sub_query = std::make_shared<ASTSubquery>();
                 sub_query->children.push_back(*it);
-                sub_query->formatImpl(settings, state, frame);
+                sub_query->formatImpl(out);
             }
         }
         else
         {
             if (it != list_of_selects->children.begin())
-                settings.ostr << settings.nl_or_ws;
-            (*it)->formatImpl(settings, state, frame);
+                out.nlOrWs();
+            (*it)->formatImpl(out);
         }
     }
 }

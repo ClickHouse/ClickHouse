@@ -13,57 +13,66 @@ namespace DB
 {
 namespace
 {
-    void formatRenameTo(const String & new_short_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_short_name, IAST::FormattingBuffer out)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
-                      << backQuote(new_short_name);
+        out.writeKeyword(" RENAME TO ");
+        out.ostr << backQuote(new_short_name);
     }
 
 
-    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, IAST::FormattingBuffer out)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_none : "")
-                      << (is_restrictive ? "restrictive" : "permissive");
+        out.writeKeyword(" AS ");
+        out.ostr << (is_restrictive ? "restrictive" : "permissive");
     }
 
 
-    void formatFilterExpression(const ASTPtr & expr, const IAST::FormatSettings & settings)
+    void formatFilterExpression(const ASTPtr & expr, IAST::FormattingBuffer out)
     {
-        settings.ostr << " ";
+        out.ostr << " ";
         if (expr)
-            expr->format(settings);
+            expr->formatImpl(out);
         else
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+            out.writeKeyword("NONE");
     }
 
 
-    void formatForClause(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check, bool alter, const IAST::FormatSettings & settings)
+    void formatForClause(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check,
+                         bool alter, const IAST::FormattingBuffer & out)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " FOR " << (settings.hilite ? IAST::hilite_none : "");
+        out.writeKeyword(" FOR ");
         bool need_comma = false;
         for (const auto & command : commands)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << command << (settings.hilite ? IAST::hilite_none : "");
+                out.ostr << ", ";
+            out.writeKeyword(command);
         }
 
         if (!filter.empty())
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " USING" << (settings.hilite ? IAST::hilite_none : "") << filter;
+        {
+            out.writeKeyword(" USING");
+            out.ostr << filter;
+        }
 
         if (!check.empty() && (alter || (check != filter)))
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH CHECK" << (settings.hilite ? IAST::hilite_none : "") << check;
+        {
+            out.writeKeyword(" WITH CHECK");
+            out.ostr << check;
+        }
     }
 
 
-    void formatForClauses(const std::vector<std::pair<RowPolicyFilterType, ASTPtr>> & filters, bool alter, const IAST::FormatSettings & settings)
+    void formatForClauses(const std::vector<std::pair<RowPolicyFilterType, ASTPtr>> & filters, bool alter,
+                          const IAST::FormattingBuffer & out)
     {
         std::vector<std::pair<RowPolicyFilterType, String>> filters_as_strings;
         WriteBufferFromOwnString temp_buf;
-        IAST::FormatSettings temp_settings(temp_buf, settings);
         for (const auto & [filter_type, filter] : filters)
         {
-            formatFilterExpression(filter, temp_settings);
+            IAST::FormatState state;
+            IAST::FormattingBuffer temp_out(temp_buf, out.getSettings(), state);
+            formatFilterExpression(filter, temp_out);
             filters_as_strings.emplace_back(filter_type, temp_buf.str());
             temp_buf.restart();
         }
@@ -102,16 +111,16 @@ namespace
             }
 
             if (!filter.empty() || !check.empty())
-                formatForClause(commands, filter, check, alter, settings);
+                formatForClause(commands, filter, check, alter, out);
         }
         while (!filter.empty() || !check.empty());
     }
 
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, IAST::FormattingBuffer out)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
-        roles.format(settings);
+        out.writeKeyword(" TO ");
+        roles.formatImpl(out);
     }
 }
 
@@ -146,41 +155,36 @@ ASTPtr ASTCreateRowPolicyQuery::clone() const
 }
 
 
-void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTCreateRowPolicyQuery::formatImpl(FormattingBuffer out) const
 {
     if (attach)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH ROW POLICY";
-    }
+        out.writeKeyword("ATTACH ROW POLICY");
     else
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY")
-                      << (settings.hilite ? hilite_none : "");
-    }
+        out.writeKeyword(alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY");
 
     if (if_exists)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" IF EXISTS");
     else if (if_not_exists)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" IF NOT EXISTS");
     else if (or_replace)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" OR REPLACE");
 
-    settings.ostr << " ";
-    names->format(settings);
+    out.ostr << " ";
+    names->formatImpl(out);
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
     assert(names->cluster.empty());
 
     if (!new_short_name.empty())
-        formatRenameTo(new_short_name, settings);
+        formatRenameTo(new_short_name, out);
 
     if (is_restrictive)
-        formatAsRestrictiveOrPermissive(*is_restrictive, settings);
+        formatAsRestrictiveOrPermissive(*is_restrictive, out);
 
-    formatForClauses(filters, alter, settings);
+    formatForClauses(filters, alter, out);
 
     if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, settings);
+        formatToRoles(*roles, out);
 }
 
 

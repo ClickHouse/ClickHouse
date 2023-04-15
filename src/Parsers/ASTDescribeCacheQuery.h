@@ -19,9 +19,10 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "DESCRIBE FILESYSTEM CACHE" << (settings.hilite ? hilite_none : "") << " " << cache_name;
+        out.writeKeyword("DESCRIBE FILESYSTEM CACHE ");
+        out.ostr << cache_name;
     }
 };
 

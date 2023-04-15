@@ -19,7 +19,7 @@ public:
     ASTPtr expression;
     ASTPtr transformers;
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 }

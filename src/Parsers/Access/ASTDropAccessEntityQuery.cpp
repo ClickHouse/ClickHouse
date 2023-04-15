@@ -8,14 +8,14 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, IAST::FormattingBuffer out)
     {
         bool need_comma = false;
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ',';
-            settings.ostr << ' ' << backQuoteIfNeed(name);
+                out.ostr << ',';
+            out.ostr << ' ' << backQuoteIfNeed(name);
         }
     }
 }
@@ -38,22 +38,21 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 }
 
 
-void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropAccessEntityQuery::formatImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << AccessEntityTypeInfo::get(type).name
-                  << (if_exists ? " IF EXISTS" : "")
-                  << (settings.hilite ? hilite_none : "");
+    out.writeKeyword("DROP ");
+    out.writeKeyword(AccessEntityTypeInfo::get(type).name);
+    out.writeKeyword(if_exists ? " IF EXISTS" : "");
 
     if (type == AccessEntityType::ROW_POLICY)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
+        out.ostr << " ";
+        row_policy_names->formatImpl(out);
     }
     else
-        formatNames(names, settings);
+        formatNames(names, out);
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 }
 
 

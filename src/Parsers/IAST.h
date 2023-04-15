@@ -190,31 +190,13 @@ public:
     /// Format settings.
     struct FormatSettings
     {
-        WriteBuffer & ostr;
         bool hilite = false;
-        bool one_line;
+        bool one_line = true;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
-        // Newline or whitespace.
-        char nl_or_ws;
-
-        FormatSettings(WriteBuffer & ostr_, bool one_line_)
-            : ostr(ostr_), one_line(one_line_)
-        {
-            nl_or_ws = one_line ? ' ' : '\n';
-        }
-
-        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
-            : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
-            show_secrets(other.show_secrets)
-        {
-            nl_or_ws = one_line ? ' ' : '\n';
-        }
-
-        void writeIdentifier(const String & name) const;
+        FormatSettings copyWithAlwaysQuoteIdentifiers() const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -240,13 +222,117 @@ public:
         const IAST * current_select = nullptr;
     };
 
-    void format(const FormatSettings & settings) const
+    class FormattingBuffer
+    {
+    public:
+        WriteBuffer & ostr;
+
+        static const char * hilite_keyword;
+        static const char * hilite_identifier;
+        static const char * hilite_function;
+        static const char * hilite_operator;
+        static const char * hilite_alias;
+        static const char * hilite_substitution;
+        static const char * hilite_none;
+        static const char * hilite_metacharacter;
+
+    private:
+        const FormatSettings & settings;
+        FormatState & state;
+        FormatStateStacked stacked_state;
+
+
+        /**
+         * To be used in RAII style, just like std::lock_guard with std::mutex.
+         */
+        class Hiliter
+        {
+            DB::WriteBuffer & ostr;
+            bool hilite;
+        public:
+            Hiliter(DB::WriteBuffer & ostr_, bool hilite_, const char * hilite_type);
+            ~Hiliter();
+
+            Hiliter(const Hiliter & other) = delete;
+            Hiliter(Hiliter && other) = delete;
+            Hiliter & operator=(const Hiliter & other) = delete;
+            Hiliter & operator=(Hiliter && other) = delete;
+        };
+        Hiliter createHiliter(const char * hilite_type) const;
+        void writePossiblyHilited(std::string_view str, const char * hilite_type) const;
+        void writeIdentifierOrAlias(const String & name, bool hilite_as_identifier) const;
+
+        FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_, FormatState & state_, FormatStateStacked stacked_state_) :
+            ostr(ostr_), settings(settings_), state(state_), stacked_state(stacked_state_) {}
+    public:
+        FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_, FormatState & state_) :
+            ostr(ostr_), settings(settings_), state(state_) {}
+
+        FormattingBuffer copy() const;
+
+        const FormatSettings & getSettings() const;
+
+        FormattingBuffer copyWithNewSettings(const FormatSettings & settings_) const;
+
+        FormattingBuffer & setIndent(UInt8 indent);
+
+        FormattingBuffer & increaseIndent(int extra_indent = 1);
+
+        FormattingBuffer & setNeedParens(bool value = true);
+
+        FormattingBuffer & setExpressionListAlwaysStartsOnNewLine(bool value = true);
+
+        FormattingBuffer & setExpressionListPrependWhitespace(bool value = true);
+
+        FormattingBuffer & setSurroundEachListElementWithParens(bool value = true);
+
+        FormattingBuffer & setCurrentSelect(const IAST * select);
+
+        bool insertAlias(std::string alias, Hash printed_content) const;
+
+        void writeKeyword(std::string_view str) const;
+        void writeFunction(std::string_view str) const;
+        void writeOperator(std::string_view str) const;
+        void writeSubstitution(std::string_view str) const;
+
+        /** A special hack. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
+          *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
+          * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
+          * With highlighting we make it clearly obvious.
+          *
+          * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware
+          *  that . is a metacharacter.
+          */
+        void writeStringLiteralWithMetacharacters(const String & str, const char * metacharacters) const;
+
+        void writeIdentifier(const String & name) const;
+        void writeAlias(const String & name) const;
+        void writeProbablyBackQuotedIdentifier(const String & name) const;
+
+        void nlOrWs() const;  // Write newline or whitespace.
+        void nlOrNothing() const;
+
+        void writeSecret(const String & secret = "") const;
+        void writeIndent(int extra_indent = 0) const;
+
+        bool isOneLine() const;
+        bool shouldShowSecrets() const;
+
+        bool needParens() const;
+        bool getExpressionListAlwaysStartsOnNewLine() const;
+        bool getExpressionListPrependWhitespace() const;
+        bool getSurroundEachListElementWithParens() const;
+    };
+
+    // With new a blank internal state.
+    void format(WriteBuffer & ostr, const FormatSettings & settings) const
     {
         FormatState state;
-        formatImpl(settings, state, FormatStateStacked());
+        formatImpl(FormattingBuffer(ostr, settings, state));
     }
 
-    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
+    // Keeping the state.
+    virtual void formatImpl(FormattingBuffer /*out*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
@@ -294,15 +380,6 @@ public:
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
-
-    /// For syntax highlighting.
-    static const char * hilite_keyword;
-    static const char * hilite_identifier;
-    static const char * hilite_function;
-    static const char * hilite_operator;
-    static const char * hilite_alias;
-    static const char * hilite_substitution;
-    static const char * hilite_none;
 
 protected:
     bool childrenHaveSecretParts() const;

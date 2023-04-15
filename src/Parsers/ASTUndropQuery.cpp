@@ -19,24 +19,23 @@ ASTPtr ASTUndropQuery::clone() const
     return res;
 }
 
-void ASTUndropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTUndropQuery::formatQueryImpl(IAST::FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    settings.ostr << "UNDROP ";
-    settings.ostr << "TABLE ";
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    out.writeKeyword("UNDROP TABLE ");
 
     assert (table);
     if (!database)
-        settings.ostr << backQuoteIfNeed(getTable());
+        out.ostr << backQuoteIfNeed(getTable());
     else
-        settings.ostr << backQuoteIfNeed(getDatabase()) + "." << backQuoteIfNeed(getTable());
+        out.ostr << backQuoteIfNeed(getDatabase()) + "." << backQuoteIfNeed(getTable());
 
     if (uuid != UUIDHelpers::Nil)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
-            << quoteString(toString(uuid));
+    {
+        out.writeKeyword(" UUID ");
+        out.ostr << quoteString(toString(uuid));
+    }
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 }
 
 }

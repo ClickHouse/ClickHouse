@@ -98,13 +98,11 @@ const String & ASTIdentifier::name() const
     return full_name;
 }
 
-void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTIdentifier::formatImplWithoutAlias(FormattingBuffer out) const
 {
     auto format_element = [&](const String & elem_name)
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(elem_name);
-        settings.ostr << (settings.hilite ? hilite_none : "");
+        out.writeIdentifier(elem_name);
     };
 
     if (compound())
@@ -112,14 +110,14 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
         for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
         {
             if (i != 0)
-                settings.ostr << '.';
+                out.ostr << '.';
 
             /// Some AST rewriting code, like IdentifierSemantic::setColumnLongName,
             /// does not respect children of identifier.
             /// Here we also ignore children if they are empty.
             if (name_parts[i].empty() && j < children.size())
             {
-                children[j]->formatImpl(settings, state, frame);
+                children[j]->formatImpl(out);
                 ++j;
             }
             else
@@ -130,7 +128,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     {
         const auto & name = shortName();
         if (name.empty() && !children.empty())
-            children.front()->formatImpl(settings, state, frame);
+            children.front()->formatImpl(out);
         else
             format_element(name);
     }

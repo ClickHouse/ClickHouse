@@ -29,10 +29,9 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     bool isExtendedStorageDefinition() const;
-
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&engine));
@@ -61,7 +60,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     bool empty() const
     {
@@ -146,7 +145,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {

@@ -32,48 +32,45 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
-        settings.ostr << "DROP ";
+        out.writeKeyword("DROP ");
     else if (kind == ASTDropQuery::Kind::Detach)
-        settings.ostr << "DETACH ";
+        out.writeKeyword("DETACH ");
     else if (kind == ASTDropQuery::Kind::Truncate)
-        settings.ostr << "TRUNCATE ";
+        out.writeKeyword("TRUNCATE ");
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
     if (temporary)
-        settings.ostr << "TEMPORARY ";
+        out.writeKeyword("TEMPORARY ");
 
 
     if (!table && database)
-        settings.ostr << "DATABASE ";
+        out.writeKeyword("DATABASE ");
     else if (is_dictionary)
-        settings.ostr << "DICTIONARY ";
+        out.writeKeyword("DICTIONARY ");
     else if (is_view)
-        settings.ostr << "VIEW ";
+        out.writeKeyword("VIEW ");
     else
-        settings.ostr << "TABLE ";
+        out.writeKeyword("TABLE ");
 
     if (if_exists)
-        settings.ostr << "IF EXISTS ";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+        out.writeKeyword("IF EXISTS ");
 
     if (!table && database)
-        settings.ostr << backQuoteIfNeed(getDatabase());
+        out.ostr << backQuoteIfNeed(getDatabase());
     else
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
     if (permanently)
-        settings.ostr << " PERMANENTLY";
+        out.ostr << " PERMANENTLY";
 
     if (sync)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        out.writeKeyword(" SYNC");
 }
 
 }

@@ -30,36 +30,35 @@ ASTPtr ASTCreateIndexQuery::clone() const
     return res;
 }
 
-void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTCreateIndexQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    frame.need_parens = false;
+    out.setNeedParens(false);
 
-    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+    out.writeIndent();
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
-
-    settings.ostr << "CREATE INDEX " << (if_not_exists ? "IF NOT EXISTS " : "");
-    index_name->formatImpl(settings, state, frame);
-    settings.ostr << " ON ";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    out.writeKeyword("CREATE INDEX ");
+    out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+    index_name->formatImpl(out);
+    out.writeKeyword(" ON ");
 
     if (table)
     {
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            out.writeIndent();
+            out.ostr << backQuoteIfNeed(getDatabase());
+            out.ostr << ".";
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+        out.writeIndent();
+        out.ostr << backQuoteIfNeed(getTable());
     }
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
     if (!cluster.empty())
-        settings.ostr << " ";
+        out.ostr << " ";
 
-    index_decl->formatImpl(settings, state, frame);
+    index_decl->formatImpl(out);
 }
 
 ASTPtr ASTCreateIndexQuery::convertToASTAlterCommand() const

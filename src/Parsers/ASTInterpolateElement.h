@@ -25,7 +25,7 @@ public:
 
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 }

@@ -40,22 +40,20 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
-        std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
-
-        s.ostr << (s.hilite ? hilite_keyword : "") << "WATCH " << (s.hilite ? hilite_none : "")
-            << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        out.writeKeyword("WATCH ");
+        out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (is_watch_events)
-        {
-            s.ostr << " " << (s.hilite ? hilite_keyword : "") << "EVENTS" << (s.hilite ? hilite_none : "");
-        }
+            out.writeKeyword(" EVENTS");
 
         if (limit_length)
         {
-            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
-            limit_length->formatImpl(s, state, frame);
+            out.nlOrWs();
+            out.writeIndent();
+            out.writeKeyword("LIMIT ");
+            limit_length->formatImpl(out);
         }
     }
 };
