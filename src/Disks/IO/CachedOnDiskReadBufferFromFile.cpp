@@ -617,6 +617,10 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                     continue_predownload = false;
                 }
             }
+            else
+            {
+                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+            }
 
             if (!continue_predownload)
             {
@@ -636,8 +640,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 /// TODO: allow seek more than once with seek avoiding.
 
                 bytes_to_predownload = 0;
-                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
+                chassert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 LOG_TEST(log, "Bypassing cache because for {}", file_segment->getInfoForLog());
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
