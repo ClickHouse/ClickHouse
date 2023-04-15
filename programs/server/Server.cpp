@@ -1388,8 +1388,8 @@ try
                                 false), server_pool, socket));
                 });
 
-            const char * enet_port_name = "keeper_server.tcp_port";
             #if USE_ENET
+            const char * enet_port_name = "keeper_server.tcp_port";
             createServer(
                 config(), listen_host, port_name, listen_try, /* start_server: */ false,
                 servers_to_start_before_tables,

@@ -4,14 +4,15 @@
 #pragma GCC diagnostic ignored "-Wreserved-identifier"
 #pragma GCC diagnostic ignored "-Wpacked"
 
-#include <enet.h>
-
 #include <base/types.h>
 
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Runnable.h>
 #include <Poco/Thread.h>
 
+#if USE_ENET
+
+#include <enet.h>
 
 namespace DB
 {
@@ -47,4 +48,5 @@ private:
 };
 
 }
+#endif
 #pragma GCC diagnostic pop

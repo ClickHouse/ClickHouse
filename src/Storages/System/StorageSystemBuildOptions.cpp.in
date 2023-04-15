@@ -42,6 +42,7 @@ const char * auto_config_build[]
     "USE_SIMDJSON", "@USE_SIMDJSON@",
     "USE_ODBC", "@USE_ODBC@",
     "USE_GRPC", "@USE_GRPC@",
+    "USE_ENET", "@USE_ENET@",
     "USE_LDAP", "@USE_LDAP@",
     "TZDATA_VERSION", "@TZDATA_VERSION@",
     "USE_KRB5", "@USE_KRB5@",

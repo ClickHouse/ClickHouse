@@ -3,6 +3,8 @@
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Thread.h>
 
+#if USE_ENET
+
 #include <enet.h>
 
 namespace DB
@@ -15,7 +17,8 @@ ENetServer::ENetServer()
 
 void ENetServer::start()
 {
-    if (enet_initialize () != 0) {
+    if (enet_initialize () != 0)
+    {
         throw 1;
     }
     _stopped = false;
@@ -28,7 +31,7 @@ void ENetServer::run()
     address.host = ENET_HOST_ANY;
     address.port = port_number;
 
-    server = enet_host_create (&address /* the address to bind the server host to */, 
+    server = enet_host_create (&address /* the address to bind the server host to */,
                              32      /* allow up to 32 clients and/or outgoing connections */,
                               2      /* allow up to 2 channels to be used, 0 and 1 */,
                               0      /* assume any amount of incoming bandwidth */,
@@ -41,10 +44,12 @@ void ENetServer::run()
 
     ENetEvent event;
 
-    while (enet_host_service(server, &event, 1000) > 0) {
-        switch (event.type) {
+    while (enet_host_service(server, &event, 1000) > 0)
+    {
+        switch (event.type)
+        {
             case ENET_EVENT_TYPE_CONNECT:
-                //printf("A new client connected from %x:%u.\n",  event.peer->address.host, event.peer->address.port);
+                //printf("A new client connected from %x:%u.\n", event.peer->address.host, event.peer->address.port);
                 //event.peer->data = "Client information";
                 break;
 
@@ -94,3 +99,4 @@ void ENetServer::stop()
 }
 
 }
+#endif
