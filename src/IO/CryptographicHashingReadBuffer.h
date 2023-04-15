@@ -35,7 +35,7 @@ private:
         in.position() = pos;
         bool res = in.next();
         working_buffer = in.buffer();
-        
+
         pos = in.position();
         hashing_begin = pos;
 
