@@ -77,7 +77,6 @@
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
-#include <Server/ENetServer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
@@ -129,6 +128,10 @@
 
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
+#endif
+
+#if USE_ENET
+#   include <Server/ENetServer.h>
 #endif
 
 namespace CurrentMetrics
@@ -1383,6 +1386,25 @@ try
                                 global_context->getSettingsRef().send_timeout.totalSeconds(),
                                 false), server_pool, socket));
                 });
+
+            const char * enet_port_name = "keeper_server.tcp_port";
+            #if USE_ENET
+            createServer(
+                config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(config(), socket, listen_host, port);
+                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        enet_port_name,
+                        "Keeper (tcp): " + address.toString(),
+                        std::make_unique<ENetServer>());
+                });
+            #endif
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
             createServer(

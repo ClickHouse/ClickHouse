@@ -5,6 +5,10 @@
 #include <Server/GRPCServer.h>
 #endif
 
+#if USE_ENET
+#include <Server/ENetServer.h>
+#endif
+
 
 namespace DB
 {
@@ -36,6 +40,43 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     , impl(std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_)))
 {
 }
+
+#if USE_ENET
+class ProtocolServerAdapter::ENetServerAdapterImpl : public Impl
+{
+public:
+    explicit ENetServerAdapterImpl(std::unique_ptr<ENetServer> enet_server_) : enet_server(std::move(enet_server_)) {}
+    ~ENetServerAdapterImpl() override = default;
+
+    void start() override { enet_server->start(); }
+    void stop() override
+    {
+        is_stopping = true;
+        enet_server->stop();
+    }
+    bool isStopping() const override { return is_stopping; }
+    UInt16 portNumber() const override { return enet_server->portNumber(); }
+    size_t currentConnections() const override { return enet_server->currentConnections(); }
+    size_t currentThreads() const override { return enet_server->currentThreads(); }
+
+private:
+    std::unique_ptr<ENetServer> enet_server;
+    bool is_stopping = false;
+};
+
+ProtocolServerAdapter::ProtocolServerAdapter(
+    const std::string & listen_host_,
+    const char * port_name_,
+    const std::string & description_,
+    std::unique_ptr<ENetServer> enet_server_)
+    : listen_host(listen_host_)
+    , port_name(port_name_)
+    , description(description_)
+    , impl(std::make_unique<ENetServerAdapterImpl>(std::move(enet_server_)))
+{
+}
+#endif
+
 
 #if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
 class ProtocolServerAdapter::GRPCServerAdapterImpl : public Impl

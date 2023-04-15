@@ -30,6 +30,12 @@ public:
 
     bool isOpen() const { return !_stopped; }
 
+    size_t currentThreads() const { return 1; }
+    // placeholder value
+
+    size_t currentConnections() const { return 1; }
+    // placeholder value
+
     UInt16 portNumber() const { return port_number; }
 
 private:

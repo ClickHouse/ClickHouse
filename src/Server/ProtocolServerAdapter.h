@@ -11,6 +11,7 @@ namespace DB
 {
 
 class GRPCServer;
+class ENetServer;
 class TCPServer;
 
 /// Provides an unified interface to access a protocol implementing server
@@ -22,6 +23,10 @@ public:
     ProtocolServerAdapter(ProtocolServerAdapter && src) = default;
     ProtocolServerAdapter & operator =(ProtocolServerAdapter && src) = default;
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<TCPServer> tcp_server_);
+
+#if USE_ENET
+    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<ENetServer> enet_server_);
+#endif
 
 #if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
@@ -64,6 +69,7 @@ private:
     };
     class TCPServerAdapterImpl;
     class GRPCServerAdapterImpl;
+    class ENetServerAdapterImpl;
 
     std::string listen_host;
     std::string port_name;
