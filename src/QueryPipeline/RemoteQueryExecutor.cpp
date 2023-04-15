@@ -236,11 +236,8 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
-    {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
-        if (!duplicated_part_uuids.empty())
-            connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
-    }
+    if (!duplicated_part_uuids.empty())
+        connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
@@ -471,7 +468,6 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 
     if (!duplicates.empty())
     {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
         duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
         return false;
     }

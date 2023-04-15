@@ -317,8 +317,8 @@ private:
         }
     }
 
-    void segmentatorThreadFunction(ThreadGroupStatusPtr thread_group);
-    void parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number);
+    void segmentatorThreadFunction(ThreadGroupPtr thread_group);
+    void parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number);
 
     /// Save/log a background exception, set termination flag, wake up all
     /// threads. This function is used by segmentator and parsed threads.

@@ -9,7 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Core/IResolvedFunction.h>
 
 #include "config.h"

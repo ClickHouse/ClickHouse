@@ -132,7 +132,7 @@ void ParquetBlockInputFormat::prepareReader()
         format_settings.null_as_default,
         format_settings.parquet.case_insensitive_column_matching);
 
-    ArrowFieldIndexUtil<false> field_util(
+    ArrowFieldIndexUtil field_util(
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
     column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);

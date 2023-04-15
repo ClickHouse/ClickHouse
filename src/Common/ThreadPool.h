@@ -17,6 +17,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool_fwd.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.

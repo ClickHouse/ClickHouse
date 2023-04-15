@@ -519,4 +519,10 @@ void ReplxxLineReader::enableBracketedPaste()
     rx.enable_bracketed_paste();
 }
 
+void ReplxxLineReader::disableBracketedPaste()
+{
+    bracketed_paste_enabled = false;
+    rx.disable_bracketed_paste();
+}
+
 }
