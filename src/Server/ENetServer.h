@@ -17,25 +17,27 @@ namespace DB
 {
 class Context;
 
-class ENetServer
+class ENetServer : public Poco::Runnable
 {
 public:
     explicit ENetServer();
 
-    void run();
+    void run() override;
 
     void stop();
 
     void start();
 
-    bool isOpen() const { return is_open; }
+    bool isOpen() const { return !_stopped; }
 
     UInt16 portNumber() const { return port_number; }
 
 private:
     Poco::Thread * thread;
-    std::atomic<bool> is_open;
+    std::atomic<bool> _stopped;
     UInt16 port_number;
+    ENetAddress address;
+    ENetHost * server;
 };
 
 }
