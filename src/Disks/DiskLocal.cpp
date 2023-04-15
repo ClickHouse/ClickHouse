@@ -9,10 +9,6 @@
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <fstream>
@@ -38,7 +34,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_TRUNCATE_FILE;
@@ -555,25 +550,6 @@ catch (...)
     return false;
 }
 
-DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
-{
-    auto object_storage = std::make_shared<LocalObjectStorage>();
-    auto metadata_storage = std::make_shared<FakeMetadataStorageFromDisk>(
-        /* metadata_storage */std::static_pointer_cast<DiskLocal>(shared_from_this()),
-        object_storage,
-        /* object_storage_root_path */getPath());
-
-    return std::make_shared<DiskObjectStorage>(
-        getName(),
-        disk_path,
-        "Local",
-        metadata_storage,
-        object_storage,
-        false,
-        /* threadpool_size */16
-    );
-}
-
 void DiskLocal::checkAccessImpl(const String & path)
 {
     try
@@ -699,13 +675,6 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
     DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
-}
-
-MetadataStoragePtr DiskLocal::getMetadataStorage()
-{
-    auto object_storage = std::make_shared<LocalObjectStorage>();
-    return std::make_shared<FakeMetadataStorageFromDisk>(
-        std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
 }
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
