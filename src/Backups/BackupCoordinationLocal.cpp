@@ -15,7 +15,11 @@ BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_)
 
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStage(const String &, const String &, const bool &)
+void BackupCoordinationLocal::setStage(const String &, const String &)
+{
+}
+
+void BackupCoordinationLocal::setStageForCluster(const String &)
 {
 }
 
