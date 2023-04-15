@@ -82,12 +82,12 @@ enum {
     Exists = 5,                 // OK
     IsFile = 6,                 // OK
     IsDirectory = 7,            // OK
-    GetFileSize = 8,                        // Not now
+    GetFileSize = 8,            
     CreateDirectory = 9,        // OK
     CreateDirectories = 10,     // OK
     ClearDirectory = 11,
     MoveDirectory = 12,
-    IterateDirectory = 13,      // ---------- HARD ----------
+    IterateDirectory = 13,
     CreateFile = 14,            // OK
     MoveFile = 15,
     ReplaceFile = 16, 
@@ -258,6 +258,7 @@ void RemoteFSHandler::receivePacket()
 
     std::string path;
     bool boolRes;
+    size_t sizeTRes;
 
     switch (packet_type)
     {
@@ -288,6 +289,13 @@ void RemoteFSHandler::receivePacket()
             writeBoolText(boolRes, *out);
             out->next();
             break;
+        case GetFileSize:
+            receivePath(path);
+            sizeTRes = disk->getFileSize(path);
+            writeVarUInt(GetFileSize, *out);
+            writeVarUInt(sizeTRes, *out);
+            out->next();
+            break;
         case CreateDirectory:
             receivePath(path);
             disk->createDirectory(path);
@@ -308,6 +316,7 @@ void RemoteFSHandler::receivePacket()
             break;
         case ReadFile:
             readFile();
+            break;
         case WriteFile:
             writeFile();
             break;
@@ -334,41 +343,53 @@ void RemoteFSHandler::receiveUnexpectedHello()
 void RemoteFSHandler::readFile()
 {
     std::string strData;
-    receivePath(strData);
+    receivePath(strData); // Read path
     size_t offset;
     readVarUInt(offset, *in);
+    LOG_TRACE(log, "Received offset {}", offset);
     size_t size;
     readVarUInt(size, *in);
+    LOG_TRACE(log, "Received size {}", size);
     auto readBuf = disk->readFile(strData);
-    readBuf->seek(offset);
+    readBuf->seek(offset, SEEK_SET);
     strData.resize(size);
-    readBuf->read(strData.data(), size);
-    writeVarUint(ReadFile, *out);
+    auto bytes_read = readBuf->read(strData.data(), size);
+    strData.resize(bytes_read);
+    writeVarUInt(ReadFile, *out);
     writeString(strData, *out);
     out->next();
 }
 
 void RemoteFSHandler::writeFile()
 {
-    std::string path;
-    receivePath(path);
+    std::string strData;
+    receivePath(strData);
     size_t buf_size;
     readVarUInt(buf_size, *in);
-    WriteMode mode;
-    readIntBinary(mode, *in);
-    auto writeBuf = disk->writeFile(path, buf_size, mode);
+    LOG_TRACE(log, "Received buf_size {}", buf_size);
+    uint modeRaw;
+    readVarUInt(modeRaw, *in);
+    WriteMode mode = WriteMode(modeRaw);
+    LOG_TRACE(log, "Received mode {}", mode);
+    auto writeBuf = disk->writeFile(strData, buf_size, mode);
+    writeVarUInt(WriteFile, *out);
+    out->next();
     UInt64 packet_type = 0;
     while (true) {
         readVarUInt(packet_type, *in);
         switch (packet_type) {
             case DataPacket:
-                std::string data;
-                readStringBinary(data, *in);
-                writeString(data, *writeBuf);
-                writeBuf->next(); // TODO проверить, нужно ли это
+                readStringBinary(strData, *in);
+                LOG_TRACE(log, "Received data {}", strData);
+                writeString(strData, *writeBuf);
+                writeBuf->next(); // TODO maybe remove this line
+                writeVarUInt(DataPacket, *out);
+                out->next();
+                break;
             case EndWriteFile:
+                LOG_TRACE(log, "Close file");
                 writeBuf->sync();
-                writeVarUint(EndWriteFile, *out);
+                writeVarUInt(EndWriteFile, *out);
                 out->next();
                 return;
             default:
