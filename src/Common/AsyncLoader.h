@@ -144,23 +144,31 @@ private:
     // Key of a pending job in ready queue
     struct ReadyKey
     {
-        ssize_t priority;
-        UInt64 ready_seqno;
+        ssize_t priority; // Ascending order
+        ssize_t initial_priority; // Ascending order
+        UInt64 ready_seqno; // Descending order
 
         bool operator<(const ReadyKey & rhs) const
         {
-            if (priority == rhs.priority)
-                return ready_seqno < rhs.ready_seqno;
-            return priority > rhs.priority;
+            if (priority > rhs.priority)
+                return true;
+            if (priority < rhs.priority)
+                return false;
+            if (initial_priority > rhs.initial_priority)
+                return true;
+            if (initial_priority < rhs.initial_priority)
+                return false;
+            return ready_seqno < rhs.ready_seqno;
         }
     };
 
     // Scheduling information for a pending job
     struct Info
     {
-        ssize_t priority = 0;
+        ssize_t initial_priority = 0; // Initial priority passed into schedule()
+        ssize_t priority = 0; // Elevated priority, due to priority inheritance or prioritize()
         size_t dependencies_left = 0;
-        UInt64 ready_seqno = 0; // zero means that job is not in ready queue
+        UInt64 ready_seqno = 0; // Zero means that job is not in ready queue
         LoadJobSet dependent_jobs;
 
         // Three independent states of a non-finished jobs
@@ -171,7 +179,7 @@ private:
         // Get key of a ready job
         ReadyKey key() const
         {
-            return {priority, ready_seqno};
+            return {.priority = priority, .initial_priority = initial_priority, .ready_seqno = ready_seqno};
         }
     };
 
@@ -311,7 +319,7 @@ public:
         {
             NOEXCEPT_SCOPE({
                 ALLOW_ALLOCATIONS_IN_SCOPE;
-                scheduled_jobs.emplace(job, Info{.priority = priority});
+                scheduled_jobs.emplace(job, Info{.initial_priority = priority, .priority = priority});
             });
             job->priority.store(priority); // Set user-facing priority
         }
