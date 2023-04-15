@@ -32,7 +32,6 @@ private:
     std::shared_ptr<S3::Client> client;
     ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
-    Poco::Logger * log;
 };
 
 
@@ -48,37 +47,18 @@ public:
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
     void copyDataToFile(const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name) override;
+    void copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name) override;
+    DataSourceDescription getDataSourceDescription() const override;
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
-    DataSourceDescription getDataSourceDescription() const override;
-    bool supportNativeCopy(DataSourceDescription data_source_description) const override;
-    void copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name) override;
-
 private:
-    void copyObjectImpl(
-        const String & src_bucket,
-        const String & src_key,
-        const String & dst_bucket,
-        const String & dst_key,
-        size_t size,
-        const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
-
-    void copyObjectMultipartImpl(
-        const String & src_bucket,
-        const String & src_key,
-        const String & dst_bucket,
-        const String & dst_key,
-        size_t size,
-        const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
-
     void removeFilesBatch(const Strings & file_names);
 
     S3::URI s3_uri;
     std::shared_ptr<S3::Client> client;
     S3Settings::RequestSettings request_settings;
-    Poco::Logger * log;
     std::optional<bool> supports_batch_delete;
 };
 

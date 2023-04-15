@@ -5,6 +5,7 @@
 #include <IO/copyData.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 
 namespace fs = std::filesystem;
@@ -12,7 +13,9 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-BackupReaderFile::BackupReaderFile(const String & path_) : path(path_), log(&Poco::Logger::get("BackupReaderFile"))
+
+BackupReaderFile::BackupReaderFile(const String & path_)
+    : IBackupReader(&Poco::Logger::get("BackupReaderFile")), path(path_)
 {
 }
 
@@ -39,19 +42,20 @@ void BackupReaderFile::copyFileToDisk(const String & file_name, size_t size, Dis
     if (destination_disk->getDataSourceDescription() == getDataSourceDescription())
     {
         /// Use more optimal way.
-        LOG_TRACE(log, "Copying {}/{} to disk {} locally", path, file_name, destination_disk->getName());
+        LOG_TRACE(log, "Copying file {} locally", file_name);
         fs::copy(path / file_name, fullPath(destination_disk, destination_path), fs::copy_options::overwrite_existing);
         return;
     }
 
-    LOG_TRACE(log, "Copying {}/{} to disk {} through buffers", path, file_name, destination_disk->getName());
+    /// Fallback to copy through buffers.
     IBackupReader::copyFileToDisk(path / file_name, size, destination_disk, destination_path, write_mode, write_settings);
 }
 
 
 BackupWriterFile::BackupWriterFile(const String & path_, const ContextPtr & context_)
-    : IBackupWriter(context_)
+    : IBackupWriter(context_, &Poco::Logger::get("BackupWriterFile"))
     , path(path_)
+    , has_throttling(static_cast<bool>(context_->getBackupsThrottler()))
 {
 }
 
@@ -141,29 +145,26 @@ DataSourceDescription BackupReaderFile::getDataSourceDescription() const
 }
 
 
-bool BackupWriterFile::supportNativeCopy(DataSourceDescription data_source_description) const
+void BackupWriterFile::copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
 {
-    return data_source_description == getDataSourceDescription();
-}
-
-void BackupWriterFile::copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
-{
-    std::string abs_source_path;
-    if (src_disk)
-        abs_source_path = fullPath(src_disk, src_file_name);
-    else
-        abs_source_path = fs::absolute(src_file_name);
-
-    if (has_throttling || (src_offset != 0) || (src_size != fs::file_size(abs_source_path)))
+    /// std::filesystem::copy() can copy from the filesystem only, and it cannot do the throttling.
+    if (!has_throttling && (getDataSourceDescription() == src_disk->getDataSourceDescription()))
     {
-        auto create_read_buffer = [this, abs_source_path] { return createReadBufferFromFileBase(abs_source_path, read_settings); };
-        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
-        return;
+        std::string abs_source_path = fullPath(src_disk, src_file_name);
+        /// std::filesystem::copy() can copy a file as a whole only.
+        if ((src_offset == 0) && (src_size == fs::file_size(abs_source_path)))
+        {
+            /// Use more optimal way.
+            LOG_TRACE(log, "Copying file {} locally", src_file_name);
+            auto abs_dest_path = path / dest_file_name;
+            fs::create_directories(abs_dest_path.parent_path());
+            fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
+            return;
+        }
     }
 
-    auto file_path = path / dest_file_name;
-    fs::create_directories(file_path.parent_path());
-    fs::copy(abs_source_path, file_path, fs::copy_options::overwrite_existing);
+    /// Fallback to copy through buffers.
+    IBackupWriter::copyFileFromDisk(src_disk, src_file_name, src_offset, src_size, dest_file_name);
 }
 
 }

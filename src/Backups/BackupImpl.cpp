@@ -805,72 +805,56 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
-    std::string from_file_name = "memory buffer";
-    if (auto fname = entry->getFilePath(); !fname.empty())
-        from_file_name = "file " + fname;
-
+    bool should_check_lock_file = false;
     {
         std::lock_guard lock{mutex};
         ++num_files;
         total_size += info.size;
+        if (!num_entries)
+            should_check_lock_file = true;
     }
+
+    auto src_disk = entry->tryGetDiskIfExists();
+    auto src_file_path = entry->getFilePath();
+    String src_file_desc = src_file_path.empty() ? "memory buffer" : ("file " + src_file_path);
 
     if (info.data_file_name.empty())
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, {}", info.data_file_name, from_file_name, !info.size ? "empty" : "base backup has it");
+        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, {}", info.data_file_name, src_file_desc, !info.size ? "empty" : "base backup has it");
         return;
     }
 
     if (!coordination->startWritingFile(info.data_file_index))
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, data file #{} is already being written", info.data_file_name, from_file_name, info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, data file #{} is already being written", info.data_file_name, src_file_desc, info.data_file_index);
         return;
     }
 
-    LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, from_file_name, info.data_file_index);
+    if (!should_check_lock_file)
+        checkLockFile(true);
 
-    auto writer_description = writer->getDataSourceDescription();
-    auto reader_description = entry->getDataSourceDescription();
+    /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.
 
-    /// We need to copy whole file without archive, we can do it faster
-    /// if source and destination are compatible
-    if (!use_archive && writer->supportNativeCopy(reader_description))
+    if (use_archive)
     {
-        /// Should be much faster than writing data through server.
-        LOG_TRACE(log, "Will copy file {} using native copy", info.data_file_name);
-
-        /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
-
-        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.base_size, info.size - info.base_size, info.data_file_name);
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
+        auto out = archive_writer->writeFile(info.data_file_name);
+        auto read_buffer = entry->getReadBuffer();
+        if (info.base_size != 0)
+            read_buffer->seek(info.base_size, SEEK_SET);
+        copyData(*read_buffer, *out);
+        out->finalize();
+    }
+    else if (src_disk)
+    {
+        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
+        writer->copyFileFromDisk(src_disk, src_file_path, info.base_size, info.size - info.base_size, info.data_file_name);
     }
     else
     {
-        bool has_entries = false;
-        {
-            std::lock_guard lock{mutex};
-            has_entries = num_entries > 0;
-        }
-        if (!has_entries)
-            checkLockFile(true);
-
-        if (use_archive)
-        {
-            LOG_TRACE(log, "Adding file {} to archive", info.data_file_name);
-            auto out = archive_writer->writeFile(info.data_file_name);
-            auto read_buffer = entry->getReadBuffer();
-            if (info.base_size != 0)
-                read_buffer->seek(info.base_size, SEEK_SET);
-            copyData(*read_buffer, *out);
-            out->finalize();
-        }
-        else
-        {
-            LOG_TRACE(log, "Will copy file {}", info.data_file_name);
-            auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
-
-            /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
-            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
-        }
+        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
+        auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
+        writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
     }
 
     {

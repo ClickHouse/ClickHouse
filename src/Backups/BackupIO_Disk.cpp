@@ -3,6 +3,7 @@
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -14,7 +15,7 @@ namespace ErrorCodes
 }
 
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_)
-    : disk(disk_), path(path_), log(&Poco::Logger::get("BackupReaderDisk"))
+    : IBackupReader(&Poco::Logger::get("BackupReaderDisk")), disk(disk_), path(path_)
 {
 }
 
@@ -38,22 +39,29 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & fi
 void BackupReaderDisk::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
                                       WriteMode write_mode, const WriteSettings & write_settings)
 {
-    if (write_mode == WriteMode::Rewrite)
+    if ((write_mode == WriteMode::Rewrite) && (destination_disk->getDataSourceDescription() == getDataSourceDescription()))
     {
-        LOG_TRACE(log, "Copying {}/{} from disk {} to {} by the disk", path, file_name, disk->getName(), destination_disk->getName());
+        /// Use more optimal way.
+        LOG_TRACE(log, "Copying file {} using {} disk", file_name, toString(destination_disk->getDataSourceDescription().type));
         disk->copyFile(path / file_name, *destination_disk, destination_path, write_settings);
         return;
     }
 
-    LOG_TRACE(log, "Copying {}/{} from disk {} to {} through buffers", path, file_name, disk->getName(), destination_disk->getName());
+    /// Fallback to copy through buffers.
     IBackupReader::copyFileToDisk(file_name, size, destination_disk, destination_path, write_mode, write_settings);
+}
+
+DataSourceDescription BackupReaderDisk::getDataSourceDescription() const
+{
+    return disk->getDataSourceDescription();
 }
 
 
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & path_, const ContextPtr & context_)
-    : IBackupWriter(context_)
+    : IBackupWriter(context_, &Poco::Logger::get("BackupWriterDisk"))
     , disk(disk_)
     , path(path_)
+    , has_throttling(static_cast<bool>(context_->getBackupsThrottler()))
 {
 }
 
@@ -115,31 +123,25 @@ DataSourceDescription BackupWriterDisk::getDataSourceDescription() const
     return disk->getDataSourceDescription();
 }
 
-DataSourceDescription BackupReaderDisk::getDataSourceDescription() const
+void BackupWriterDisk::copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
 {
-    return disk->getDataSourceDescription();
-}
-
-bool BackupWriterDisk::supportNativeCopy(DataSourceDescription data_source_description) const
-{
-    return data_source_description == disk->getDataSourceDescription();
-}
-
-void BackupWriterDisk::copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
-{
-    if (!src_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot natively copy data to disk without source disk");
-
-    if (has_throttling || (src_offset != 0) || (src_size != src_disk->getFileSize(src_file_name)))
+    /// IDisk::copyFile() can copy to the same disk only, and it cannot do the throttling.
+    if (!has_throttling && (getDataSourceDescription() == src_disk->getDataSourceDescription()))
     {
-        auto create_read_buffer = [this, src_disk, src_file_name] { return src_disk->readFile(src_file_name, read_settings); };
-        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
-        return;
+        /// IDisk::copyFile() can copy a file as a whole only.
+        if ((src_offset == 0) && (src_size == src_disk->getFileSize(src_file_name)))
+        {
+            /// Use more optimal way.
+            LOG_TRACE(log, "Copying file {} using {} disk", src_file_name, toString(src_disk->getDataSourceDescription().type));
+            auto dest_file_path = path / dest_file_name;
+            disk->createDirectories(dest_file_path.parent_path());
+            src_disk->copyFile(src_file_name, *disk, dest_file_path);
+            return;
+        }
     }
 
-    auto file_path = path / dest_file_name;
-    disk->createDirectories(file_path.parent_path());
-    src_disk->copyFile(src_file_name, *disk, file_path);
+    /// Fallback to copy through buffers.
+    IBackupWriter::copyFileFromDisk(src_disk, src_file_name, src_offset, src_size, dest_file_name);
 }
 
 }
