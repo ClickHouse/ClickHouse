@@ -252,12 +252,14 @@ void BackupCoordinationRemote::removeAllNodes()
 }
 
 
-void BackupCoordinationRemote::setStage(const String & new_stage, const String & message, const bool & for_cluster)
+void BackupCoordinationRemote::setStage(const String & new_stage, const String & message)
 {
-    if (for_cluster)
-        stage_sync->setStageForCluster(new_stage);
-    else
-        stage_sync->set(current_host, new_stage, message);
+    stage_sync->set(current_host, new_stage, message);
+}
+
+void BackupCoordinationRemote::setStageForCluster(const String & new_stage)
+{
+    stage_sync->setStageForCluster(new_stage);
 }
 
 void BackupCoordinationRemote::setError(const Exception & exception)

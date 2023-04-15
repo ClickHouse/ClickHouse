@@ -368,7 +368,7 @@ void BackupsWorker::doBackup(
 
             /// Wait until all the hosts have written their backup entries.
             backup_coordination->waitForStage(Stage::COMPLETED);
-            backup_coordination->setStage(Stage::COMPLETED, /* message */ "", /* for_cluster */ true);
+            backup_coordination->setStageForCluster(Stage::COMPLETED);
         }
         else
         {
@@ -709,7 +709,7 @@ void BackupsWorker::doRestore(
 
             /// Wait until all the hosts have written their backup entries.
             restore_coordination->waitForStage(Stage::COMPLETED);
-            restore_coordination->setStage(Stage::COMPLETED, /* message */ "", /* for_cluster */ true);
+            restore_coordination->setStageForCluster(Stage::COMPLETED);
         }
         else
         {
