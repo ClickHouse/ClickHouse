@@ -1,5 +1,7 @@
 #include "CatBoostLibraryHandler.h"
 
+#include <Core/FieldDispatch.h>
+
 #include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 

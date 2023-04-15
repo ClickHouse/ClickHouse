@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Helpers.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Core/FieldDispatch.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>

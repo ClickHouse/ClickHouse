@@ -73,7 +73,7 @@ static std::ostream & operator<<(std::ostream & ostr, const JSONPathAndValue & p
         first = false;
     }
 
-    ostr << "}, Field{" << applyVisitor(FieldVisitorToString(), path_and_value.value) << "} }";
+    ostr << "}, Field{" << convertFieldToString(path_and_value.value) << "} }";
     return ostr;
 }
 

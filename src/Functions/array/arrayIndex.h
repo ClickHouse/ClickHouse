@@ -16,6 +16,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <Core/FieldDispatch.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/castColumn.h>

@@ -2,6 +2,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
+#include <Core/FieldDispatch.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>

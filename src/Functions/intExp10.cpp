@@ -2,6 +2,7 @@
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/intExp.h>
+#include <Core/FieldDispatch.h>
 
 namespace DB
 {

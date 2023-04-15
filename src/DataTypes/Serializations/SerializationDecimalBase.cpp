@@ -2,6 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Core/DecimalField.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>

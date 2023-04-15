@@ -1,5 +1,6 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Core/FieldDispatch.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>

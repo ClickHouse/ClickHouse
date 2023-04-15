@@ -60,7 +60,7 @@ public:
             auto converted_parameter = convertFieldToTypeOrThrow(parameter_value, *command_parameter.type);
             auto parameter_placeholder = "{" + command_parameter.name + "}";
 
-            auto parameter_value_string = applyVisitor(FieldVisitorToString(), converted_parameter);
+            auto parameter_value_string = convertFieldToString(converted_parameter);
             bool find_placedholder = false;
 
             auto try_replace_parameter_placeholder_with_value = [&](std::string & command_part)

@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <Core/AccurateComparison.h>
+#include <Core/FieldDispatch.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
@@ -289,7 +290,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        return applyVisitor(FieldVisitorToString(), src);
+        return convertFieldToString(src);
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {

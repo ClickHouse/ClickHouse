@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/UUID.h>
 #include <optional>
 #include <Core/SettingsFields.h>
 

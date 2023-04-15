@@ -1,6 +1,7 @@
 #include <Core/SettingsFields.h>
 
 #include <Core/Field.h>
+#include <Core/FieldDispatch.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>

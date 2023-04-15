@@ -7,6 +7,7 @@
 #include <IO/Operators.h>
 #include <Common/DateLUT.h>
 #include <Common/FieldVisitorToString.h>
+#include <Core/DecimalField.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 
@@ -781,14 +782,12 @@ namespace MySQLReplication
 
     void RowsEvent::dump(WriteBuffer & out) const
     {
-        FieldVisitorToString to_string;
-
         header.dump(out);
         out << "Schema: " << this->schema << '\n';
         out << "Table: " << this->table << '\n';
         for (size_t i = 0; i < rows.size(); ++i)
         {
-            out << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << '\n';
+            out << "Row[" << i << "]: " << convertFieldToString(rows[i]) << '\n';
         }
     }
 

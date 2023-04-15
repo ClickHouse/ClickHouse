@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <Core/Types.h>
 #include <Core/Field.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -46,5 +45,8 @@ public:
     DataTypePtr operator() (const Int256 & x) const;
     DataTypePtr operator() (const bool & x) const;
 };
+
+template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
+DataTypePtr convertFieldToDataType(const Field & x);
 
 }

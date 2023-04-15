@@ -1,5 +1,7 @@
 #include <Common/FieldVisitorSum.h>
 
+#include <Core/FieldDispatch.h>
+
 namespace DB
 {
 

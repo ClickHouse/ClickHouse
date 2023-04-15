@@ -21,6 +21,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Core/FieldDispatch.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>

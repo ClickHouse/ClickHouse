@@ -179,13 +179,13 @@ public:
 
     static String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
     {
-        auto constant_name = applyVisitor(FieldVisitorToString(), constant_literal);
+        auto constant_name = convertFieldToString(constant_literal);
         return constant_name + "_" + constant_type->getName();
     }
 
     static String calculateConstantActionNodeName(const Field & constant_literal)
     {
-        return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
+        return calculateConstantActionNodeName(constant_literal, convertFieldToDataType(constant_literal));
     }
 
     String calculateWindowNodeActionName(const QueryTreeNodePtr & node)

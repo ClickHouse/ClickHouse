@@ -13,6 +13,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <Core/FieldDispatch.h>
 
 
 namespace DB
@@ -207,5 +208,15 @@ DataTypePtr FieldToDataType<on_error>::operator()(const bool &) const
 template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr convertFieldToDataType(const Field &x)
+{
+    return applyVisitor(FieldToDataType<on_error>(), x);
+}
+
+template DataTypePtr convertFieldToDataType<LeastSupertypeOnError::Throw>(const Field &x);
+template DataTypePtr convertFieldToDataType<LeastSupertypeOnError::String>(const Field &x);
+template DataTypePtr convertFieldToDataType<LeastSupertypeOnError::Null>(const Field &x);
 
 }

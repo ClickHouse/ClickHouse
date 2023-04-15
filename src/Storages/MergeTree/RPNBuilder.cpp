@@ -42,7 +42,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             /// We need to convert value back to string here.
             const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
             if (column_const && !allow_experimental_analyzer)
-                writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
+                writeString(convertFieldToString(column_const->getField()), out);
             else
                 writeString(node.result_name, out);
             break;
@@ -192,7 +192,7 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
         const auto * literal = typeid_cast<const ASTLiteral *>(ast_node);
         if (literal)
         {
-            result.type = applyVisitor(FieldToDataType(), literal->value);
+            result.type = convertFieldToDataType(literal->value);
             result.column = result.type->createColumnConst(0, literal->value);
 
             return result;

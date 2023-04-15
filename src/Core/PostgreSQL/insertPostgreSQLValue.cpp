@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/DecimalField.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>

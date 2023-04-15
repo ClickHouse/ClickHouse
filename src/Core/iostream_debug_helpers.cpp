@@ -23,7 +23,7 @@ namespace DB
 template <>
 std::ostream & operator<< <Field>(std::ostream & stream, const Field & what)
 {
-    stream << applyVisitor(FieldVisitorDump(), what);
+    stream << dumpField(what);
     return stream;
 }
 
@@ -81,7 +81,7 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
     {
         if (i)
             stream << ", ";
-        stream << applyVisitor(FieldVisitorDump(), what[i]);
+        stream << dumpField(what[i]);
     }
     stream << "}";
 

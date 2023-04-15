@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/DecimalField.h>
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
 #include <base/demangle.h>

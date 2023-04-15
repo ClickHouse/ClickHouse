@@ -90,16 +90,3 @@ template <> struct make_signed<UInt256> { using type = Int256; };
 
 template <typename T> using make_signed_t = typename make_signed<T>::type;
 
-template <typename T>
-struct is_big_int // NOLINT(readability-identifier-naming)
-{
-    static constexpr bool value = false;
-};
-
-template <> struct is_big_int<Int128> { static constexpr bool value = true; };
-template <> struct is_big_int<UInt128> { static constexpr bool value = true; };
-template <> struct is_big_int<Int256> { static constexpr bool value = true; };
-template <> struct is_big_int<UInt256> { static constexpr bool value = true; };
-
-template <typename T>
-inline constexpr bool is_big_int_v = is_big_int<T>::value;

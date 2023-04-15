@@ -1,5 +1,7 @@
 #include <Common/FieldVisitorWriteBinary.h>
 
+#include <Core/DecimalField.h>
+#include <Core/FieldDispatch.h>
 #include <IO/WriteHelpers.h>
 
 

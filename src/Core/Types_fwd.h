@@ -31,7 +31,33 @@ using IPv4 = StrongTypedef<UInt32, struct IPv4Tag>;
 
 struct IPv6;
 
-struct Null;
+/// Hold a null value for untyped calculation. It can also store infinities to handle nullable
+/// comparison which is used for nullable KeyCondition.
+struct Null
+{
+    enum class Value
+    {
+        Null,
+        PositiveInfinity,
+        NegativeInfinity,
+    };
+
+    Value value{Value::Null};
+
+    bool isNull() const { return value == Value::Null; }
+    bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
+    bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
+
+    bool operator==(const Null & other) const
+    {
+        return value == other.value;
+    }
+
+    bool operator!=(const Null & other) const
+    {
+        return !(*this == other);
+    }
+};
 
 using UInt128 = ::UInt128;
 using UInt256 = ::UInt256;

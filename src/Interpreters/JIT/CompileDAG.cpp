@@ -97,7 +97,7 @@ std::string CompileDAG::dump() const
                 const auto * column = typeid_cast<const ColumnConst *>(node.column.get());
                 const auto & data = column->getDataColumn();
 
-                dumped_values[i] = applyVisitor(FieldVisitorToString(), data[0]) + " : " + node.result_type->getName();
+                dumped_values[i] = convertFieldToString(data[0]) + " : " + node.result_type->getName();
                 break;
             }
             case CompileType::FUNCTION:

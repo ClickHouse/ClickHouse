@@ -10,6 +10,7 @@
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/FieldDispatch.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>

@@ -10,6 +10,8 @@
 
 #include <Common/assert_cast.h>
 #include <Common/randomSeed.h>
+#include <Core/FieldDispatch.h>
+
 #include <fmt/core.h>
 #include <pcg_random.hpp>
 #include <gtest/gtest.h>
@@ -72,7 +74,7 @@ void checkFieldsAreEqual(ColumnObject::Subcolumn subcolumn, const std::vector<Fi
         if (!applyVisitor(FieldVisitorAccurateEquals(), field, fields[i]))
         {
             std::cerr << fmt::format("Wrong value at position {}, expected {}, got {}",
-                i, applyVisitor(FieldVisitorToString(), fields[i]), applyVisitor(FieldVisitorToString(), field));
+                i, convertFieldToString(fields[i]), convertFieldToString(field));
             ASSERT_TRUE(false);
         }
     }

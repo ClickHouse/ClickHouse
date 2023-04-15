@@ -8,6 +8,7 @@
 
 #include <Poco/Logger.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Core/FieldDispatch.h>
 
 namespace DB
 {

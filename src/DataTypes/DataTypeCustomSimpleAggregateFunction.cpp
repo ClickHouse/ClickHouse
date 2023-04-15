@@ -71,7 +71,7 @@ String DataTypeCustomSimpleAggregateFunction::getName() const
         {
             if (i)
                 stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            stream << convertFieldToString(parameters[i]);
         }
         stream << ")";
     }

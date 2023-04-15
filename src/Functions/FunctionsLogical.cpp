@@ -15,6 +15,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Core/FieldDispatch.h>
 
 #include <cstring>
 #include <algorithm>

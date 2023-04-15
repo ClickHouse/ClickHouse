@@ -15,6 +15,7 @@
 
 #include <Common/FieldVisitorSum.h>
 #include <Common/assert_cast.h>
+#include <Core/FieldDispatch.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <map>

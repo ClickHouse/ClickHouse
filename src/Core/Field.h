@@ -9,11 +9,8 @@
 
 #include <Common/Exception.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <Core/Defines.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/UUID.h>
-#include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
 #include <base/strong_typedef.h>
 #include <base/EnumReflection.h>
@@ -124,7 +121,7 @@ struct CustomType
     bool isSecret() const { return impl->isSecret(); }
     const char * getTypeName() const { return impl->getTypeName(); }
     String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
-    const CustomTypeImpl & getImpl() { return *impl; }
+    const CustomTypeImpl & getImpl() const { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
     bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
@@ -135,69 +132,8 @@ struct CustomType
     std::shared_ptr<const CustomTypeImpl> impl;
 };
 
-template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
-template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
-template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
-
 template <typename T>
-class DecimalField
-{
-public:
-    explicit DecimalField(T value = {}, UInt32 scale_ = 0)
-    :   dec(value),
-        scale(scale_)
-    {}
-
-    operator T() const { return dec; } /// NOLINT
-    T getValue() const { return dec; }
-    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
-    UInt32 getScale() const { return scale; }
-
-    template <typename U>
-    bool operator < (const DecimalField<U> & r) const
-    {
-        using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
-        return decimalLess<MaxType>(dec, r.getValue(), scale, r.getScale());
-    }
-
-    template <typename U>
-    bool operator <= (const DecimalField<U> & r) const
-    {
-        using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
-        return decimalLessOrEqual<MaxType>(dec, r.getValue(), scale, r.getScale());
-    }
-
-    template <typename U>
-    bool operator == (const DecimalField<U> & r) const
-    {
-        using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
-        return decimalEqual<MaxType>(dec, r.getValue(), scale, r.getScale());
-    }
-
-    template <typename U> bool operator > (const DecimalField<U> & r) const { return r < *this; }
-    template <typename U> bool operator >= (const DecimalField<U> & r) const { return r <= * this; }
-    template <typename U> bool operator != (const DecimalField<U> & r) const { return !(*this == r); }
-
-    const DecimalField<T> & operator += (const DecimalField<T> & r)
-    {
-        if (scale != r.getScale())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Add different decimal fields");
-        dec += r.getValue();
-        return *this;
-    }
-
-    const DecimalField<T> & operator -= (const DecimalField<T> & r)
-    {
-        if (scale != r.getScale())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sub different decimal fields");
-        dec -= r.getValue();
-        return *this;
-    }
-
-private:
-    T dec;
-    UInt32 scale;
-};
+class DecimalField;
 
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
@@ -214,7 +150,7 @@ using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
 /// signedness of char is different in Linux on x86 and Linux on ARM.
-template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
+template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<std::is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
 #ifdef __cpp_char8_t
@@ -490,6 +426,8 @@ public:
 
     template <typename T> auto & safeGet();
 
+    bool lessForExtendedTypes(const Field & rhs) const;
+
     bool operator< (const Field & rhs) const
     {
         if (which < rhs.which)
@@ -502,26 +440,26 @@ public:
             case Types::Null:    return false;
             case Types::Bool:    [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
-            case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
-            case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
             case Types::Int64:   return get<Int64>()   < rhs.get<Int64>();
-            case Types::Int128:  return get<Int128>()  < rhs.get<Int128>();
-            case Types::Int256:  return get<Int256>()  < rhs.get<Int256>();
-            case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
-            case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
             case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
             case Types::Map:     return get<Map>()     < rhs.get<Map>();
             case Types::Object:  return get<Object>()  < rhs.get<Object>();
-            case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
-            case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
-            case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
-            case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
             case Types::CustomType:  return get<CustomType>() < rhs.get<CustomType>();
+            case Types::UInt128:
+            case Types::UInt256:
+            case Types::Int128:
+            case Types::Int256:
+            case Types::UUID:
+            case Types::IPv6:
+            case Types::Decimal32:
+            case Types::Decimal64:
+            case Types::Decimal128:
+            case Types::Decimal256: return lessForExtendedTypes(rhs);
         }
 
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -531,6 +469,8 @@ public:
     {
         return rhs < *this;
     }
+
+    bool lessOrEqualsForExtendedTypes(const Field & rhs) const;
 
     bool operator<= (const Field & rhs) const
     {
@@ -544,26 +484,26 @@ public:
             case Types::Null:    return true;
             case Types::Bool: [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
-            case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
-            case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
             case Types::Int64:   return get<Int64>()   <= rhs.get<Int64>();
-            case Types::Int128:  return get<Int128>()  <= rhs.get<Int128>();
-            case Types::Int256:  return get<Int256>()  <= rhs.get<Int256>();
-            case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
             case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
-            case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
             case Types::Map:     return get<Map>()     <= rhs.get<Map>();
             case Types::Object:  return get<Object>()  <= rhs.get<Object>();
-            case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
-            case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
-            case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
-            case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
             case Types::CustomType:  return get<CustomType>() <= rhs.get<CustomType>();
+            case Types::UInt128:
+            case Types::UInt256:
+            case Types::Int128:
+            case Types::Int256:
+            case Types::UUID:
+            case Types::IPv6:
+            case Types::Decimal32:
+            case Types::Decimal64:
+            case Types::Decimal128:
+            case Types::Decimal256: return lessOrEqualsForExtendedTypes(rhs);
         }
 
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -573,6 +513,8 @@ public:
     {
         return rhs <= *this;
     }
+
+    bool equalsForExtendedTypes(const Field & rhs) const;
 
     // More like bitwise equality as opposed to semantic equality:
     // Null equals Null and NaN equals NaN.
@@ -592,24 +534,24 @@ public:
                 // Compare as UInt64 so that NaNs compare as equal.
                 return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
             }
-            case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();
-            case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();
             case Types::String:  return get<String>()  == rhs.get<String>();
             case Types::Array:   return get<Array>()   == rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
             case Types::Map:     return get<Map>()     == rhs.get<Map>();
             case Types::Object:  return get<Object>()  == rhs.get<Object>();
-            case Types::UInt128: return get<UInt128>() == rhs.get<UInt128>();
-            case Types::UInt256: return get<UInt256>() == rhs.get<UInt256>();
-            case Types::Int128:  return get<Int128>()  == rhs.get<Int128>();
-            case Types::Int256:  return get<Int256>()  == rhs.get<Int256>();
-            case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
-            case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
-            case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
-            case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
             case Types::CustomType:  return get<CustomType>() == rhs.get<CustomType>();
+            case Types::UInt128:
+            case Types::UInt256:
+            case Types::Int128:
+            case Types::Int256:
+            case Types::UUID:
+            case Types::IPv6:
+            case Types::Decimal32:
+            case Types::Decimal64:
+            case Types::Decimal128:
+            case Types::Decimal256: return equalsForExtendedTypes(rhs);
         }
 
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -623,51 +565,16 @@ public:
     /// Field is template parameter, to allow universal reference for field,
     /// that is useful for const and non-const .
     template <typename F, typename FieldRef>
-    static auto dispatch(F && f, FieldRef && field)
-    {
-        switch (field.which)
-        {
-            case Types::Null:    return f(field.template get<Null>());
-            case Types::UInt64:  return f(field.template get<UInt64>());
-            case Types::UInt128: return f(field.template get<UInt128>());
-            case Types::UInt256: return f(field.template get<UInt256>());
-            case Types::Int64:   return f(field.template get<Int64>());
-            case Types::Int128:  return f(field.template get<Int128>());
-            case Types::Int256:  return f(field.template get<Int256>());
-            case Types::UUID:    return f(field.template get<UUID>());
-            case Types::IPv4:    return f(field.template get<IPv4>());
-            case Types::IPv6:    return f(field.template get<IPv6>());
-            case Types::Float64: return f(field.template get<Float64>());
-            case Types::String:  return f(field.template get<String>());
-            case Types::Array:   return f(field.template get<Array>());
-            case Types::Tuple:   return f(field.template get<Tuple>());
-            case Types::Map:     return f(field.template get<Map>());
-            case Types::Bool:
-            {
-                bool value = bool(field.template get<UInt64>());
-                return f(value);
-            }
-            case Types::Object:     return f(field.template get<Object>());
-            case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
-            case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
-            case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
-            case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
-            case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
-            case Types::CustomType: return f(field.template get<CustomType>());
-        }
-
-        UNREACHABLE();
-    }
+    static auto dispatch(F && f, FieldRef && field);
 
     String dump() const;
     static Field restoreFromDump(std::string_view dump_);
 
+    static constexpr size_t storageAlignment = 8;
+    static constexpr size_t storageSize      = 48; // Maybe better to use std::sizeof(AggregateFunctionStateData) because it's the largest type
+
 private:
-    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
-        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData, CustomType
-        > storage;
+    alignas (storageAlignment) std::byte storage[std::max(DBMS_MIN_FIELD_SIZE - sizeof(Types::Which), storageSize)];
 
     Types::Which which;
 
@@ -714,25 +621,13 @@ private:
         ptr->assign(std::move(str));
     }
 
-    void create(const Field & x)
-    {
-        dispatch([this] (auto & value) { createConcrete(value); }, x);
-    }
+    void create(const Field & x);
 
-    void create(Field && x)
-    {
-        dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
-    }
+    void create(Field && x);
 
-    void assign(const Field & x)
-    {
-        dispatch([this] (auto & value) { assignConcrete(value); }, x);
-    }
+    void assign(const Field & x);
 
-    void assign(Field && x)
-    {
-        dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
-    }
+    void assign(Field && x);
 
     template <typename CharT>
     requires (sizeof(CharT) == 1)

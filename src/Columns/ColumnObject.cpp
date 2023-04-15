@@ -12,7 +12,8 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Core/FieldDispatch.h>
+#include <Processors/Transforms/ColumnGathererTransform.h> //TODO: remove this include
 
 namespace DB
 {

@@ -80,6 +80,7 @@
 #include <Columns/Collator.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
+#include <Core/FieldDispatch.h>
 #include <Core/ProtocolDefines.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
@@ -1218,7 +1219,7 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context,
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), field), expr);
+            convertFieldToString(field), expr);
 
     return converted.safeGet<UInt64>();
 }

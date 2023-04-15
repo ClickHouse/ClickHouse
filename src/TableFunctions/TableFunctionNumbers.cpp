@@ -66,7 +66,7 @@ UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context,
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The value {} is not representable as UInt64",
-                        applyVisitor(FieldVisitorToString(), field));
+                        convertFieldToString(field));
 
     return converted.safeGet<UInt64>();
 }

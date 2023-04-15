@@ -2,6 +2,7 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
+#include <Core/DecimalField.h>
 #include <base/demangle.h>
 #include <type_traits>
 

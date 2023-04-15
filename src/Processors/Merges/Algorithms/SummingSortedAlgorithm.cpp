@@ -7,6 +7,7 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Core/FieldDispatch.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>

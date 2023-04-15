@@ -3,6 +3,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/ExponentiallySmoothedCounter.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Core/FieldDispatch.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

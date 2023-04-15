@@ -36,7 +36,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto value = getValue(arguments);
-        return applyVisitor(FieldToDataType{}, value);
+        return convertFieldToDataType(value);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

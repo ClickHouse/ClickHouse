@@ -11,6 +11,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Core/callOnTypeIndex.h>
+#include <Core/DecimalField.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>

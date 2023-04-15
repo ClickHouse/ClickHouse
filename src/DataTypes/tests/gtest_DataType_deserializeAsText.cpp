@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Core/DecimalField.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>

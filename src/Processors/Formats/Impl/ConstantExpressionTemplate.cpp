@@ -255,7 +255,7 @@ private:
         else if (field_type == Field::Types::Array)
         {
             info.special_parser.is_array = true;
-            info.type = applyVisitor(FieldToDataType(), info.literal->value);
+            info.type = convertFieldToDataType(info.literal->value);
             DataTypes nested_types = { assert_cast<const DataTypeArray &>(*info.type).getNestedType() };
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeArray>(nested_types[0]);
@@ -263,7 +263,7 @@ private:
         else if (field_type == Field::Types::Tuple)
         {
             info.special_parser.is_tuple = true;
-            info.type = applyVisitor(FieldToDataType(), info.literal->value);
+            info.type = convertFieldToDataType(info.literal->value);
             auto nested_types = assert_cast<const DataTypeTuple &>(*info.type).getElements();
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeTuple>(nested_types);
@@ -272,7 +272,7 @@ private:
         {
             info.special_parser.is_map = true;
 
-            info.type = applyVisitor(FieldToDataType(), info.literal->value);
+            info.type = convertFieldToDataType(info.literal->value);
             auto nested_types = assert_cast<const DataTypeMap &>(*info.type).getKeyValueTypes();
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeMap>(nested_types);
@@ -518,7 +518,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         istr.position() = const_cast<char *>(iterator->begin);
 
         const Field & collection = ast->as<ASTLiteral &>().value;
-        auto collection_type = applyVisitor(FieldToDataType(), collection);
+        auto collection_type = convertFieldToDataType(collection);
 
         DataTypes nested_types;
         if (type_info.is_array)

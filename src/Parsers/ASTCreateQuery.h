@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/UUID.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>

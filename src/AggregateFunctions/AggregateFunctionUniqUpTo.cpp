@@ -2,6 +2,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Core/FieldDispatch.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>

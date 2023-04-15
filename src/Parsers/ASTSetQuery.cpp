@@ -3,6 +3,7 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
+#include <Core/FieldDispatch.h>
 #include <IO/Operators.h>
 
 
@@ -38,7 +39,7 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
         if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
             format.ostr << " = " << custom.toString(false);
         else
-            format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            format.ostr << " = " << convertFieldToString(change.value);
     }
 
     for (const auto & setting_name : default_settings)

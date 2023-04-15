@@ -34,4 +34,6 @@ public:
     String operator() (const bool & x) const;
 };
 
+String dumpField(const Field & x);
+
 }

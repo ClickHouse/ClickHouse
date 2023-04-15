@@ -106,7 +106,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                         column_values_msg.append(", ");
                     column_values_msg.append(backQuoteIfNeed(name));
                     column_values_msg.append(" = ");
-                    column_values_msg.append(applyVisitor(FieldVisitorToString(), column[row_idx]));
+                    column_values_msg.append(convertFieldToString(column[row_idx]));
                     first = false;
                 }
 

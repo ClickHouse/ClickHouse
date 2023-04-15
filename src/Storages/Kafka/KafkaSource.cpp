@@ -9,6 +9,8 @@
 
 #include <Common/ProfileEvents.h>
 
+#include <Core/DecimalField.h>
+
 namespace ProfileEvents
 {
     extern const Event KafkaMessagesRead;

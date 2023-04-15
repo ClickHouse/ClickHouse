@@ -6,6 +6,7 @@
 #include <Parsers/queryToString.h>
 
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Core/FieldDispatch.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>

@@ -37,7 +37,7 @@ public:
     bool use_legacy_column_name_of_tuple = false;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
+    String getID(char delim) const override { return "Literal" + (delim + dumpField(value)); }
 
     ASTPtr clone() const override;
 

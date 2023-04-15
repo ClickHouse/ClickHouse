@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Core/FieldDispatch.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 

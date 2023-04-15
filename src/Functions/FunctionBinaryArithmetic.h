@@ -15,6 +15,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/FieldDispatch.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>

@@ -636,7 +636,7 @@ static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const 
     {
         if (literal->value.getType() == Field::Types::String)
         {
-            auto string = applyVisitor(FieldVisitorToString(), literal->value);
+            auto string = convertFieldToString(literal->value);
 
             unsigned escaping = 0;
             for (auto c : string)

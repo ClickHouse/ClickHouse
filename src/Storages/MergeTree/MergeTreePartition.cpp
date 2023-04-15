@@ -14,6 +14,7 @@
 #include <Common/typeid_cast.h>
 #include <base/hex.h>
 #include <Core/Block.h>
+#include <Core/FieldDispatch.h>
 
 
 namespace DB
@@ -232,7 +233,6 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
 
     if (are_all_integral)
     {
-        FieldVisitorToString to_string_visitor;
         for (size_t i = 0; i < value.size(); ++i)
         {
             if (i > 0)
@@ -243,7 +243,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(value[i].get<IPv4>().toUnderType());
             else
-                result += applyVisitor(to_string_visitor, value[i]);
+                result += convertFieldToString(value[i]);
 
             /// It is tempting to output DateTime as YYYYMMDDhhmmss, but that would make partition ID
             /// timezone-dependent.

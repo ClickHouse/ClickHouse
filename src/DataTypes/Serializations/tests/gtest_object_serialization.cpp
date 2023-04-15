@@ -67,8 +67,8 @@ TEST(SerializationObject, FromString)
         const auto & data = subcolumn.getFinalizedColumn();
         for (size_t i = 0; i < expected.size(); ++i)
             ASSERT_EQ(
-                applyVisitor(FieldVisitorToString(), data[i]),
-                applyVisitor(FieldVisitorToString(), expected[i]));
+                convertFieldToString(data[i]),
+                convertFieldToString(expected[i]));
     };
 
     check_subcolumn("k1", "Int8", {1, 2});

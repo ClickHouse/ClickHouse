@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -5,7 +6,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/readDecimalText.h>
 #include <Core/Field.h>
+#include <Core/FieldDispatch.h>
+#include <Core/Types.h>
 #include <Core/DecimalComparison.h>
+#include <Core/DecimalField.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
@@ -18,6 +22,32 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
     extern const int DECIMAL_OVERFLOW;
 }
+
+template <typename ...Ts>
+struct AlignmentOf
+{
+    static constexpr size_t value = std::max({ alignof(Ts)... });
+};
+
+constexpr size_t ExpectedStorageAlignment = AlignmentOf<Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
+        AggregateFunctionStateData, CustomType
+        >::value;
+
+static_assert(Field::storageAlignment == ExpectedStorageAlignment, "Field storage alignment doesn't match");
+
+template <typename ...Ts>
+struct SizeOf
+{
+    static constexpr size_t value = std::max({ sizeof(Ts)... });
+};
+
+constexpr size_t ExpectedStorageSize = SizeOf<Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
+        AggregateFunctionStateData, CustomType
+        >::value;
+
+static_assert(Field::storageSize == ExpectedStorageSize, "Field storage size doesn't match");
 
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
@@ -303,6 +333,62 @@ void writeFieldText(const Field & x, WriteBuffer & buf)
     buf.write(res.data(), res.size());
 }
 
+bool Field::lessForExtendedTypes(const Field & rhs) const
+{
+    switch (which)
+    {
+        case Types::UInt128:    return get<UInt128>()                  < rhs.get<UInt128>();
+        case Types::UInt256:    return get<UInt256>()                  < rhs.get<UInt256>();
+        case Types::Int128:     return get<Int128>()                   < rhs.get<Int128>();
+        case Types::Int256:     return get<Int256>()                   < rhs.get<Int256>();
+        case Types::UUID:       return get<UUID>()                     < rhs.get<UUID>();
+        case Types::IPv6:       return get<IPv6>()                     < rhs.get<IPv6>();
+        case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
+        case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
+        case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
+        case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Field type {}", which);
+    }
+}
+
+bool Field::lessOrEqualsForExtendedTypes(const Field & rhs) const
+{
+    switch (which)
+    {
+        case Types::UInt128:    return get<UInt128>()                  <= rhs.get<UInt128>();
+        case Types::UInt256:    return get<UInt256>()                  <= rhs.get<UInt256>();
+        case Types::Int128:     return get<Int128>()                   <= rhs.get<Int128>();
+        case Types::Int256:     return get<Int256>()                   <= rhs.get<Int256>();
+        case Types::UUID:       return get<UUID>().toUnderType()       <= rhs.get<UUID>().toUnderType();
+        case Types::IPv6:       return get<IPv6>()                     <= rhs.get<IPv6>();
+        case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
+        case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
+        case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
+        case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Field type {}", which);
+    }
+}
+
+bool Field::equalsForExtendedTypes(const Field & rhs) const
+{
+    switch (which)
+    {
+        case Types::UInt128:    return get<UInt128>()                  == rhs.get<UInt128>();
+        case Types::UInt256:    return get<UInt256>()                  == rhs.get<UInt256>();
+        case Types::Int128:     return get<Int128>()                   == rhs.get<Int128>();
+        case Types::Int256:     return get<Int256>()                   == rhs.get<Int256>();
+        case Types::UUID:       return get<UUID>().toUnderType()       == rhs.get<UUID>().toUnderType();
+        case Types::IPv6:       return get<IPv6>()                     == rhs.get<IPv6>();
+        case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
+        case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
+        case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
+        case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Field type {}", which);
+    }
+}
 
 String Field::dump() const
 {
@@ -518,47 +604,25 @@ Field Field::restoreFromDump(std::string_view dump_)
     UNREACHABLE();
 }
 
-
-template <typename T>
-bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
+void Field::create(const Field & x)
 {
-    using Comparator = DecimalComparison<T, T, EqualsOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    dispatch([this] (auto & value) { createConcrete(value); }, x);
 }
 
-template <typename T>
-bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale)
+void Field::create(Field && x)
 {
-    using Comparator = DecimalComparison<T, T, LessOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
 }
 
-template <typename T>
-bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
+void Field::assign(const Field & x)
 {
-    using Comparator = DecimalComparison<T, T, LessOrEqualsOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    dispatch([this] (auto & value) { assignConcrete(value); }, x);
 }
 
-
-template bool decimalEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
-
-template bool decimalLess<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLess<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLess<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLess<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLess<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
-
-template bool decimalLessOrEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLessOrEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLessOrEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
-template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
-
+void Field::assign(Field && x)
+{
+    dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
+}
 
 inline void writeText(const Null & x, WriteBuffer & buf)
 {

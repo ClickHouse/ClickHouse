@@ -15,6 +15,20 @@ using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
 using UInt256 = wide::integer<256, unsigned>;
 
+template <typename T>
+struct is_big_int // NOLINT(readability-identifier-naming)
+{
+    static constexpr bool value = false;
+};
+
+template <> struct is_big_int<Int128> { static constexpr bool value = true; };
+template <> struct is_big_int<UInt128> { static constexpr bool value = true; };
+template <> struct is_big_int<Int256> { static constexpr bool value = true; };
+template <> struct is_big_int<UInt256> { static constexpr bool value = true; };
+
+template <typename T>
+inline constexpr bool is_big_int_v = is_big_int<T>::value;
+
 namespace DB
 {
 

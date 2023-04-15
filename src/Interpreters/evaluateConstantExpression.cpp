@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
 {
-    auto type = applyVisitor(FieldToDataType(), literal->value);
+    auto type = convertFieldToDataType(literal->value);
     /// In case of Array field nested fields can have different types.
     /// Example: Array [1, 2.3] will have 2 fields with types UInt64 and Float64
     /// when result type is Array(Float64).

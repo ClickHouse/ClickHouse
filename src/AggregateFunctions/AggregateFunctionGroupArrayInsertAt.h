@@ -12,6 +12,9 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
+
+#include <Core/FieldDispatch.h>
+
 #include <Interpreters/convertFieldToType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>

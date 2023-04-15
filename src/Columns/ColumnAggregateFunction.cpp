@@ -49,7 +49,7 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
         {
             if (i)
                 stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            stream << convertFieldToString(parameters[i]);
         }
         stream << ')';
     }

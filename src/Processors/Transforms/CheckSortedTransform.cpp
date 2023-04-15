@@ -3,7 +3,6 @@
 #include <Common/quoteString.h>
 #include <Core/SortDescription.h>
 
-
 namespace DB
 {
 
@@ -44,8 +43,8 @@ void CheckSortedTransform::transform(Chunk & chunk)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Sort order of blocks violated for column number {}, left: {}, right: {}.",
                     column_number,
-                    applyVisitor(FieldVisitorDump(), (*left_col)[left_index]),
-                    applyVisitor(FieldVisitorDump(), (*right_col)[right_index]));
+                    dumpField((*left_col)[left_index]),
+                    dumpField((*right_col)[right_index]));
             }
         }
     };

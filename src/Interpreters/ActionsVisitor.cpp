@@ -6,6 +6,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/FieldDispatch.h>
 
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>

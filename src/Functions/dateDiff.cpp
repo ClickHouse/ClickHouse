@@ -7,6 +7,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 
+#include <Core/DecimalField.h>
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>

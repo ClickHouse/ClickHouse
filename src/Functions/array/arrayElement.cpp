@@ -10,6 +10,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnArray.h>
 #include <Core/Field.h>
+#include <Core/FieldDispatch.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>

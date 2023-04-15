@@ -4,6 +4,7 @@
 
 #include <base/sort.h>
 #include <base/TypeName.h>
+#include <Core/DecimalField.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>

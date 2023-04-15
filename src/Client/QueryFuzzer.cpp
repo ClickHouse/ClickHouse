@@ -21,6 +21,7 @@
 #include <unordered_set>
 
 #include <Core/Types.h>
+#include <Core/DecimalField.h>
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>

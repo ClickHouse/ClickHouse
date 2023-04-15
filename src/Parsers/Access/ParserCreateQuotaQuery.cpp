@@ -10,6 +10,7 @@
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Core/FieldDispatch.h>
 #include <base/range.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>

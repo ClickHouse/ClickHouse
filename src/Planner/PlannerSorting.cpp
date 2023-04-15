@@ -2,6 +2,8 @@
 
 #include <Common/FieldVisitorsAccurateComparison.h>
 
+#include <Core/FieldDispatch.h>
+
 #include <DataTypes/DataTypeInterval.h>
 
 #include <Interpreters/Context.h>

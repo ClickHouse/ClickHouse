@@ -21,7 +21,7 @@ namespace DB
 ConstantNode::ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
-    , value_string(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
+    , value_string(convertFieldToString(constant_value->getValue()))
 {
     source_expression = std::move(source_expression_);
 }
@@ -35,7 +35,7 @@ ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
 {}
 
 ConstantNode::ConstantNode(Field value_)
-    : ConstantNode(value_, applyVisitor(FieldToDataType(), value_))
+    : ConstantNode(value_, convertFieldToDataType(value_))
 {}
 
 void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -99,7 +99,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         case Field::Types::Int64:
         case Field::Types::Float64:
         {
-            WhichDataType constant_value_field_type(applyVisitor(FieldToDataType(), constant_value_literal));
+            WhichDataType constant_value_field_type(convertFieldToDataType(constant_value_literal));
             need_to_add_cast_function = constant_value_field_type.idx != constant_value_type.idx;
             break;
         }

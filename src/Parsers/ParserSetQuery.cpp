@@ -10,6 +10,7 @@
 #include <Parsers/FieldFromAST.h>
 
 #include <Core/Names.h>
+#include <Core/FieldDispatch.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -167,7 +168,7 @@ bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected 
     ParserLiteral literal_p;
     if (literal_p.parse(pos, node, expected))
     {
-        value = applyVisitor(FieldVisitorToString(), node->as<ASTLiteral>()->value);
+        value = convertFieldToString(node->as<ASTLiteral>()->value);
 
         /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
         if (value.starts_with('\''))

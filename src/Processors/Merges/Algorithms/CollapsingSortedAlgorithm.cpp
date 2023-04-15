@@ -49,7 +49,7 @@ void CollapsingSortedAlgorithm::reportIncorrectData()
     {
         if (i != 0)
             s << ", ";
-        s << applyVisitor(FieldVisitorToString(), (*sort_columns[i])[last_row.row_num]);
+        s << convertFieldToString((*sort_columns[i])[last_row.row_num]);
     }
     s << ").";
 

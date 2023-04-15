@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <base/UUID.h>
 #include <optional>
 
 

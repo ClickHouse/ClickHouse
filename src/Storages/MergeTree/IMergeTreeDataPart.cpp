@@ -5,6 +5,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <string_view>
 #include <Core/Defines.h>
+#include <Core/FieldDispatch.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>

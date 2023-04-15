@@ -100,8 +100,8 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
                     "Block structure mismatch in {} stream: different values of constants in column '{}': actual: {}, expected: {}",
                     context_description,
                     actual.name,
-                    applyVisitor(FieldVisitorToString(), actual_value),
-                    applyVisitor(FieldVisitorToString(), expected_value));
+                    convertFieldToString(actual_value),
+                    convertFieldToString(expected_value));
     }
 
     return ReturnType(true);

@@ -13,20 +13,18 @@ int main(int argc, char ** argv)
 {
     using namespace DB;
 
-    FieldVisitorToString to_string;
-
     Field field = UInt64(0);
-    std::cerr << applyVisitor(to_string, field) << std::endl;
+    std::cerr << convertFieldToString(field) << std::endl;
 
     field = std::string("Hello, world!");
-    std::cerr << applyVisitor(to_string, field) << std::endl;
+    std::cerr << convertFieldToString(field) << std::endl;
 
     field = Null();
-    std::cerr << applyVisitor(to_string, field) << std::endl;
+    std::cerr << convertFieldToString(field) << std::endl;
 
     Field field2;
     field2 = field;
-    std::cerr << applyVisitor(to_string, field2) << std::endl;
+    std::cerr << convertFieldToString(field2) << std::endl;
 
     {
         Array array;
@@ -34,11 +32,11 @@ int main(int argc, char ** argv)
         array.push_back(Int64(-123));
         array.push_back(String("Hello"));
         field = array;
-        std::cerr << applyVisitor(to_string, field) << std::endl;
+        std::cerr << convertFieldToString(field) << std::endl;
     }
 
     field.get<Array &>().push_back(field);
-    std::cerr << applyVisitor(to_string, field) << std::endl;
+    std::cerr << convertFieldToString(field) << std::endl;
 
     std::cerr << (field < field2) << std::endl;
     std::cerr << (field2 < field) << std::endl;

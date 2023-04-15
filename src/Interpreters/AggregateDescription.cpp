@@ -24,7 +24,7 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
 
             first = false;
 
-            out << applyVisitor(FieldVisitorToString(), param);
+            out << convertFieldToString(param);
         }
     };
 
@@ -99,7 +99,7 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
         {
             auto params_array = std::make_unique<JSONBuilder::JSONArray>();
             for (const auto & param : params)
-                params_array->add(applyVisitor(FieldVisitorToString(), param));
+                params_array->add(convertFieldToString(param));
 
             function_map->add("Parameters", std::move(params_array));
         }

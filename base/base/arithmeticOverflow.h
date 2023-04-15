@@ -2,6 +2,7 @@
 
 #include <base/extended_types.h>
 #include <base/defines.h>
+#include <base/Decimal_fwd.h>
 
 // NOLINTBEGIN(google-runtime-int)
 

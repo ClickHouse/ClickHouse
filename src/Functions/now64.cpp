@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 
+#include <Core/DecimalField.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>

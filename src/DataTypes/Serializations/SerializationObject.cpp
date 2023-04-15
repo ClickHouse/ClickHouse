@@ -11,6 +11,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
+#include <Core/FieldDispatch.h>
 #include <Functions/FunctionsConversion.h>
 
 #include <IO/ReadHelpers.h>

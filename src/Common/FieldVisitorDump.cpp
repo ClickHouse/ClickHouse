@@ -1,5 +1,7 @@
 #include <Common/FieldVisitorDump.h>
 
+#include <Core/FieldDispatch.h>
+
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -134,6 +136,11 @@ String FieldVisitorDump::operator() (const CustomType & x) const
     writeQuoted(x.toString(), wb);
     wb << ')';
     return wb.str();
+}
+
+String dumpField(const Field &x)
+{
+    return applyVisitor(FieldVisitorDump(), x);
 }
 
 }

@@ -17,6 +17,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
+#include <Core/FieldDispatch.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
@@ -51,8 +52,8 @@ String Range::toString() const
 {
     WriteBufferFromOwnString str;
 
-    str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
-    str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+    str << (left_included ? '[' : '(') << convertFieldToString(left) << ", ";
+    str << convertFieldToString(right) << (right_included ? ']' : ')');
 
     return str.str();
 }
@@ -2343,7 +2344,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
                 if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(it->get()))
                 {
                     if (func->getKind() == FunctionWithOptionalConstArg::Kind::LEFT_CONST)
-                        buf << applyVisitor(FieldVisitorToString(), (*func->getConstArg().column)[0]) << ", ";
+                        buf << convertFieldToString((*func->getConstArg().column)[0]) << ", ";
                 }
             }
         }
@@ -2357,7 +2358,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
                 if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(it->get()))
                 {
                     if (func->getKind() == FunctionWithOptionalConstArg::Kind::RIGHT_CONST)
-                        buf << ", " << applyVisitor(FieldVisitorToString(), (*func->getConstArg().column)[0]);
+                        buf << ", " << convertFieldToString((*func->getConstArg().column)[0]);
                 }
             }
             buf << ")";

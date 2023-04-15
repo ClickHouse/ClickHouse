@@ -9,6 +9,7 @@
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include <Core/FieldDispatch.h>
 
 
 namespace DB

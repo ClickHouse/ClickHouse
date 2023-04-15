@@ -1671,7 +1671,7 @@ void Context::applySettingChange(const SettingChange & change)
     {
         e.addMessage(fmt::format(
                          "in attempt to set the value of setting '{}' to {}",
-                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
+                         change.name, convertFieldToString(change.value)));
         throw;
     }
 }

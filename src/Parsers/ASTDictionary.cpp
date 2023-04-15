@@ -118,7 +118,7 @@ void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
         if (it != changes.begin())
             settings.ostr << ", ";
 
-        settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        settings.ostr << it->name << " = " << convertFieldToString(it->value);
     }
     settings.ostr << (settings.hilite ? hilite_none : "") << ")";
 }

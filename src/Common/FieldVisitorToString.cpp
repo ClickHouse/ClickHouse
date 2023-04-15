@@ -1,5 +1,7 @@
 #include <Common/FieldVisitorToString.h>
 
+#include <Core/FieldDispatch.h>
+
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>

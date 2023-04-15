@@ -1,6 +1,7 @@
 #include <Interpreters/WindowDescription.h>
 
 #include <Core/Field.h>
+#include <Core/FieldDispatch.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
@@ -65,7 +66,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
-        buf << applyVisitor(FieldVisitorToString(), begin_offset);
+        buf << convertFieldToString(begin_offset);
         buf << " "
             << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -82,7 +83,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
-        buf << applyVisitor(FieldVisitorToString(), end_offset);
+        buf << convertFieldToString(end_offset);
         buf << " "
             << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -103,7 +104,7 @@ void WindowFrame::checkValid() const
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
                 type,
-                applyVisitor(FieldVisitorToString(), begin_offset),
+                convertFieldToString(begin_offset),
                 begin_offset.getType());
         }
 
@@ -116,7 +117,7 @@ void WindowFrame::checkValid() const
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
                 type,
-                applyVisitor(FieldVisitorToString(), end_offset),
+                convertFieldToString(end_offset),
                 end_offset.getType());
         }
     }

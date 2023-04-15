@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/queryToString.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/DecimalField.h>
 #include <Parsers/ASTInsertQuery.h>
 
 namespace DB

@@ -8,6 +8,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Core/FieldDispatch.h>
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"

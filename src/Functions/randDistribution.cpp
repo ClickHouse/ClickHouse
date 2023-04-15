@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
+#include <Core/FieldDispatch.h>
 
 #include <random>
 

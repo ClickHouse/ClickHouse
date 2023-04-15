@@ -1,5 +1,6 @@
 #include <Interpreters/FillingRow.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Core/FieldDispatch.h>
 #include <IO/Operators.h>
 
 

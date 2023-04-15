@@ -30,7 +30,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & setti
 
             formatSettingName(change.name, settings.ostr);
             if (settings.show_secrets)
-                settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+                settings.ostr << " = " << convertFieldToString(change.value);
             else
                 settings.ostr << " = '[HIDDEN]'";
         }

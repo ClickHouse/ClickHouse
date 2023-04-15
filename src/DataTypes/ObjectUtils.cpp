@@ -15,6 +15,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/FieldDispatch.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>

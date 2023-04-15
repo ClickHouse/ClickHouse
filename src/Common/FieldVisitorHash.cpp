@@ -2,6 +2,7 @@
 
 #include <Common/SipHash.h>
 
+#include <Core/FieldDispatch.h>
 
 namespace DB
 {

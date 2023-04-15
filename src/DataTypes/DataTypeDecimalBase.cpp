@@ -1,4 +1,6 @@
 #include <DataTypes/DataTypeDecimalBase.h>
+
+#include <Core/DecimalField.h>
 #include <Interpreters/Context.h>
 #include <type_traits>
 
