@@ -6,13 +6,15 @@ sidebar_label: SHOW
 
 # SHOW Statements
 
-## SHOW CREATE TABLE
+## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW [CREATE] [TEMPORARY] TABLE|DICTIONARY|VIEW|DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
+Returns a single column of type String containing the CREATE query used for creating the specified object.
+
+`SHOW TABLE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
 
 Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 

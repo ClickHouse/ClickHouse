@@ -825,11 +825,11 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
-    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query)
+    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query_)
     {
-        if (!query.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query.replica_zk_path))
+        if (!query_.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query_.replica_zk_path))
             return;
-        if (replicated->getFullReplicaName() != query.replica)
+        if (replicated->getFullReplicaName() != query_.replica)
             return;
 
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "There is a local database {}, which has the same path in ZooKeeper "
