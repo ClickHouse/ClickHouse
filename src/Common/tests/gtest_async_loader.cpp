@@ -58,6 +58,7 @@ struct AsyncLoaderTest
     LoadJobSet randomJobSet(int job_count, int dep_probability_percent, JobFunc job_func, std::string_view name_prefix = "job")
     {
         std::vector<LoadJobPtr> jobs;
+        jobs.reserve(job_count);
         for (int j = 0; j < job_count; j++)
         {
             LoadJobSet deps;
@@ -75,6 +76,7 @@ struct AsyncLoaderTest
     LoadJobSet randomJobSet(int job_count, int dep_probability_percent, std::vector<LoadJobPtr> external_deps, JobFunc job_func, std::string_view name_prefix = "job")
     {
         std::vector<LoadJobPtr> jobs;
+        jobs.reserve(job_count);
         for (int j = 0; j < job_count; j++)
         {
             LoadJobSet deps;
@@ -94,6 +96,7 @@ struct AsyncLoaderTest
     LoadJobSet chainJobSet(int job_count, JobFunc job_func, std::string_view name_prefix = "job")
     {
         std::vector<LoadJobPtr> jobs;
+        jobs.reserve(job_count);
         jobs.push_back(makeLoadJob({}, fmt::format("{}{}", name_prefix, 0), job_func));
         for (int j = 1; j < job_count; j++)
             jobs.push_back(makeLoadJob({ jobs[j - 1] }, fmt::format("{}{}", name_prefix, j), job_func));
@@ -158,6 +161,7 @@ TEST(AsyncLoader, CycleDetection)
     try
     {
         std::vector<LoadJobPtr> jobs;
+        jobs.reserve(16);
         jobs.push_back(makeLoadJob({}, "job0", job_func));
         jobs.push_back(makeLoadJob({ jobs[0] }, "job1", job_func));
         jobs.push_back(makeLoadJob({ jobs[0], jobs[1] }, "job2", job_func));
@@ -344,6 +348,7 @@ TEST(AsyncLoader, CancelExecutingTask)
     // Make several iterations to catch the race (if any)
     for (int iteration = 0; iteration < 10; iteration++) {
         std::vector<LoadJobPtr> task1_jobs;
+        task1_jobs.reserve(256);
         auto blocker_job = makeLoadJob({}, "blocker_job", blocker_job_func);
         task1_jobs.push_back(blocker_job);
         for (int i = 0; i < 100; i++)
@@ -510,6 +515,7 @@ TEST(AsyncLoader, TestConcurrency)
         };
 
         std::vector<AsyncLoader::Task> tasks;
+        tasks.reserve(concurrency);
         for (int i = 0; i < concurrency; i++)
             tasks.push_back(t.loader.schedule(t.chainJobSet(5, job_func)));
         t.loader.wait();
@@ -537,6 +543,7 @@ TEST(AsyncLoader, TestOverload)
 
         t.loader.stop();
         std::vector<AsyncLoader::Task> tasks;
+        tasks.reserve(concurrency);
         for (int i = 0; i < concurrency; i++)
             tasks.push_back(t.loader.schedule(t.chainJobSet(5, job_func)));
         t.loader.start();
@@ -558,6 +565,7 @@ TEST(AsyncLoader, RandomIndependentTasks)
     };
 
     std::vector<AsyncLoader::Task> tasks;
+    tasks.reserve(512);
     for (int i = 0; i < 512; i++)
     {
         int job_count = t.randomInt(1, 32);
@@ -586,6 +594,7 @@ TEST(AsyncLoader, RandomDependentTasks)
     std::unique_lock lock{mutex};
 
     int tasks_left = 1000;
+    tasks.reserve(tasks_left);
     while (tasks_left-- > 0)
     {
         cv.wait(lock, [&] { return t.loader.getScheduledJobCount() < 100; });
