@@ -120,8 +120,6 @@ private:
             finished.notify_all();
     }
 
-    // TODO(serxa): add callback/status for cancel?
-
     std::function<void(const LoadJobPtr & self)> func;
 
     mutable std::mutex mutex;
@@ -243,6 +241,7 @@ public:
         }
 
         // Do not track jobs in this task
+        // WARNING: Jobs will never be removed() and are going to be stored as finished_jobs until ~AsyncLoader()
         void detach()
         {
             loader = nullptr;
@@ -451,10 +450,23 @@ public:
             finished_jobs.erase(job);
     }
 
+    void setMaxThreads(size_t value)
+    {
+        std::unique_lock lock{mutex};
+        pool.setMaxThreads(value);
+        pool.setMaxFreeThreads(value);
+        pool.setQueueSize(value);
+        max_threads = value;
+        if (!is_running)
+            return;
+        for (size_t i = 0; workers < max_threads && i < ready_queue.size(); i++)
+            spawn(lock);
+    }
+
     size_t getMaxThreads() const
     {
         std::unique_lock lock{mutex};
-        return pool.getMaxThreads();
+        return max_threads;
     }
 
     size_t getScheduledJobCount() const
@@ -600,7 +612,7 @@ private:
             ready_queue.emplace(info.key(), job);
         });
 
-        if (is_running && workers < max_threads) // TODO(serxa): Can we make max_thread changeable in runtime?
+        if (is_running && workers < max_threads)
             spawn(lock);
     }
 
@@ -633,7 +645,7 @@ private:
                 else if (job)
                     finish(lock, job, LoadStatus::OK);
 
-                if (!is_running || ready_queue.empty())
+                if (!is_running || ready_queue.empty() || workers > max_threads)
                 {
                     workers--;
                     return;
