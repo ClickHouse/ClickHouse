@@ -927,11 +927,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     if (shared->root_temp_data_on_disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
-    const auto * disk_object_storage_ptr = dynamic_cast<const DiskObjectStorage *>(disk_ptr.get());
-    if (!disk_object_storage_ptr)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' does not use cache", cache_disk_name);
-
-    auto file_cache = disk_object_storage_ptr->getCache();
+    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
     if (!file_cache)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
 
