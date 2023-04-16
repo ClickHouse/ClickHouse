@@ -2000,6 +2000,7 @@ void Server::createServers(
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
 
+    logger().debug("protocols under key: %s", protocols);
     for (const auto & protocol : protocols)
     {
         std::vector<std::string> hosts;

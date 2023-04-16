@@ -13,6 +13,7 @@
 #include "InterserverIOHTTPHandler.h"
 #include "PrometheusRequestHandler.h"
 #include "WebUIRequestHandler.h"
+#include "WebSocketHandler.h"
 
 
 namespace DB
@@ -124,6 +125,7 @@ static const auto root_response_expression = "config://http_server_default_respo
 
 void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
 {
+    // TODO: maybe move websocket creation here
     auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
     root_handler->attachStrictPath("/");
     root_handler->allowGetAndHeadRequest();
@@ -138,6 +140,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     replicas_status_handler->attachNonStrictPath("/replicas_status");
     replicas_status_handler->allowGetAndHeadRequest();
     factory.addHandler(replicas_status_handler);
+
+    // TODO: add websocket handler here
+    auto websocket_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebSocketRequestHandler>>(server);
+    websocket_handler->attachNonStrictPath("/websocket");
+    websocket_handler->allowGetAndHeadRequest();
+    factory.addHandler(websocket_handler);
 
     auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     play_handler->attachNonStrictPath("/play");
