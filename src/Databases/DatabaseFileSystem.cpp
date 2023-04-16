@@ -59,23 +59,30 @@ StoragePtr DatabaseFileSystem::tryGetTable(const String & name, ContextPtr conte
 
     auto table_path = getTablePath(name);
 
-    // If the table doesn't exist in the tables map, check if the corresponding file exists
-    Poco::File table_file(table_path);
-    if (!table_file.exists())
+    try
+    {
+        // If the table doesn't exist in the tables map, check if the corresponding file exists
+        Poco::File table_file(table_path);
+        if (!table_file.exists())
+            return nullptr;
+
+        // If the file exists, create a new table using TableFunctionFile and return it.
+        auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
+
+        auto table_function = TableFunctionFactory::instance().get(args, context_);
+        if (!table_function)
+            return nullptr;
+
+        auto table_storage = table_function->execute(args, context_, name);
+        if (table_storage)
+            addTable(name, table_storage);
+
+        return table_storage;
+    }
+    catch (...)
+    {
         return nullptr;
-
-    // If the file exists, create a new table using TableFunctionFile and return it.
-    auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
-
-    auto table_function = TableFunctionFactory::instance().get(args, context_);
-    if (!table_function)
-        return nullptr;
-
-    auto table_storage = table_function->execute(args, context_, name);
-    if (table_storage)
-        addTable(name, table_storage);
-
-    return table_storage;
+    }
 }
 
 ASTPtr DatabaseFileSystem::getCreateDatabaseQuery() const
@@ -116,7 +123,8 @@ void DatabaseFileSystem::shutdown()
 /**
  * Returns an empty vector because the database is read-only and no tables can be backed up.
  */
-std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFileSystem::getTablesForBackup(const FilterByNameFunction&, const ContextPtr&) const {
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFileSystem::getTablesForBackup(const FilterByNameFunction&, const ContextPtr&) const
+{
     return {};
 }
 
@@ -125,7 +133,8 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFileSystem::getTablesForBacku
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access.
  */
-DatabaseTablesIteratorPtr DatabaseFileSystem::getTablesIterator(ContextPtr, const FilterByNameFunction&) const {
+DatabaseTablesIteratorPtr DatabaseFileSystem::getTablesIterator(ContextPtr, const FilterByNameFunction&) const
+{
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
