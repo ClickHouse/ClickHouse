@@ -427,6 +427,8 @@ void AsyncLoader::finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr &
         dependent.swap(info.dependent_jobs); // To avoid container modification during recursion
         for (const auto & dep : dependent)
         {
+            if (!scheduled_jobs.contains(dep))
+                continue; // Job has already been canceled
             std::exception_ptr e;
             NOEXCEPT_SCOPE({
                 ALLOW_ALLOCATIONS_IN_SCOPE;
@@ -439,7 +441,7 @@ void AsyncLoader::finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr &
             finish(lock, dep, LoadStatus::CANCELED, e);
         }
 
-        // Clean dependency graph edges
+        // Clean dependency graph edges pointing to canceled jobs
         for (const auto & dep : job->dependencies)
             if (auto dep_info = scheduled_jobs.find(dep); dep_info != scheduled_jobs.end())
                 dep_info->second.dependent_jobs.erase(job);
