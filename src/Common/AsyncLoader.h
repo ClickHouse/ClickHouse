@@ -89,7 +89,7 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && 
 // `AsyncLoader` is a scheduler for DAG of `LoadJob`s. It tracks dependencies and priorities of jobs.
 // Basic usage example:
 //     auto job_func = [&] (const LoadJobPtr & self) {
-//         LOG_TRACE(log, "Executing load job '{}' with priority '{}'", self->name, self->priority);
+//         LOG_TRACE(log, "Executing load job '{}' with priority '{}'", self->name, self->priority());
 //     };
 //     auto job1 = makeLoadJob({}, "job1", job_func);
 //     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
@@ -120,7 +120,7 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && 
 // Every job has a priority associated with it. AsyncLoader runs higher priority (greater `priority` value) jobs first. Job priority can be elevated
 // (a) if either it has a dependent job with higher priority (in this case priority of a dependent job is inherited);
 // (b) or job was explicitly prioritized by `prioritize(job, higher_priority)` call (this also leads to a priority inheritance for all the dependencies).
-// Note that to avoid priority inversion `job_func` should use `self->priority` to schedule new jobs in AsyncLoader or any other pool.
+// Note that to avoid priority inversion `job_func` should use `self->priority()` to schedule new jobs in AsyncLoader or any other pool.
 // Value stored in load job priority field is atomic and can be increased even during job execution.
 //
 // When task is scheduled it can contain dependencies on previously scheduled jobs. These jobs can have any status.
