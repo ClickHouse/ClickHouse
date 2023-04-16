@@ -115,7 +115,7 @@ TEST(AsyncLoader, Smoke)
 
     auto job_func = [&] (const LoadJobPtr & self) {
         jobs_done++;
-        if (self->priority == low_priority)
+        if (self->priority() == low_priority)
             low_priority_jobs_done++;
     };
 
@@ -560,7 +560,7 @@ TEST(AsyncLoader, StaticPriorities)
 
     auto job_func = [&] (const LoadJobPtr & self)
     {
-        schedule += fmt::format("{}{}", self->name, self->priority);
+        schedule += fmt::format("{}{}", self->name, self->priority());
     };
 
     std::vector<LoadJobPtr> jobs;
