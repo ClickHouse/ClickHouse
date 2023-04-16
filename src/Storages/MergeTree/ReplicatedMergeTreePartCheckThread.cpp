@@ -391,6 +391,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 checkDataPart(
                     part,
                     true,
+                    false, // error may be here
                     [this] { return need_stop.load(); });
 
                 if (need_stop)

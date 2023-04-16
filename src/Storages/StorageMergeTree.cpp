@@ -2021,6 +2021,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 {
     CheckResults results;
     DataPartsVector data_parts;
+
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
@@ -2029,6 +2030,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
+    auto cryptographic_mode = getSettings()->cryptographic_mode;
     for (auto & part : data_parts)
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
@@ -2037,7 +2039,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false);
+                auto calculated_checksums = checkDataPart(part, false, cryptographic_mode);
                 calculated_checksums.checkEqual(part->checksums, true);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
@@ -2056,7 +2058,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         {
             try
             {
-                checkDataPart(part, true);
+                checkDataPart(part, true, cryptographic_mode);
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "");
             }

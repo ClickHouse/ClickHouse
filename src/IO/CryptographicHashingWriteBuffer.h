@@ -4,10 +4,8 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Types.h>
-
+#include <Common/SipHash.h>
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
-
-UInt128 sipHash128(const char*, const size_t);
 
 namespace DB
 {
