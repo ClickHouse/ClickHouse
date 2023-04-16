@@ -647,3 +647,52 @@ TEST(AsyncLoader, RandomDependentTasks)
 
     t.loader.wait();
 }
+
+TEST(AsyncLoader, SetMaxThreads)
+{
+    AsyncLoaderTest t(1);
+
+    std::atomic<int> sync_index{0};
+    std::atomic<int> executing{0};
+    int max_threads_values[] = {1, 2, 3, 4, 5, 4, 3, 2, 1, 5, 10, 5, 1, 20, 1};
+    std::vector<std::unique_ptr<std::barrier<>>> syncs;
+    syncs.reserve(std::size(max_threads_values));
+    for (int max_threads : max_threads_values)
+        syncs.push_back(std::make_unique<std::barrier<>>(max_threads + 1));
+
+
+    auto job_func = [&] (const LoadJobPtr &)
+    {
+        int idx = sync_index;
+        if (idx < syncs.size())
+        {
+            executing++;
+            syncs[idx]->arrive_and_wait(); // (A)
+            executing--;
+            syncs[idx]->arrive_and_wait(); // (B)
+        }
+    };
+
+    // Generate enough independent jobs
+    for (int i = 0; i < 1000; i++)
+        t.loader.schedule({makeLoadJob({}, "job", job_func)}).detach();
+
+    t.loader.start();
+    while (sync_index < syncs.size())
+    {
+        // Wait for `max_threads` jobs to start executing
+        int idx = sync_index;
+        while (executing.load() != max_threads_values[idx])
+        {
+            ASSERT_LE(executing, max_threads_values[idx]);
+            std::this_thread::yield();
+        }
+
+        // Allow all jobs to finish
+        syncs[idx]->arrive_and_wait(); // (A)
+        sync_index++;
+        if (sync_index < syncs.size())
+            t.loader.setMaxThreads(max_threads_values[sync_index]);
+        syncs[idx]->arrive_and_wait(); // (B) this sync point is required to allow `executing` value to go back down to zero after we change number of workers
+    }
+}
