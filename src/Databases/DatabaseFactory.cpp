@@ -433,13 +433,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
     }
 #endif
-    else if (engine_name == "FileSystem") {
+    else if (engine_name == "FileSystem")
+    {
         const ASTFunction * engine = engine_define->engine;
 
         // If init_path is empty, then the current path from Poco will be used
         std::string init_path;
 
-        if (engine->arguments && engine->arguments->children.size() > 0) {
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
             if (engine->arguments->children.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "FileSystem database requires at most 1 argument: file_system_path");
 
