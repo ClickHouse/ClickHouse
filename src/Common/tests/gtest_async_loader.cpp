@@ -73,7 +73,7 @@ struct AsyncLoaderTest
     }
 
     template <typename JobFunc>
-    LoadJobSet randomJobSet(int job_count, int dep_probability_percent, std::vector<LoadJobPtr> external_deps, JobFunc job_func, std::string_view name_prefix = "job")
+    LoadJobSet randomJobSet(int job_count, int dep_probability_percent, const std::vector<LoadJobPtr> & external_deps, JobFunc job_func, std::string_view name_prefix = "job")
     {
         std::vector<LoadJobPtr> jobs;
         jobs.reserve(job_count);
@@ -85,7 +85,7 @@ struct AsyncLoaderTest
                 if (randomInt(0, 99) < dep_probability_percent)
                     deps.insert(jobs[d]);
             }
-            if (randomInt(0, 99) < dep_probability_percent)
+            if (!external_deps.empty() && randomInt(0, 99) < dep_probability_percent)
                 deps.insert(external_deps[randomInt<size_t>(0, external_deps.size() - 1)]);
             jobs.push_back(makeLoadJob(std::move(deps), fmt::format("{}{}", name_prefix, j), job_func));
         }
