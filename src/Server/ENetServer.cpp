@@ -2,6 +2,8 @@
 
 #include <Server/ENetServer.h>
 
+#include <Server/ENetPacketMap.h>
+
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Thread.h>
 
@@ -45,6 +47,7 @@ void ENetServer::run()
     }
 
     ENetEvent event;
+    ENetPacket* resp;
 
     while (enet_host_service(server, &event, 1000) > 0)
     {
@@ -56,29 +59,30 @@ void ENetServer::run()
                 break;
 
             case ENET_EVENT_TYPE_RECEIVE:
-                /*printf("A packet of length %lu containing %s was received from %s on channel %u.\n",
-                        event.packet->dataLength,
-                        event.packet->data,
-                        event.peer->data,
-                        event.channelID);*/
+                //event.packet->dataLength,
+                //event.packet->data,
+                //event.peer->data,
+                //event.channelID);
                 /* Clean up the packet now that we're done using it. */
                 enet_packet_destroy (event.packet);
 
-                //work
+                // handle the request
 
-                //response
+                resp = enet_packet_create ("response", 
+                                          strlen ("response") + 1, 
+                                          ENET_PACKET_FLAG_RELIABLE);
+
+                enet_peer_send (event.peer, 0, resp);
+
+                enet_host_flush(server);
 
                 break;
 
             case ENET_EVENT_TYPE_DISCONNECT:
-                //printf("%s disconnected.\n", event.peer->data);
-                /* Reset the peer's client information. */
                 event.peer->data = nullptr;
                 break;
 
             case ENET_EVENT_TYPE_DISCONNECT_TIMEOUT:
-                //printf("%s disconnected due to timeout.\n", event.peer->data);
-                /* Reset the peer's client information. */
                 event.peer->data = nullptr;
                 break;
 
