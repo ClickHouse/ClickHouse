@@ -43,7 +43,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         if (file_cache_settings.base_path.empty())
             file_cache_settings.base_path = fs::path(context->getPath()) / "disks" / name / "cache/";
         else if (fs::path(file_cache_settings.base_path).is_relative())
-            file_cache_settings.base_path = fs::path(context->getPath()) / "caches" / cache_base_path;
+            file_cache_settings.base_path = fs::path(context->getPath()) / "caches" / file_cache_settings.base_path;
 
         auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings);
         auto disk = disk_it->second;
