@@ -77,7 +77,9 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const { return result_description; }
+    SortDescription & getSortDescription() { return result_description; }
+
+    void SetSortDescription(const SortDescription & new_description) { result_description = std::move(new_description); }
 
     void convertToFinishSorting(SortDescription prefix_description);
 
