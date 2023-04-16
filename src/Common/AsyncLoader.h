@@ -135,7 +135,45 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && 
     return std::make_shared<LoadJob>(std::move(dependencies), name, std::forward<Func>(func));
 }
 
-// TODO(serxa): write good comment
+// `AsyncLoader` is a scheduler for DAG of `LoadJob`s. It tracks dependencies and priorities of jobs.
+// Basic usage example:
+//     auto job_func = [&] (const LoadJobPtr & self) {
+//         LOG_TRACE(log, "Executing load job '{}' with priority '{}'", self->name, self->priority);
+//     };
+//     auto job1 = makeLoadJob({}, "job1", job_func);
+//     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
+//     auto job3 = makeLoadJob({ job1 }, "job3", job_func);
+//     auto task = async_loader.schedule({ job1, job2, job3 }, /* priority = */ 0);
+// Here we have created and scheduled a task consisting of two jobs. Job1 has no dependencies and is run first.
+// Job2 and job3 depends on job1 and are run only after job1 completion. Another thread may prioritize a job and wait for it:
+//     async_loader->prioritize(job3, 1); // higher priority jobs are run first
+//     job3->wait(); // blocks until job completion or cancelation and rethrow an exception (if any)
+//
+// AsyncLoader tracks state of all scheduled jobs. Job lifecycle is the following:
+// 1)  Job is constructed with PENDING status.
+// 2)  Job is scheduled and placed into a task. Scheduled job may be ready (i.e. have all its dependencies finished) or blocked.
+// 3a) When all dependencies are successfully executed, job became ready. Ready job is enqueued into the ready queue.
+// 3b) If at least one of job dependencies is failed or canceled, then this job is canceled (with all it's dependent jobs as well).
+//     On cancelation an ASYNC_LOAD_CANCELED exception is generated and saved inside LoadJob object. Job status is changed to CANCELED.
+//     Exception is rethrown by any existing or new `wait()` call. Job is moved to the set of finished jobs.
+// 4)  Scheduled pending ready job starts execution by a worker. Job is dequeuedCallback `job_func` is called.
+//     Status of an executing job is PENDING. And it is still considered as scheduled job by AsyncLoader.
+//     Note that `job_func` of a CANCELED job is never executed.
+// 5a) On successful execution job status is changed to OK and all existing and new `wait()` calls finish w/o exceptions.
+// 5b) Any exception thrown out of `job_func` is wrapped into ASYNC_LOAD_FAILED exception and save inside LoadJob.
+//     Job status is changed to FAILED. All dependent jobs are canceled. The exception is rethrown from all existing and new `wait()` calls.
+// 6)  Job is no longer considered as scheduled and is instead moved to finished jobs set. This is required for introspection of finished jobs.
+// 7)  Task object containing this job is destructed or `remove()` is explicitly called. Job is removed from the finished job set.
+// 8)  Job is destructed.
+//
+// Every job has a priority associated with it. AsyncLoader runs higher priority (greater `priority` value) jobs first. Job priority can be elevated
+// (a) if either it has a dependent job with higher priority (in this case priority of a dependent job is inherited);
+// (b) or job was explicitly prioritized by `prioritize(job, higher_priority)` call (this also leads to a priority inheritance for all the dependencies).
+// Note that to avoid priority inversion `job_func` should use `self->priority` to schedule new jobs in AsyncLoader or any other pool.
+// Value stored in load job priority field is atomic and can be increased even during job execution.
+//
+// When task is scheduled. It can contain dependencies on previously scheduled jobs. These jobs can have any status.
+// The only forbidden thing is a dependency on job, that was not scheduled in AsyncLoader yet: all dependent jobs are immediately canceled.
 class AsyncLoader : private boost::noncopyable
 {
 private:
@@ -684,8 +722,6 @@ private:
 
     mutable std::mutex mutex;
     bool is_running = false;
-
-    // TODO(serxa): add metrics for number of jobs in every state
 
     // Full set of scheduled pending jobs along with scheduling info
     std::unordered_map<LoadJobPtr, Info> scheduled_jobs;
