@@ -284,6 +284,8 @@ AsyncLoader::Task AsyncLoader::schedule(LoadJobSet && jobs, ssize_t priority)
 
 void AsyncLoader::prioritize(const LoadJobPtr & job, ssize_t new_priority)
 {
+    if (!job)
+        return;
     DENY_ALLOCATIONS_IN_SCOPE;
     std::unique_lock lock{mutex};
     prioritize(job, new_priority, lock);
