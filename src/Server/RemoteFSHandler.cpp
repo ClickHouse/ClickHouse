@@ -74,28 +74,28 @@ namespace ErrorCodes
 }
 
 enum {
-    Hello = 0,                  // OK
-    Ping = 1,                   // OK
+    Hello = 0,
+    Ping = 1,
     GetTotalSpace = 2,
     GetAvailableSpace = 3,
-    GetUnreservedSpace = 4,
-    Exists = 5,                 // OK
-    IsFile = 6,                 // OK
-    IsDirectory = 7,            // OK
-    GetFileSize = 8,            
-    CreateDirectory = 9,        // OK
-    CreateDirectories = 10,     // OK
+    Exists = 5,
+    IsFile = 6,
+    IsDirectory = 7,
+    GetFileSize = 8,
+    CreateDirectory = 9,
+    CreateDirectories = 10,
     ClearDirectory = 11,
     MoveDirectory = 12,
     IterateDirectory = 13,
-    CreateFile = 14,            // OK
+    EndIterateDirectory = 113,
+    CreateFile = 14,
     MoveFile = 15,
-    ReplaceFile = 16, 
-    Copy = 17,                              // Not now
-    CopyDirectoryContent = 18,
-    ListFiles = 19,
-    ReadFile = 20,              // ---------- HARD ----------
-    WriteFile = 21,             // ---------- HARD ----------
+    ReplaceFile = 16,
+    Copy = 17,
+    CopyDirectoryContent = 18,  // TODO: fix test
+    ListFiles = 19,             // TODO: later
+    ReadFile = 20,              // TODO: improve
+    WriteFile = 21,             // TODO: improve
     EndWriteFile = 121,
     RemoveFile = 22,
     RemoveFileIfExists = 23,
@@ -103,12 +103,13 @@ enum {
     RemoveRecursive = 25,
     SetLastModified = 26,
     GetLastModified = 27,
-    GetLastChanged = 28,                    // Not now
-    SetReadOnly = 29,                       // Not now
+    GetLastChanged = 28,
+    SetReadOnly = 29,           // TODO fix test
     CreateHardLink = 30,
-    TruncateFile = 31,                      // Not now
+    TruncateFile = 31,
     DataPacket = 55,
-    Error = 255                 // OK
+    DirIterEntry = 56,
+    Error = 255
 };
 
 
@@ -212,8 +213,8 @@ void RemoteFSHandler::run()
         }
         catch (...)
         {
+            // TODO: split on different cases
             sendError(getCurrentExceptionMessage(false));
-            throw;
         }
     }
 }
@@ -257,8 +258,10 @@ void RemoteFSHandler::receivePacket()
     LOG_TRACE(log, "Received {}", packet_type);
 
     std::string path;
-    bool boolRes;
-    size_t sizeTRes;
+    std::string path2;
+    bool boolVar;
+    size_t sizeTVar;
+    time_t timeVar;
 
     switch (packet_type)
     {
@@ -268,32 +271,42 @@ void RemoteFSHandler::receivePacket()
             writeVarUInt(Ping, *out);
             out->next();
             break;
+        case GetTotalSpace:
+            writeVarUInt(GetTotalSpace, *out);
+            writeVarUInt(disk->getTotalSpace(), *out);
+            out->next();
+            break;
+        case GetAvailableSpace:
+            writeVarUInt(GetAvailableSpace, *out);
+            writeVarUInt(disk->getAvailableSpace(), *out);
+            out->next();
+            break;
         case Exists:
             receivePath(path);
-            boolRes = disk->exists(path);
+            boolVar = disk->exists(path);
             writeVarUInt(Exists, *out);
-            writeBoolText(boolRes, *out);
+            writeBoolText(boolVar, *out);
             out->next();
             break;
         case IsFile:
             receivePath(path);
-            boolRes = disk->isFile(path);
+            boolVar = disk->isFile(path);
             writeVarUInt(IsFile, *out);
-            writeBoolText(boolRes, *out);
+            writeBoolText(boolVar, *out);
             out->next();
             break;
         case IsDirectory:
             receivePath(path);
-            boolRes = disk->isDirectory(path);
+            boolVar = disk->isDirectory(path);
             writeVarUInt(IsDirectory, *out);
-            writeBoolText(boolRes, *out);
+            writeBoolText(boolVar, *out);
             out->next();
             break;
         case GetFileSize:
             receivePath(path);
-            sizeTRes = disk->getFileSize(path);
+            sizeTVar = disk->getFileSize(path);
             writeVarUInt(GetFileSize, *out);
-            writeVarUInt(sizeTRes, *out);
+            writeVarUInt(sizeTVar, *out);
             out->next();
             break;
         case CreateDirectory:
@@ -308,10 +321,54 @@ void RemoteFSHandler::receivePacket()
             writeVarUInt(CreateDirectories, *out);
             out->next();
             break;
+        case ClearDirectory:
+            receivePath(path);
+            disk->clearDirectory(path);
+            writeVarUInt(ClearDirectory, *out);
+            out->next();
+            break;
+        case MoveDirectory:
+            receivePath(path);
+            receivePath(path2);
+            disk->moveDirectory(path, path2);
+            writeVarUInt(MoveDirectory, *out);
+            out->next();
+            break;
+        case IterateDirectory:
+            iterateDirectory();
+            break;
         case CreateFile:
             receivePath(path);
             disk->createFile(path);
             writeVarUInt(CreateFile, *out);
+            out->next();
+            break;
+        case MoveFile:
+            receivePath(path);
+            receivePath(path2);
+            disk->moveFile(path, path2);
+            writeVarUInt(MoveFile, *out);
+            out->next();
+            break;
+        case ReplaceFile:
+            receivePath(path);
+            receivePath(path2);
+            disk->replaceFile(path, path2);
+            writeVarUInt(ReplaceFile, *out);
+            out->next();
+            break;
+        case Copy:
+            receivePath(path);
+            receivePath(path2);
+            disk->copy(path, disk, path2);
+            writeVarUInt(Copy, *out);
+            out->next();
+            break;
+        case CopyDirectoryContent:
+            receivePath(path);
+            receivePath(path2);
+            disk->copyDirectoryContent(path, disk, path2);
+            writeVarUInt(CopyDirectoryContent, *out);
             out->next();
             break;
         case ReadFile:
@@ -319,6 +376,71 @@ void RemoteFSHandler::receivePacket()
             break;
         case WriteFile:
             writeFile();
+            break;
+        case RemoveFile:
+            receivePath(path);
+            disk->removeFile(path);
+            writeVarUInt(RemoveFile, *out);
+            out->next();
+            break;
+        case RemoveFileIfExists:
+            receivePath(path);
+            disk->removeFileIfExists(path);
+            writeVarUInt(RemoveFileIfExists, *out);
+            out->next();
+            break;
+        case RemoveDirectory:
+            receivePath(path);
+            disk->removeDirectory(path);
+            writeVarUInt(RemoveDirectory, *out);
+            out->next();
+            break;
+        case RemoveRecursive:
+            receivePath(path);
+            disk->removeRecursive(path);
+            writeVarUInt(RemoveRecursive, *out);
+            out->next();
+            break;
+        case SetLastModified:
+            receivePath(path);
+            readVarUInt(timeVar, *in);
+            disk->setLastModified(path, Poco::Timestamp::fromEpochTime(timeVar));
+            writeVarUInt(SetLastModified, *out);
+            out->next();
+            break;
+        case GetLastModified:
+            receivePath(path);
+            timeVar = disk->getLastModified(path).epochTime();
+            writeVarUInt(GetLastModified, *out);
+            writeVarUInt(timeVar, *out);
+            out->next();
+            break;
+        case GetLastChanged:
+            receivePath(path);
+            timeVar = disk->getLastChanged(path);
+            writeVarUInt(GetLastChanged, *out);
+            writeVarUInt(timeVar, *out);
+            out->next();
+            break;
+        case SetReadOnly:
+            receivePath(path);
+            disk->setReadOnly(path);
+            writeVarUInt(SetReadOnly, *out);
+            out->next();
+            break;
+        case CreateHardLink:
+            receivePath(path);
+            receivePath(path2);
+            disk->createHardLink(path, path2);
+            writeVarUInt(CreateHardLink, *out);
+            out->next();
+            break;
+        case TruncateFile:
+            receivePath(path);
+            readVarUInt(sizeTVar, *in);
+            disk->truncateFile(path, sizeTVar);
+            writeVarUInt(TruncateFile, *out);
+            out->next();
             break;
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
@@ -340,6 +462,19 @@ void RemoteFSHandler::receiveUnexpectedHello()
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
 
+void RemoteFSHandler::iterateDirectory()
+{
+    std::string path;
+    receivePath(path);
+    for (auto iter = disk->iterateDirectory(path); iter->isValid(); iter->next()) {
+        LOG_TRACE(log, "Writing dir entry {}", iter->path());
+        writeVarUInt(DirIterEntry, *out);
+        writeStringBinary(iter->path(), *out);
+    }
+    writeVarUInt(EndIterateDirectory, *out);
+    out->next();
+}
+
 void RemoteFSHandler::readFile()
 {
     std::string strData;
@@ -356,7 +491,7 @@ void RemoteFSHandler::readFile()
     auto bytes_read = readBuf->read(strData.data(), size);
     strData.resize(bytes_read);
     writeVarUInt(ReadFile, *out);
-    writeString(strData, *out);
+    writeStringBinary(strData, *out);
     out->next();
 }
 
