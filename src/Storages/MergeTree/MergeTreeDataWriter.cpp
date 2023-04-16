@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/CryptographicHashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/ObjectUtils.h>

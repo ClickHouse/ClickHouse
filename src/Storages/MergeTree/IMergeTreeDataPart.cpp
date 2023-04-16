@@ -6,7 +6,9 @@
 #include <string_view>
 #include <Core/Defines.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/CryptographicHashingWriteBuffer.h>
 #include <IO/HashingReadBuffer.h>
+#include <IO/CryptographicHashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -2010,8 +2012,15 @@ IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const St
         return {};
     }
     std::unique_ptr<ReadBufferFromFileBase> in_file = getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-    HashingReadBuffer in_hash(*in_file);
 
+    if (storage.getSettings()->cryptographic_mode) {
+        CryptoHashingReadBuffer in_hash(*in_file);
+        String value;
+        readStringUntilEOF(value, in_hash);
+        return in_hash.getHash();
+    }
+
+    HashingReadBuffer in_hash(*in_file);
     String value;
     readStringUntilEOF(value, in_hash);
     return in_hash.getHash();

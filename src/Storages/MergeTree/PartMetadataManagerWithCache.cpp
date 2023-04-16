@@ -213,6 +213,7 @@ void PartMetadataManagerWithCache::getKeysAndCheckSums(Strings & keys, std::vect
     size_t size = keys.size();
     for (size_t i = 0; i < size; ++i)
     {
+
         ReadBufferFromString rbuf(values[i]);
         HashingReadBuffer hbuf(rbuf);
         hbuf.ignoreAll();
