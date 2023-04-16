@@ -79,6 +79,8 @@ void ExpressionStep::updateOutputStream()
     output_stream = createOutputStream(
         input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
 
+    updateDataHintsWithExpressionActionsDAG(output_stream->hints, *actions_dag);
+
     if (!getDataStreamTraits().preserves_sorting)
         return;
 
