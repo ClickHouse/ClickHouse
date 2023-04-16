@@ -147,7 +147,7 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && 
 // Here we have created and scheduled a task consisting of two jobs. Job1 has no dependencies and is run first.
 // Job2 and job3 depends on job1 and are run only after job1 completion. Another thread may prioritize a job and wait for it:
 //     async_loader->prioritize(job3, 1); // higher priority jobs are run first
-//     job3->wait(); // blocks until job completion or cancelation and rethrow an exception (if any)
+//     job3->wait(); // blocks until job completion or cancellation and rethrow an exception (if any)
 //
 // AsyncLoader tracks state of all scheduled jobs. Job lifecycle is the following:
 // 1)  Job is constructed with PENDING status.
