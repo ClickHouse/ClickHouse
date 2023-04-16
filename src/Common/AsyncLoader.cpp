@@ -266,7 +266,7 @@ AsyncLoader::Task AsyncLoader::schedule(LoadJobSet && jobs, ssize_t priority)
                         e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
                             "Load job '{}' -> {}",
                             job->name,
-                            getExceptionMessage(dep->exception(), /* with_stack_trace = */ false)));
+                            getExceptionMessage(dep->exception(), /* with_stacktrace = */ false)));
                     });
                     finish(lock, job, LoadStatus::CANCELED, e);
                     break; // This job is now finished, stop its dependencies processing
@@ -438,7 +438,7 @@ void AsyncLoader::finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr &
                     Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
                         "Load job '{}' -> {}",
                         dep->name,
-                        getExceptionMessage(exception_from_job, /* with_stack_trace = */ false)));
+                        getExceptionMessage(exception_from_job, /* with_stacktrace = */ false)));
             });
             finish(lock, dep, LoadStatus::CANCELED, e);
         }
