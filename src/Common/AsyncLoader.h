@@ -172,7 +172,7 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && 
 // Note that to avoid priority inversion `job_func` should use `self->priority` to schedule new jobs in AsyncLoader or any other pool.
 // Value stored in load job priority field is atomic and can be increased even during job execution.
 //
-// When task is scheduled. It can contain dependencies on previously scheduled jobs. These jobs can have any status.
+// When task is scheduled it can contain dependencies on previously scheduled jobs. These jobs can have any status.
 // The only forbidden thing is a dependency on job, that was not scheduled in AsyncLoader yet: all dependent jobs are immediately canceled.
 class AsyncLoader : private boost::noncopyable
 {
