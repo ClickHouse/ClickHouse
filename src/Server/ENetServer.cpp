@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Server/ENetServer.h>
 
 #include <Poco/Net/TCPServer.h>
@@ -22,7 +24,7 @@ void ENetServer::start()
         throw 1;
     }
     _stopped = false;
-	thread->start(*this);
+    thread->start(*this);
 }
 
 
@@ -86,16 +88,16 @@ void ENetServer::run()
     }
 }
 
-	
+
 void ENetServer::stop()
 {
-	if (!_stopped)
-	{
+    if (!_stopped)
+    {
         enet_host_destroy(server);
         enet_deinitialize();
-		_stopped = true;
-		thread->join();
-	}
+        _stopped = true;
+        thread->join();
+    }
 }
 
 }

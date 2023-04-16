@@ -4,6 +4,8 @@
 #pragma GCC diagnostic ignored "-Wreserved-identifier"
 #pragma GCC diagnostic ignored "-Wpacked"
 
+#include "config.h"
+
 #include <base/types.h>
 
 #include <Poco/Net/TCPServer.h>
