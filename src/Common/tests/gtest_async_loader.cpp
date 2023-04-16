@@ -587,6 +587,62 @@ TEST(AsyncLoader, StaticPriorities)
     ASSERT_EQ(schedule, "A9E9D9F9G9H9C4B3");
 }
 
+TEST(AsyncLoader, DynamicPriorities)
+{
+    AsyncLoaderTest t(1);
+
+    for (bool prioritize : {false, true})
+    {
+        std::string schedule;
+
+        LoadJobPtr job_to_prioritize;
+
+        auto job_func = [&] (const LoadJobPtr & self)
+        {
+            if (prioritize && self->name == "C")
+                t.loader.prioritize(job_to_prioritize, 9); // dynamic prioritization
+            schedule += fmt::format("{}{}", self->name, self->priority());
+        };
+
+        // Job DAG with initial priorities. During execution of C4, job G0 priority is increased to G9, postponing B3 job executing.
+        // A0 -+-> B3
+        //     |
+        //     `-> C4
+        //     |
+        //     `-> D1 -.
+        //     |       +-> F0 --> G0 --> H0
+        //     `-> E2 -'
+        std::vector<LoadJobPtr> jobs;
+        jobs.push_back(makeLoadJob({}, "A", job_func)); // 0
+        jobs.push_back(makeLoadJob({ jobs[0] }, "B", job_func)); // 1
+        jobs.push_back(makeLoadJob({ jobs[0] }, "C", job_func)); // 2
+        jobs.push_back(makeLoadJob({ jobs[0] }, "D", job_func)); // 3
+        jobs.push_back(makeLoadJob({ jobs[0] }, "E", job_func)); // 4
+        jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, "F", job_func)); // 5
+        jobs.push_back(makeLoadJob({ jobs[5] }, "G", job_func)); // 6
+        jobs.push_back(makeLoadJob({ jobs[6] }, "H", job_func)); // 7
+        auto task = t.loader.schedule({ jobs[0] }, 0);
+        task.merge(t.loader.schedule({ jobs[1] }, 3));
+        task.merge(t.loader.schedule({ jobs[2] }, 4));
+        task.merge(t.loader.schedule({ jobs[3] }, 1));
+        task.merge(t.loader.schedule({ jobs[4] }, 2));
+        task.merge(t.loader.schedule({ jobs[5] }, 0));
+        task.merge(t.loader.schedule({ jobs[6] }, 0));
+        task.merge(t.loader.schedule({ jobs[7] }, 0));
+
+        job_to_prioritize = jobs[6];
+
+        t.loader.start();
+        t.loader.wait();
+        t.loader.stop();
+
+        if (prioritize)
+            ASSERT_EQ(schedule, "A4C4E9D9F9G9B3H0");
+        else
+            ASSERT_EQ(schedule, "A4C4B3E2D1F0G0H0");
+    }
+}
+
 TEST(AsyncLoader, RandomIndependentTasks)
 {
     AsyncLoaderTest t(16);
