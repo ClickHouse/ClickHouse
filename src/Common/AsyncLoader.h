@@ -98,14 +98,14 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && 
 // Here we have created and scheduled a task consisting of two jobs. Job1 has no dependencies and is run first.
 // Job2 and job3 depends on job1 and are run only after job1 completion. Another thread may prioritize a job and wait for it:
 //     async_loader->prioritize(job3, 1); // higher priority jobs are run first
-//     job3->wait(); // blocks until job completion or cancelation and rethrow an exception (if any)
+//     job3->wait(); // blocks until job completion or cancellation and rethrow an exception (if any)
 //
 // AsyncLoader tracks state of all scheduled jobs. Job lifecycle is the following:
 // 1)  Job is constructed with PENDING status.
 // 2)  Job is scheduled and placed into a task. Scheduled job may be ready (i.e. have all its dependencies finished) or blocked.
 // 3a) When all dependencies are successfully executed, job became ready. Ready job is enqueued into the ready queue.
 // 3b) If at least one of job dependencies is failed or canceled, then this job is canceled (with all it's dependent jobs as well).
-//     On cancelation an ASYNC_LOAD_CANCELED exception is generated and saved inside LoadJob object. Job status is changed to CANCELED.
+//     On cancellation an ASYNC_LOAD_CANCELED exception is generated and saved inside LoadJob object. Job status is changed to CANCELED.
 //     Exception is rethrown by any existing or new `wait()` call. Job is moved to the set of finished jobs.
 // 4)  Scheduled pending ready job starts execution by a worker. Job is dequeuedCallback `job_func` is called.
 //     Status of an executing job is PENDING. And it is still considered as scheduled job by AsyncLoader.
