@@ -925,6 +925,8 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     std::exception_ptr local_format_error;
 
+    progress_before_query_start.reset();
+
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -1045,7 +1047,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 }
 
 
-void ClientBase::onProgress(const Progress & value)
+void ClientBase::onProgress(Progress & value)
 {
     if (!progress_indication.updateProgress(value))
     {
@@ -1054,7 +1056,13 @@ void ClientBase::onProgress(const Progress & value)
     }
 
     if (output_format)
+    {
+        value.incrementPiecewiseAtomically(progress_before_query_start);
+        progress_before_query_start.reset();
         output_format->onProgress(value);
+    }
+    else
+        progress_before_query_start.incrementPiecewiseAtomically(value);
 
     if (need_render_progress && tty_buf)
         progress_indication.writeProgress(*tty_buf);

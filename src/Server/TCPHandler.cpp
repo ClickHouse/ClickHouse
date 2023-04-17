@@ -416,6 +416,22 @@ void TCPHandler::runImpl()
                 return res;
             });
 
+            query_context->setQueryCancellationChecker(
+                [this]() -> bool
+                {
+                    std::lock_guard lock(fatal_error_mutex);
+
+                    if (isQueryCancelled())
+                        return true;
+
+                    sendProgress();
+                    sendProfileEvents();
+                    sendLogs();
+
+                    return false;
+                },
+                interactive_delay);
+
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
 

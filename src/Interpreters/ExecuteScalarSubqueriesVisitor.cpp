@@ -33,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -187,9 +188,19 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         {
             auto io = interpreter->execute();
 
+            auto cancellation_checker = data.getContext()->getQueryCancellationChecker();
+            UInt64 interactive_delay = data.getContext()->getQueryInteractiveDelay();
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
-            while (block.rows() == 0 && executor.pull(block));
+
+            while (block.rows() == 0 && executor.pull(block, interactive_delay))
+            {
+                if (cancellation_checker && (*cancellation_checker)())
+                    throw Exception(
+                        ErrorCodes::QUERY_WAS_CANCELLED,
+                        "Query '{}' was cancelled when evaluating scalar subqueries",
+                        data.getContext()->getCurrentQueryId());
+            }
 
             if (block.rows() == 0)
             {
@@ -220,8 +231,14 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
             Block tmp_block;
-            while (tmp_block.rows() == 0 && executor.pull(tmp_block))
-                ;
+            while (tmp_block.rows() == 0 && executor.pull(tmp_block, interactive_delay))
+            {
+                if (cancellation_checker && (*cancellation_checker)())
+                    throw Exception(
+                        ErrorCodes::QUERY_WAS_CANCELLED,
+                        "Query '{}' was cancelled when evaluating scalar subqueries",
+                        data.getContext()->getCurrentQueryId());
+            }
 
             if (tmp_block.rows() != 0)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");

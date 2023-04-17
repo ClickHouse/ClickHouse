@@ -185,6 +185,7 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
+using QueryCancellationChecker = std::function<bool()>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
@@ -275,6 +276,9 @@ private:
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
+    /// Used to check if TCP client cancels query during planing
+    std::optional<QueryCancellationChecker> query_cancellation_checker;
+    UInt64 interactive_delay = 0;
 
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
@@ -1076,6 +1080,9 @@ public:
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
+    std::optional<QueryCancellationChecker> getQueryCancellationChecker() const;
+    UInt64 getQueryInteractiveDelay() const;
+    void setQueryCancellationChecker(QueryCancellationChecker && checker, UInt64 interactive_delay_);
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
 
