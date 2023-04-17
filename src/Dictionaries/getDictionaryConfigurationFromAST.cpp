@@ -571,11 +571,23 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
+void checkLifetime(const ASTCreateQuery & query)
+{
+    if (query.dictionary -> layout && query.dictionary->layout->layout_type == "direct") {
+        if (query.dictionary -> lifetime)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
+                query.dictionary->layout->layout_type);
+    }
+}
+
 
 DictionaryConfigurationPtr
 getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
 {
     checkAST(query);
+    checkLifetime(query);
 
     AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
     AutoPtr<Poco::XML::Element> document_root(xml_document->createElement("dictionaries"));
