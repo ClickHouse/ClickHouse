@@ -91,6 +91,7 @@ namespace detail
     class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
     public:
+        /// Information from HTTP response header.
         struct FileInfo
         {
             // nullopt if the server doesn't report it.
@@ -796,7 +797,24 @@ namespace detail
         FileInfo getFileInfo()
         {
             Poco::Net::HTTPResponse response;
-            getHeadResponse(response);
+            try
+            {
+                getHeadResponse(response);
+            }
+            catch (HTTPException & e)
+            {
+                /// Maybe the web server doesn't support HEAD requests.
+                /// E.g. webhdfs reports status 400.
+                /// We should proceed in hopes that the actual GET request will succeed.
+                /// (Unless the error in transient. Don't want to nondeterministically sometimes
+                /// fall back to slow whole-file reads when HEAD is actually supported; that sounds
+                /// like a nightmare to debug.)
+                if (e.getHTTPStatus() >= 400 && e.getHTTPStatus() <= 499 &&
+                    e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS)
+                    return FileInfo{};
+
+                throw;
+            }
             return parseFileInfo(response, 0);
         }
 
