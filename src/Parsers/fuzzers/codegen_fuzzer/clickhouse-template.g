@@ -37,6 +37,7 @@ $1 " as " $2 ;
 "SELECT " $1 " INTO OUTFILE " $2 ;
 "SELECT " $1 " STDDEV_SAMP " $2 "STDDEV_SAMP " $3 ;
 "SELECT " $1 " NULLS " $2 "NULLS " $3 ;
+// Added in more clickhouse specific fuzzing tests
 "SELECT " $1 " AS " $2 "AS " $3 ;
 "SELECT " $1 " DESCENDING " $2 "DESCENDING " $3 ;
 "SELECT " $1 " SVG " $2 "SVG " $3 ;
