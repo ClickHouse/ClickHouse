@@ -1,6 +1,4 @@
 #include <Common/ConcurrentBoundedQueue.h>
-
-#include <QueryPipeline/ConnectionCollector.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 
@@ -23,13 +21,8 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageMemory.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric SyncDrainedConnections;
-    extern const Metric ActiveSyncDrainedConnections;
-}
 
 namespace ProfileEvents
 {
@@ -67,7 +60,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 {
     create_connections = [this, &connection, throttler, extension_]()
     {
-        auto res = std::make_shared<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+        auto res = std::make_unique<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -83,7 +76,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 {
     create_connections = [this, connection_ptr, throttler, extension_]()
     {
-        auto res = std::make_shared<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
+        auto res = std::make_unique<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -91,7 +84,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    const ConnectionPoolWithFailoverPtr & pool_,
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
@@ -100,10 +92,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
     , task_iterator(extension_ ? extension_->task_iterator : nullptr)
     , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
-    , pool(pool_)
 {
     create_connections = [this, connections_, throttler, extension_]() mutable {
-        auto res = std::make_shared<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -111,7 +102,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    const ConnectionPoolWithFailoverPtr & pool_,
+    const ConnectionPoolWithFailoverPtr & pool,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
@@ -119,9 +110,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
     , task_iterator(extension_ ? extension_->task_iterator : nullptr)
     , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
-    , pool(pool_)
 {
-    create_connections = [this, throttler, extension_]()->std::shared_ptr<IConnections>
+    create_connections = [this, pool, throttler, extension_]()->std::unique_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -133,7 +123,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             if (main_table)
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-            auto res = std::make_shared<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check);
+            auto res = std::make_unique<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check);
             if (extension_ && extension_->replica_info)
                 res->setReplicaInfo(*extension_->replica_info);
             return res;
@@ -151,7 +141,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         else
             connection_entries = pool->getMany(timeouts, &current_settings, pool_mode);
 
-        auto res = std::make_shared<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -226,7 +216,15 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
 
     const auto & settings = context->getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == connections->size())
+    {
+        /// To avoid sending the query again in the read(), we need to update the following flags:
+        std::lock_guard guard(was_cancelled_mutex);
+        was_cancelled = true;
+        finished = true;
+        sent_query = true;
+
         return;
+    }
 
     /// Query cannot be canceled in the middle of the send query,
     /// since there are multiple packets:
@@ -246,11 +244,8 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
-    {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
-        if (!duplicated_part_uuids.empty())
-            connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
-    }
+    if (!duplicated_part_uuids.empty())
+        connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
@@ -322,7 +317,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read(std::unique_ptr<ReadCo
         read_context = std::make_unique<ReadContext>(*connections);
     }
 
-    do
+    while (true)
     {
         if (!read_context->resumeRoutine())
             return ReadResult(Block());
@@ -349,7 +344,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read(std::unique_ptr<ReadCo
                 return restartQueryWithoutDuplicatedUUIDs(&read_context);
         }
     }
-    while (true);
 #else
     return read();
 #endif
@@ -482,7 +476,6 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 
     if (!duplicates.empty())
     {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
         duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
         return false;
     }
@@ -536,26 +529,38 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read", read_context);
 
-    if (context->getSettingsRef().drain_timeout != Poco::Timespan(-1000000))
+    /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
+    Packet packet = connections->drain();
+    switch (packet.type)
     {
-        auto connections_left = ConnectionCollector::enqueueConnectionCleanup(pool, connections);
-        if (connections_left)
-        {
-            /// Drain connections synchronously and suppress errors.
-            CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
-            ConnectionCollector::drainConnections(*connections_left, /* throw_error= */ false);
-            CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
-        }
-    }
-    else
-    {
-        /// Drain connections synchronously without suppressing errors.
-        CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
-        ConnectionCollector::drainConnections(*connections, /* throw_error= */ true);
-        CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
-    }
+        case Protocol::Server::EndOfStream:
+            finished = true;
+            break;
 
-    finished = true;
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
+
+        case Protocol::Server::Exception:
+            got_exception_from_replica = true;
+            packet.exception->rethrow();
+            break;
+
+        case Protocol::Server::ProfileEvents:
+            /// Pass profile events from remote server to client
+            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+                if (!profile_queue->emplace(std::move(packet.block)))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
+
+        default:
+            got_unknown_packet_from_replica = true;
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
+                connections->dumpAddresses());
+    }
 }
 
 void RemoteQueryExecutor::cancel(std::unique_ptr<ReadContext> * read_context)
@@ -602,6 +607,9 @@ void RemoteQueryExecutor::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
+                /// Send only temporary tables with StorageMemory
+                if (!std::dynamic_pointer_cast<StorageMemory>(cur))
+                    continue;
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;

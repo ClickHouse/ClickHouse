@@ -350,7 +350,7 @@ void TransactionLog::tryFinalizeUnknownStateTransactions()
         /// CSNs must be already loaded, only need to check if the corresponding mapping exists.
         if (auto csn = getCSN(txn->tid))
         {
-            finalizeCommittedTransaction(txn, csn, state_guard);
+            finalizeCommittedTransaction(txn.get(), csn, state_guard);
         }
         else
         {
@@ -431,7 +431,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             /// The only thing we can do is to postpone its finalization.
             {
                 std::lock_guard lock{running_list_mutex};
-                unknown_state_list.emplace_back(txn.get(), std::move(state_guard));
+                unknown_state_list.emplace_back(txn, std::move(state_guard));
             }
             log_updated_event->set();
             if (throw_on_unknown_status)
@@ -487,6 +487,7 @@ CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN
         }
     }
 
+    txn->afterFinalize();
     return allocated_csn;
 }
 
@@ -523,6 +524,7 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
     }
 
     tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::ROLLBACK, txn->tid);
+    txn->afterFinalize();
 }
 
 MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash & tid)

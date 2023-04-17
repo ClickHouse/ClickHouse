@@ -70,5 +70,5 @@ SELECT * FROM mongodb(
 
 **See Also**
 
--   [The `MongoDB` table engine](../../engines/table-engines/integrations/mongodb.md)
--   [Using MongoDB as a dictionary source](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources/#mongodb)
+-   [The `MongoDB` table engine](/docs/en/engines/table-engines/integrations/mongodb.md)
+-   [Using MongoDB as a dictionary source](/docs/en/sql-reference/dictionaries/index.md#mongodb)

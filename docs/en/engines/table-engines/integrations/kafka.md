@@ -19,8 +19,8 @@ Kafka lets you:
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1],
+    name2 [type2],
     ...
 ) ENGINE = Kafka()
 SETTINGS
@@ -102,7 +102,7 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
@@ -112,6 +112,10 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 ```
 
 </details>
+
+:::info
+The Kafka table engine doesn't support columns with [default value](../../../sql-reference/statements/create/table.md#default_value). If you need columns with default value, you can add them at materialized view level (see below).
+:::
 
 ## Description {#description}
 
@@ -162,21 +166,58 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Configuration {#configuration}
 
-Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
+Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ``` xml
-  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+
+    <!-- Configuration specific to topics "logs" and "stats" -->
+
+    <kafka_topic>
+      <name>logs</name>
+      <retry_backoff_ms>250</retry_backoff_ms>
+      <fetch_min_bytes>100000</fetch_min_bytes>
+    </kafka_topic>
+
+    <kafka_topic>
+      <name>stats</name>
+      <retry_backoff_ms>400</retry_backoff_ms>
+      <fetch_min_bytes>50000</fetch_min_bytes>
+    </kafka_topic>
+  </kafka>
+
+```
+
+<details markdown="1">
+
+<summary>Example in deprecated syntax</summary>
+
+``` xml
+  <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
   </kafka>
 
-  <!-- Configuration specific for topic "logs" -->
+  <!-- Configuration specific to topics "logs" and "stats" -->
+  <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
+
   <kafka_logs>
     <retry_backoff_ms>250</retry_backoff_ms>
     <fetch_min_bytes>100000</fetch_min_bytes>
   </kafka_logs>
+
+  <kafka_stats>
+    <retry_backoff_ms>400</retry_backoff_ms>
+    <fetch_min_bytes>50000</fetch_min_bytes>
+  </kafka_stats>
 ```
+
+</details>
+
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
@@ -218,4 +259,4 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+-   [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)

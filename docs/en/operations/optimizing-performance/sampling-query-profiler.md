@@ -7,11 +7,23 @@ import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.m
 
 # Sampling Query Profiler
 
-<SelfManaged />
-
 ClickHouse runs sampling profiler that allows analyzing query execution. Using profiler you can find source code routines that used the most frequently during query execution. You can trace CPU time and wall-clock time spent including idle time.
 
-To use profiler:
+Query profiler is automatically enabled in ClickHouse Cloud and you can run a sample query as follows
+
+``` sql
+SELECT
+    count(),
+    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+FROM system.trace_log
+WHERE (query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c') AND (event_date = today())
+GROUP BY trace
+ORDER BY count() DESC
+LIMIT 10
+SETTINGS allow_introspection_functions = 1
+```
+
+In self-managed deployments, to use query profiler:
 
 -   Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
 

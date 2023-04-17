@@ -15,6 +15,7 @@ using namespace DB;
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolSize;
 }
 
 std::random_device device;
@@ -102,7 +103,8 @@ TEST(Executor, Simple)
         "GTest",
         1, // threads
         100, // max_tasks
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     String schedule; // mutex is not required because we have a single worker
@@ -144,14 +146,14 @@ TEST(Executor, RemoveTasks)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     for (size_t i = 0; i < batch; ++i)
         for (size_t j = 0; j < tasks_kinds; ++j)
             ASSERT_TRUE(
-                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j)))
-            );
+                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j))));
 
     std::vector<std::thread> threads(batch);
 
@@ -185,7 +187,8 @@ TEST(Executor, RemoveTasksStress)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     std::barrier barrier(schedulers_count + removers_count);
@@ -235,7 +238,8 @@ TEST(Executor, UpdatePolicy)
         "GTest",
         1, // threads
         100, // max_tasks
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     String schedule; // mutex is not required because we have a single worker

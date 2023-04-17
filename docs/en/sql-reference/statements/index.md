@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/statements/
 sidebar_position: 1
-sidebar_label: Statements
+sidebar_label: List of statements
 ---
 
-# ClickHouse SQL Statements 
+# ClickHouse SQL Statements
 
 Statements represent various kinds of action you can perform using SQL queries. Each kind of statement has it’s own syntax and usage details that are described separately:
 

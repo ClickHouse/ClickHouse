@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <IO/AsyncReadCounters.h>
+#include <boost/heap/priority_queue.hpp>
 #include <queue>
 
 namespace DB
@@ -25,6 +26,7 @@ public:
         RangesInDataParts && parts_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
         size_t preferred_block_size_bytes_,
@@ -78,7 +80,6 @@ private:
     Block header;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
-    MergeTreeReaderSettings reader_settings;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     size_t index_granularity_bytes;
     size_t fixed_index_granularity;
@@ -87,6 +88,8 @@ private:
     const Names column_names;
     const Names virtual_column_names;
     PrewhereInfoPtr prewhere_info;
+    const ExpressionActionsSettings actions_settings;
+    const MergeTreeReaderSettings reader_settings;
     RangesInDataParts parts_ranges;
 
     [[ maybe_unused ]] const bool is_remote_read;

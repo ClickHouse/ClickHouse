@@ -125,7 +125,7 @@ SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','
 
 Like [sipHash64](#hash_functions-siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
-:::warning
+:::note
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects should probably use [sipHash128Reference](#hash_functions-siphash128reference).
@@ -165,7 +165,7 @@ Result:
 
 Same as [sipHash128](#hash_functions-siphash128) but additionally takes an explicit key argument instead of using a fixed key.
 
-:::warning
+:::note
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects should probably use [sipHash128ReferenceKeyed](#hash_functions-siphash128referencekeyed).
@@ -441,11 +441,11 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash
 
-Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452), 
-[Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405), 
-[Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410), 
-[Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959), 
-[Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060). 
+Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452),
+[Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405),
+[Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410),
+[Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
+[Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
 Note that Java only support calculating signed integers hash, so if you want to calculate unsigned integers hash you must cast it to proper signed ClickHouse types.
@@ -658,6 +658,45 @@ Result:
 ┌─────────────────res1─┬────────────────res2─┐
 │ 12384823029245979431 │ 1188926775431157506 │
 └──────────────────────┴─────────────────────┘
+```
+
+
+## kafkaMurmurHash
+
+Calculates a 32-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [Kafka](https://github.com/apache/kafka/blob/461c5cfe056db0951d9b74f5adc45973670404d7/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L482) and without the highest bit to be compatible with [Default Partitioner](https://github.com/apache/kafka/blob/139f7709bd3f5926901a21e55043388728ccca78/clients/src/main/java/org/apache/kafka/clients/producer/internals/BuiltInPartitioner.java#L328).
+
+**Syntax**
+
+```sql
+MurmurHash(par1, ...)
+```
+
+**Arguments**
+
+-   `par1, ...` — A variable number of parameters that can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
+
+**Returned value**
+
+-   Calculated hash value.
+
+Type: [UInt32](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    kafkaMurmurHash('foobar') AS res1,
+    kafkaMurmurHash(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS res2
+```
+
+Result:
+
+```response
+┌───────res1─┬─────res2─┐
+│ 1357151166 │ 85479775 │
+└────────────┴──────────┘
 ```
 
 ## murmurHash3_32, murmurHash3_64

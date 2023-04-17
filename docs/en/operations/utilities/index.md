@@ -1,11 +1,11 @@
 ---
 slug: /en/operations/utilities/
 sidebar_position: 56
-sidebar_label: Overview
+sidebar_label: List of tools and utilities
 pagination_next: 'en/operations/utilities/clickhouse-copier'
 ---
 
-# ClickHouse Utilities 
+# List of tools and utilities
 
 -   [clickhouse-local](../../operations/utilities/clickhouse-local.md) — Allows running SQL queries on data without starting the ClickHouse server, similar to how `awk` does this.
 -   [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) — Copies (and reshards) data from one cluster to another cluster.

@@ -4,7 +4,7 @@ sidebar_position: 32
 sidebar_label: SELECT
 ---
 
-# SELECT Query 
+# SELECT Query
 
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
@@ -44,7 +44,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [WHERE clause](../../../sql-reference/statements/select/where.md)
 -   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 -   [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
--   [HAVING clause](../../../sql-reference/statements/select/having)
+-   [HAVING clause](../../../sql-reference/statements/select/having.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 -   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)

@@ -12,7 +12,6 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Types.h>
-#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
@@ -40,7 +39,7 @@ using QueryContextPtr = std::shared_ptr<QueryContext>;
 public:
     using Key = DB::FileCacheKey;
 
-    FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
+    explicit FileCache(const FileCacheSettings & settings);
 
     ~FileCache() = default;
 

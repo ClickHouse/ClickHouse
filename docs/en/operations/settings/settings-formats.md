@@ -15,11 +15,12 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
-- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow)
+- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats)
+- [BSONEachRow](../../interfaces/formats.md/#bsoneachrow) (and other JSON formats)
 - [TSKV](../../interfaces/formats.md/#tskv)
 - All formats with suffixes WithNames/WithNamesAndTypes
-- [JSONColumns](../../interfaces/formats.md/#jsoncolumns)
 - [MySQLDump](../../interfaces/formats.md/#mysqldump)
+- [Native](../../interfaces/formats.md/#native)
 
 Possible values:
 
@@ -78,7 +79,7 @@ Default value: 1.
 
 ## input_format_defaults_for_omitted_fields {#input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow), [CSV](../../interfaces/formats.md/#csv), [TabSeparated](../../interfaces/formats.md/#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats), [CSV](../../interfaces/formats.md/#csv), [TabSeparated](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [Parquet](../../interfaces/formats.md/#parquet), [Arrow](../../interfaces/formats.md/#arrow), [Avro](../../interfaces/formats.md/#avro), [ORC](../../interfaces/formats.md/#orc), [Native](../../interfaces/formats.md/#native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 :::note
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -96,7 +97,9 @@ Default value: 1.
 Enables or disables the initialization of [NULL](../../sql-reference/syntax.md/#null-literal) fields with [default values](../../sql-reference/statements/create/table.md/#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
-This setting is applicable to [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) queries for text input formats.
+This setting is applicable for most input formats.
+
+For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
 Possible values:
 
@@ -138,6 +141,10 @@ x	UInt8
 y	Nullable(String)
 z	IPv4
 ```
+
+:::note
+If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
+:::
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
@@ -504,7 +511,7 @@ Enabled by default.
 
 Ignore unknown keys in json object for named tuples.
 
-Disabled by default.
+Enabled by default.
 
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
@@ -957,7 +964,7 @@ Default value: 1.
 
 ### input_format_arrow_import_nested {#input_format_arrow_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
 
 Possible values:
 
@@ -1007,11 +1014,17 @@ Use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString column
 
 Enabled by default.
 
+### output_format_arrow_compression_method {#output_format_arrow_compression_method}
+
+Compression method used in output Arrow format. Supported codecs: `lz4_frame`, `zstd`, `none` (uncompressed)
+
+Default value: `none`.
+
 ## ORC format settings {#orc-format-settings}
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
 
 Possible values:
 
@@ -1050,11 +1063,17 @@ Use ORC String type instead of Binary for String columns.
 
 Disabled by default.
 
+### output_format_orc_compression_method {#output_format_orc_compression_method}
+
+Compression method used in output ORC format. Supported codecs: `lz4`, `snappy`, `zlib`, `zstd`, `none` (uncompressed)
+
+Default value: `none`.
+
 ## Parquet format settings {#parquet-format-settings}
 
 ### input_format_parquet_import_nested {#input_format_parquet_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
 
 Possible values:
 
@@ -1098,6 +1117,18 @@ Disabled by default.
 Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns.
 
 Enabled by default.
+
+### output_format_parquet_version {#output_format_parquet_version}
+
+The version of Parquet format used in output format. Supported versions: `1.0`, `2.4`, `2.6` and `2.latest`.
+
+Default value: `2.latest`.
+
+### output_format_parquet_compression_method {#output_format_parquet_compression_method}
+
+Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
+
+Default value: `lz4`.
 
 ## Hive format settings {#hive-format-settings}
 
@@ -1461,7 +1492,7 @@ Default value: `65505`.
 
 The name of table that will be used in the output INSERT statement.
 
-Default value: `'table''`.
+Default value: `table`.
 
 ### output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
@@ -1501,4 +1532,12 @@ Disabled by default.
 
 The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
 
-Default value: `1GiB`
+Default value: `1GiB`.
+
+## Native format settings {#native-format-settings}
+
+### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
+
+Allow types conversion in Native input format between columns from input data and requested columns.
+
+Enabled by default.

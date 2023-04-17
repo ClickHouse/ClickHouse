@@ -71,20 +71,15 @@ Chunk ParquetBlockInputFormat::generate()
     if (*batch)
     {
         auto tmp_table = arrow::Table::FromRecordBatches({*batch});
-        arrow_column_to_ch_column->arrowTableToCHChunk(res, *tmp_table, (*tmp_table)->num_rows());
+        /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+        /// Otherwise fill the missing columns with zero values of its type.
+        BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
+        arrow_column_to_ch_column->arrowTableToCHChunk(res, *tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
     }
     else
     {
-        current_record_batch_reader.reset();
-        file_reader.reset();
         return {};
     }
-
-    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
-    /// Otherwise fill the missing columns with zero values of its type.
-    if (format_settings.defaults_for_omitted_fields)
-        for (const auto & column_idx : missing_columns)
-            block_missing_values.setBits(column_idx, res.getNumRows());
 
     return res;
 }
@@ -94,6 +89,7 @@ void ParquetBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     file_reader.reset();
+    current_record_batch_reader.reset();
     column_indices.clear();
     row_group_current = 0;
     block_missing_values.clear();
@@ -133,10 +129,10 @@ void ParquetBlockInputFormat::prepareReader()
         "Parquet",
         format_settings.parquet.import_nested,
         format_settings.parquet.allow_missing_columns,
+        format_settings.null_as_default,
         format_settings.parquet.case_insensitive_column_matching);
-    missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
-    ArrowFieldIndexUtil<false> field_util(
+    ArrowFieldIndexUtil field_util(
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
     column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);

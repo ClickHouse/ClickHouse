@@ -215,7 +215,9 @@ public:
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
+    String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
+    void dequeueDroppedTableCleanup(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
 
@@ -235,6 +237,21 @@ public:
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
+
+    struct TableMarkedAsDropped
+    {
+        StorageID table_id = StorageID::createEmpty();
+        StoragePtr table;
+        String metadata_path;
+        time_t drop_time{};
+    };
+    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
+
+    TablesMarkedAsDropped getTablesMarkedDropped()
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        return tables_marked_dropped;
+    }
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -263,15 +280,6 @@ private:
         return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
     }
 
-    struct TableMarkedAsDropped
-    {
-        StorageID table_id = StorageID::createEmpty();
-        StoragePtr table;
-        String metadata_path;
-        time_t drop_time{};
-    };
-    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
-
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
@@ -279,7 +287,6 @@ private:
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     static constexpr size_t reschedule_time_ms = 100;
-    static constexpr time_t drop_error_cooldown_sec = 5;
 
     mutable std::mutex databases_mutex;
 
@@ -326,6 +333,9 @@ private:
     time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
     static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
     time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
+
+    static constexpr time_t default_drop_error_cooldown_sec = 5;
+    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
 };
 
 /// This class is useful when creating a table or database.

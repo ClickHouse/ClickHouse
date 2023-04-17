@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
@@ -231,7 +232,19 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 
                 seen_elements[element_pos] = 1;
                 auto & element_column = extractElementColumn(column, element_pos);
-                elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+
+                try
+                {
+                    if (settings.null_as_default)
+                        SerializationNullable::deserializeTextJSONImpl(element_column, istr, settings, elems[element_pos]);
+                    else
+                        elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("(while reading the value of nested key " + name + ")");
+                    throw;
+                }
 
                 skipWhitespaceIfAny(istr);
                 ++processed;

@@ -206,6 +206,7 @@ Examples:
 ``` sql
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
+SELECT JSONExtract('{"a": "hello", "b": "world"}', 'Map(String, String)') = map('a',  'hello', 'b', 'world');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4, 'Nullable(Int64)') = NULL
 SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8') = 1
@@ -401,7 +402,7 @@ Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, jso
 
 Parses a JSON and extract a value as JSON scalar.
 
-If the value does not exist, an empty string will be returned.
+If the value does not exist, an empty string will be returned by default, and by SET `function_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
 
 Example:
 
@@ -410,6 +411,8 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
 SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_VALUE('{"hello":2}', '$.hello');
 SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
+select JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
+select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 ```
 
 Result:
@@ -471,3 +474,38 @@ Result:
 
 -   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
 -   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+
+
+## JSONArrayLength
+
+Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
+
+**Syntax**
+
+``` sql
+JSONArrayLength(json)
+```
+
+Alias: `JSON_ARRAY_LENGTH(json)`.
+
+**Arguments**
+
+-   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+
+**Returned value**
+
+-   If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
+
+Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+``` sql
+SELECT
+    JSONArrayLength(''),
+    JSONArrayLength('[1,2,3]')
+
+┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
+│                ᴺᵁᴸᴸ │                          3 │
+└─────────────────────┴────────────────────────────┘
+```

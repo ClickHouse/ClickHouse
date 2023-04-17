@@ -251,7 +251,7 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
     /// Do not use this template anymore
     templates[column_idx].reset();
     buf->rollbackToCheckpoint();
-    *token_iterator = start;
+    token_iterator = start;
 
     /// It will deduce new template or fallback to slow SQL parser
     return parseExpression(*column, column_idx);

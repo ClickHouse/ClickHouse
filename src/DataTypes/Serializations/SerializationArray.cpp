@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeArray.h>
@@ -42,6 +43,14 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_array_size",
+            size,
+            settings.max_binary_array_size);
+
     field = Array();
     Array & arr = field.get<Array &>();
     arr.reserve(size);
@@ -74,6 +83,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_array_size",
+            size,
+            settings.max_binary_array_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -510,7 +526,10 @@ void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            nested->deserializeTextJSON(nested_column, istr, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextJSONImpl(nested_column, istr, settings, nested);
+            else
+                nested->deserializeTextJSON(nested_column, istr, settings);
         }, false);
 }
 

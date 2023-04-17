@@ -309,6 +309,7 @@ The HTTP interface allows passing external data (external temporary tables) for 
 ## Response Buffering {#response-buffering}
 
 You can enable response buffering on the server-side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
+Also settings `http_response_buffer_size` and `http_wait_end_of_query` can be used.
 
 `buffer_size` determines the number of bytes in the result to buffer in the server memory. If a result body is larger than this threshold, the buffer is written to the HTTP channel, and the remaining data is sent directly to the HTTP channel.
 
@@ -330,6 +331,35 @@ You can create a query with parameters and pass values for them from the corresp
 
 ``` bash
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+```
+
+### Tabs in URL Parameters
+
+Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
+
+```bash
+curl -sS "http://localhost:8123" -d "SELECT splitByChar('\t', 'abc      123')"
+```
+
+```response
+['abc','123']
+```
+
+However, if you try to encode an actual tab using `%09` in a URL parameter, it won't get parsed properly:
+
+```bash
+curl -sS "http://localhost:8123?param_arg1=abc%09123" -d "SELECT splitByChar('\t', {arg1:String})"
+Code: 457. DB::Exception: Value abc	123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
+```
+
+If you are using URL parameters, you will need to encode the `\t` as `%5C%09`. For example:
+
+```bash
+curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar('\t', {arg1:String})"
+```
+
+```response
+['abc','123']
 ```
 
 ## Predefined HTTP Interface {#predefined_http_interface}
@@ -445,7 +475,7 @@ Next are the configuration methods for different `type`.
 
 The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
-:::warning
+:::note
 To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
 :::
 
@@ -476,7 +506,7 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-:::warning
+:::note
 In one `predefined_query_handler` only supports one `query` of an insert type.
 :::
 

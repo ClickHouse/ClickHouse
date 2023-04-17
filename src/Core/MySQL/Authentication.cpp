@@ -147,10 +147,7 @@ void Sha256Password::authenticate(
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to write public key to memory. Error: {}", getOpenSSLErrors());
         }
         char * pem_buf = nullptr;
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wold-style-cast"
         int64_t pem_size = BIO_get_mem_data(mem, &pem_buf);
-#    pragma GCC diagnostic pop
         String pem(pem_buf, pem_size);
 
         LOG_TRACE(log, "Key: {}", pem);

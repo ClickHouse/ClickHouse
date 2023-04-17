@@ -792,7 +792,7 @@ neighbor(column, offset[, default_value])
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
-:::warning    
+:::tip
 It can reach the neighbor rows only inside the currently processed data block.
 :::
 
@@ -902,7 +902,7 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-:::warning    
+:::tip
 It can reach the previous row only inside the currently processed data block.
 :::
 
@@ -986,7 +986,7 @@ Each event has a start time and an end time. The start time is included in the e
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
-:::warning    
+:::tip
 Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception. Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
 :::
 
@@ -1674,7 +1674,7 @@ Result:
 
 Accumulates states of an aggregate function for each row of a data block.
 
-:::warning    
+:::tip
 The state is reset for each new data block.
 :::
 
@@ -2177,7 +2177,7 @@ Number of digits.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-:::note    
+:::note
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
 :::
 
@@ -2260,7 +2260,7 @@ Result:
 
 ## currentProfiles
 
-Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
+Returns a list of the current [settings profiles](../../guides/sre/user-management/index.md#settings-profiles-management) for the current user.
 
 The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
 
@@ -2272,7 +2272,7 @@ currentProfiles()
 
 **Returned value**
 
--   List of the current user settings profiles. 
+-   List of the current user settings profiles.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2288,7 +2288,7 @@ enabledProfiles()
 
 **Returned value**
 
--   List of the enabled settings profiles. 
+-   List of the enabled settings profiles.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2304,7 +2304,7 @@ defaultProfiles()
 
 **Returned value**
 
--   List of the default settings profiles. 
+-   List of the default settings profiles.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2320,7 +2320,7 @@ currentRoles()
 
 **Returned value**
 
--   List of the current roles for the current user. 
+-   List of the current roles for the current user.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2336,13 +2336,13 @@ enabledRoles()
 
 **Returned value**
 
--   List of the enabled roles for the current user. 
+-   List of the enabled roles for the current user.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultRoles
 
-Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
+Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
 
 **Syntax**
 
@@ -2352,7 +2352,7 @@ defaultRoles()
 
 **Returned value**
 
--   List of the default roles for the current user. 
+-   List of the default roles for the current user.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2499,7 +2499,7 @@ In the following example a configuration with two shards is used. The query is e
 Query:
 
 ``` sql
-CREATE TABLE shard_num_example (dummy UInt8) 
+CREATE TABLE shard_num_example (dummy UInt8)
     ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 ```

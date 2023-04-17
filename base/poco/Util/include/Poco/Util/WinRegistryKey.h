@@ -123,7 +123,6 @@ namespace Util
         ///
         /// Throws a NotFoundException if the value does not exist.
 
-#if defined(POCO_HAVE_INT64)
 
         void setInt64(const std::string & name, Poco::Int64 value);
         /// Sets the numeric (REG_QWORD) value with the given name.
@@ -135,7 +134,6 @@ namespace Util
         ///
         /// Throws a NotFoundException if the value does not exist.
 
-#endif // POCO_HAVE_INT64
 
         void deleteValue(const std::string & name);
         /// Deletes the value with the given name.

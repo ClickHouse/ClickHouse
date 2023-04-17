@@ -182,7 +182,7 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
 {
     ColumnsDescription columns;
-    if (tryParseColumnsListFromString(hints_str, columns, ctx))
+    if (tryParseColumnsListFromString(hints_str, columns, ctx, hints_parsing_error))
     {
         for (const auto & [name, type] : columns.getAll())
             hints[name] = type;
@@ -238,7 +238,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
                 rows_in_block = 0;
                 auto column_type = readColumnAndGetDataType(
                     column_name, rows_in_block, format_settings.max_rows_to_read_for_schema_inference - total_rows_read);
-                chooseResultColumnType(*this, names_to_types[column_name], column_type, nullptr, column_name, total_rows_read + 1);
+                chooseResultColumnType(*this, names_to_types[column_name], column_type, nullptr, column_name, total_rows_read + 1, hints_parsing_error);
             }
 
             ++iteration;
@@ -260,7 +260,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
         {
             transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
             /// Check that we could determine the type of this column.
-            checkFinalInferredType(type, name, format_settings, nullptr, format_settings.max_rows_to_read_for_schema_inference);
+            checkFinalInferredType(type, name, format_settings, nullptr, format_settings.max_rows_to_read_for_schema_inference, hints_parsing_error);
         }
         result.emplace_back(name, type);
     }

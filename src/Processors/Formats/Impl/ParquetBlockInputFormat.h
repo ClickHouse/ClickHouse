@@ -42,7 +42,6 @@ private:
     // indices of columns to read from Parquet file
     std::vector<int> column_indices;
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
-    std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;

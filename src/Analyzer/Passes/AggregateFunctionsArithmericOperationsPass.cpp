@@ -102,19 +102,21 @@ public:
         if (!left_argument_constant_node && !right_argument_constant_node)
             return;
 
-        /** If we extract negative constant, aggregate function name must be updated.
+        /** Need reverse max <-> min for:
           *
-          * Example: SELECT min(-1 * id);
-          * Result: SELECT -1 * max(id);
+          * max(-1*value) -> -1*min(value)
+          * max(value/-2) -> min(value)/-2
+          * max(1-value) -> 1-min(value)
           */
-        std::string aggregate_function_name_if_constant_is_negative;
-        if (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide")
+        auto get_reverse_aggregate_function_name = [](const std::string & aggregate_function_name) -> std::string
         {
-            if (lower_aggregate_function_name == "min")
-                aggregate_function_name_if_constant_is_negative = "max";
-            else if (lower_aggregate_function_name == "max")
-                aggregate_function_name_if_constant_is_negative = "min";
-        }
+            if (aggregate_function_name == "min")
+                return "max";
+            else if (aggregate_function_name == "max")
+                return "min";
+            else
+                return aggregate_function_name;
+        };
 
         size_t arithmetic_function_argument_index = 0;
 
@@ -126,11 +128,11 @@ public:
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
             const auto & left_argument_constant_value_literal = left_argument_constant_node->getValue();
-            if (!aggregate_function_name_if_constant_is_negative.empty() &&
-                left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
-            {
-                lower_aggregate_function_name = aggregate_function_name_if_constant_is_negative;
-            }
+            bool need_reverse = (arithmetic_function_name == "multiply" && left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
+                || (arithmetic_function_name == "minus");
+
+            if (need_reverse)
+                lower_aggregate_function_name = get_reverse_aggregate_function_name(lower_aggregate_function_name);
 
             arithmetic_function_argument_index = 1;
         }
@@ -138,11 +140,10 @@ public:
         {
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
-            if (!aggregate_function_name_if_constant_is_negative.empty() &&
-                right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal))
-            {
-                lower_aggregate_function_name = aggregate_function_name_if_constant_is_negative;
-            }
+            bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
+
+            if (need_reverse)
+                lower_aggregate_function_name = get_reverse_aggregate_function_name(lower_aggregate_function_name);
 
             arithmetic_function_argument_index = 0;
         }
