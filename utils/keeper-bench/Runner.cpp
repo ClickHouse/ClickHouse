@@ -329,7 +329,7 @@ void Runner::runBenchmark()
     generator->startup(*connections[0]);
     std::cerr << "Prepared\n";
 
-	auto start_timestamp_ms = Poco::Timestamp{}.epochMicroseconds() / 1000;
+	auto start_timestamp_ms = Poco::Timestamp().epochMicroseconds() / 1000;
 
     try
     {
