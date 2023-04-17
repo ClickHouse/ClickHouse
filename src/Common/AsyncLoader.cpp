@@ -83,7 +83,7 @@ void LoadJob::canceled(const std::exception_ptr & ptr)
 
 void LoadJob::finish()
 {
-    func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` and `task->wait()` return
+    func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` and `LoadJob::wait()` return
     if (waiters > 0)
         finished.notify_all();
 }
