@@ -1,5 +1,6 @@
 #include <Analyzer/ConstantNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 
