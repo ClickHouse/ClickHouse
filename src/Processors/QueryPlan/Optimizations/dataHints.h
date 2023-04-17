@@ -130,16 +130,20 @@ public:
 
     void unionLowerBoundary(const std::optional<Field> & value)
     {
-        if (!value || !lower_boundary)
+        if (!lower_boundary)
             return;
+        if (!value)
+            lower_boundary = std::nullopt;
         if (value.value() < lower_boundary.value())
             setLowerBoundary(value.value());
     }
 
     void unionUpperBoundary(const std::optional<Field> & value)
     {
-        if (!value || !upper_boundary)
+        if (!upper_boundary)
             return;
+        if (!value)
+            upper_boundary = std::nullopt;
         if (upper_boundary.value() < value.value())
             setUpperBoundary(value.value());
     }
