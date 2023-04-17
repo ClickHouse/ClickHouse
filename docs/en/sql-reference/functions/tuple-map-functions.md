@@ -81,6 +81,7 @@ mapFromArrays(keys, values)
 Alias: `MAP_FROM_ARRAYS`
   
 **Arguments**
+
 -   `keys` — Given key array to create a map from. The nested type of array must be: [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md)
 -   `values`  - Given value array to create a map from.
   
@@ -115,9 +116,10 @@ mapFromString(str_expr[, pair_delim[, key_value_delim]])
 Alias: `str_to_map`
   
 **Arguments**
+
 - `str_expr`: a [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) expression.
-- `pair_delim`: a single byte [String](../../sql-reference/data-types/string.md) constant that has been used in str_expr as a pair delimiter, i.e., to separate the key-value pairs. Optional, with default value ','.
-- `key_value_delim`: a single byte [String](../../sql-reference/data-types/string.md) constant that has been used in the string as a key-value delimiter, i.e., to separate key and value in a particular key-value pair. Optional, with default value ':'.
+- `pair_delim`: a single byte [String](../../sql-reference/data-types/string.md) constant that has been used in str_expr as a pair delimiter, i.e., to separate the key-value pairs. Optional, with default value `,`.
+- `key_value_delim`: a single byte [String](../../sql-reference/data-types/string.md) constant that has been used in the string as a key-value delimiter, i.e., to separate key and value in a particular key-value pair. Optional, with default value `:`.
   
 **Returned value**
 
