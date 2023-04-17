@@ -63,13 +63,13 @@ private:
 
     /// hashing_buf -> compressed_buf -> plain_hashing -> plain_file
     std::unique_ptr<WriteBufferFromFileBase> plain_file;
-    HashingWriteBuffer plain_hashing;
+    CryptoHashingWriteBuffer plain_hashing;
 
     /// Compressed stream which allows to write with codec.
     struct CompressedStream
     {
         CompressedWriteBuffer compressed_buf;
-        HashingWriteBuffer hashing_buf;
+        CryptoHashingWriteBuffer hashing_buf;
 
         CompressedStream(WriteBuffer & buf, const CompressionCodecPtr & codec)
             : compressed_buf(buf, codec)
@@ -87,14 +87,14 @@ private:
 
     /// If marks are uncompressed, the data is written to 'marks_file_hashing' for hash calculation and then to the 'marks_file'.
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
-    std::unique_ptr<HashingWriteBuffer> marks_file_hashing;
+    std::unique_ptr<CryptoHashingWriteBuffer> marks_file_hashing;
 
     /// If marks are compressed, the data is written to 'marks_source_hashing' for hash calculation,
     /// then to 'marks_compressor' for compression,
     /// then to 'marks_file_hashing' for calculation of hash of compressed data,
     /// then finally to 'marks_file'.
     std::unique_ptr<CompressedWriteBuffer> marks_compressor;
-    std::unique_ptr<HashingWriteBuffer> marks_source_hashing;
+    std::unique_ptr<CryptoHashingWriteBuffer> marks_source_hashing;
 };
 
 }

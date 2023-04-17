@@ -322,7 +322,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         writeBinary(desc.file_size, out);
 
         auto file_in = desc.input_buffer_getter();
-        HashingWriteBuffer hashing_out(out);
+        CryptoHashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
 
         if (blocker.isCancelled())
@@ -762,7 +762,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
                 absolute_file_path, data_part_storage->getRelativePath());
 
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
-        HashingWriteBuffer hashing_out(*written_files.back());
+        CryptoHashingWriteBuffer hashing_out(*written_files.back());
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
 
         if (blocker.isCancelled())

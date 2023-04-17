@@ -39,7 +39,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
             4096,
             settings_.query_write_settings);
 
-    marks_file_hashing = std::make_unique<HashingWriteBuffer>(*marks_file);
+    marks_file_hashing = std::make_unique<CryptoHashingWriteBuffer>(*marks_file);
 
     if (data_part_->index_granularity_info.mark_type.compressed)
     {
@@ -48,7 +48,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
             getMarksCompressionCodec(settings_.marks_compression_codec),
             settings_.marks_compress_block_size);
 
-        marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
+        marks_source_hashing = std::make_unique<CryptoHashingWriteBuffer>(*marks_compressor);
     }
 
     const auto & storage_columns = metadata_snapshot->getColumns();

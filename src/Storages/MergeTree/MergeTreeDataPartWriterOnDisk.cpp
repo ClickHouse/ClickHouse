@@ -189,7 +189,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
         index_file_stream = data_part->getDataPartStorage().writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
-        index_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
+        index_file_hashing_stream = std::make_unique<CryptoHashingWriteBuffer>(*index_file_stream);
 
         if (compress_primary_key)
         {
@@ -197,7 +197,7 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
             auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.primary_key_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
             CompressionCodecPtr primary_key_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
             index_compressor_stream = std::make_unique<CompressedWriteBuffer>(*index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
-            index_source_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_compressor_stream);
+            index_source_hashing_stream = std::make_unique<CryptoHashingWriteBuffer>(*index_compressor_stream);
         }
     }
 }
