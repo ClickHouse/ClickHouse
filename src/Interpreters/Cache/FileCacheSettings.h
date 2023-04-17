@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Cache/FileCache_fwd.h>
+#include <string>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } } // NOLINT(cppcoreguidelines-virtual-class-destructor)
 
@@ -9,6 +10,8 @@ namespace DB
 
 struct FileCacheSettings
 {
+    std::string base_path;
+
     size_t max_size = 0;
     size_t max_elements = FILECACHE_DEFAULT_MAX_ELEMENTS;
     size_t max_file_segment_size = FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE;
