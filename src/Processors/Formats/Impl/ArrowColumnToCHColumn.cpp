@@ -287,7 +287,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
             column_data.insert_assume_reserved(raw_data, raw_data + chunk.length());
         }
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {internal_column, internal_type, column_name};
 }
 
 /// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
