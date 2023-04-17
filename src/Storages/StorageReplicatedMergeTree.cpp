@@ -14,37 +14,40 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadFuzzer.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <base/sort.h>
 
 #include <Storages/AlterCommands.h>
-#include <Storages/PartitionCommands.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Freeze.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/LeaderElection.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/PinnedPartUUIDs.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
-#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
-#include <Storages/MergeTree/MergeFromLogEntryTask.h>
-#include <Storages/MergeTree/MutateFromLogEntryTask.h>
-#include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
-#include <Storages/MergeTree/LeaderElection.h>
+#include <Storages/MergeTree/MutateFromLogEntryTask.h>
+#include <Storages/MergeTree/PinnedPartUUIDs.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
-#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
-#include <Storages/Freeze.h>
+#include <Storages/PartitionCommands.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
@@ -96,9 +99,6 @@
 
 #include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
-#include "MergeTree/MergeTreeDataFormatVersion.h"
-#include "MergeTree/MergeTreePartInfo.h"
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -9040,10 +9040,8 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
     NameSet files_not_to_remove;
 
     auto part_info = DetachedPartInfo::parseDetachedPartName(disk, part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
-    if (!part_info.valid_name) 
-    {
+    if (!part_info.valid_name)
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Invalid detached part name {} on disk {}", path, disk->getName());
-    }
 
     fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
     if (disk->exists(checksums))
