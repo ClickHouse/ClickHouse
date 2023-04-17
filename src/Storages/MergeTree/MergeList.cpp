@@ -78,9 +78,4 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement()
-{
-    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
-}
-
 }
