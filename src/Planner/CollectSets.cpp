@@ -47,6 +47,11 @@ public:
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
         auto & sets = planner_context.getPreparedSets();
 
+        String set_key = planner_context.createSetKey(in_first_argument->getResultType(), in_second_argument);
+
+        if (planner_context.hasSet(set_key))
+            return;
+
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
         StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
