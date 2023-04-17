@@ -103,7 +103,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemZeros>(context, system_database, "zeros_mt", "Multithreaded version of system.zeros.", true);
     attach<StorageSystemDatabases>(context, system_database, "databases", "Contains all the information about all the databases within the current server.");
     attach<StorageSystemTables>(context, system_database, "tables", "Contains all the information about all the tables within the current server.");
-    attach<StorageSystemColumns>(context, system_database, "columns", "Contains all the information about all the columns from all the table within the current server.");
+    attach<StorageSystemColumns>(context, system_database, "columns", "Contains all the information about all the columns from all the tables within the current server.");
     attach<StorageSystemFunctions>(context, system_database, "functions", "Contains a list of all available normal and aggregate functions with their descriptions.");
     attach<StorageSystemEvents>(context, system_database, "events", "Contains a list of useful for profiling events with their descriptions and values at a moment of execution.");
     attach<StorageSystemSettings>(context, system_database, "settings", "Contains a list of all user-level settings (which can be modified in a scope of query or connection), their current and default values along with descriptions.");
