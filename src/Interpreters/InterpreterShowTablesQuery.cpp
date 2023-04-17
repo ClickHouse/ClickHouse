@@ -1,4 +1,4 @@
-#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
@@ -24,7 +24,8 @@ namespace ErrorCodes
 
 
 InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-    : WithMutableContext(context_), query_ptr(query_ptr_)
+    : WithMutableContext(context_)
+    , query_ptr(query_ptr_)
 {
 }
 
@@ -176,7 +177,7 @@ BlockIO InterpreterShowTablesQuery::execute()
 
         Block sample_block{ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "Caches")};
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
-        auto caches = FileCacheFactory::instance().getAllByName();
+        auto caches = FileCacheFactory::instance().getAll();
         for (const auto & [name, _] : caches)
             res_columns[0]->insert(name);
         BlockIO res;

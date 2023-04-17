@@ -31,9 +31,11 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
+#include <memory>
 #include <random>
 #include <pcg_random.hpp>
 #include <Common/scope_guard_safe.h>
+#include <Common/ThreadPool.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 
@@ -121,8 +123,8 @@ void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
     chassert(prev_stop_flag);
-    main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
-    cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
+    main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
 }
 
 void DDLWorker::shutdown()
@@ -132,8 +134,10 @@ void DDLWorker::shutdown()
     {
         queue_updated_event->set();
         cleanup_event->set();
-        main_thread.join();
-        cleanup_thread.join();
+        if (main_thread)
+            main_thread->join();
+        if (cleanup_thread)
+            cleanup_thread->join();
         worker_pool.reset();
     }
 }
@@ -1022,10 +1026,10 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     {
         String str_buf = node_path.substr(query_path_prefix.length());
         DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Metric id;
-        readText(id, in);
-        id = std::max(*max_pushed_entry_metric, id);
-        CurrentMetrics::set(*max_pushed_entry_metric, id);
+        CurrentMetrics::Value pushed_entry;
+        readText(pushed_entry, in);
+        pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
+        CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);
     }
 
     /// We cannot create status dirs in a single transaction with previous request,

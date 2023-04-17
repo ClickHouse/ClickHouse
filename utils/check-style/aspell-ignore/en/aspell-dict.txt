@@ -108,6 +108,7 @@ NULLIF
 NVME
 NYPD
 NuRaft
+Observability
 OLAP
 OLTP
 ObjectId
@@ -374,6 +375,7 @@ llvm
 localhost
 macOS
 mariadb
+mdadm
 miniselect
 msgpack
 msgpk

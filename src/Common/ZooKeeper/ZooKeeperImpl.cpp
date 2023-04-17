@@ -669,8 +669,8 @@ void ZooKeeper::receiveThread()
                     earliest_operation = operations.begin()->second;
                     auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(args.operation_timeout_ms * 1000);
                     if (now > earliest_operation_deadline)
-                        throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline already expired) for path: {}",
-                                        earliest_operation->request->getPath());
+                        throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (deadline of {} ms already expired) for path: {}",
+                                        args.operation_timeout_ms, earliest_operation->request->getPath());
                     max_wait_us = std::chrono::duration_cast<std::chrono::microseconds>(earliest_operation_deadline - now).count();
                 }
             }
@@ -687,12 +687,12 @@ void ZooKeeper::receiveThread()
             {
                 if (earliest_operation)
                 {
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response) for request {} for path: {}",
-                        toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
+                    throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response in {} ms) for request {} for path: {}",
+                        args.operation_timeout_ms, toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
-                    throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout");
+                    throw Exception(Error::ZOPERATIONTIMEOUT, "Nothing is received in session timeout of {} ms", args.session_timeout_ms);
 
             }
 
@@ -1080,7 +1080,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             if (requests_queue.isFinished())
                 throw Exception(Error::ZSESSIONEXPIRED, "Session expired");
 
-            throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout");
+            throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push request to queue within operation timeout of {} ms", args.operation_timeout_ms);
         }
     }
     catch (...)
@@ -1332,7 +1332,7 @@ void ZooKeeper::close()
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
-        throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout");
+        throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }

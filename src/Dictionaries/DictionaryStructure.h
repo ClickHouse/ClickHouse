@@ -16,11 +16,6 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
-#if defined(__GNUC__)
-    /// GCC mistakenly warns about the names in enum class.
-    #pragma GCC diagnostic ignored "-Wshadow"
-#endif
-
 namespace DB
 {
 using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;

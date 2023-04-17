@@ -91,7 +91,7 @@ The command must read arguments from `STDIN` and must output the result to `STDO
 **Example**
 
 Creating `test_function` using XML configuration.
-File test_function.xml.
+File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
 ```xml
 <functions>
     <function>
@@ -108,7 +108,7 @@ File test_function.xml.
 </functions>
 ```
 
-Script file inside `user_scripts` folder `test_function.py`.
+Script file inside `user_scripts` folder `test_function.py` (`/var/lib/clickhouse/user_scripts/test_function.py` with default path settings).
 
 ```python
 #!/usr/bin/python3
@@ -136,7 +136,7 @@ Result:
 ```
 
 Creating `test_function_sum` manually specifying `execute_direct` to `0` using XML configuration.
-File test_function.xml.
+File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
 ```xml
 <functions>
     <function>
@@ -173,7 +173,7 @@ Result:
 ```
 
 Creating `test_function_sum_json` with named arguments and format [JSONEachRow](../../interfaces/formats.md#jsoneachrow) using XML configuration.
-File test_function.xml.
+File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
 ```xml
 <functions>
     <function>
@@ -195,7 +195,7 @@ File test_function.xml.
 </functions>
 ```
 
-Script file inside `user_scripts` folder `test_function_sum_json.py`.
+Script file inside `user_scripts` folder `test_function_sum_json.py` (`/var/lib/clickhouse/user_scripts/test_function_sum_json.py` with default path settings).
 
 ```python
 #!/usr/bin/python3
@@ -228,7 +228,7 @@ Result:
 ```
 
 Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type).
-File test_function_parameter_python.xml.
+File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function_parameter_python.xml` with default path settings).
 ```xml
 <functions>
     <function>
@@ -244,7 +244,7 @@ File test_function_parameter_python.xml.
 </functions>
 ```
 
-Script file inside `user_scripts` folder `test_function_parameter_python.py`.
+Script file inside `user_scripts` folder `test_function_parameter_python.py` (`/var/lib/clickhouse/user_scripts/test_function_parameter_python.py` with default path settings).
 
 ```python
 #!/usr/bin/python3

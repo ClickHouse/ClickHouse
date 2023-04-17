@@ -553,6 +553,32 @@ Default value: 8192
 
 Merge reads rows from parts in blocks of `merge_max_block_size` rows, then merges and writes the result into a new part. The read block is placed in RAM, so `merge_max_block_size` affects the size of the RAM required for the merge. Thus, merges can consume a large amount of RAM for tables with very wide rows (if the average row size is 100kb, then when merging 10 parts, (100kb * 10 * 8192) = ~ 8GB of RAM). By decreasing `merge_max_block_size`, you can reduce the amount of RAM required for a merge but slow down a merge.
 
+## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number-of-free-entries-in-pool-to-lower-max-size-of-merge}
+
+When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue). 
+This is to allow small merges to process - not filling the pool with long running merges.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8
+
+## number_of_free_entries_in_pool_to_execute_mutation {#number-of-free-entries-in-pool-to-execute-mutation}
+
+When there is less than specified number of free entries in pool, do not execute part mutations. 
+This is to leave free threads for regular merges and avoid "Too many parts".
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 20
+
+**Usage**
+
+The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings#background_pool_size) * [background_pool_size](/docs/en/operations/server-configuration-parameters/settings#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+
 ## max_part_loading_threads {#max-part-loading-threads}
 
 The maximum number of threads that read parts when ClickHouse starts.

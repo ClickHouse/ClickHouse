@@ -118,9 +118,11 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   SonarCloud:
+    # TODO: Remove if: whenever SonarCloud supports c++23
+    if: ${{ false }}
     runs-on: [self-hosted, builder]
     env:
-      SONAR_SCANNER_VERSION: 4.7.0.2747
+      SONAR_SCANNER_VERSION: 4.8.0.2856
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       CC: clang-15
@@ -173,4 +175,4 @@ jobs:
             --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}" \
             --define sonar.projectKey="ClickHouse_ClickHouse" \
             --define sonar.organization="clickhouse-java" \
-            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql"
+            --define sonar.exclusions="**/*.java,**/*.ts,**/*.js,**/*.css,**/*.sql" \

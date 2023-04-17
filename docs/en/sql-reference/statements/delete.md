@@ -55,3 +55,7 @@ With the described implementation now we can see what can negatively affect 'DEL
 - Table having a very large number of data parts
 - Having a lot of data in Compact parts—in a Compact part, all columns are stored in one file.
 
+
+## Related content
+
+- Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

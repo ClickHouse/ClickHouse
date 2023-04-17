@@ -5,7 +5,8 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/Throttler_fwd.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -16,10 +17,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <IO/IResourceManager.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/ResizeProcessor.h>
-#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -42,6 +40,8 @@ struct OvercommitTracker;
 
 namespace DB
 {
+
+class ASTSelectQuery;
 
 struct ContextSharedPart;
 class ContextAccess;
@@ -162,9 +162,6 @@ struct BackgroundTaskSchedulingSettings;
     class SynonymsExtensions;
     class Lemmatizers;
 #endif
-
-class Throttler;
-using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
@@ -476,9 +473,10 @@ public:
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
 
-    VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
+    VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
+    TemporaryDataOnDiskScopePtr getSharedTempDataOnDisk() const;
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setPath(const String & path);
@@ -783,9 +781,9 @@ public:
     void setQueryContext(ContextMutablePtr context_) { query_context = context_; }
     void setSessionContext(ContextMutablePtr context_) { session_context = context_; }
 
-    void makeQueryContext() { query_context = shared_from_this(); }
-    void makeSessionContext() { session_context = shared_from_this(); }
-    void makeGlobalContext() { initGlobal(); global_context = shared_from_this(); }
+    void makeQueryContext();
+    void makeSessionContext();
+    void makeGlobalContext();
 
     const Settings & getSettingsRef() const { return settings; }
 
@@ -915,11 +913,6 @@ public:
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
-
-    ThrottlerPtr getReplicatedFetchesThrottler() const;
-    ThrottlerPtr getReplicatedSendsThrottler() const;
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1116,6 +1109,9 @@ public:
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 
+    /** Get settings for reading from filesystem for BACKUPs. */
+    ReadSettings getBackupReadSettings() const;
+
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
 
@@ -1152,6 +1148,28 @@ private:
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
 
     DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
+
+    /// Throttling
+public:
+    ThrottlerPtr getReplicatedFetchesThrottler() const;
+    ThrottlerPtr getReplicatedSendsThrottler() const;
+
+    ThrottlerPtr getRemoteReadThrottler() const;
+    ThrottlerPtr getRemoteWriteThrottler() const;
+
+    ThrottlerPtr getLocalReadThrottler() const;
+    ThrottlerPtr getLocalWriteThrottler() const;
+
+    ThrottlerPtr getBackupsThrottler() const;
+
+private:
+    mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
+    mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
+
+    mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
+    mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
+
+    mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
 };
 
 struct HTTPContext : public IHTTPContext

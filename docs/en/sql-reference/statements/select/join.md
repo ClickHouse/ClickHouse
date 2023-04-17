@@ -18,6 +18,10 @@ FROM <left_table>
 
 Expressions from `ON` clause and columns from `USING` clause are called “join keys”. Unless otherwise stated, join produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching “join keys”, which might produce results with much more rows than the source tables.
 
+## Related Content
+
+- Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
+
 ## Supported Types of JOIN
 
 All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supported:
