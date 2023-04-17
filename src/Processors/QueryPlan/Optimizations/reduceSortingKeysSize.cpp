@@ -111,7 +111,7 @@ size_t tryReduceSortingKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes
 
     auto * sorting_node = node->children.front();
     auto * sorting_step = typeid_cast<SortingStep *>(sorting_node->step.get());
-    if (!sorting_step)
+    if (!sorting_step || sorting_step->getType() != SortingStep::Type::Full)
         return 0;
 
     const auto hints = sorting_step->getInputStreams().front().hints;

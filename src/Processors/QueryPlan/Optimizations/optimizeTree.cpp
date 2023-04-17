@@ -184,7 +184,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 }
 
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeThirdPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -202,6 +202,9 @@ void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::
             stack.push_back(next_frame);
             continue;
         }
+
+        if (optimization_settings.sorting_with_data_hints)
+            tryReduceSortingKeysSize(frame.node, nodes);
 
         if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>(frame.node->step.get()))
         {
