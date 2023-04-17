@@ -133,39 +133,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    /// Add cache relating settings to ReadSettings.
-    auto modified_read_settings = patchSettings(read_settings);
-    auto implementation_buffer = object_storage->readObject(object, read_settings, read_hint, file_size);
-
-    /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
-    if (implementation_buffer->isIntegratedWithFilesystemCache()
-        && modified_read_settings.enable_filesystem_cache_on_lower_level)
-    {
-        return implementation_buffer;
-    }
-    else
-    {
-        if (!file_size)
-            file_size = implementation_buffer->getFileSize();
-
-        auto implementation_buffer_creator = [object, read_settings, read_hint, file_size, this]()
-        {
-            return std::make_unique<BoundedReadBuffer>(object_storage->readObject(object, read_settings, read_hint, file_size));
-        };
-
-        FileCache::Key key = getCacheKey(object.getPathKeyForCache());
-        LOG_TEST(log, "Reading from file `{}` with cache key `{}`", object.absolute_path, key.toString());
-        return std::make_unique<CachedOnDiskReadBufferFromFile>(
-            object.absolute_path,
-            key,
-            cache,
-            implementation_buffer_creator,
-            read_settings,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
-            file_size.value(),
-            /* allow_seeks */true,
-            /* use_external_buffer */false);
-    }
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
 }
 
 

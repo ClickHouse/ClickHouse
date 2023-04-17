@@ -645,9 +645,9 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 {
     auto read_buffer_creator =
         [this, read_settings]
-        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        return std::make_shared<ReadBufferFromS3>(
+        return std::make_unique<ReadBufferFromS3>(
             client,
             bucket,
             path,
