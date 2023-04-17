@@ -17,3 +17,12 @@ SELECT toTypeName(arrayDifference([CAST('1', 'UInt128'), 3]));
 SELECT toTypeName(arrayDifference([CAST('1', 'Int128'), 3]));
 SELECT toTypeName(arrayDifference([CAST('1', 'UInt256'), 3]));
 SELECT toTypeName(arrayDifference([CAST('1', 'Int256'), 3]));
+
+SELECT arrayCumSumNonNegative([CAST('1', 'Int128'), -2]);
+SELECT arrayCumSumNonNegative([CAST('1', 'Int256'), -2]);
+SELECT arrayCumSumNonNegative([CAST('1', 'UInt128'), 2]);
+SELECT arrayCumSumNonNegative([CAST('1', 'UInt256'), 2]);
+SELECT toTypeName(arrayCumSumNonNegative([CAST('1', 'Int128'), -2]));
+SELECT toTypeName(arrayCumSumNonNegative([CAST('1', 'Int256'), -2]));
+SELECT toTypeName(arrayCumSumNonNegative([CAST('1', 'UInt128'), 2]));
+SELECT toTypeName(arrayCumSumNonNegative([CAST('1', 'UInt256'), 2]));
