@@ -1304,6 +1304,8 @@ Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`
 Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
 `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
 
+Leading escape sequences will be skipped in keys and will be considered invalid for values.
+
 **Escape sequences with escape sequence support turned on**
 ``` sql
 arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
