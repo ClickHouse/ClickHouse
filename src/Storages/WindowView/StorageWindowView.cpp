@@ -1020,7 +1020,7 @@ void StorageWindowView::threadFuncFireProc()
 
     std::lock_guard lock(fire_signal_mutex);
     /// TODO: consider using time_t instead (for every timestamp in this class)
-    UInt32 timestamp_now = static_cast<UInt32>(std::time(nullptr));
+    UInt32 timestamp_now = static_cast<UInt32>(Poco::Timestamp().epochMicroseconds() / 1000000);
 
     while (next_fire_signal <= timestamp_now)
     {
