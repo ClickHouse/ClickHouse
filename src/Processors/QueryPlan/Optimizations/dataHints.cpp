@@ -48,6 +48,12 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
     if (constant_type_name == "UInt128" || constant_type_name == "Int128" || constant_type_name == "UInt256" || constant_type_name == "Int256")
         return std::nullopt;
 
+    const auto & input_type = maybe_input_column->result_type;
+    const auto & constant_type = maybe_constant_column->result_type;
+    if (isDate(input_type) != isDate(constant_type) || isDate32(input_type) != isDate32(constant_type) ||
+            isDateTime(input_type) != isDateTime(constant_type) || isDateTime64(input_type) != isDateTime64(constant_type))
+        return std::nullopt;
+
     ProcessedPredicate result;
     result.column_name = maybe_input_column->result_name;
     if (maybe_constant_column->result_type->isValueRepresentedByUnsignedInteger())
