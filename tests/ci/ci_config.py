@@ -259,6 +259,9 @@ CI_CONFIG = {
         "Stateless tests (release, wide parts enabled)": {
             "required_build": "package_release",
         },
+        "Stateless tests (release, analyzer)": {
+            "required_build": "package_release",
+        },
         "Stateless tests (release, DatabaseOrdinary)": {
             "required_build": "package_release",
         },
