@@ -6,7 +6,7 @@ slug: /en/guides/developer/transactional
 INSERT into one partition* in one table* of MergeTree* family up to max_insert_block_size rows* is transactional (ACID):
 - Atomic: INSERT is succeeded or rejected as a whole: if confirmation is sent to the client, all rows INSERTed; if error is sent to the client, no rows INSERTed.
 - Consistent: if there are no table constraints violated, then all rows in an INSERT are inserted and the INSERT succeeds; if constraints are violated, then no rows are inserted.
-- Isolated: concurrent clients observe a consistent snapshot of the table–the state of the table either as if before INSERT or after successfull INSERT; no partial state is seen;
+- Isolated: concurrent clients observe a consistent snapshot of the table–the state of the table either as if before INSERT or after successful INSERT; no partial state is seen;
 - Durable: successful INSERT is written to the filesystem before answering to the client, on single replica or multiple replicas (controlled by the `insert_quorum` setting), and ClickHouse can ask the OS to sync the filesystem data on the storage media (controlled by the `fsync_after_insert` setting).
 * If table has many partitions and INSERT covers many partitions–then insertion into every partition is transactional on its own;
 * INSERT into multiple tables with one statement is possible if materialized views are involved;
@@ -104,7 +104,7 @@ See the [deployment](docs/en/deployment-guides/terminology.md) documentation for
 
 #### Verify that experimental transactions are enabled
 
-Issue a `BEGIN TRANSACTION` forllowed by a `ROLLBACK` to verify that experimental transactions are enabled, and that ClickHouse Keeper is enabled as it is used to track transactions. 
+Issue a `BEGIN TRANSACTION` followed by a `ROLLBACK` to verify that experimental transactions are enabled, and that ClickHouse Keeper is enabled as it is used to track transactions. 
 
 ```sql
 BEGIN TRANSACTION
@@ -237,7 +237,7 @@ FROM mergetree_table
 ### Transactions introspection
 
 You can inspect transactions by querying the `system.transactions` table, but note that you cannot query that
-table from a session that is in a transaction–open a second `clickhouse client` sesssion to query that table.
+table from a session that is in a transaction–open a second `clickhouse client` session to query that table.
 
 ```sql
 SELECT *
