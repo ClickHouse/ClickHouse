@@ -133,7 +133,10 @@ public:
         if (!lower_boundary)
             return;
         if (!value)
+        {
             lower_boundary = std::nullopt;
+            return;
+        }
         if (value.value() < lower_boundary.value())
             setLowerBoundary(value.value());
     }
@@ -143,7 +146,10 @@ public:
         if (!upper_boundary)
             return;
         if (!value)
+        {
             upper_boundary = std::nullopt;
+            return;
+        }
         if (upper_boundary.value() < value.value())
             setUpperBoundary(value.value());
     }
