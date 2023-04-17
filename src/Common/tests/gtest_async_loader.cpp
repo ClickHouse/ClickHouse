@@ -751,4 +751,5 @@ TEST(AsyncLoader, SetMaxThreads)
             t.loader.setMaxThreads(max_threads_values[sync_index]);
         syncs[idx]->arrive_and_wait(); // (B) this sync point is required to allow `executing` value to go back down to zero after we change number of workers
     }
+    t.loader.wait();
 }
