@@ -94,6 +94,7 @@ enum {
     Copy = 17,
     CopyDirectoryContent = 18,  // TODO: fix test
     ListFiles = 19,             // TODO: later
+    EndListFiles = 119,
     ReadFile = 20,              // TODO: improve
     WriteFile = 21,             // TODO: improve
     EndWriteFile = 121,
@@ -108,7 +109,6 @@ enum {
     CreateHardLink = 30,
     TruncateFile = 31,
     DataPacket = 55,
-    DirIterEntry = 56,
     Error = 255
 };
 
@@ -371,6 +371,9 @@ void RemoteFSHandler::receivePacket()
             writeVarUInt(CopyDirectoryContent, *out);
             out->next();
             break;
+        case ListFiles:
+            listFiles();
+            break;
         case ReadFile:
             readFile();
             break;
@@ -468,10 +471,26 @@ void RemoteFSHandler::iterateDirectory()
     receivePath(path);
     for (auto iter = disk->iterateDirectory(path); iter->isValid(); iter->next()) {
         LOG_TRACE(log, "Writing dir entry {}", iter->path());
-        writeVarUInt(DirIterEntry, *out);
+        writeVarUInt(DataPacket, *out);
         writeStringBinary(iter->path(), *out);
     }
     writeVarUInt(EndIterateDirectory, *out);
+    out->next();
+}
+
+void RemoteFSHandler::listFiles()
+{
+    std::string path;
+    receivePath(path);
+    std::vector<String> files;
+    disk->listFiles(path, files);
+    for (auto iter = files.begin(); iter != files.end(); iter++) {
+        LOG_TRACE(log, "Writing file name {}", *iter);
+        writeVarUInt(DataPacket, *out);
+        writeStringBinary(*iter, *out);
+    }
+    disk->listFiles(path, files);
+    writeVarUInt(EndListFiles, *out);
     out->next();
 }
 

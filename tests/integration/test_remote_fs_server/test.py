@@ -40,6 +40,9 @@ REPLACE_FILE = b'\x10' # 16
 COPY = b'\x11' # 17
 COPY_DIRECTORY_CONTENT = b'\x12' # 18
 
+LIST_FILES = b'\x13' # 19
+END_LIST_FILES = b'\x77' # 119
+
 READ_FILE = b'\x14' # 20
 
 WRITE_FILE = b'\x15' # 21
@@ -58,7 +61,6 @@ CREATE_HARD_LINK = b'\x1E' # 30
 TRUNCATE_FILE = b'\x1F' # 31
 
 DATA_PACKET = b'\x37' # 55
-DIR_ITER_ENTRY = b'\x38' # 56
 
 ERROR = b'\xFF\x01' # 255
 
@@ -140,7 +142,6 @@ def disk_conn(conn):
 
 def test_bad_disk_name(conn):
     conn.send(HELLO + strToBytes("some_name"))
-    print("sended", flush=True)
     data = conn.recv(1024)
     assert isErrorResp(data)
     strLen = data[2]
@@ -256,8 +257,29 @@ def test_iterate_directory(disk_conn):
     data = disk_conn.recv(1024)
     entries_count = 0
     while data[:1] != END_ITERATE_DIRECTORY:
-        print(data)
-        assert data[:1] == DIR_ITER_ENTRY
+        assert data[:1] == DATA_PACKET
+        data = data[1:]
+        l = bytesToNum(data)
+        data = data[1:]
+        strBinary, data = data[:l], data[l:]
+        assert strBinary.decode() != ""
+        entries_count += 1
+    assert entries_count == 2
+
+
+def test_list_files(disk_conn):
+    file1 = strToBytes("file1")
+    file2 = strToBytes("file2")
+    for file in [file1, file2]:
+        disk_conn.send(CREATE_FILE + file)
+        data = disk_conn.recv(1024)
+        assert data == CREATE_FILE
+    
+    disk_conn.send(LIST_FILES + strToBytes(""))
+    data = disk_conn.recv(1024)
+    entries_count = 0
+    while data[:1] != END_LIST_FILES:
+        assert data[:1] == DATA_PACKET
         data = data[1:]
         l = bytesToNum(data)
         data = data[1:]

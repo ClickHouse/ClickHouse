@@ -85,6 +85,7 @@ private:
     [[noreturn]] void receiveUnexpectedHello();
 
     void iterateDirectory();
+    void listFiles();
     void readFile();
     void writeFile();
 
