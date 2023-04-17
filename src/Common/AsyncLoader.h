@@ -158,7 +158,7 @@ private:
         UInt64 ready_seqno = 0; // Zero means that job is not in ready queue.
         LoadJobSet dependent_jobs; // Set of jobs dependent on this job.
 
-        // Three independent states of a non-finished jobs
+        // Three independent states of a non-finished job.
         bool is_blocked() const { return dependencies_left > 0; }
         bool is_ready() const { return dependencies_left == 0 && ready_seqno > 0; }
         bool is_executing() const { return dependencies_left == 0 && ready_seqno == 0; }
@@ -188,11 +188,11 @@ public:
         // Merge all jobs from other task into this task. Useful for merging jobs with different priorities into one task.
         void merge(Task && o);
 
-        // Remove all jobs from AsyncLoader.
+        // Remove all jobs of this task from AsyncLoader.
         void remove();
 
         // Do not track jobs in this task.
-        // WARNING: Jobs will never be removed() and are going to be stored as finished_jobs until ~AsyncLoader().
+        // WARNING: Jobs will never be removed() and are going to be stored as finished jobs until ~AsyncLoader().
         void detach();
 
     private:
@@ -213,17 +213,19 @@ public:
 
     // Wait for currently executing jobs to finish, but do not run any other pending jobs.
     // Not finished jobs are left in pending state:
-    //  - they can be resumed by calling start() again;
+    //  - they can be executed by calling start() again;
     //  - or canceled using ~Task() or remove() later.
     void stop();
 
-    // Schedule all `jobs` with given `priority` and return task containing these jobs.
+    // Schedule all `jobs` with given `priority` and return a task containing these jobs.
     // Higher priority jobs (with greater `priority` value) are executed earlier.
     // All dependencies of a scheduled job inherit its priority if it is higher. This way higher priority job
     // never wait for (blocked by) lower priority jobs (no priority inversion).
+    // Returned task destructor ensures that all the `jobs` are finished (OK, FAILED or CANCELED)
+    // and are removed from AsyncLoader, so it is thread-safe to destroy them.
     [[nodiscard]] Task schedule(LoadJobSet && jobs, ssize_t priority = 0);
 
-    // Increase priority of a job and all its dependencies recursively
+    // Increase priority of a job and all its dependencies recursively.
     void prioritize(const LoadJobPtr & job, ssize_t new_priority);
 
     // Remove finished jobs, cancel scheduled jobs, wait for executing jobs to finish and remove them.
