@@ -226,8 +226,8 @@ void FileSegment::resetDownloaderUnlocked(const FileSegmentGuard::Lock &)
 void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock & lock) const
 {
     auto caller = getCallerId();
-    auto current_downloader = getDownloaderUnlocked(lock);
-    LOG_TEST(log, "Downloader id: {}, caller id: {}", current_downloader, caller);
+    auto current_downloader = getDownloaderUnlocked(segment_lock);
+    LOG_TEST(log, "Downloader id: {}, caller id: {}, operation: {}", current_downloader, caller, operation);
 
     if (caller != current_downloader)
     {
@@ -503,8 +503,9 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
     {
         cache_writer->finalize();
         cache_writer.reset();
-        remote_file_reader.reset();
     }
+
+    remote_file_reader.reset();
 }
 
 void FileSegment::completePartAndResetDownloader()
@@ -567,10 +568,13 @@ void FileSegment::complete()
         resetDownloaderUnlocked(segment_lock);
     }
 
-    if (cache_writer && (is_downloader || is_last_holder))
+    if (is_downloader || is_last_holder)
     {
-        cache_writer->finalize();
-        cache_writer.reset();
+        if (cache_writer)
+        {
+            cache_writer->finalize();
+            cache_writer.reset();
+        }
         remote_file_reader.reset();
     }
 
