@@ -78,7 +78,7 @@ The function is a more convenient alternative to `CAST((key_array, value_array),
 mapFromArrays(keys, values)
 ```  
 
-Alias: `MAP_FROM_ARRAYS(keys, values)`
+Alias: `MAP_FROM_ARRAYS`
   
 **Arguments**
 -   `keys` — Given key array to create a map from. The nested type of array must be: [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md)
@@ -104,7 +104,7 @@ select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
 
 ## mapFromString
 
-Creates a [Map(key, value)](../../sql-reference/data-types/map.md) with key and values of type [String](../../sql-reference/data-types/string.md) from an input [String](../../sql-reference/data-types/string.md) (or [FixedString]((../../sql-reference/data-types/fixedstring.md))) expression and delimiters.
+Creates a [Map(key, value)](../../sql-reference/data-types/map.md) with key and values of type [String](../../sql-reference/data-types/string.md) from an input [String](../../sql-reference/data-types/string.md) (or [FixedString](../../sql-reference/data-types/fixedstring.md)) expression and delimiters.
   
 **Syntax**
 
@@ -112,7 +112,7 @@ Creates a [Map(key, value)](../../sql-reference/data-types/map.md) with key and 
 mapFromString(str_expr[, pair_delim[, key_value_delim]])
 ```  
 
-Alias: `str_to_map(str_expr[, pair_delim[, key_value_delim]])`
+Alias: `str_to_map`
   
 **Arguments**
 - `str_expr`: a [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) expression.
