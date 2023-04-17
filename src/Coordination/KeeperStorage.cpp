@@ -1001,11 +1001,25 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
-        Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
+        Coordination::ZooKeeperCreateResponse * response = dynamic_cast<Coordination::ZooKeeperCreateResponse *>(response_ptr.get());
+
+        Coordination::ZooKeeperCreateIfNotExistsRequest * create_if_not_exists_request = dynamic_cast<Coordination::ZooKeeperCreateIfNotExistsRequest *>(zk_request.get());
+
+        if (create_if_not_exists_request != nullptr) {
+            Coordination::ZooKeeperCreateIfNotExistsRequest & request = dynamic_cast<Coordination::ZooKeeperCreateIfNotExistsRequest &>(*zk_request);
+
+            auto & container = storage.container;
+            auto node_it = container.find(request.path);
+            if (node_it != container.end())
+            {
+                response->error = Coordination::Error::ZOK;
+                return response_ptr;
+            }
+        }
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
-            response.error = result;
+            response->error = result;
             return response_ptr;
         }
 
@@ -1016,8 +1030,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             [zxid](const auto & delta)
             { return delta.zxid == zxid && std::holds_alternative<KeeperStorage::CreateNodeDelta>(delta.operation); });
 
-        response.path_created = create_delta_it->path;
-        response.error = Coordination::Error::ZOK;
+        response->path_created = create_delta_it->path;
+        response->error = Coordination::Error::ZOK;
         return response_ptr;
     }
 };
@@ -1730,6 +1744,10 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
                     break;
+                case Coordination::OpNum::CreateIfNotExists:
+                    check_operation_type(OperationType::Write);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
+                    break;
                 case Coordination::OpNum::Remove:
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
@@ -1993,6 +2011,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::CreateIfNotExists, KeeperStorageCreateRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::CheckNotExists, KeeperStorageCheckRequestProcessor>(*this);

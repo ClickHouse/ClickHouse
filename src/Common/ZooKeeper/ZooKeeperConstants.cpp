@@ -21,6 +21,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Check),
     static_cast<int32_t>(OpNum::Multi),
     static_cast<int32_t>(OpNum::MultiRead),
+    static_cast<int32_t>(OpNum::CreateIfNotExists),
     static_cast<int32_t>(OpNum::Auth),
     static_cast<int32_t>(OpNum::SessionID),
     static_cast<int32_t>(OpNum::SetACL),
@@ -57,6 +58,8 @@ std::string toString(OpNum op_num)
             return "Multi";
         case OpNum::MultiRead:
             return "MultiRead";
+        case OpNum::CreateIfNotExists:
+            return "CreateIfNotExists";
         case OpNum::Sync:
             return "Sync";
         case OpNum::Heartbeat:

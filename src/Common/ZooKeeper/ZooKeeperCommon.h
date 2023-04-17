@@ -194,7 +194,7 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Close; }
 };
 
-struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
+struct ZooKeeperCreateRequest : public CreateRequest, ZooKeeperRequest
 {
     /// used only during restore from zookeeper log
     int32_t parent_cversion = -1;
@@ -215,7 +215,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
+struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
 
@@ -226,6 +226,11 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
+};
+
+struct ZooKeeperCreateIfNotExistsRequest final : public ZooKeeperCreateRequest
+{
+    OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
