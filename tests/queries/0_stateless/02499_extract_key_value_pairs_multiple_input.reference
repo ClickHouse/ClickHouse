@@ -291,4 +291,16 @@ WITH
 SELECT
     x;
 {'age':'31','last_key':'last_value','name':'neymar','nationality':'brazil','team':'psg'}
+-- { echoOn }
+-- should not fail because pair delimiters contains 8 characters, which is within the limit
+WITH
+    extractKeyValuePairs('not_important', ':', '12345678', '\'') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
 {}
