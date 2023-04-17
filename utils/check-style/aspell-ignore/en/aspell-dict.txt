@@ -93,7 +93,7 @@ LineAsString
 LinksDeployment
 LowCardinality
 MEMTABLE
-MVCC 
+MVCC
 MSan
 MacOS
 Memcheck
@@ -149,7 +149,7 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
-SELECTs 
+SELECTs
 SERIALIZABLE
 SIMD
 SMALLINT
@@ -176,7 +176,7 @@ Testflows
 Tgz
 Toolset
 Tradeoff
-Transactional 
+Transactional
 TwoColumnList
 UBSan
 UInt
@@ -208,7 +208,7 @@ analytics
 anonymized
 ansi
 async
-atomicity 
+atomicity
 autogeneration
 autostart
 avro
@@ -301,7 +301,7 @@ flatbuffers
 fmtlib
 formatschema
 formatter
-fsync 
+fsync
 fuzzer
 fuzzers
 gRPC
