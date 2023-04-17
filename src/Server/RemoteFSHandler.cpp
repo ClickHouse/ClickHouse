@@ -1,57 +1,57 @@
 #include <algorithm>
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <mutex>
-#include <vector>
 #include <string_view>
-#include <cstring>
-#include <base/types.h>
-#include <base/scope_guard.h>
-#include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <Common/CurrentThread.h>
-#include <Common/Stopwatch.h>
-#include <Common/NetException.h>
-#include <Common/setThreadName.h>
-#include <Common/OpenSSLHelpers.h>
-#include <IO/Progress.h>
+#include <vector>
+#include <Access/AccessControl.h>
+#include <Access/Credentials.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Compression/CompressionFactory.h>
+#include <Core/ExternalTable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/TablesStatus.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/Progress.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/TablesStatus.h>
+#include <Interpreters/executeQuery.h>
 #include <Server/TCPServer.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageS3Cluster.h>
-#include <Core/ExternalTable.h>
-#include <Access/AccessControl.h>
-#include <Access/Credentials.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Compression/CompressionFactory.h>
-#include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
+#include <base/scope_guard.h>
+#include <base/types.h>
 #include <fmt/format.h>
+#include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/NetException.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
-#include "Storages/MergeTree/RequestResponse.h"
 #include "RemoteFSHandler.h"
+#include "Storages/MergeTree/RequestResponse.h"
 
 using namespace DB;
 
@@ -60,20 +60,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_DISK;
-    extern const int POCO_EXCEPTION;
-    extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
-    extern const int UNKNOWN_PROTOCOL;
-    extern const int AUTHENTICATION_FAILED;
 }
 
-enum {
+enum
+{
     Hello = 0,
     Ping = 1,
     GetTotalSpace = 2,
@@ -92,11 +86,11 @@ enum {
     MoveFile = 15,
     ReplaceFile = 16,
     Copy = 17,
-    CopyDirectoryContent = 18,  // TODO: fix test
-    ListFiles = 19,             // TODO: later
+    CopyDirectoryContent = 18, // TODO: fix test
+    ListFiles = 19, // TODO: later
     EndListFiles = 119,
-    ReadFile = 20,              // TODO: improve
-    WriteFile = 21,             // TODO: improve
+    ReadFile = 20, // TODO: improve
+    WriteFile = 21, // TODO: improve
     EndWriteFile = 121,
     RemoveFile = 22,
     RemoveFileIfExists = 23,
@@ -105,7 +99,7 @@ enum {
     SetLastModified = 26,
     GetLastModified = 27,
     GetLastChanged = 28,
-    SetReadOnly = 29,           // TODO fix test
+    SetReadOnly = 29, // TODO fix test
     CreateHardLink = 30,
     TruncateFile = 31,
     DataPacket = 55,
@@ -113,7 +107,8 @@ enum {
 };
 
 
-RemoteFSHandler::RemoteFSHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, std::string server_display_name_)
+RemoteFSHandler::RemoteFSHandler(
+    IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -121,7 +116,12 @@ RemoteFSHandler::RemoteFSHandler(IServer & server_, TCPServer & tcp_server_, con
     , server_display_name(std::move(server_display_name_))
 {
 }
-RemoteFSHandler::RemoteFSHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_)
+RemoteFSHandler::RemoteFSHandler(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    TCPProtocolStackData & stack_data,
+    std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -450,7 +450,7 @@ void RemoteFSHandler::receivePacket()
     }
 }
 
-void RemoteFSHandler::receivePath(std::string &path)
+void RemoteFSHandler::receivePath(std::string & path)
 {
     readStringBinary(path, *in);
     LOG_TRACE(log, "Received path {}", path);
@@ -469,7 +469,8 @@ void RemoteFSHandler::iterateDirectory()
 {
     std::string path;
     receivePath(path);
-    for (auto iter = disk->iterateDirectory(path); iter->isValid(); iter->next()) {
+    for (auto iter = disk->iterateDirectory(path); iter->isValid(); iter->next())
+    {
         LOG_TRACE(log, "Writing dir entry {}", iter->path());
         writeVarUInt(DataPacket, *out);
         writeStringBinary(iter->path(), *out);
@@ -484,7 +485,8 @@ void RemoteFSHandler::listFiles()
     receivePath(path);
     std::vector<String> files;
     disk->listFiles(path, files);
-    for (auto iter = files.begin(); iter != files.end(); iter++) {
+    for (auto iter = files.begin(); iter != files.end(); iter++)
+    {
         LOG_TRACE(log, "Writing file name {}", *iter);
         writeVarUInt(DataPacket, *out);
         writeStringBinary(*iter, *out);
@@ -529,9 +531,11 @@ void RemoteFSHandler::writeFile()
     writeVarUInt(WriteFile, *out);
     out->next();
     UInt64 packet_type = 0;
-    while (true) {
+    while (true)
+    {
         readVarUInt(packet_type, *in);
-        switch (packet_type) {
+        switch (packet_type)
+        {
             case DataPacket:
                 readStringBinary(strData, *in);
                 LOG_TRACE(log, "Received data {}", strData);
@@ -559,7 +563,7 @@ void RemoteFSHandler::sendHello()
 }
 
 
-void RemoteFSHandler::sendError(std::string errorMsg) 
+void RemoteFSHandler::sendError(std::string errorMsg)
 {
     writeVarUInt(Error, *out);
     writeStringBinary(errorMsg, *out);
