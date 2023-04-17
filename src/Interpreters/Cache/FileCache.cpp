@@ -19,22 +19,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(
-    const String & cache_base_path_,
-    const FileCacheSettings & cache_settings_)
-    : max_file_segment_size(cache_settings_.max_file_segment_size)
-    , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
-    , bypass_cache_threshold(cache_settings_.enable_bypass_cache_with_threashold ? cache_settings_.bypass_cache_threashold : 0)
-    , delayed_cleanup_interval_ms(cache_settings_.delayed_cleanup_interval_ms)
+FileCache::FileCache(const FileCacheSettings & settings)
+    : max_file_segment_size(settings.max_file_segment_size)
+    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
+    , bypass_cache_threshold(settings.enable_bypass_cache_with_threashold ? settings.bypass_cache_threashold : 0)
+    , delayed_cleanup_interval_ms(settings.delayed_cleanup_interval_ms)
     , log(&Poco::Logger::get("FileCache"))
-    , metadata(cache_base_path_)
+    , metadata(settings.base_path)
 {
-    main_priority = std::make_unique<LRUFileCachePriority>(cache_settings_.max_size, cache_settings_.max_elements);
+    main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
-    if (cache_settings_.cache_hits_threshold)
-        stash = std::make_unique<HitsCountStash>(cache_settings_.cache_hits_threshold, cache_settings_.max_elements);
+    if (settings.cache_hits_threshold)
+        stash = std::make_unique<HitsCountStash>(settings.cache_hits_threshold, settings.max_elements);
 
-    if (cache_settings_.enable_filesystem_query_cache_limit)
+    if (settings.enable_filesystem_query_cache_limit)
         query_limit = std::make_unique<FileCacheQueryLimit>();
 
     cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });

@@ -189,13 +189,13 @@ TEST_F(FileCacheTest, get)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
+    settings.base_path = cache_base_path;
     settings.max_size = 30;
     settings.max_elements = 5;
 
     {
         std::cerr << "Step 1\n";
-
-        auto cache = FileCache(cache_base_path, settings);
+        auto cache = DB::FileCache(settings);
         cache.initialize();
         auto key = cache.createKeyForPath("key1");
 
@@ -555,7 +555,7 @@ TEST_F(FileCacheTest, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::FileCache(cache_base_path, settings);
+        auto cache2 = DB::FileCache(settings);
         cache2.initialize();
         auto key = cache2.createKeyForPath("key1");
 
@@ -571,9 +571,9 @@ TEST_F(FileCacheTest, get)
 
         auto settings2 = settings;
         settings2.max_file_segment_size = 10;
-        std::string cache_path = caches_dir / "cache2";
-        fs::create_directories(cache_path);
-        auto cache2 = DB::FileCache(cache_path, settings2);
+        settings2.base_path = caches_dir / "cache2";
+        fs::create_directories(settings2.base_path);
+        auto cache2 = DB::FileCache(settings2);
         cache2.initialize();
         auto key = cache2.createKeyForPath("key1");
 
@@ -587,7 +587,7 @@ TEST_F(FileCacheTest, get)
     {
         /// Test delated cleanup
 
-        auto cache = FileCache(cache_base_path, settings);
+        auto cache = FileCache(settings);
         cache.initialize();
         cache.cleanup();
         const auto key = cache.createKeyForPath("key10");
@@ -618,7 +618,7 @@ TEST_F(FileCacheTest, get)
 
         auto settings2{settings};
         settings2.delayed_cleanup_interval_ms = 0;
-        auto cache = FileCache(cache_base_path, settings2);
+        auto cache = DB::FileCache(settings2);
         cache.initialize();
         const auto key = cache.createKeyForPath("key10");
         const auto key_path = cache.getPathInLocalCache(key);
@@ -645,8 +645,9 @@ TEST_F(FileCacheTest, writeBuffer)
     settings.max_size = 100;
     settings.max_elements = 5;
     settings.max_file_segment_size = 5;
+    settings.base_path = cache_base_path;
 
-    FileCache cache(cache_base_path, settings);
+    FileCache cache(settings);
     cache.initialize();
 
     auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
@@ -748,8 +749,9 @@ TEST_F(FileCacheTest, temporaryData)
     DB::FileCacheSettings settings;
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
+    settings.base_path = cache_base_path;
 
-    DB::FileCache file_cache(cache_base_path, settings);
+    DB::FileCache file_cache(settings);
     file_cache.initialize();
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);

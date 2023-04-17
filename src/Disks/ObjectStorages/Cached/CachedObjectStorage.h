@@ -87,7 +87,7 @@ public:
 
     String getObjectsNamespace() const override;
 
-    const String & getCacheBasePath() const override { return cache->getBasePath(); }
+    const std::string & getCacheName() const override { return cache_config_name; }
 
     std::string generateBlobNameForPath(const std::string & path) override;
 
@@ -114,8 +114,6 @@ public:
     WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
 
     static bool canUseReadThroughCache();
-
-    FileCachePtr getCache() const { return cache; }
 
 private:
     FileCache::Key getCacheKey(const std::string & path) const;
