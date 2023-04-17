@@ -55,7 +55,7 @@ public:
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
      *
-     * As long as pointers to returned file segments are hold
+     * As long as pointers to returned file segments are held
      * it is guaranteed that these file segments are not removed from cache.
      */
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
