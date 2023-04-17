@@ -155,46 +155,46 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 {
     attachSystemTablesLocal(context, system_database);
 
-    attach<StorageSystemParts>(context, system_database, "parts", "Contains a list of currently existing (both active and inactive) parts of all *-MergeTree tables.");
+    attach<StorageSystemParts>(context, system_database, "parts", "Contains a list of currently existing (both active and inactive) parts of all *-MergeTree tables. Each part is represented by a single row.");
     attach<StorageSystemProjectionParts>(context, system_database, "projection_parts", "Contains a list of currently existing projection parts (a copy of some part containing aggregated data or just sorted in different order) created for all the projections for all tables within a cluster.");
     attach<StorageSystemDetachedParts>(context, system_database, "detached_parts", "Contains a list of all parts which are being found in /detached directory along with a reason why it was detached. ClickHouse server doesn't use such parts anyhow.");
-    attach<StorageSystemPartsColumns>(context, system_database, "parts_columns", "");
-    attach<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "");
-    attach<StorageSystemDisks>(context, system_database, "disks", "");
-    attach<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "");
-    attach<StorageSystemProcesses>(context, system_database, "processes", "");
-    attach<StorageSystemMetrics>(context, system_database, "metrics", "");
-    attach<StorageSystemMerges>(context, system_database, "merges", "");
-    attach<StorageSystemMoves>(context, system_database, "moves", "");
-    attach<StorageSystemMutations>(context, system_database, "mutations", "");
-    attach<StorageSystemReplicas>(context, system_database, "replicas", "");
-    attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue", "");
-    attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue", "");
-    attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue", "");
-    attach<StorageSystemDictionaries>(context, system_database, "dictionaries", "");
-    attach<StorageSystemModels>(context, system_database, "models", "");
-    attach<StorageSystemClusters>(context, system_database, "clusters", "");
-    attach<StorageSystemGraphite>(context, system_database, "graphite_retentions", "");
-    attach<StorageSystemMacros>(context, system_database, "macros", "");
-    attach<StorageSystemReplicatedFetches>(context, system_database, "replicated_fetches", "");
-    attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards", "");
-    attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts", "");
-    attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "");
-    attach<StorageSystemQueryCache>(context, system_database, "query_cache", "");
-    attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "");
-    attach<StorageSystemCertificates>(context, system_database, "certificates", "");
-    attach<StorageSystemNamedCollections>(context, system_database, "named_collections", "");
+    attach<StorageSystemPartsColumns>(context, system_database, "parts_columns", "Contains a list of columns of all currently existing parts of all MergeTree tables. Each column is represented by a single row.");
+    attach<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "Contains a list of columns of all currently existing projection parts of all MergeTree tables. Each column is represented by a single row.");
+    attach<StorageSystemDisks>(context, system_database, "disks", "Contains information about disks defined in the server configuration.");
+    attach<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "Contains information about storage policies and volumes defined in the server configuration.");
+    attach<StorageSystemProcesses>(context, system_database, "processes", "Contains a list of currently executing processes (queries) with their progress.");
+    attach<StorageSystemMetrics>(context, system_database, "metrics", "Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.");
+    attach<StorageSystemMerges>(context, system_database, "merges", "Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.");
+    attach<StorageSystemMoves>(context, system_database, "moves", "Contains information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row.");
+    attach<StorageSystemMutations>(context, system_database, "mutations", "Contains a list of mutations and their progress. Each mutation command is represented by a single row.");
+    attach<StorageSystemReplicas>(context, system_database, "replicas", "Contains information and status of all table replicas on current server. Each replica is represented by a single row.");
+    attach<StorageSystemReplicationQueue>(context, system_database, "replication_queue", "Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for each table replica.");
+    attach<StorageSystemDDLWorkerQueue>(context, system_database, "distributed_ddl_queue", "Contains information about distributed DDL queries (ON CLUSTER clause) that were executed on a cluster.");
+    attach<StorageSystemDistributionQueue>(context, system_database, "distribution_queue", "Contains information about local files that are in the queue to be sent to the shards. These local files contain new parts that are created by inserting new data into the Distributed table in asynchronous mode.");
+    attach<StorageSystemDictionaries>(context, system_database, "dictionaries", "Contains information about dictionaries.");
+    attach<StorageSystemModels>(context, system_database, "models", "Contains a list of CatBoost models loaded into a LibraryBridge's memory along with time when it was loaded.");
+    attach<StorageSystemClusters>(context, system_database, "clusters", "Contains information about clusters defined in the configuration file or generated by a Replicated database.");
+    attach<StorageSystemGraphite>(context, system_database, "graphite_retentions", "Contains information about parameters graphite_rollup which are used in tables with *GraphiteMergeTree engines.");
+    attach<StorageSystemMacros>(context, system_database, "macros", "Contains a list of all macros defined in server configuration.");
+    attach<StorageSystemReplicatedFetches>(context, system_database, "replicated_fetches", "Contains information about currently running background fetches.");
+    attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards", "Contains information about parts which are currently in a process of moving between shards and their progress.");
+    attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts", "Contains information about pending asynchronous inserts in queue in server's memory.");
+    attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "Contains information about all entries inside filesystem cache for remote objects.");
+    attach<StorageSystemQueryCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
+    attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
+    attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
+    attach<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
-        attach<StorageSystemTransactions>(context, system_database, "transactions", "");
+        attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)
 {
-    attach<StorageSystemAsynchronousMetrics>(context, system_database, "asynchronous_metrics", "", async_metrics);
+    attach<StorageSystemAsynchronousMetrics>(context, system_database, "asynchronous_metrics", "Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.", async_metrics);
 }
 
 }
