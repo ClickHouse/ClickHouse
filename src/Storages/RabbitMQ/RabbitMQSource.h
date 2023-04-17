@@ -51,6 +51,8 @@ private:
     uint64_t max_execution_time_ms = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
+    RabbitMQConsumer::CommitInfo commit_info;
+
     RabbitMQSource(
         StorageRabbitMQ & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
