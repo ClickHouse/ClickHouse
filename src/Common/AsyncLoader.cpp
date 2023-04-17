@@ -62,8 +62,7 @@ void LoadJob::ok()
 {
     std::unique_lock lock{mutex};
     load_status = LoadStatus::OK;
-    if (waiters > 0)
-        finished.notify_all();
+    finish();
 }
 
 void LoadJob::failed(const std::exception_ptr & ptr)
@@ -71,8 +70,7 @@ void LoadJob::failed(const std::exception_ptr & ptr)
     std::unique_lock lock{mutex};
     load_status = LoadStatus::FAILED;
     load_exception = ptr;
-    if (waiters > 0)
-        finished.notify_all();
+    finish();
 }
 
 void LoadJob::canceled(const std::exception_ptr & ptr)
@@ -80,6 +78,12 @@ void LoadJob::canceled(const std::exception_ptr & ptr)
     std::unique_lock lock{mutex};
     load_status = LoadStatus::CANCELED;
     load_exception = ptr;
+    finish();
+}
+
+void LoadJob::finish()
+{
+    func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` and `task->wait()` return
     if (waiters > 0)
         finished.notify_all();
 }
