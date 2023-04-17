@@ -258,7 +258,6 @@ public:
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
 
-
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
     //
@@ -267,6 +266,8 @@ public:
     RemoteFileReaderPtr getRemoteFileReader();
 
     RemoteFileReaderPtr extractRemoteFileReader();
+
+    void resetRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 

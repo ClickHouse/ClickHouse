@@ -226,7 +226,7 @@ void FileSegment::resetDownloaderUnlocked(const FileSegmentGuard::Lock &)
 void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock & lock) const
 {
     auto caller = getCallerId();
-    auto current_downloader = getDownloaderUnlocked(segment_lock);
+    auto current_downloader = getDownloaderUnlocked(lock);
     LOG_TEST(log, "Downloader id: {}, caller id: {}, operation: {}", current_downloader, caller, operation);
 
     if (caller != current_downloader)
@@ -255,6 +255,13 @@ FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
     auto lock = segment_guard.lock();
     assertIsDownloaderUnlocked("getRemoteFileReader", lock);
     return remote_file_reader;
+}
+
+void FileSegment::resetRemoteFileReader()
+{
+    auto lock = segment_guard.lock();
+    assertIsDownloaderUnlocked("resetRemoteFileReader", lock);
+    remote_file_reader.reset();
 }
 
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
@@ -699,6 +706,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
 {
     auto check_iterator = [this](const Priority::Iterator & it)
     {
+        UNUSED(this);
         if (!it)
             return;
 
