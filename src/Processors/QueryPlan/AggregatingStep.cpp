@@ -131,6 +131,7 @@ AggregatingStep::AggregatingStep(
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
+    hints = input_streams.front().hints;
     updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
     if (memoryBoundMergingWillBeUsed())
     {
@@ -566,6 +567,7 @@ void AggregatingStep::updateOutputStream()
         input_streams.front(),
         appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
         getDataStreamTraits());
+    hints = input_streams.front().hints;
     updateDataHintsWithOutputHeaderKeys(output_stream->hints, output_stream->header.getNames());
 }
 
