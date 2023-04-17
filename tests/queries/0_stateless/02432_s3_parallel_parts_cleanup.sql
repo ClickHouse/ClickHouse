@@ -55,7 +55,7 @@ select sleep(3);
 select count(), sum(n), sum(m) from rmt;
 select count(), sum(n), sum(m) from rmt2;
 
--- So there will be at least 2 parts (just in case no parts are removed until drop)
+-- So there will be at least 2 parts (just in case no parts are removed until drop).
 insert into rmt(n) values (10);
 
 drop table rmt;
