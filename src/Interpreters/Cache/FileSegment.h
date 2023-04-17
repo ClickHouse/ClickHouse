@@ -72,7 +72,7 @@ public:
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
     using Downloader = std::string;
     using DownloaderId = std::string;
-    using CachePriorityIterator = IFileCachePriority::Iterator;
+    using Priority = IFileCachePriority;
 
     enum class State
     {
@@ -116,7 +116,7 @@ public:
         const CreateFileSegmentSettings & create_settings = {},
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
-        CachePriorityIterator queue_iterator_ = CachePriorityIterator{});
+        Priority::Iterator queue_iterator_ = Priority::Iterator{});
 
     ~FileSegment() = default;
 
@@ -222,9 +222,9 @@ public:
 
     FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
 
-    CachePriorityIterator getQueueIterator() const;
+    Priority::Iterator getQueueIterator() const;
 
-    void setQueueIterator(CachePriorityIterator iterator);
+    void setQueueIterator(Priority::Iterator iterator);
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -235,8 +235,6 @@ public:
     /**
      * ========== Methods that must do cv.notify() ==================
      */
-
-    void setBroken();
 
     void complete();
 
@@ -285,6 +283,7 @@ private:
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
+    bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
 
@@ -308,7 +307,7 @@ private:
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
-    mutable CachePriorityIterator queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
+    mutable Priority::Iterator queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
 

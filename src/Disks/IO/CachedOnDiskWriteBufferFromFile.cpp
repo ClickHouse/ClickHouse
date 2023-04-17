@@ -88,7 +88,6 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         bool reserved = file_segment->reserve(size_to_write);
         if (!reserved)
         {
-            file_segment->setBroken();
             appendFilesystemCacheLog(*file_segment);
 
             LOG_DEBUG(

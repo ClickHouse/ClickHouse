@@ -353,13 +353,10 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
 
     auto metadata = getByOffset(offset);
     const auto & file_segment = metadata->file_segment;
+    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 
     const size_t downloaded_size = file_segment->getDownloadedSize(false);
-    const size_t full_size = file_segment->range().size();
-
-    chassert(downloaded_size <= file_segment->reserved_size);
-
-    if (downloaded_size == full_size)
+    if (downloaded_size == file_segment->range().size())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -367,20 +364,17 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    CreateFileSegmentSettings create_settings(file_segment->getKind());
-    auto queue_iterator = file_segment->queue_iterator;
+    ssize_t diff = file_segment->reserved_size - downloaded_size;
 
     metadata->file_segment = std::make_shared<FileSegment>(
-        getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED, create_settings,
-        file_segment->cache, key_metadata, queue_iterator);
+        getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
+        CreateFileSegmentSettings(file_segment->getKind()),
+        file_segment->cache, key_metadata, file_segment->queue_iterator);
 
-    chassert(queue_iterator->getEntry().size == file_segment->reserved_size);
-    ssize_t diff = file_segment->reserved_size - file_segment->downloaded_size;
     if (diff)
-        queue_iterator->updateSize(-diff);
+        metadata->getQueueIterator()->updateSize(-diff);
 
-    chassert(file_segment->reserved_size == downloaded_size);
-    chassert(metadata->size() == queue_iterator->getEntry().size);
+    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
 std::shared_ptr<const FileSegmentMetadata> LockedKey::getByOffset(size_t offset) const
