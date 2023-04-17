@@ -90,7 +90,6 @@
 #include <unordered_set>
 #include <filesystem>
 
-#include <fmt/core.h>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 
