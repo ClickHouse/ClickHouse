@@ -52,25 +52,39 @@ ORDER BY (CounterID, EventDate)"""
             return row
 
     path_to_detached_part = get_path_to_detached_part(
-        node1.query(
-            "SELECT path FROM system.detached_parts where table = 'test1'"
-        )
+        node1.query("SELECT path FROM system.detached_parts where table = 'test1'")
     )
 
     new_part_name = "ignored_" + os.path.basename(path_to_detached_part)
-    new_path_to_detached_part_name = os.path.dirname(path_to_detached_part) + os.sep + new_part_name
+    new_path_to_detached_part_name = (
+        os.path.dirname(path_to_detached_part) + os.sep + new_part_name
+    )
 
     node1.exec_in_container(
-            [
-                        "bash",
-                        "-c",
-                        f"mv {path_to_detached_part} {new_path_to_detached_part_name}",
-                    ],
-                    privileged=True,
-                    user="root")
+        [
+            "bash",
+            "-c",
+            f"mv {path_to_detached_part} {new_path_to_detached_part_name}",
+        ],
+        privileged=True,
+        user="root",
+    )
 
-    assert node1.query("SELECT path FROM system.detached_parts where table = 'test1'").strip() == new_path_to_detached_part_name
+    assert (
+        node1.query(
+            "SELECT path FROM system.detached_parts where table = 'test1'"
+        ).strip()
+        == new_path_to_detached_part_name
+    )
 
-    node1.query(f"ALTER TABLE test1 DROP DETACHED PART '{new_part_name}'", settings={"allow_drop_detached": 1})
+    node1.query(
+        f"ALTER TABLE test1 DROP DETACHED PART '{new_part_name}'",
+        settings={"allow_drop_detached": 1},
+    )
 
-    assert node1.query("SELECT path FROM system.detached_parts where table = 'test1'").strip() == ""
+    assert (
+        node1.query(
+            "SELECT path FROM system.detached_parts where table = 'test1'"
+        ).strip()
+        == ""
+    )
