@@ -69,6 +69,7 @@ private:
     void ok();
     void failed(const std::exception_ptr & ptr);
     void canceled(const std::exception_ptr & ptr);
+    void finish();
 
     std::function<void(const LoadJobPtr & self)> func;
     std::atomic<ssize_t> load_priority{0};
