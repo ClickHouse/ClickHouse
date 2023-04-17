@@ -119,7 +119,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
     attach<StorageSystemContributors>(context, system_database, "contributors", "Contains a list of all ClickHouse contributors <3");
-    attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users accounts either configured at the server through configuration file or created via SQL.");
+    attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.");
     attach<StorageSystemRoles>(context, system_database, "roles", "Contains a list of all roles created at the server.");
     attach<StorageSystemGrants>(context, system_database, "grants", "Contains the information about privileges granted to ClickHouse user accounts.");
     attach<StorageSystemRoleGrants>(context, system_database, "role_grants", "Contains the role grants for users and roles. To add entries to this table, use `GRANT role TO user`. Using this table you may find out which roles are assigned to which users or which roles does user has.");
