@@ -56,7 +56,7 @@ Homebrew
 Homebrew's
 HorizontalDivide
 Hostname
-INSERTed 
+INSERTed
 IPv
 IntN
 Integrations
