@@ -5,7 +5,10 @@
 #include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/EventNotifier.h>
 #include <Common/Config/ConfigProcessor.h>
-#include "IO/WriteBufferFromFile.h"
+#include "IO/ReadBufferFromString.h"
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/copyData.h>
 
 namespace CurrentMetrics
 {
@@ -82,6 +85,25 @@ Runner::Runner(
     else
         continue_on_error = config->getBool("continue_on_error", false);
     std::cerr << "Continue on error: " << continue_on_error << std::endl;
+
+    static const std::string output_key = "output";
+    print_to_stdout = config->getBool(output_key + ".stdout", false);
+    std::cerr << "Printing output to stdout: " << print_to_stdout << std::endl;
+
+    static const std::string output_file_key = output_key + ".file";
+    if (config->has(output_file_key))
+    {
+        if (config->has(output_file_key + ".path"))
+        {
+            file_output = config->getString(output_file_key + ".path");
+            output_file_with_timestamp = config->getBool(output_file_key + ".with_timestamp");
+        }
+        else
+            file_output = config->getString(output_file_key);
+
+        std::cerr << "Result file path: " << file_output->string() << std::endl;
+    }
+
     std::cerr << "---- Run options ----\n" << std::endl;
 
     pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency);
@@ -261,24 +283,6 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
 bool Runner::tryPushRequestInteractively(Coordination::ZooKeeperRequestPtr && request, DB::InterruptListener & interrupt_listener)
 {
-    //static std::unordered_map<Coordination::OpNum, size_t> counts;
-    //static size_t i = 0;
-    //
-    //counts[request->getOpNum()]++;
-
-    //if (request->getOpNum() == Coordination::OpNum::Multi)
-    //{
-    //    for (const auto & multi_request : dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request).requests)
-    //        counts[dynamic_cast<Coordination::ZooKeeperRequest &>(*multi_request).getOpNum()]++;
-    //}
-
-    //++i;
-    //if (i % 10000 == 0)
-    //{
-    //    for (const auto & [op_num, count] : counts)
-    //        std::cerr << fmt::format("{}: {}", op_num, count) << std::endl;
-    //}
-
     bool inserted = false;
 
     while (!inserted)
@@ -324,6 +328,9 @@ void Runner::runBenchmark()
     std::cerr << "Preparing to run\n";
     generator->startup(*connections[0]);
     std::cerr << "Prepared\n";
+
+	auto start_timestamp_ms = Poco::Timestamp{}.epochMicroseconds() / 1000;
+
     try
     {
         for (size_t i = 0; i < concurrency; ++i)
@@ -360,8 +367,30 @@ void Runner::runBenchmark()
     std::lock_guard lock(mutex);
     info->report(concurrency);
 
-    DB::WriteBufferFromFile out("result.json");
-    info->writeJSON(out, concurrency);
+    DB::WriteBufferFromOwnString out;
+    info->writeJSON(out, concurrency, start_timestamp_ms);
+    auto output_string = std::move(out.str());
+
+    if (print_to_stdout)
+        std::cout << output_string << std::endl;
+
+    if (file_output)
+    {
+        auto path = *file_output;
+
+        if (output_file_with_timestamp)
+        {
+            auto filename = file_output->filename();
+            filename = fmt::format("{}_{}{}", filename.stem().generic_string(), start_timestamp_ms, filename.extension().generic_string());
+            path = file_output->parent_path() / filename;
+        }
+
+        std::cerr << "Storing output to " << path << std::endl;
+
+        DB::WriteBufferFromFile file_output_buffer(path);
+        DB::ReadBufferFromString read_buffer(output_string);
+        DB::copyData(read_buffer, file_output_buffer);
+    }
 }
 
 

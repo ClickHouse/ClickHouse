@@ -119,16 +119,20 @@ void Stats::report(size_t concurrency)
     }
 }
 
-void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency)
+void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_timestamp)
 {
     using namespace rapidjson;
     Document results;
     auto & allocator = results.GetAllocator();
     results.SetObject();
 
+    results.AddMember("timestamp", Value(start_timestamp), allocator);
+
     const auto get_results = [&](auto & collector)
     {
         Value specific_results(kObjectType);
+
+        specific_results.AddMember("total_requests", Value(collector.requests), allocator);
 
         auto [rps, bps] = collector.getThroughput(concurrency);
         specific_results.AddMember("requests_per_second", Value(rps), allocator);
@@ -139,9 +143,8 @@ void Stats::writeJSON(DB::WriteBuffer & out, size_t concurrency)
         const auto add_percentile = [&](double percent)
         {
             Value percentile(kObjectType);
-            percentile.AddMember("percentile", Value(percent), allocator);
-            percentile.AddMember("value", Value(collector.getPercentile(percent)), allocator);
-
+            Value percent_key(fmt::format("{:.2f}", percent).c_str(), allocator);
+            percentile.AddMember(percent_key, Value(collector.getPercentile(percent)), allocator);
             percentiles.PushBack(percentile, allocator);
         };
 

@@ -36,7 +36,7 @@ struct Stats
     void clear();
 
     void report(size_t concurrency);
-    void writeJSON(DB::WriteBuffer & out, size_t concurrency);
+    void writeJSON(DB::WriteBuffer & out, size_t concurrency, int64_t start_timestamp);
 };
 
 
