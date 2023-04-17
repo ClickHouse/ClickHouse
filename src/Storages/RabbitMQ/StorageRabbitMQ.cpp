@@ -371,6 +371,14 @@ void StorageRabbitMQ::initRabbitMQ()
         for (const auto i : collections::range(0, num_queues))
             bindQueue(i + 1, *rabbit_channel);
 
+        if (queues.size() != num_queues)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected all queues to be initialized (but having {}/{})",
+                queues.size(), num_queues);
+        }
+
         LOG_TRACE(log, "RabbitMQ setup completed");
         rabbit_is_ready = true;
         rabbit_channel->close();
@@ -593,35 +601,6 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
 }
 
 
-bool StorageRabbitMQ::updateChannel(ChannelPtr & channel)
-{
-    try
-    {
-        channel = connection->createChannel();
-        return true;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        return false;
-    }
-}
-
-
-void StorageRabbitMQ::prepareChannelForConsumer(RabbitMQConsumerPtr consumer)
-{
-    if (!consumer)
-        return;
-
-    if (consumer->queuesCount() != queues.size())
-        consumer->updateQueues(queues);
-
-    consumer->updateAckTracker();
-
-    if (updateChannel(consumer->getChannel()))
-        consumer->setupChannel();
-}
-
 void StorageRabbitMQ::unbindExchange()
 {
     /* This is needed because with RabbitMQ (without special adjustments) can't, for example, properly make mv if there was insert query
@@ -820,7 +799,7 @@ void StorageRabbitMQ::shutdown()
     shutdown_called = true;
 
     for (auto & consumer : consumers_ref)
-        consumer.lock()->shutdown();
+        consumer.lock()->stop();
 
     LOG_TRACE(log, "Deactivating background tasks");
 
@@ -982,7 +961,7 @@ void StorageRabbitMQ::initializeBuffers()
     if (!initialized)
     {
         for (const auto & consumer : consumers)
-            prepareChannelForConsumer(consumer);
+            consumer->updateChannel(*connection);
         initialized = true;
     }
 }
@@ -1144,10 +1123,7 @@ bool StorageRabbitMQ::tryStreamToViews()
                 ++queue_empty;
 
             if (source->needChannelUpdate())
-            {
-                auto consumer = source->getBuffer();
-                prepareChannelForConsumer(consumer);
-            }
+                source->getBuffer()->updateChannel(*connection);
 
             /* false is returned by the sendAck function in only two cases:
              * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on

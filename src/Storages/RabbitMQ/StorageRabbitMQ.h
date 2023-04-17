@@ -72,9 +72,7 @@ public:
     String getExchange() const { return exchange_name; }
     void unbindExchange();
 
-    bool updateChannel(ChannelPtr & channel);
-    void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
-    void prepareChannelForConsumer(RabbitMQConsumerPtr consumer);
+    RabbitMQConnection & getConnection() { return *connection; }
 
     void incrementReader();
     void decrementReader();
