@@ -59,24 +59,30 @@ void ENetServer::run()
                 break;
 
             case ENET_EVENT_TYPE_RECEIVE:
-                //event.packet->dataLength,
-                //event.packet->data,
-                //event.peer->data,
-                //event.channelID);
-                /* Clean up the packet now that we're done using it. */
-                enet_packet_destroy (event.packet);
+                {
+                    //event.packet->dataLength,
+                    //event.packet->data,
+                    //event.peer->data,
+                    //event.channelID);
+                    /* Clean up the packet now that we're done using it. */
+                    ENetPack pck;
+                    pck.deserialize(reinterpret_cast<char *>(event.packet->data));
 
-                // handle the request
+                    enet_packet_destroy (event.packet);
 
-                resp = enet_packet_create ("response", 
-                                          strlen ("response") + 1, 
-                                          ENET_PACKET_FLAG_RELIABLE);
+                    // handle the request
+                    // processQuery()
 
-                enet_peer_send (event.peer, 0, resp);
+                    resp = enet_packet_create ("response",
+                                            strlen ("response") + 1,
+                                            ENET_PACKET_FLAG_RELIABLE);
 
-                enet_host_flush(server);
+                    enet_peer_send (event.peer, 0, resp);
 
-                break;
+                    enet_host_flush(server);
+
+                    break;
+                }
 
             case ENET_EVENT_TYPE_DISCONNECT:
                 event.peer->data = nullptr;

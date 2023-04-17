@@ -9,6 +9,10 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
 
+#if USE_ENET
+#   include <Server/ENetPacketMap.h>
+#endif
+
 
 namespace zkutil
 {
@@ -37,6 +41,9 @@ public:
 
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+    #if USE_ENET
+    void processQuery(const ENetPack & params, ReadBuffer & body, WriteBuffer & out, ENetPack & response);
+    #endif
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);

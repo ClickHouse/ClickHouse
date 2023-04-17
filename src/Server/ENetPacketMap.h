@@ -1,3 +1,5 @@
+#pragma once
+
 #include <base/types.h>
 #include <map>
 #include "config.h"
@@ -11,16 +13,25 @@ class ENetPack
             data[key] = val;
         }
 
-        std::string get(std::string key, std::string def)
+        std::string get(std::string key) const
         {
             if (data.find(key) != data.end())
             {
-                return data[key];
+                return data.at(key);
+            }
+            return "";
+        }
+
+        std::string get(std::string key, std::string def) const
+        {
+            if (data.find(key) != data.end())
+            {
+                return data.at(key);
             }
             return def;
         }
 
-        std::string serialize()
+        std::string serialize() const
         {
             std::string res = "";
             for (auto pair: data)
