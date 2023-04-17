@@ -37,6 +37,7 @@ enum class OpNum : int32_t
     // CH Keeper specific operations
     FilteredList = 500,
     CheckNotExists = 501,
+    CreateIfNotExists = 502,
 
     SessionID = 997, /// Special internal request
 };
