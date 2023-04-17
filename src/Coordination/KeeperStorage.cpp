@@ -1001,25 +1001,23 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
-        Coordination::ZooKeeperCreateResponse * response = dynamic_cast<Coordination::ZooKeeperCreateResponse *>(response_ptr.get());
+        Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
 
-        Coordination::ZooKeeperCreateIfNotExistsRequest * create_if_not_exists_request = dynamic_cast<Coordination::ZooKeeperCreateIfNotExistsRequest *>(zk_request.get());
-
-        if (create_if_not_exists_request != nullptr) {
-            Coordination::ZooKeeperCreateIfNotExistsRequest & request = dynamic_cast<Coordination::ZooKeeperCreateIfNotExistsRequest &>(*zk_request);
+        if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists) {
+            Coordination::ZooKeeperCreateRequest & request = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*zk_request);
 
             auto & container = storage.container;
             auto node_it = container.find(request.path);
             if (node_it != container.end())
             {
-                response->error = Coordination::Error::ZOK;
+                response.error = Coordination::Error::ZOK;
                 return response_ptr;
             }
         }
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
-            response->error = result;
+            response.error = result;
             return response_ptr;
         }
 
@@ -1030,8 +1028,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             [zxid](const auto & delta)
             { return delta.zxid == zxid && std::holds_alternative<KeeperStorage::CreateNodeDelta>(delta.operation); });
 
-        response->path_created = create_delta_it->path;
-        response->error = Coordination::Error::ZOK;
+        response.path_created = create_delta_it->path;
+        response.error = Coordination::Error::ZOK;
         return response_ptr;
     }
 };
