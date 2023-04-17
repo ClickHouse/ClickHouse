@@ -303,7 +303,7 @@ private:
     SearchSymbols read_quoted_needles;
 
     /*
-     * Helper method to copy bytes until `character_pos` and process possible escape sequence. Returns number a pair containing a boolean
+     * Helper method to copy bytes until `character_pos` and process possible escape sequence. Returns a pair containing a boolean
      * that indicates success and a std::size_t that contains the number of bytes read/ consumed.
      * */
     std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, auto & output) const
