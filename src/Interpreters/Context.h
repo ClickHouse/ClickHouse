@@ -17,7 +17,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <IO/IResourceManager.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -41,6 +40,8 @@ struct OvercommitTracker;
 
 namespace DB
 {
+
+class ASTSelectQuery;
 
 struct ContextSharedPart;
 class ContextAccess;

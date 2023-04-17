@@ -53,6 +53,8 @@ public:
 
     struct Configuration
     {
+        using Addresses = std::vector<std::pair<String, UInt16>>;
+
         String host;
         UInt16 port = 0;
         String username = "default";
@@ -63,14 +65,15 @@ public:
         bool replace_query = false;
         String on_duplicate_clause;
 
-        std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
+        Addresses addresses; /// Failover replicas.
         String addresses_expr;
     };
 
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings);
 
     static Configuration processNamedCollectionResult(
-        const NamedCollection & named_collection, MySQLSettings & storage_settings, bool require_table = true);
+        const NamedCollection & named_collection, MySQLSettings & storage_settings,
+        ContextPtr context_, bool require_table = true);
 
 private:
     friend class StorageMySQLSink;
