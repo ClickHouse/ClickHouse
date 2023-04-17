@@ -315,8 +315,8 @@ public:
     /// This method guarantees that all subsequent calls to joinIfJoinable() will be essentially noop-s after the first call to joinIfJoinable().
     void joinIfJoinable()
     {
-        bool wasnt = false;
-        if (!join_attempted.compare_exchange_strong(wasnt, true))
+        bool expected = false;
+        if (!join_attempted.compare_exchange_strong(expected, true))
             return;
 
         if (joinable())
