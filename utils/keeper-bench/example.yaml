@@ -109,3 +109,9 @@ generator:
         - "/test4"
       path:
         children_of: "/test"
+
+output:
+  file: 
+    path: "output.json"
+    with_timestamp: true
+  stdout: true

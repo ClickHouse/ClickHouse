@@ -7,14 +7,14 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <pcg-random/pcg_random.hpp>
-#include <Common/randomSeed.h>
 #include <Common/InterruptListener.h>
 #include <Common/CurrentMetrics.h>
 
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "Stats.h"
+
+#include <filesystem>
 
 using Ports = std::vector<UInt16>;
 using Strings = std::vector<std::string>;
@@ -59,6 +59,9 @@ private:
     std::atomic<bool> shutdown = false;
 
     std::shared_ptr<Stats> info;
+    bool print_to_stdout;
+    std::optional<std::filesystem::path> file_output;
+    bool output_file_with_timestamp;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
