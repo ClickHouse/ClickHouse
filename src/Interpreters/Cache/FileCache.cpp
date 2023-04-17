@@ -82,12 +82,19 @@ void FileCache::initialize()
 
     try
     {
-        loadMetadata();
+        if (fs::exists(getBasePath()))
+        {
+            loadMetadata();
+        }
+        else
+        {
+            fs::create_directories(getBasePath());
+        }
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
         init_exception = std::current_exception();
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
     }
 
