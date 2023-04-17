@@ -1,6 +1,7 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
+#include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
@@ -9,8 +10,8 @@
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
 #include <Common/getRandomASCIIString.h>
-#include <IO/BoundedReadBuffer.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -55,14 +56,9 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     auto modified_settings = patchSettings(read_settings);
     auto read_buffer_creator =
         [=] (const std::string & file_path, size_t /* read_until_position */)
-        -> std::shared_ptr<ReadBufferFromFileBase>
+        -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        auto impl = createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
-        if (modified_settings.enable_filesystem_cache)
-        {
-            return std::make_unique<BoundedReadBuffer>(std::move(impl));
-        }
-        return impl;
+        return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
     };
 
     auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
@@ -76,7 +72,8 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     else
     {
         auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(impl), modified_settings);
-        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), modified_settings.remote_read_min_bytes_for_seek);
+        return std::make_unique<SeekAvoidingReadBuffer>(
+            std::move(buf), modified_settings.remote_read_min_bytes_for_seek);
     }
 }
 
@@ -132,10 +129,13 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     size_t buf_size,
     const WriteSettings & /* write_settings */)
 {
-    int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
+    if (mode != WriteMode::Rewrite)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
+
     LOG_TEST(log, "Write object: {}", object.absolute_path);
-    auto impl = std::make_unique<WriteBufferFromFile>(object.absolute_path, buf_size, flags);
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(impl), std::move(finalize_callback), object.absolute_path);
+    auto impl = std::make_unique<WriteBufferFromFile>(object.absolute_path, buf_size);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(
+        std::move(impl), std::move(finalize_callback), object.absolute_path);
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object)
@@ -174,16 +174,17 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
 void LocalObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    fs::path to = object_to.absolute_path;
-    fs::path from = object_from.absolute_path;
-
-    /// Same logic as in DiskLocal.
-    if (object_from.absolute_path.ends_with('/'))
-        from = from.parent_path();
-    if (fs::is_directory(from))
-        to /= from.filename();
-
-    fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    if (Context::getGlobalContextInstance()->getSettingsRef().local_object_storage_has_copy)
+    {
+        fs::copy(object_from.absolute_path, object_to.absolute_path);
+    }
+    else
+    {
+        auto in = readObject(object_from);
+        auto out = writeObject(object_to, WriteMode::Rewrite);
+        copyData(*in, *out);
+        out->finalize();
+    }
 }
 
 void LocalObjectStorage::shutdown()

@@ -169,9 +169,9 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
 {
     auto read_buffer_creator =
          [this, read_settings]
-         (const std::string & path_, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+         (const std::string & path_, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
      {
-         return std::make_shared<ReadBufferFromWebServer>(
+         return std::make_unique<ReadBufferFromWebServer>(
              fs::path(url) / path_,
              getContext(),
              read_settings,

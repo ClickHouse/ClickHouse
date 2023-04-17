@@ -20,8 +20,7 @@ namespace DB
 class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
-    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
-    using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
+    using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>()>;
 
     CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,
@@ -61,7 +60,7 @@ public:
     };
 
 private:
-    void initialize(size_t offset, size_t size);
+    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 
     ImplementationBufferPtr getImplementationBuffer(FileSegmentPtr & file_segment);
 
@@ -76,6 +75,8 @@ private:
     void predownload(FileSegmentPtr & file_segment);
 
     bool nextImplStep();
+
+    void initialize(size_t offset, size_t size);
 
     void assertCorrectness() const;
 
