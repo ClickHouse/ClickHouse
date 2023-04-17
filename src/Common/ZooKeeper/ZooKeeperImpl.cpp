@@ -33,6 +33,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperTransactions;
     extern const Event ZooKeeperCreate;
     extern const Event ZooKeeperRemove;
+    extern const Event ZooKeeperRemoveRecursive;
     extern const Event ZooKeeperExists;
     extern const Event ZooKeeperMulti;
     extern const Event ZooKeeperGet;

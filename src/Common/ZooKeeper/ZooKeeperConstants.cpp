@@ -40,6 +40,8 @@ std::string toString(OpNum op_num)
             return "Create";
         case OpNum::Remove:
             return "Remove";
+        case OpNum::RemoveRecursive:
+            return "RemoveRecursive";
         case OpNum::Exists:
             return "Exists";
         case OpNum::Get:

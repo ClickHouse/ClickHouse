@@ -33,6 +33,7 @@ namespace ProfileEvents
 {
     extern const Event KeeperCreateRequest;
     extern const Event KeeperRemoveRequest;
+    extern const Event KeeperRemoveRecursiveRequest;
     extern const Event KeeperSetRequest;
     extern const Event KeeperCheckRequest;
     extern const Event KeeperMultiRequest;
@@ -1189,6 +1190,102 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
     }
 };
 
+struct KeeperStorageRemoveRecursiveRequestProcessor final : public KeeperStorageRequestProcessor
+{
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
+    {
+        return storage.checkACL(parentPath(zk_request->getPath()), Coordination::ACL::Delete, session_id, is_local);
+    }
+
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
+    std::vector<KeeperStorage::Delta>
+    preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & digest, const KeeperContext & keeper_context) const override
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperRemoveRecursiveRequest);
+        Coordination::ZooKeeperRemoveRecursiveRequest & request = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*zk_request);
+
+        std::vector<KeeperStorage::Delta> new_deltas;
+
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+        {
+            auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", request.path);
+
+            handleSystemNodeModification(keeper_context, error_msg);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
+
+        const auto update_parent_pzxid = [&]()
+        {
+            auto parent_path = parentPath(request.path);
+            if (!storage.uncommitted_state.getNode(parent_path))
+                return;
+
+            new_deltas.emplace_back(
+                std::string{parent_path},
+                zxid,
+                KeeperStorage::UpdateNodeDelta
+                {
+                    [zxid](KeeperStorage::Node & parent)
+                    {
+                        if (parent.stat.pzxid < zxid)
+                            parent.stat.pzxid = zxid;
+                   }
+                }
+            );
+        };
+
+        auto node = storage.uncommitted_state.getNode(request.path);
+
+        if (!node)
+        {
+            if (request.restored_from_zookeeper_log)
+                update_parent_pzxid();
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
+        }
+        else if (request.version != -1 && request.version != node->stat.version)
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADVERSION}};
+        else if (node->stat.numChildren != 0)
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
+
+        if (request.restored_from_zookeeper_log)
+            update_parent_pzxid();
+
+        new_deltas.emplace_back(
+            std::string{parentPath(request.path)},
+            zxid,
+            KeeperStorage::UpdateNodeDelta{[](KeeperStorage::Node & parent)
+                                           {
+                                               ++parent.stat.cversion;
+                                               parent.stat.numChildren = 0;
+                                           }});
+
+        // Implement the recursive KeeperStorage::RemoveNodeDelta
+        // new_deltas.emplace_back(request.path, zxid, KeeperStorage::RemoveNodeDelta{request.version, node->stat.ephemeralOwner});
+
+        if (node->stat.ephemeralOwner != 0)
+            storage.unregisterEphemeralPath(node->stat.ephemeralOwner, request.path);
+
+        digest = storage.calculateNodesDigest(digest, new_deltas);
+
+        return new_deltas;
+    }
+
+    Coordination::ZooKeeperResponsePtr process(KeeperStorage & storage, int64_t zxid) const override
+    {
+        Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
+        Coordination::ZooKeeperRemoveRecursiveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveResponse &>(*response_ptr);
+
+        response.error = storage.commit(zxid);
+        return response_ptr;
+    }
+
+    KeeperStorage::ResponsesForSessions
+    processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
+    {
+        return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
+    }
+};
+
 struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestProcessor
 {
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
@@ -1711,6 +1808,10 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
                     break;
+                case Coordination::OpNum::RemoveRecursive:
+                    check_operation_type(OperationType::Write);
+                    concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRecursiveRequestProcessor>(sub_zk_request));
+                    break;
                 case Coordination::OpNum::Set:
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
@@ -1960,6 +2061,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::Close, KeeperStorageCloseRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Create, KeeperStorageCreateRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Remove, KeeperStorageRemoveRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::RemoveRecursives, KeeperStorageRemoveRecursiveRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Exists, KeeperStorageExistsRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Get, KeeperStorageGetRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Set, KeeperStorageSetRequestProcessor>(*this);

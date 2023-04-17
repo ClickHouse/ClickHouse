@@ -9,6 +9,7 @@
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
 #include <array>
+#include <memory>
 
 
 namespace Coordination
@@ -178,6 +179,12 @@ void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(version, out);
 }
 
+void ZooKeeperRemoveRecursiveRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path, out);
+    Coordination::write(version, out);
+}
+
 std::string ZooKeeperRemoveRequest::toStringImpl() const
 {
     return fmt::format(
@@ -187,7 +194,22 @@ std::string ZooKeeperRemoveRequest::toStringImpl() const
         version);
 }
 
+std::string ZooKeeperRemoveRecursiveRequest::toStringImpl() const
+{
+    return fmt::format(
+        "path = {}\n"
+        "version = {}",
+        path,
+        version);
+}
+
 void ZooKeeperRemoveRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path, in);
+    Coordination::read(version, in);
+}
+
+void ZooKeeperRemoveRecursiveRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
     Coordination::read(version, in);
@@ -468,6 +490,11 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, 
             checkOperationType(Write);
             requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
         }
+        else if (const auto * concrete_request_remove_recursive = dynamic_cast<const RemoveRecursiveRequest *>(generic_request.get()))
+        {
+            checkOperationType(Write);
+            requests.push_back(std::make_shared<ZooKeeperRemoveRecursiveRequest>(*concrete_request_remove_recursive));
+        }
         else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
         {
             checkOperationType(Write);
@@ -661,6 +688,7 @@ ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return setTime
 ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperAuthResponse>()); }
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCreateResponse>()); }
 ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperRemoveResponse>()); }
+ZooKeeperResponsePtr ZooKeeperRemoveRecursiveRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperRemoveRecursiveResponse>()); }
 ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperExistsResponse>()); }
 ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperGetResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSetResponse>()); }
@@ -737,6 +765,13 @@ void ZooKeeperCreateRequest::createLogElements(LogElements & elems) const
 }
 
 void ZooKeeperRemoveRequest::createLogElements(LogElements & elems) const
+{
+    ZooKeeperRequest::createLogElements(elems);
+    auto & elem =  elems.back();
+    elem.version = version;
+}
+
+void ZooKeeperRemoveRecursiveRequest::createLogElements(LogElements & elems) const
 {
     ZooKeeperRequest::createLogElements(elems);
     auto & elem =  elems.back();
@@ -944,6 +979,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
+    registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);
     registerZooKeeperRequest<OpNum::Get, ZooKeeperGetRequest>(*this);
     registerZooKeeperRequest<OpNum::Set, ZooKeeperSetRequest>(*this);

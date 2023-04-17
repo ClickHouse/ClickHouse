@@ -229,6 +229,21 @@ struct RemoveResponse : virtual Response
 {
 };
 
+struct RemoveRecursiveRequest : virtual Request
+{
+    String path;
+    int32_t version = -1;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+
+    size_t bytesSize() const override { return path.size() + sizeof(version); }
+};
+
+struct RemoveRecursiveResponse : virtual Response
+{
+};
+
 struct ExistsRequest : virtual Request
 {
     String path;
