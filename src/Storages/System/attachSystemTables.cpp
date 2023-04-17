@@ -122,7 +122,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemUsers>(context, system_database, "users", "Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.");
     attach<StorageSystemRoles>(context, system_database, "roles", "Contains a list of all roles created at the server.");
     attach<StorageSystemGrants>(context, system_database, "grants", "Contains the information about privileges granted to ClickHouse user accounts.");
-    attach<StorageSystemRoleGrants>(context, system_database, "role_grants", "Contains the role grants for users and roles. To add entries to this table, use `GRANT role TO user`. Using this table you may find out which roles are assigned to which users or which roles does user has.");
+    attach<StorageSystemRoleGrants>(context, system_database, "role_grants", "Contains the role grants for users and roles. To add entries to this table, use `GRANT role TO user`. Using this table you may find out which roles are assigned to which users or which roles a user has.");
     attach<StorageSystemCurrentRoles>(context, system_database, "current_roles", "Contains active roles of a current user. SET ROLE changes the contents of this table.");
     attach<StorageSystemEnabledRoles>(context, system_database, "enabled_roles", "Contains all active roles at the moment, including current role of the current user and granted roles for current role.");
     attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles", "Contains properties of configured setting profiles.");
