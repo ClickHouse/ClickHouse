@@ -598,8 +598,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
                 chassert(file_segment.getCurrentWriteOffset(false) == static_cast<size_t>(implementation_buffer->getPosition()));
 
-                bool success = writeCache(implementation_buffer->buffer().begin(), current_predownload_size, current_offset, file_segment);
-                if (success)
+                continue_predownload = writeCache(implementation_buffer->buffer().begin(), current_predownload_size, current_offset, file_segment);
+                if (continue_predownload)
                 {
                     current_offset += current_predownload_size;
 
@@ -609,7 +609,6 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 else
                 {
                     LOG_TEST(log, "Bypassing cache because writeCache (in predownload) method failed");
-                    continue_predownload = false;
                 }
             }
 
@@ -631,7 +630,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 /// TODO: allow seek more than once with seek avoiding.
 
                 bytes_to_predownload = 0;
-                file_segment.setBroken();
+                file_segment.completePartAndResetDownloader();
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
@@ -944,13 +943,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             else
             {
                 LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
-            }
-
-            if (!success)
-            {
-                file_segment.setBroken();
-                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                download_current_segment = false;
             }
         }
 

@@ -15,7 +15,6 @@ using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 struct FileSegmentMetadata : private boost::noncopyable
 {
     using Priority = IFileCachePriority;
-    using PriorityIterator = IFileCachePriority::Iterator;
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
@@ -24,6 +23,8 @@ struct FileSegmentMetadata : private boost::noncopyable
     size_t size() const;
 
     bool valid() const { return !removal_candidate.load(); }
+
+    Priority::Iterator getQueueIterator() { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
     std::atomic<bool> removal_candidate{false};

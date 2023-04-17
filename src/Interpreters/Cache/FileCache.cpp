@@ -558,7 +558,8 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
 
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
     {
-        chassert(segment_metadata->file_segment->getQueueIterator());
+        chassert(segment_metadata->file_segment->assertCorrectness());
+
         const bool is_persistent = allow_persistent_files && segment_metadata->file_segment->isPersistent();
         const bool releasable = segment_metadata->releasable() && !is_persistent;
 
@@ -821,13 +822,13 @@ void FileCache::loadMetadata()
                     auto file_segment_metadata_it = addFileSegment(
                         *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), &lock);
 
-                    chassert(file_segment_metadata_it->second->file_segment->getQueueIterator());
-                    chassert(file_segment_metadata_it->second->size() == size);
+                    const auto & file_segment_metadata = file_segment_metadata_it->second;
+                    chassert(file_segment_metadata->file_segment->assertCorrectness());
                     total_size += size;
 
                     queue_entries.emplace_back(
-                        file_segment_metadata_it->second->file_segment->getQueueIterator(),
-                        file_segment_metadata_it->second->file_segment);
+                        file_segment_metadata->getQueueIterator(),
+                        file_segment_metadata->file_segment);
                 }
                 else
                 {
@@ -965,22 +966,14 @@ size_t FileCache::getFileSegmentsNum() const
 
 void FileCache::assertCacheCorrectness()
 {
-    metadata.iterate([&](const LockedKey & locked_key)
+    auto lock = cache_guard.lock();
+    main_priority->iterate([&](LockedKey &, FileSegmentMetadataPtr segment_metadata)
     {
-        for (const auto & [offset, file_segment_metadata] : locked_key)
-        {
-            const auto & file_segment = *file_segment_metadata->file_segment;
-
-            if (file_segment.key() != locked_key.getKey())
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Expected {} = {}", file_segment.key(), locked_key.getKey());
-            }
-
-            file_segment.assertCorrectness();
-        }
-    });
+        const auto & file_segment = *segment_metadata->file_segment;
+        UNUSED(file_segment);
+        chassert(file_segment.assertCorrectness());
+        return PriorityIterationResult::CONTINUE;
+    }, lock);
 }
 
 FileCache::QueryContextHolder::QueryContextHolder(

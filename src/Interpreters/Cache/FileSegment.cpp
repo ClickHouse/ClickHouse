@@ -32,7 +32,7 @@ FileSegment::FileSegment(
         const CreateFileSegmentSettings & settings,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        CachePriorityIterator queue_iterator_)
+        Priority::Iterator queue_iterator_)
     : file_key(key_)
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
@@ -101,13 +101,13 @@ size_t FileSegment::getReservedSize() const
     return reserved_size;
 }
 
-FileSegment::CachePriorityIterator FileSegment::getQueueIterator() const
+FileSegment::Priority::Iterator FileSegment::getQueueIterator() const
 {
     auto lock = segment_guard.lock();
     return queue_iterator;
 }
 
-void FileSegment::setQueueIterator(CachePriorityIterator iterator)
+void FileSegment::setQueueIterator(Priority::Iterator iterator)
 {
     auto lock = segment_guard.lock();
     if (queue_iterator)
@@ -355,8 +355,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
         setDownloadFailedUnlocked(lock);
 
-        cv.notify_all();
-
         throw;
     }
 
@@ -384,7 +382,7 @@ FileSegment::State FileSegment::wait(size_t offset)
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset(true);
         });
-        chassert(ok);
+        /// chassert(ok);
     }
 
     return download_state;
@@ -457,18 +455,20 @@ bool FileSegment::reserve(size_t size_to_reserve)
     size_t already_reserved_size = reserved_size - expected_downloaded_size;
 
     bool reserved = already_reserved_size >= size_to_reserve;
+    if (reserved)
+        return reserved;
+
+    size_to_reserve = size_to_reserve - already_reserved_size;
+
+    /// This (resizable file segments) is allowed only for single threaded use of file segment.
+    /// Currently it is used only for temporary files through cache.
+    if (is_unbound && is_file_segment_size_exceeded)
+        segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
+
+    reserved = cache->tryReserve(*this, size_to_reserve);
+
     if (!reserved)
-    {
-        size_to_reserve = size_to_reserve - already_reserved_size;
-
-        /// This (resizable file segments) is allowed only for single threaded use of file segment.
-        /// Currently it is used only for temporary files through cache.
-        if (is_unbound && is_file_segment_size_exceeded)
-            segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
-
-        reserved = cache->tryReserve(*this, size_to_reserve);
-        chassert(assertCorrectness());
-    }
+        setDownloadFailedUnlocked(segment_guard.lock());
 
     return reserved;
 }
@@ -516,27 +516,15 @@ void FileSegment::completePartAndResetDownloader()
     assertNotDetachedUnlocked(lock);
     assertIsDownloaderUnlocked("completePartAndResetDownloader", lock);
 
-    resetDownloadingStateUnlocked(lock);
-    resetDownloaderUnlocked(lock);
-
-    LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lock));
-}
-
-void FileSegment::setBroken()
-{
-    auto lock = segment_guard.lock();
-
-    SCOPE_EXIT({ cv.notify_all(); });
-
-    assertNotDetachedUnlocked(lock);
-    assertIsDownloaderUnlocked("setBroken", lock);
+    chassert(download_state == State::DOWNLOADING
+             || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
     if (download_state == State::DOWNLOADING)
         resetDownloadingStateUnlocked(lock);
-    if (download_state != State::DOWNLOADED)
-        download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
     resetDownloaderUnlocked(lock);
+
+    LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lock));
 }
 
 void FileSegment::complete()
@@ -700,24 +688,48 @@ String FileSegment::stateToString(FileSegment::State state)
 
 bool FileSegment::assertCorrectness() const
 {
-    auto lock = segment_guard.lock();
+    return assertCorrectnessUnlocked(segment_guard.lock());
+}
 
-    auto current_downloader = getDownloaderUnlocked(lock);
-    chassert(current_downloader.empty() == (download_state != FileSegment::State::DOWNLOADING));
-    chassert(!current_downloader.empty() == (download_state == FileSegment::State::DOWNLOADING));
-    chassert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(getPathInLocalCache()) > 0);
-
-    chassert(reserved_size == 0 || queue_iterator);
-    if (queue_iterator)
+bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const
+{
+    auto check_iterator = [this](const Priority::Iterator & it)
     {
-        const auto & entry = queue_iterator->getEntry();
-        if (isCompleted(false))
-            chassert(reserved_size == entry.size);
-        else
-            /// We cannot check == here because reserved_size is not
-            /// guarded by any mutex, it is just an atomic.
-            chassert(reserved_size <= entry.size);
+        if (!it)
+            return;
+
+        const auto entry = it->getEntry();
+        UNUSED(entry);
+        chassert(entry.size == reserved_size);
+        chassert(entry.key == key());
+        chassert(entry.offset == offset());
+    };
+
+    if (download_state == State::DOWNLOADED)
+    {
+        chassert(downloader_id.empty());
+        chassert(downloaded_size == reserved_size);
+        chassert(std::filesystem::file_size(getPathInLocalCache()) > 0);
+        chassert(queue_iterator);
+        check_iterator(queue_iterator);
     }
+    else
+    {
+        if (download_state == State::DOWNLOADED)
+        {
+            chassert(!downloader_id.empty());
+        }
+        else if (download_state == State::PARTIALLY_DOWNLOADED
+                 || download_state == State::EMPTY)
+        {
+            chassert(downloader_id.empty());
+        }
+
+        chassert(reserved_size >= downloaded_size);
+        chassert((reserved_size == 0) || queue_iterator);
+        check_iterator(queue_iterator);
+    }
+
     return true;
 }
 
