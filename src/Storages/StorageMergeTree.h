@@ -151,6 +151,13 @@ private:
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
 
+    /// PreparedSets cache for one executing mutation.
+    /// NOTE: we only store weak_ptr to PreparedSetsCache, so that the cache is shared between mutation tasks that are executed in parallel.
+    /// The goal is to avoiding consuming a lot of memory when the same big sets are used by multiple tasks at the same time.
+    /// If the tasks are executed without time overlap, we will destroy the cache to free memory, and the next task might rebuild the same sets.
+    std::mutex mutation_prepared_sets_cache_mutex;
+    std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
+
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting
@@ -258,6 +265,8 @@ private:
     void attachRestoredParts(MutableDataPartsVector && parts) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
+
+    PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
 
     friend class MergeTreeSink;
     friend class MergeTreeData;

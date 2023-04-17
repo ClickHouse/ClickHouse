@@ -5124,7 +5124,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             /// Create constant set column for constant folding
 
-            auto column_set = ColumnSet::create(1, std::move(set));
+            auto column_set = ColumnSet::create(1, FutureSet(std::move(set)));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
 
