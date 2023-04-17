@@ -95,9 +95,9 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && 
 //     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
 //     auto job3 = makeLoadJob({ job1 }, "job3", job_func);
 //     auto task = async_loader.schedule({ job1, job2, job3 }, /* priority = */ 0);
-// Here we have created and scheduled a task consisting of two jobs. Job1 has no dependencies and is run first.
-// Job2 and job3 depends on job1 and are run only after job1 completion. Another thread may prioritize a job and wait for it:
-//     async_loader->prioritize(job3, 1); // higher priority jobs are run first
+// Here we have created and scheduled a task consisting of three jobs. Job1 has no dependencies and is run first.
+// Job2 and job3 depend on job1 and are run only after job1 completion. Another thread may prioritize a job and wait for it:
+//     async_loader->prioritize(job3, /* priority = */ 1); // higher priority jobs are run first
 //     job3->wait(); // blocks until job completion or cancellation and rethrow an exception (if any)
 //
 // AsyncLoader tracks state of all scheduled jobs. Job lifecycle is the following:
