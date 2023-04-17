@@ -31,9 +31,13 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
 
 ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(ColumnsWithTypeAndNameList arguments)
 {
-    if (arguments.empty())
+    static constexpr auto MAX_NUMBER_OF_ARGUMENTS = 4u;
+
+    if (arguments.empty() || arguments.size() > MAX_NUMBER_OF_ARGUMENTS)
     {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function extractKeyValuePairs requires at least one argument");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Function extractKeyValuePairs requires at least 1 argument and at most {}. {} was provided",
+                        MAX_NUMBER_OF_ARGUMENTS, arguments.size());
     }
 
     auto data_column = extractStringColumn(popFrontAndGet(arguments), "data_column");

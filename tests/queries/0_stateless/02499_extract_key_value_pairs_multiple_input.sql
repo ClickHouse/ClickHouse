@@ -390,6 +390,31 @@ WITH
 SELECT
     x; -- {serverError BAD_ARGUMENTS}
 
+-- should fail because no argument has been provided
+WITH
+    extractKeyValuePairs() AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+
+-- should fail because one extra argument / non existent has been provided
+WITH
+    extractKeyValuePairs('a', ':', ',', '"', '') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+
+-- { echoOn }
 -- should not fail because pair delimiters contains 8 characters, which is within the limit
 WITH
     extractKeyValuePairs('not_important', ':', '12345678', '\'') AS s_map,
