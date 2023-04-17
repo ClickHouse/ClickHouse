@@ -375,7 +375,7 @@ private:
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
-        size_t key_column = 0;
+        std::vector<size_t> key_column;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
@@ -449,7 +449,7 @@ private:
     bool tryPrepareSetIndex(
         const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
-        size_t & out_key_column_num);
+        std::vector<size_t> & out_key_column_num_vector);
 
     /// Checks that the index can not be used.
     ///
