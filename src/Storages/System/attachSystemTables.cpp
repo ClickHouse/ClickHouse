@@ -99,7 +99,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemOne>(context, system_database, "one", "Used when the table is not specified explicitly, for example in queries like `SELECT 1`. Analog of the DUAL table in Oracle and MySQL.");
     attach<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false);
     attach<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true);
-    attach<StorageSystemZeros>(context, system_database, "zeros", "Generated unlimited amount of non-materialized zeros.", false);
+    attach<StorageSystemZeros>(context, system_database, "zeros", "Produces unlimited number of non-materialized zeros.", false);
     attach<StorageSystemZeros>(context, system_database, "zeros_mt", "Multithreaded version of system.zeros.", true);
     attach<StorageSystemDatabases>(context, system_database, "databases", "Contains all the information about all the databases within the current server.");
     attach<StorageSystemTables>(context, system_database, "tables", "Contains all the information about all the tables within the current server.");
