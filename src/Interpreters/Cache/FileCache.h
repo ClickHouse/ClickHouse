@@ -39,7 +39,7 @@ using QueryContextPtr = std::shared_ptr<QueryContext>;
 public:
     using Key = DB::FileCacheKey;
 
-    FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
+    explicit FileCache(const FileCacheSettings & settings);
 
     ~FileCache() = default;
 

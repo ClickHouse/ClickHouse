@@ -77,6 +77,12 @@ void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(con
 
     if (!if_changed || settings.s3_max_single_part_upload_size.changed)
         max_single_part_upload_size = settings.s3_max_single_part_upload_size;
+
+    /// AWS S3 SDK library has a bug. It is using std::*stream (which is a major offense).
+    /// LLVM libc++ has a bug. It does not allow std::*stream to work for large strings.
+
+    if (max_single_part_upload_size >= 2_GiB)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Uploading parts of 2 GiB or larger is not supported due to a bug in AWS and LLVM. Lower the value of `s3_max_single_part_upload_size` setting.");
 }
 
 void S3Settings::RequestSettings::PartUploadSettings::validate()
