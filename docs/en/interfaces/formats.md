@@ -68,7 +68,7 @@ The supported formats are:
 | [Avro](#data-format-avro)                                                                 | ✔    | ✔      |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗      |
 | [Parquet](#data-format-parquet)                                                           | ✔    | ✔      |
-| [ParqueMetadata](#data-format-parquet-metadata)                                           | ✔    | ✗      |
+| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔    | ✗      |
 | [Arrow](#data-format-arrow)                                                               | ✔    | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔      |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔      |
@@ -2011,7 +2011,7 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
 - num_rows - the total number of rows
 - num_row_groups - the total number of row groups
 - format_version - parquet format version, always 1.0 or 2.6
-- total_byte_size - total bytes size of the data, calculated as the sum of total_byte_size from all row groups
+- total_uncompressed_size - total uncompressed bytes size of the data, calculated as the sum of total_byte_size from all row groups
 - total_compressed_size - total compressed bytes size of the data, calculated as the sum of total_compressed_size from all row groups
 - columns - the list of columns metadata with the next structure:
   - name - column name
@@ -2021,18 +2021,21 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
   - physical_type - column physical type
   - logical_type - column logical type
   - compression - compression used for this column
+  - total_uncompressed_size - total uncompressed bytes size of the column, calculated as the sum of total_uncompressed_size of the column from all row groups
+  - total_compressed_size - total compressed bytes size of the column,  calculated as the sum of total_compressed_size of the column from all row groups 
+  - space_saved - percent of space saved by compression, calculated as (1 - total_compressed_size/total_uncompressed_size).
   - encodings - the list of encodings used for this column
 - row_groups - the list of row groups metadata with the next structure:
   - num_columns - the number of columns in the row group
   - num_rows - the number of rows in the row group
-  - total_byte_size - total bytes size of the row group
+  - total_uncompressed_size - total uncompressed bytes size of the row group
   - total_compressed_size - total compressed bytes size of the row group
   - columns - the list of column chunks metadata with the next structure:
      - name - column name
      - path - column path
      - total_compressed_size - total compressed bytes size of the column
      - total_uncompressed_size - total uncompressed bytes size of the row group
-     - have_statistics - bool flag that indicates if column chunk metadata contains column statistics
+     - have_statistics - boolean flag that indicates if column chunk metadata contains column statistics
      - statistics - column chunk statistics (all fields are NULL if have_statistics = false) with the next structure:
         - num_values - the number of non-null values in the column chunk
         - null_count - the number of NULL values in the column chunk
@@ -2049,20 +2052,24 @@ SELECT * FROM file(data.parquet, ParquetMetadata) format PrettyJSONEachRow
 ```json
 {
     "num_columns": "2",
-    "num_rows": "1000000",
-    "num_row_groups": "16",
+    "num_rows": "100000",
+    "num_row_groups": "2",
     "format_version": "2.6",
-    "total_byte_size": "10001981",
-    "total_compressed_size": "6011415",
+    "metadata_size": "577",
+    "total_uncompressed_size": "282436",
+    "total_compressed_size": "26633",
     "columns": [
         {
             "name": "number",
             "path": "number",
             "max_definition_level": "0",
             "max_repetition_level": "0",
-            "physical_type": "INT64",
-            "logical_type": "Int(bitWidth=64, isSigned=false)",
+            "physical_type": "INT32",
+            "logical_type": "Int(bitWidth=16, isSigned=false)",
             "compression": "LZ4",
+            "total_uncompressed_size": "133321",
+            "total_compressed_size": "13293",
+            "space_saved": "90.03%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
@@ -2070,13 +2077,16 @@ SELECT * FROM file(data.parquet, ParquetMetadata) format PrettyJSONEachRow
             ]
         },
         {
-            "name": "'Hello'",
-            "path": "'Hello'",
+            "name": "concat('Hello', toString(modulo(number, 1000)))",
+            "path": "concat('Hello', toString(modulo(number, 1000)))",
             "max_definition_level": "0",
             "max_repetition_level": "0",
             "physical_type": "BYTE_ARRAY",
             "logical_type": "None",
             "compression": "LZ4",
+            "total_uncompressed_size": "149115",
+            "total_compressed_size": "13340",
+            "space_saved": "91.05%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
@@ -2088,41 +2098,41 @@ SELECT * FROM file(data.parquet, ParquetMetadata) format PrettyJSONEachRow
         {
             "num_columns": "2",
             "num_rows": "65409",
-            "total_byte_size": "654367",
-            "total_compressed_size": "393396",
+            "total_uncompressed_size": "179809",
+            "total_compressed_size": "14163",
             "columns": [
                 {
                     "name": "number",
                     "path": "number",
-                    "total_compressed_size": "393329",
-                    "total_uncompressed_size": "654302",
+                    "total_compressed_size": "7070",
+                    "total_uncompressed_size": "85956",
                     "have_statistics": true,
                     "statistics": {
                         "num_values": "65409",
                         "null_count": "0",
                         "distinct_count": null,
                         "min": "0",
-                        "max": "65408"
+                        "max": "999"
                     }
                 },
                 {
-                    "name": "'Hello'",
-                    "path": "'Hello'",
-                    "total_compressed_size": "67",
-                    "total_uncompressed_size": "65",
+                    "name": "concat('Hello', toString(modulo(number, 1000)))",
+                    "path": "concat('Hello', toString(modulo(number, 1000)))",
+                    "total_compressed_size": "7093",
+                    "total_uncompressed_size": "93853",
                     "have_statistics": true,
                     "statistics": {
                         "num_values": "65409",
                         "null_count": "0",
                         "distinct_count": null,
-                        "min": "Hello",
-                        "max": "Hello"
+                        "min": "Hello0",
+                        "max": "Hello999"
                     }
                 }
             ]
         },
-      ...
-  ]
+        ...
+    ]
 }
 ```
 

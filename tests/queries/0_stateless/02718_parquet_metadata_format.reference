@@ -3,7 +3,8 @@
     "num_rows": "100000",
     "num_row_groups": "2",
     "format_version": "2.6",
-    "total_byte_size": "314147",
+    "metadata_size": "617",
+    "total_uncompressed_size": "314147",
     "total_compressed_size": "27081",
     "columns": [
         {
@@ -13,8 +14,10 @@
             "max_repetition_level": "0",
             "physical_type": "INT32",
             "logical_type": "Int(bitWidth=16, isSigned=false)",
-            "is_nullable": false,
             "compression": "LZ4",
+            "total_uncompressed_size": "133321",
+            "total_compressed_size": "13293",
+            "space_saved": "90.03%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
@@ -28,8 +31,10 @@
             "max_repetition_level": "0",
             "physical_type": "BYTE_ARRAY",
             "logical_type": "None",
-            "is_nullable": false,
             "compression": "LZ4",
+            "total_uncompressed_size": "149115",
+            "total_compressed_size": "13340",
+            "space_saved": "91.05%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
@@ -43,8 +48,10 @@
             "max_repetition_level": "0",
             "physical_type": "INT32",
             "logical_type": "Int(bitWidth=8, isSigned=false)",
-            "is_nullable": true,
             "compression": "LZ4",
+            "total_uncompressed_size": "31711",
+            "total_compressed_size": "448",
+            "space_saved": "98.59%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
@@ -56,7 +63,7 @@
         {
             "num_columns": "3",
             "num_rows": "65409",
-            "total_byte_size": "200527",
+            "total_uncompressed_size": "200527",
             "total_compressed_size": "14406",
             "columns": [
                 {
@@ -106,7 +113,7 @@
         {
             "num_columns": "3",
             "num_rows": "34591",
-            "total_byte_size": "113620",
+            "total_uncompressed_size": "113620",
             "total_compressed_size": "12675",
             "columns": [
                 {
@@ -168,8 +175,10 @@
             "max_repetition_level": "0",
             "physical_type": "INT32",
             "logical_type": "Int(bitWidth=16, isSigned=false)",
-            "is_nullable": false,
             "compression": "LZ4",
+            "total_uncompressed_size": "133321",
+            "total_compressed_size": "13293",
+            "space_saved": "90.03%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
@@ -183,8 +192,10 @@
             "max_repetition_level": "0",
             "physical_type": "BYTE_ARRAY",
             "logical_type": "None",
-            "is_nullable": false,
             "compression": "LZ4",
+            "total_uncompressed_size": "149115",
+            "total_compressed_size": "13340",
+            "space_saved": "91.05%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
@@ -198,8 +209,10 @@
             "max_repetition_level": "0",
             "physical_type": "INT32",
             "logical_type": "Int(bitWidth=8, isSigned=false)",
-            "is_nullable": true,
             "compression": "LZ4",
+            "total_uncompressed_size": "31711",
+            "total_compressed_size": "448",
+            "space_saved": "98.59%",
             "encodings": [
                 "RLE_DICTIONARY",
                 "PLAIN",
