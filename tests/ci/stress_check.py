@@ -180,7 +180,7 @@ def run_stress_test(docker_image_name):
     )
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

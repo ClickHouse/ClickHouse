@@ -9,9 +9,10 @@ import logging
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
+from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CI_CONFIG, REQUIRED_CHECKS
+from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 
@@ -71,22 +72,98 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 
 def post_commit_status(
-    gh: Github, sha: str, check_name: str, description: str, state: str, report_url: str
+    commit: Commit,
+    state: str,
+    report_url: str,
+    description: str,
+    check_name: str,
+    pr_info: Optional[PRInfo] = None,
 ) -> None:
+    """The parameters are given in the same order as for commit.create_status,
+    if an optional parameter `pr_info` is given, the `set_status_comment` functions
+    is invoked to add or update the comment with statuses overview"""
     for i in range(RETRY):
         try:
-            commit = get_commit(gh, sha, 1)
             commit.create_status(
-                context=check_name,
-                description=description,
                 state=state,
                 target_url=report_url,
+                description=description,
+                context=check_name,
             )
             break
         except Exception as ex:
             if i == RETRY - 1:
                 raise ex
             time.sleep(i)
+    if pr_info:
+        set_status_comment(commit, pr_info)
+
+
+def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
+    """It adds or updates the comment status to all Pull Requests but for release
+    one, so the method does nothing for simple pushes and pull requests with
+    `release`/`release-lts` labels"""
+    if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
+        return
+    # to reduce number of parameters, the Github is constructed on the fly
+    gh = Github()
+    gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
+    repo = get_repo(gh)
+    pr = repo.get_pull(pr_info.number)
+    comment_header = f"<!-- commit {commit.sha} automatic status comment -->\n"
+    comment = None  # type: Optional[IssueComment]
+    for ic in pr.get_issue_comments():
+        if ic.body.startswith(comment_header):
+            comment = ic
+            break
+
+    statuses_limit = 25  # the arbitrary limit to use <details> html tag
+    statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
+    details = ""
+    details_ending = ""
+    if statuses_limit < len(statuses):
+        details = "<details><summary>Show the statuses</summary>\n\n"
+        details_ending = "\n\n</details>"
+    comment_body = (
+        f"This is an automated comment for commit `{commit.sha}` with "
+        f"description of existing statuses\n\n{details}"
+        "<table><thead><tr><th>Check name</th><th>Description</th><th>Status</th>"
+        "<th>Status message</th><th>Optional report URL</th></tr></thead>\n<tbody>"
+    )
+    table_rows = []  # type: List[str]
+    for status in statuses:
+        description = ""  # it's impossible to have nothing, but safer to define
+        for cd in CHECK_DESCRIPTIONS:
+            if cd.match_func(status.context):
+                description = cd.description
+                break
+
+        if status.state == "success":
+            state = "🟢 "
+        elif status.state == "pending":
+            state = "🟡 "
+        elif status.state in ["error", "failure"]:
+            state = "🔴 "
+        else:
+            state = ""
+
+        if status.target_url:
+            link = f'<a href="{status.target_url}">Report</a>'
+        else:
+            link = ""
+
+        table_rows.append(
+            f"<tr><td>{status.context}</td><td>{description}</td>"
+            f"<td>{state}{status.state}</td><td>{status.description}</td>"
+            f"<td>{link}</td></tr>\n"
+        )
+
+    comment_footer = f"</table>{details_ending}"
+    comment_body = "".join([comment_header, comment_body, *table_rows, comment_footer])
+    if comment is not None:
+        comment.edit(comment_body)
+        return
+    pr.create_issue_comment(comment_body)
 
 
 def post_commit_status_to_file(

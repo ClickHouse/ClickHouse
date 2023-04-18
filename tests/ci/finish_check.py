@@ -29,11 +29,4 @@ if __name__ == "__main__":
         if status.context == NAME and status.state == "pending"
     )
     if pending_status:
-        post_commit_status(
-            gh,
-            pr_info.sha,
-            NAME,
-            "All checks finished",
-            "success",
-            url,
-        )
+        post_commit_status(commit, "success", url, "All checks finished", NAME, pr_info)

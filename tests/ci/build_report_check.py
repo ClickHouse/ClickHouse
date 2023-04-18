@@ -277,12 +277,7 @@ def main():
     description = f"{ok_groups}/{total_groups} artifact groups are OK {addition}"
 
     post_commit_status(
-        gh,
-        pr_info.sha,
-        build_check_name,
-        description,
-        summary_status,
-        url,
+        commit, summary_status, url, description, build_check_name, pr_info
     )
 
     if summary_status == "error":

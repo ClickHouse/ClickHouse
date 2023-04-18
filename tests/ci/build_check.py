@@ -236,10 +236,10 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL: {url}")
 
 
-def mark_failed_reports_pending(build_name: str, sha: str) -> None:
+def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
     try:
         gh = GitHub(get_best_robot_token())
-        commit = get_commit(gh, sha)
+        commit = get_commit(gh, pr_info.sha)
         statuses = get_commit_filtered_statuses(commit)
         report_status = [
             name
@@ -253,12 +253,12 @@ def mark_failed_reports_pending(build_name: str, sha: str) -> None:
                     report_status,
                 )
                 post_commit_status(
-                    gh,
-                    sha,
-                    report_status,
-                    "Set to pending on rerun",
+                    commit,
                     "pending",
                     status.url,
+                    "Set to pending on rerun",
+                    report_status,
+                    pr_info,
                 )
     except:  # we do not care about any exception here
         logging.info("Failed to get or mark the reports status as pending, continue")
@@ -294,7 +294,7 @@ def main():
     check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
 
     # If it's a latter running, we need to mark possible failed status
-    mark_failed_reports_pending(build_name, pr_info.sha)
+    mark_failed_reports_pending(build_name, pr_info)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version

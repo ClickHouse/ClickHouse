@@ -66,7 +66,7 @@ def main():
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")
-        post_commit_status(gh, pr_info.sha, NAME, "No changes in docs", "success", "")
+        post_commit_status(commit, "success", "", "No changes in docs", NAME, pr_info)
         sys.exit(0)
 
     if pr_info.has_changes_in_documentation():
@@ -134,7 +134,7 @@ def main():
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print("::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, NAME, description, status, report_url)
+    post_commit_status(commit, status, report_url, description, NAME, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
