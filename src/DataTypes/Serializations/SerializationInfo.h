@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Poco/JSON/Object.h>
 
