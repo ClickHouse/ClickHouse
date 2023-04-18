@@ -2031,6 +2031,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         data_parts = getVisibleDataPartsVector(local_context);
 
     auto cryptographic_mode = getSettings()->cryptographic_mode;
+    bool fill_merkle_tree = merkle_tree.empty();
+
     for (auto & part : data_parts)
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
@@ -2041,6 +2043,9 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             {
                 auto calculated_checksums = checkDataPart(part, false, cryptographic_mode);
                 calculated_checksums.checkEqual(part->checksums, true);
+
+                auto checksum_hex = calculated_checksums.getTotalChecksumHex();
+                merkle_tree.insert(checksum_hex);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
@@ -2058,7 +2063,13 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         {
             try
             {
-                checkDataPart(part, true, cryptographic_mode);
+                auto calculated_checksums = checkDataPart(part, true, cryptographic_mode);
+
+                if (fill_merkle_tree) {
+                    auto checksum_hex = calculated_checksums.getTotalChecksumHex();
+                    merkle_tree.insert(checksum_hex+checksum_hex);
+                }
+
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "");
             }
@@ -2068,6 +2079,11 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             }
         }
     }
+
+    if (cryptographic_mode) {
+        results.emplace_back("root hash", true, merkle_tree.root().to_string());
+    }
+
     return results;
 }
 
