@@ -390,12 +390,12 @@ struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse
     size_t bytesSize() const override { return ZooKeeperListResponse::bytesSize() - sizeof(stat); }
 };
 
-struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
+struct ZooKeeperCheckRequest : CheckRequest, ZooKeeperRequest
 {
     ZooKeeperCheckRequest() = default;
     explicit ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
 
-    OpNum getOpNum() const override { return OpNum::Check; }
+    OpNum getOpNum() const override { return not_exists ? OpNum::CheckNotExists : OpNum::Check; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     std::string toStringImpl() const override;

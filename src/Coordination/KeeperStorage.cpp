@@ -1449,24 +1449,44 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
 struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
+    explicit KeeperStorageCheckRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_)
+        : KeeperStorageRequestProcessor(zk_request_)
     {
-        return storage.checkACL(zk_request->getPath(), Coordination::ACL::Read, session_id, is_local);
+        check_not_exists = zk_request->getOpNum() == Coordination::OpNum::CheckNotExists;
     }
 
-    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
+    bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
+    {
+        StringRef path;
+        if (check_not_exists)
+            path = parentPath(zk_request->getPath());
+        else
+            path = zk_request->getPath();
+
+        return storage.checkACL(path, Coordination::ACL::Read, session_id, is_local);
+    }
+
     std::vector<KeeperStorage::Delta>
     preprocess(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
     {
         ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
+
         Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*zk_request);
 
-        if (!storage.uncommitted_state.getNode(request.path))
-            return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
-
         auto node = storage.uncommitted_state.getNode(request.path);
-        if (request.version != -1 && request.version != node->stat.version)
-            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADVERSION}};
+        if (check_not_exists)
+        {
+            if (node && (request.version == -1 || request.version == node->stat.version))
+                return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+        }
+        else
+        {
+            if (!node)
+                return {KeeperStorage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+            if (request.version != -1 && request.version != node->stat.version)
+                return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADVERSION}};
+        }
 
         return {};
     }
@@ -1497,17 +1517,22 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
         auto & container = storage.container;
         auto node_it = container.find(request.path);
-        if (node_it == container.end())
+
+        if (check_not_exists)
         {
-            on_error(Coordination::Error::ZNONODE);
-        }
-        else if (request.version != -1 && request.version != node_it->value.stat.version)
-        {
-            on_error(Coordination::Error::ZBADVERSION);
+            if (node_it != container.end() && (request.version == -1 || request.version == node_it->value.stat.version))
+                on_error(Coordination::Error::ZNODEEXISTS);
+            else
+                response.error = Coordination::Error::ZOK;
         }
         else
         {
-            response.error = Coordination::Error::ZOK;
+            if (node_it == container.end())
+                on_error(Coordination::Error::ZNONODE);
+            else if (request.version != -1 && request.version != node_it->value.stat.version)
+                on_error(Coordination::Error::ZBADVERSION);
+            else
+                response.error = Coordination::Error::ZOK;
         }
 
         return response_ptr;
@@ -1523,6 +1548,9 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
         ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
         return processImpl<true>(storage, zxid);
     }
+
+private:
+    bool check_not_exists;
 };
 
 
@@ -1971,6 +1999,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::CheckNotExists, KeeperStorageCheckRequestProcessor>(*this);
 }
 
 
