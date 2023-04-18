@@ -451,11 +451,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Also do not output too much data if we're fuzzing.
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
     {
-//        LogContextes("ClientBase::onData header", global_context);
         return;
     }
-
-//    LogContextes("ClientBase::onData DATA block", global_context);
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
@@ -1075,7 +1072,7 @@ void ClientBase::onProgress(const Progress & value)
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
     Settings settings;
-    settings.timezone = tz;
+    settings.session_timezone = tz;
     global_context->applySettingsChanges(settings.changes());
 }
 

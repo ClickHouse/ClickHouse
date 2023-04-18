@@ -4008,9 +4008,9 @@ Default value: `0`.
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
 
-## timezone {#timezone}
+## session_timezone {#session_timezone}
 
-If specified, sets a implicit timezone (instead of server-default). All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
+If specified, sets an implicit timezone (instead of server-default). All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
 Examples:
 
 ```clickhouse
@@ -4020,13 +4020,13 @@ Europe/Berlin	Europe/Berlin
 ```
 
 ```clickhouse
-SELECT timeZone(), serverTimezone() SETTINGS timezone = 'Asia/Novosibirsk' FORMAT TSV
+SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
 
 Asia/Novosibirsk	Europe/Berlin
 ```
 
 ```clickhouse
-SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS timezone = 'America/Denver' FORMAT TSV
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
 
 1999-12-13 07:23:23.123
 ```
