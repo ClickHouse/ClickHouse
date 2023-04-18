@@ -201,11 +201,11 @@ if __name__ == "__main__":
     parser.add_argument("--in-results-dir", default="/test_output/")
     parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
     parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
-    parser.add_argument("--broken-tests", default="")
+    parser.add_argument("--broken-tests", default="/broken_tests.txt")
     args = parser.parse_args()
 
     broken_tests = list()
-    if len(args.broken_tests) != 0:
+    if os.path.exists(args.broken_tests):
         with open(args.broken_tests) as f:
             broken_tests = f.readlines()
 
