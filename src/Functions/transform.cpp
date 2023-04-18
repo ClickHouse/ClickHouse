@@ -205,22 +205,169 @@ namespace
             if (!in)
                 return false;
             const auto & pod = in->getData();
+
+            if (!executeNumToString(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<UInt8>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<UInt16>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<UInt32>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<UInt64>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<Int8>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<Int16>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<Int32>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<Int64>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<Float32>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnVector<Float64>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnDecimal<Decimal32>>(pod, column_result, default_non_const)
+                && !executeNumToNum<ColumnDecimal<Decimal64>>(pod, column_result, default_non_const))
+            {
+                const size_t size = pod.size();
+                const auto & table = *cache.table_num_to_idx;
+                column_result.reserve(size);
+                for (size_t i = 0; i < size; ++i)
+                {
+                    const auto * it = table.find(bit_cast<UInt64>(pod[i]));
+                    if (it)
+                        column_result.insertFrom(*cache.to_columns, it->getMapped());
+                    else if (cache.default_column)
+                        column_result.insertFrom(*cache.default_column, 0);
+                    else if (default_non_const)
+                        column_result.insertFrom(*default_non_const, i);
+                    else
+                        column_result.insertFrom(*in, i);
+                }
+            }
+            return true;
+        }
+
+        template <typename T>
+        bool executeNumToString(const PaddedPODArray<T> & pod, IColumn & column_result, const ColumnPtr default_non_const) const
+        {
+            auto * out = typeid_cast<ColumnString *>(&column_result);
+            if (!out)
+                return false;
+            auto & out_offs = out->getOffsets();
             const size_t size = pod.size();
+            out_offs.resize(size);
+            auto & out_chars = out->getChars();
+
+            const auto * from_col = reinterpret_cast<const ColumnString *>(cache.to_columns.get());
+            const auto & from_chars = from_col->getChars();
+            const auto & from_offs = from_col->getOffsets();
             const auto & table = *cache.table_num_to_idx;
-            column_result.reserve(size);
+
+            if (cache.default_column)
+            {
+                const auto * def = reinterpret_cast<const ColumnString *>(cache.default_column.get());
+                const auto & def_chars = def->getChars();
+                const auto & def_offs = def->getOffsets();
+                const auto * def_data = def_chars.data();
+                auto def_size = def_offs[0];
+                executeNumToStringHelper(table, pod, out_chars, out_offs, from_chars, from_offs, def_data, def_size, size);
+            }
+            else
+            {
+                const auto * def = reinterpret_cast<const ColumnString *>(default_non_const.get());
+                const auto & def_chars = def->getChars();
+                const auto & def_offs = def->getOffsets();
+                executeNumToStringHelper(table, pod, out_chars, out_offs, from_chars, from_offs, def_chars, def_offs, size);
+            }
+            return true;
+        }
+
+        template <typename Table, typename In, typename DefData, typename DefOffs>
+        void executeNumToStringHelper(
+            const Table & table,
+            const PaddedPODArray<In> & pod,
+            ColumnString::Chars & out_data,
+            ColumnString::Offsets & out_offsets,
+            const ColumnString::Chars & to_data,
+            const ColumnString::Offsets & to_offsets,
+            const DefData & def_data,
+            const DefOffs & def_offsets,
+            const size_t size) const
+        {
+            size_t out_cur_off = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                const char8_t * to = nullptr;
+                size_t to_size = 0;
+                const auto * it = table.find(bit_cast<UInt64>(pod[i]));
+                if (it)
+                {
+                    const auto idx = it->getMapped();
+                    const auto start = to_offsets[idx - 1];
+                    to = &to_data[start];
+                    to_size = to_offsets[idx] - start;
+                }
+                else if constexpr (std::is_same_v<DefData, ColumnString::Chars>)
+                {
+                    const auto start = def_offsets[i - 1];
+                    to = &def_data[start];
+                    to_size = def_offsets[i] - start;
+                }
+                else
+                {
+                    to = def_data;
+                    to_size = def_offsets;
+                }
+                out_data.resize(out_cur_off + to_size);
+                memcpy(&out_data[out_cur_off], to, to_size);
+                out_cur_off += to_size;
+                out_offsets[i] = out_cur_off;
+            }
+        }
+
+        template <typename T, typename U>
+        bool executeNumToNum(const PaddedPODArray<U> & pod, IColumn & column_result, const ColumnPtr default_non_const) const
+        {
+            auto * out = typeid_cast<T *>(&column_result);
+            if (!out)
+                return false;
+            auto & out_pod = out->getData();
+            const size_t size = pod.size();
+            out_pod.resize(size);
+
+            const auto & to_pod = reinterpret_cast<const T *>(cache.to_columns.get())->getData();
+            const auto & table = *cache.table_num_to_idx;
+            if (cache.default_column)
+            {
+                const auto const_def = reinterpret_cast<const T *>(cache.default_column.get())->getData()[0];
+                executeNumToNumHelper(table, pod, out_pod, to_pod, const_def, size);
+            }
+            else if (default_non_const)
+            {
+                const auto & nconst_def = reinterpret_cast<const T *>(default_non_const.get())->getData();
+                executeNumToNumHelper(table, pod, out_pod, to_pod, nconst_def, size);
+            }
+            else
+                executeNumToNumHelper(table, pod, out_pod, to_pod, pod, size);
+            return true;
+        }
+
+        template <typename Table, typename In, typename Out, typename Def>
+        void executeNumToNumHelper(
+            const Table & table,
+            const PaddedPODArray<In> & pod,
+            PaddedPODArray<Out> & out_pod,
+            const PaddedPODArray<Out> & to_pod,
+            const Def & def,
+            const size_t size) const
+        {
             for (size_t i = 0; i < size; ++i)
             {
                 const auto * it = table.find(bit_cast<UInt64>(pod[i]));
                 if (it)
-                    column_result.insertFrom(*cache.to_columns, it->getMapped());
-                else if (cache.default_column)
-                    column_result.insertFrom(*cache.default_column, 0);
-                else if (default_non_const)
-                    column_result.insertFrom(*default_non_const, i);
+                {
+                    const auto idx = it->getMapped();
+                    out_pod[i] = to_pod[idx];
+                }
+                else if constexpr (std::is_same_v<Def, Out>)
+                    out_pod[i] = def;
+                else if constexpr (is_decimal<Out>)
+                    out_pod[i] = static_cast<typename Out::NativeType>(def[i]);
                 else
-                    column_result.insertFrom(*in, i);
+                    out_pod[i] = static_cast<Out>(def[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
             }
-            return true;
         }
 
         bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const) const
@@ -230,9 +377,170 @@ namespace
                 return false;
             const auto & data = in->getChars();
             const auto & offsets = in->getOffsets();
+
+            if (!executeStringToString(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<UInt8>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<UInt16>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<UInt32>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<UInt64>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<Int8>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<Int16>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<Int32>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<Int64>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<Float32>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnVector<Float64>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnDecimal<Decimal32>>(data, offsets, column_result, default_non_const)
+                && !executeStringToNum<ColumnDecimal<Decimal64>>(data, offsets, column_result, default_non_const))
+            {
+                const size_t size = offsets.size();
+                const auto & table = *cache.table_string_to_idx;
+                ColumnString::Offset current_offset = 0;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                    current_offset = offsets[i];
+                    const auto * it = table.find(ref);
+                    if (it)
+                        column_result.insertFrom(*cache.to_columns, it->getMapped());
+                    else if (cache.default_column)
+                        column_result.insertFrom(*cache.default_column, 0);
+                    else if (default_non_const)
+                        column_result.insertFrom(*default_non_const, 0);
+                    else
+                        column_result.insertFrom(*in, i);
+                }
+            }
+            return true;
+        }
+
+        bool executeStringToString(
+            const ColumnString::Chars & data,
+            const ColumnString::Offsets & offsets,
+            IColumn & column_result,
+            const ColumnPtr default_non_const) const
+        {
+            auto * out = typeid_cast<ColumnString *>(&column_result);
+            if (!out)
+                return false;
+            auto & out_offs = out->getOffsets();
             const size_t size = offsets.size();
+            out_offs.resize(size);
+            auto & out_chars = out->getChars();
+
+            const auto * from_col = reinterpret_cast<const ColumnString *>(cache.to_columns.get());
+            const auto & from_chars = from_col->getChars();
+            const auto & from_offs = from_col->getOffsets();
+
             const auto & table = *cache.table_string_to_idx;
-            column_result.reserve(size);
+            if (cache.default_column)
+            {
+                const auto * def = reinterpret_cast<const ColumnString *>(cache.default_column.get());
+                const auto & def_chars = def->getChars();
+                const auto & def_offs = def->getOffsets();
+                const auto * def_data = def_chars.data();
+                auto def_size = def_offs[0];
+                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, from_chars, from_offs, def_data, def_size, size);
+            }
+            else if (default_non_const)
+            {
+                const auto * def = reinterpret_cast<const ColumnString *>(default_non_const.get());
+                const auto & def_chars = def->getChars();
+                const auto & def_offs = def->getOffsets();
+                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, from_chars, from_offs, def_chars, def_offs, size);
+            }
+            else
+            {
+                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, from_chars, from_offs, data, offsets, size);
+            }
+            return true;
+        }
+
+        template <typename Table, typename DefData, typename DefOffs>
+        void executeStringToStringHelper(
+            const Table & table,
+            const ColumnString::Chars & data,
+            const ColumnString::Offsets & offsets,
+            ColumnString::Chars & out_data,
+            ColumnString::Offsets & out_offsets,
+            const ColumnString::Chars & to_data,
+            const ColumnString::Offsets & to_offsets,
+            const DefData & def_data,
+            const DefOffs & def_offsets,
+            const size_t size) const
+        {
+            ColumnString::Offset current_offset = 0;
+            size_t out_cur_off = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                const char8_t * to = nullptr;
+                size_t to_size = 0;
+                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                current_offset = offsets[i];
+                const auto * it = table.find(ref);
+                if (it)
+                {
+                    const auto idx = it->getMapped();
+                    const auto start = to_offsets[idx - 1];
+                    to = &to_data[start];
+                    to_size = to_offsets[idx] - start;
+                }
+                else if constexpr (std::is_same_v<DefData, ColumnString::Chars>)
+                {
+                    const auto start = def_offsets[i - 1];
+                    to = &def_data[start];
+                    to_size = def_offsets[i] - start;
+                }
+                else
+                {
+                    to = def_data;
+                    to_size = def_offsets;
+                }
+                out_data.resize(out_cur_off + to_size);
+                memcpy(&out_data[out_cur_off], to, to_size);
+                out_cur_off += to_size;
+                out_offsets[i] = out_cur_off;
+            }
+        }
+
+        template <typename T>
+        bool executeStringToNum(
+            const ColumnString::Chars & data,
+            const ColumnString::Offsets & offsets,
+            IColumn & column_result,
+            const ColumnPtr default_non_const) const
+        {
+            auto * out = typeid_cast<T *>(&column_result);
+            if (!out)
+                return false;
+            auto & out_pod = out->getData();
+            const size_t size = offsets.size();
+            out_pod.resize(size);
+
+            const auto & to_pod = reinterpret_cast<const T *>(cache.to_columns.get())->getData();
+            const auto & table = *cache.table_string_to_idx;
+            if (cache.default_column)
+            {
+                const auto const_def = reinterpret_cast<const T *>(cache.default_column.get())->getData()[0];
+                executeStringToNumHelper(table, data, offsets, out_pod, to_pod, const_def, size);
+            }
+            else
+            {
+                const auto & nconst_def = reinterpret_cast<const T *>(default_non_const.get())->getData();
+                executeStringToNumHelper(table, data, offsets, out_pod, to_pod, nconst_def, size);
+            }
+            return true;
+        }
+
+        template <typename Table, typename Out, typename Def>
+        void executeStringToNumHelper(
+            const Table & table,
+            const ColumnString::Chars & data,
+            const ColumnString::Offsets & offsets,
+            PaddedPODArray<Out> & out_pod,
+            const PaddedPODArray<Out> & to_pod,
+            const Def & def,
+            const size_t size) const
+        {
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
@@ -240,15 +548,17 @@ namespace
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
-                    column_result.insertFrom(*cache.to_columns, it->getMapped());
-                else if (cache.default_column)
-                    column_result.insertFrom(*cache.default_column, 0);
-                else if (default_non_const)
-                    column_result.insertFrom(*default_non_const, 0);
+                {
+                    const auto idx = it->getMapped();
+                    out_pod[i] = to_pod[idx];
+                }
+                else if constexpr (std::is_same_v<Def, Out>)
+                    out_pod[i] = def;
+                else if constexpr (is_decimal<Out>)
+                    out_pod[i] = static_cast<typename Out::NativeType>(def[i]);
                 else
-                    column_result.insertFrom(*in, i);
+                    out_pod[i] = static_cast<Out>(def[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
             }
-            return true;
         }
 
         /// Different versions of the hash tables to implement the mapping.
