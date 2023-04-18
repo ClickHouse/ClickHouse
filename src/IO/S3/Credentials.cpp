@@ -270,7 +270,6 @@ void AWSInstanceProfileCredentialsProvider::Reload()
 
 void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
 {
-    LOG_DEBUG(logger, "Checking if latest credential pull has expired.");
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
     if (!IsTimeToRefresh(load_frequency_ms))
     {
