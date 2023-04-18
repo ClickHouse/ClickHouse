@@ -253,11 +253,17 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
 static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, const DataTypePtr & type_hint)
 {
     DataTypePtr internal_type;
+    bool check_date_range = false;
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
     if (!type_hint || (type_hint && isDate32(*type_hint)))
+    {
         internal_type = std::make_shared<DataTypeDate32>();
+        check_date_range = true;
+    }
     else
+    {
         internal_type = std::make_shared<DataTypeInt32>();
+    }
 
     auto internal_column = internal_type->createColumn();
     PaddedPODArray<Int32> & column_data = assert_cast<ColumnVector<Int32> &>(*internal_column).getData();
@@ -268,7 +274,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
         arrow::Date32Array & chunk = dynamic_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
 
         /// Check date range only when requested type is actually Date32
-        if (isDate32(*internal_type))
+        if (check_date_range)
         {
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
