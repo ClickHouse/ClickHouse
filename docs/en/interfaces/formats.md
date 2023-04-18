@@ -38,6 +38,7 @@ The supported formats are:
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔      |
+| [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔      |
 | [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔      |
@@ -915,7 +916,39 @@ Example:
 {"num":44,"str":"hello","arr":[0,1,2,3]}
 ```
 
-While importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+## PrettyJSONEachRow {#prettyjsoneachrow}
+
+Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable onlt for output.
+
+Example
+
+```json
+{
+    "num": "42",
+    "str": "hello",
+    "arr": [
+        "0",
+        "1"
+    ],
+    "tuple": {
+        "num": 42,
+        "str": "world"
+    }
+}
+{
+    "num": "43",
+    "str": "hello",
+    "arr": [
+        "0",
+        "1",
+        "2"
+    ],
+    "tuple": {
+        "num": 43,
+        "str": "world"
+    }
+}
+```
 
 ## JSONStringsEachRow {#jsonstringseachrow}
 
