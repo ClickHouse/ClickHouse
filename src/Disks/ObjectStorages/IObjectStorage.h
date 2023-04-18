@@ -189,8 +189,6 @@ public:
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
-    virtual bool supportsAppend() const { return false; }
-
     /// Remove filesystem cache. `path` is a result of object.getPathKeyForCache() method,
     /// which is used to define a cache key for the source object path.
     virtual void removeCacheIfExists(const std::string & /* path */) {}
