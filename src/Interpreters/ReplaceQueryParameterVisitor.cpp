@@ -68,8 +68,18 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     auto search = query_parameters.find(name);
     if (search != query_parameters.end())
         return search->second;
-    else
-        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
+    else {
+        try {
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
+        }
+        catch (const Exception & e) {
+            // Add a message saying what parameter failed to parse
+            String errorMsg = e.message() + " - Parameter failed to parse: " + backQuote(name);
+            
+            // Rethrow the exception with the updated message
+            throw Exception(e.code(), errorMsg);
+        }
+    }
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
@@ -84,16 +94,26 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-    if (ast_param.name == "_request_body")
-        data_type->getDefaultSerialization()->deserializeWholeText(temp_column, read_buffer, format_settings);
-    else
-        data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
 
-    if (!read_buffer.eof())
-        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
-            "Value {} cannot be parsed as {} for query parameter '{}'"
-            " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
-            value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
+    try {
+        if (ast_param.name == "_request_body")
+            data_type->getDefaultSerialization()->deserializeWholeText(temp_column, read_buffer, format_settings);
+        else
+            data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
+
+        if (!read_buffer.eof())
+            throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+                "Value {} cannot be parsed as {} for query parameter '{}'"
+                " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
+                value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
+    }
+    catch (const Exception & e) {
+        // Add a message saying what parameter failed to parse
+        String errorMsg = e.message() + " - Parameter failed to parse: " + backQuote(ast_param.name);
+
+        // Rethrow the exception with the updated message
+        throw Exception(e.code(), errorMsg);
+    }
 
     Field literal;
     /// If data type has custom serialization, we should use CAST from String,
@@ -114,6 +134,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     /// Keep the original alias.
     ast->setAlias(alias);
 }
+
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
 {
