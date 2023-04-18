@@ -91,6 +91,9 @@
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11
+[submodule "contrib/merklecpp"]
+	path = contrib/merklecpp
+	url = https://github.com/microsoft/merklecpp.git
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
