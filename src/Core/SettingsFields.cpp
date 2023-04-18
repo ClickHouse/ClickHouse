@@ -13,7 +13,6 @@
 
 #include <cmath>
 
-extern const char * auto_time_zones[];
 
 namespace DB
 {
@@ -27,14 +26,6 @@ namespace ErrorCodes
 
 namespace
 {
-    bool checkIsExitingTimeZone(const std::string_view timezone)
-    {
-        for (auto * it = auto_time_zones; *it; ++it)
-            if (timezone == *it)
-                return true;
-        return false;
-    }
-
     template <typename T>
     T stringToNumber(const String & str)
     {
@@ -470,12 +461,6 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
     String str;
     readStringBinary(str, in);
     *this = std::move(str);
-}
-
-void SettingFieldTimezone::validateTimezone(std::string_view str)
-{
-    if (str != "" && !checkIsExitingTimeZone(str))
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", str);
 }
 
 String SettingFieldCustom::toString() const
