@@ -136,7 +136,7 @@ postgresql> SELECT * FROM test;
 
 ### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above
 
-This example uses the [PostgreSQL table engine](/docs/en/engines/table-engines/integrations/postgresql) to connect the ClickHouse table to the PostgreSQL table:
+This example uses the [PostgreSQL table engine](/docs/en/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table:
 
 ``` sql
 CREATE TABLE default.postgresql_table
