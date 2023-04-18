@@ -52,6 +52,9 @@ SELECT * FROM clusterAllReplicas('cluster_name', 'db', system.mutations)
 WHERE is_done=0 AND table='tmp';
 ```
 
+:::tip
+replace `tmp` in `table='tmp'` with the name of the table that you are checking mutations on.
+:::
 **See Also**
 
 -   [Mutations](/docs/en/sql-reference/statements/alter/index.md#mutations)
