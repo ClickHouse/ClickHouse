@@ -229,7 +229,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 }
 
 #if USE_ENET
-void Service::processQuery(const ENetPack & params, ReadBuffer & /*body*/, WriteBuffer & out, ENetPack & response)
+void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack & response)
 {
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 

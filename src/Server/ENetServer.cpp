@@ -7,6 +7,15 @@
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Thread.h>
 
+#include <Server/IServer.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterserverIOHandler.h>
+
+#include <Common/logger_useful.h>
+#include <Compression/CompressedWriteBuffer.h>
+
+#include <IO/WriteBuffer.h>
+
 #if USE_ENET
 
 #include <enet.h>
@@ -14,7 +23,13 @@
 namespace DB
 {
 
-ENetServer::ENetServer()
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+}
+
+ENetServer::ENetServer(IServer & iserver_) : ch_server(iserver_)
 {
     thread = new Poco::Thread("ENetServer");
 }
@@ -66,12 +81,34 @@ void ENetServer::run()
                     //event.channelID);
                     /* Clean up the packet now that we're done using it. */
                     ENetPack pck;
+                    ENetPack resp_pck;
                     pck.deserialize(reinterpret_cast<char *>(event.packet->data));
 
                     enet_packet_destroy (event.packet);
 
                     // handle the request
                     // processQuery()
+
+                    auto endpoint_name = pck.get("endpoint");
+                    bool compress = pck.get("compress") == "true";
+
+                    auto endpoint = ch_server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
+
+                    WriteBuffer out(nullptr, 0);
+
+                    std::shared_lock lock(endpoint->rwlock);
+                    if (endpoint->blocker.isCancelled())
+                        throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
+
+                    if (compress)
+                    {
+                        CompressedWriteBuffer compressed_out(out);
+                        endpoint->processQuery(pck, compressed_out, resp_pck);
+                    }
+                    else
+                    {
+                        endpoint->processQuery(pck, out, resp_pck);
+                    }
 
                     resp = enet_packet_create ("response",
                                             strlen ("response") + 1,

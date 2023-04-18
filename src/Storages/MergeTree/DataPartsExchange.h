@@ -42,7 +42,7 @@ public:
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
     #if USE_ENET
-    void processQuery(const ENetPack & params, ReadBuffer & body, WriteBuffer & out, ENetPack & response);
+    void processQuery(const ENetPack & params, WriteBuffer & out, ENetPack & response);
     #endif
 
 private:

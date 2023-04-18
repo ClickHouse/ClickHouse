@@ -19,11 +19,12 @@
 namespace DB
 {
 class Context;
+class IServer;
 
 class ENetServer : public Poco::Runnable
 {
 public:
-    explicit ENetServer();
+    explicit ENetServer(IServer & iserver_);
 
     void run() override;
 
@@ -47,6 +48,7 @@ private:
     UInt16 port_number;
     ENetAddress address;
     ENetHost * server;
+    IServer & ch_server;
 };
 
 }

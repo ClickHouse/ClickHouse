@@ -1403,7 +1403,7 @@ try
                         listen_host,
                         enet_port_name,
                         "Keeper (tcp): " + address.toString(),
-                        std::make_unique<ENetServer>());
+                        std::make_unique<ENetServer>(*this));
                 });
             #endif
 

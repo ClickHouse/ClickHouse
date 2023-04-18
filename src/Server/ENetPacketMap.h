@@ -4,6 +4,9 @@
 #include <map>
 #include "config.h"
 
+namespace DB
+{
+
 #if USE_ENET
 class ENetPack
 {
@@ -72,3 +75,5 @@ class ENetPack
         std::map<std::string, std::string> data;
 };
 #endif
+
+}
