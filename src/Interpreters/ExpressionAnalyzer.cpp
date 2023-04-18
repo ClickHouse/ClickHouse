@@ -56,6 +56,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
+#include <QueryPipeline/SizeLimits.h>
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -68,6 +69,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -147,6 +149,11 @@ ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
+    , size_limits_for_set_used_with_index(
+        (settings_.use_index_for_in_with_subqueries_max_values &&
+            settings_.use_index_for_in_with_subqueries_max_values < settings_.max_rows_in_set) ?
+        size_limits_for_set :
+        SizeLimits(settings_.use_index_for_in_with_subqueries_max_values, settings_.max_bytes_in_set, OverflowMode::BREAK))
     , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
 {}
 
@@ -450,7 +457,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets->get(set_key))
+    if (prepared_sets->getFuture(set_key).isValid())
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
@@ -459,25 +466,57 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         return;
     }
 
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
-    auto io = interpreter_subquery->execute();
-    PullingAsyncPipelineExecutor executor(io.pipeline);
-
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
-    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
-
-    Block block;
-    while (executor.pull(block))
+    auto build_set = [&] () -> SetPtr
     {
-        if (block.rows() == 0)
-            continue;
+        LOG_TRACE(getLogger(), "Building set, key: {}", set_key.toString());
 
-        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
-            return;
+        auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
+        auto io = interpreter_subquery->execute();
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+
+        SetPtr set = std::make_shared<Set>(settings.size_limits_for_set_used_with_index, true, getContext()->getSettingsRef().transform_null_in);
+        set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
+
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+
+            /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+            if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
+                return nullptr;
+        }
+
+        set->finishInsert();
+
+        return set;
+    };
+
+    SetPtr set;
+
+    auto set_cache = getContext()->getPreparedSetsCache();
+    if (set_cache)
+    {
+        auto from_cache = set_cache->findOrPromiseToBuild(set_key.toString());
+        if (from_cache.index() == 0)
+        {
+            set = build_set();
+            std::get<0>(from_cache).set_value(set);
+        }
+        else
+        {
+            LOG_TRACE(getLogger(), "Waiting for set, key: {}", set_key.toString());
+            set = std::get<1>(from_cache).get();
+        }
+    }
+    else
+    {
+        set = build_set();
     }
 
-    set->finishInsert();
+    if (!set)
+        return;
 
     prepared_sets->set(set_key, std::move(set));
 }
