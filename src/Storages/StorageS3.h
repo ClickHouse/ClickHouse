@@ -203,6 +203,12 @@ private:
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
 
+    struct ReadBufferOrFactory
+    {
+        std::unique_ptr<ReadBuffer> buf;
+        SeekableReadBufferFactoryPtr buf_factory;
+    };
+
     ReaderHolder reader;
 
     std::vector<NameAndTypePair> requested_virtual_columns;
@@ -223,7 +229,7 @@ private:
     ReaderHolder createReader();
     std::future<ReaderHolder> createReaderAsync();
 
-    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
+    ReadBufferOrFactory createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
 };
 

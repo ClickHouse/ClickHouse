@@ -151,5 +151,9 @@
         "name": "clickhouse/docs-builder",
         "dependent": [
         ]
+    },
+    "docker/test/sqllogic": {
+        "name": "clickhouse/sqllogic-test",
+        "dependent": []
     }
 }

@@ -5,7 +5,7 @@ slug: /en/operations/system-tables/mutations
 
 The table contains information about [mutations](/docs/en/sql-reference/statements/alter/index.md#mutations) of [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
-Columns:
+## Columns:
 
 -   `database` ([String](/docs/en/sql-reference/data-types/string.md)) — The name of the database to which the mutation was applied.
 
@@ -42,6 +42,19 @@ If there were problems with mutating some data parts, the following columns cont
 -   `latest_fail_time` ([DateTime](/docs/en/sql-reference/data-types/datetime.md)) — The date and time of the most recent part mutation failure.
 
 -   `latest_fail_reason` ([String](/docs/en/sql-reference/data-types/string.md)) — The exception message that caused the most recent part mutation failure.
+
+## Monitoring Mutations
+
+To track the progress on the system.mutations table, use a query like the following - this requires read permissions on the system.* tables:
+
+``` sql
+SELECT * FROM clusterAllReplicas('cluster_name', 'db', system.mutations)
+WHERE is_done=0 AND table='tmp';
+```
+
+:::tip
+replace `tmp` in `table='tmp'` with the name of the table that you are checking mutations on.
+:::
 
 **See Also**
 
