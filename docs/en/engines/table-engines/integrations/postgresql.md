@@ -150,7 +150,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgre
 
 ### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query
 
-The [postgresql table function](/docs/en/sql-reference/table-functions/postgresql) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse:
+The [postgresql table function](/docs/en/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse:
 
 ``` sql
 INSERT INTO default.postgresql_table
