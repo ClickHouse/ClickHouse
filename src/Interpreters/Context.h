@@ -1159,7 +1159,8 @@ private:
 
     DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
 
-    std::shared_ptr<Clusters> getClustersImpl() const;
+    /// Expect lock for shared->clusters_mutex
+    std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 
     /// Throttling
 public:
