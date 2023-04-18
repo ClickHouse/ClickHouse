@@ -107,6 +107,8 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/GraphiteWriter.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/Daemon/GitHash.generated.cpp
 
+        ${CMAKE_CURRENT_BINARY_DIR}/../../src/Storages/System/StorageSystemTimeZones.generated.cpp
+
         Keeper.cpp
         clickhouse-keeper.cpp
     )
