@@ -13,13 +13,12 @@ from github import Github
 
 from build_download_helper import get_build_name_for_check
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from compress_files import compress_fast
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults, TestResult
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from ssh import SSHKey
 from stopwatch import Stopwatch
@@ -181,10 +180,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
     check_name = KEEPER_CHECK_NAME if args.program == "keeper" else SERVER_CHECK_NAME
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)

@@ -22,11 +22,12 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import NeedsDataType, PRInfo
 from commit_status_helper import (
+    RerunHelper,
+    get_commit,
     post_commit_status,
     update_mergeable_check,
 )
 from ci_config import CI_CONFIG
-from rerun_helper import RerunHelper
 
 
 NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")
@@ -136,10 +137,11 @@ def main():
 
     gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
+    commit = get_commit(gh, pr_info.sha)
 
     atexit.register(update_mergeable_check, gh, pr_info, build_check_name)
 
-    rerun_helper = RerunHelper(gh, pr_info, build_check_name)
+    rerun_helper = RerunHelper(commit, build_check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)

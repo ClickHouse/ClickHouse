@@ -3,7 +3,7 @@
 import csv
 import os
 import time
-from typing import List, Literal
+from typing import List, Literal, Optional
 import logging
 
 from github import Github
@@ -17,6 +17,29 @@ from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 RETRY = 5
 CommitStatuses = List[CommitStatus]
 MERGEABLE_NAME = "Mergeable Check"
+
+
+class RerunHelper:
+    def __init__(self, commit: Commit, check_name: str):
+        self.check_name = check_name
+        self.commit = commit
+        self.statuses = get_commit_filtered_statuses(commit)
+
+    def is_already_finished_by_status(self) -> bool:
+        # currently we agree even for failed statuses
+        for status in self.statuses:
+            if self.check_name in status.context and status.state in (
+                "success",
+                "failure",
+            ):
+                return True
+        return False
+
+    def get_finished_status(self) -> Optional[CommitStatus]:
+        for status in self.statuses:
+            if self.check_name in status.context:
+                return status
+        return None
 
 
 def override_status(status: str, check_name: str, invert: bool = False) -> str:
