@@ -19,7 +19,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -342,9 +341,7 @@ void buildPrimaryKeyConfiguration(
     AutoPtr<Element> root,
     bool complex,
     const Names & key_names,
-    const ASTExpressionList * dictionary_attributes,
-    const ASTDictionarySettings * dict_settings,
-    ContextPtr context)
+    const ASTExpressionList * dictionary_attributes)
 {
     const auto & children = dictionary_attributes->children;
 
@@ -378,26 +375,6 @@ void buildPrimaryKeyConfiguration(
         }
 
         const ASTDictionaryAttributeDeclaration * dict_attr = (*it)->as<const ASTDictionaryAttributeDeclaration>();
-
-        auto key_type = DataTypeFactory::instance().tryGet(dict_attr->type);
-
-        auto check_dictionary_primary_key = context->getSettingsRef().check_dictionary_primary_key;
-
-        if (dict_settings)
-        {
-            if (const auto * check_dictionary_primary_key_change = dict_settings->changes.tryGet("check_dictionary_primary_key"))
-            {
-                check_dictionary_primary_key = check_dictionary_primary_key_change->get<bool>();
-            }
-        }
-
-        if (check_dictionary_primary_key && !WhichDataType(key_type).isNativeUInt())
-        {
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                "Invalid Primary key type for simple dictionary: {}. Must be native unsigned integer type. "
-                "To avoid checking it, please set check_dictionary_primary_key=false",
-                dict_attr->name);
-        }
 
         AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
         name_element->appendChild(name);
@@ -637,7 +614,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     checkPrimaryKey(all_attr_names_and_types, pk_attrs);
 
-    buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list, query.dictionary->dict_settings, context);
+    buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
     buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);

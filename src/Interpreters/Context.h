@@ -17,7 +17,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <IO/IResourceManager.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -41,6 +40,8 @@ struct OvercommitTracker;
 
 namespace DB
 {
+
+class ASTSelectQuery;
 
 struct ContextSharedPart;
 class ContextAccess;
@@ -191,6 +192,9 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 class MergeTreeMetadataCache;
 using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 #endif
+
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -397,6 +401,10 @@ private:
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
+
+    /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
+    /// mutation tasks of one mutation executed against different parts of the same table.
+    PreparedSetsCachePtr prepared_sets_cache;
 
 public:
     /// Some counters for current query execution.
@@ -1126,6 +1134,9 @@ public:
     };
 
     ParallelReplicasMode getParallelReplicasMode() const;
+
+    void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
+    PreparedSetsCachePtr getPreparedSetsCache() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
