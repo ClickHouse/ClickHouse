@@ -201,7 +201,7 @@ namespace
         template <typename T>
         bool executeNum(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const) const
         {
-            const auto in = checkAndGetColumn<T>(in_untyped);
+            const auto * const in = checkAndGetColumn<T>(in_untyped);
             if (!in)
                 return false;
             const auto & pod = in->getData();
@@ -372,7 +372,7 @@ namespace
 
         bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const) const
         {
-            const auto in = checkAndGetColumn<ColumnString>(in_untyped);
+            const auto * const in = checkAndGetColumn<ColumnString>(in_untyped);
             if (!in)
                 return false;
             const auto & data = in->getChars();
