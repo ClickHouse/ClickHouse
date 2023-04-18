@@ -916,6 +916,8 @@ Example:
 {"num":44,"str":"hello","arr":[0,1,2,3]}
 ```
 
+While importing data columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+
 ## JSONStringsEachRow {#jsonstringseachrow}
 
 Differs from JSONEachRow only in that data fields are output in strings, not in typed JSON values.
