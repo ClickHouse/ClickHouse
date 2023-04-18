@@ -106,7 +106,11 @@ def get_run_command(
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-    volume_with_broken_test = "--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt" if "analyzer" in check_name else ""
+    volume_with_broken_test = (
+        "--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt"
+        if "analyzer" in check_name
+        else ""
+    )
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
