@@ -206,8 +206,10 @@ if __name__ == "__main__":
 
     broken_tests = list()
     if os.path.exists(args.broken_tests):
+        logging.info(f"File {args.broken_tests} with broken tests found")
         with open(args.broken_tests) as f:
-            broken_tests = f.readlines()
+            broken_tests = f.read().splitlines()
+        logging.info(f"Broken tests in the list: {len(broken_tests)}")
 
     state, description, test_results = process_result(args.in_results_dir, broken_tests)
     logging.info("Result parsed")
