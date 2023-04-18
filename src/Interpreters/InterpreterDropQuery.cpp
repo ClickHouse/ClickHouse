@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_NOT_EMPTY;
 }
 
 namespace ActionLocks
@@ -122,6 +123,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
     if (database && table)
     {
+        const auto & settings = getContext()->getSettingsRef();
+        if (query.if_empty && table->totalRows(settings) > 0) {
+            throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
+        }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
 
         auto & ast_drop_query = query.as<ASTDropQuery &>();
@@ -344,11 +349,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (database->hasReplicationThread())
                 database->stopReplication();
 
+
             if (database->shouldBeEmptyOnDetach())
             {
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
                 query_for_table.if_exists = true;
+                query_for_table.if_empty = query.if_empty;
                 query_for_table.setDatabase(database_name);
                 query_for_table.sync = query.sync;
 

@@ -8,10 +8,13 @@ namespace DB
 {
 
 /** Query like this:
-  * DROP|DETACH|TRUNCATE TABLE [IF EXISTS] [db.]name [PERMANENTLY]
+  * DROP TABLE [IF EXISTS|EMPTY] [db.]name [PERMANENTLY]
   *
   * Or:
-  * DROP DATABASE [IF EXISTS] db
+  * DETACH|TRUNCATE TABLE [IF EXISTS] [db.]name [PERMANENTLY]
+  *
+  * Or:
+  * DROP DATABASE [IF EXISTS|EMPTY] db
   *
   * Or:
   * DROP DICTIONARY [IF EXISTS] [db.]name
