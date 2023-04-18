@@ -61,7 +61,9 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator), objects, modified_settings);
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    /// We use `remove_fs_method` (not `local_fs_method`) because we are about to use
+    /// AsynchronousReadIndirectBufferFromRemoteFS which works by the remote_fs_* settings.
+    if (modified_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto & reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, modified_settings, std::move(impl));
@@ -72,11 +74,6 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         return std::make_unique<SeekAvoidingReadBuffer>(
             std::move(buf), modified_settings.remote_read_min_bytes_for_seek);
     }
-}
-
-std::string LocalObjectStorage::getUniqueId(const std::string & path) const
-{
-    return toString(getINodeNumberFromPath(path));
 }
 
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const

@@ -64,19 +64,6 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     set remote_filesystem_read_method='threadpool';
     """
 
-    clickhouse client --multiquery --multiline  --query """
-    SELECT * FROM test_02226 WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
-
-    SET enable_filesystem_cache_on_write_operations = 1;
-
-    TRUNCATE TABLE test_02226;
-    SELECT count() FROM test_02226;
-
-    SYSTEM DROP FILESYSTEM CACHE;
-
-    INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
-    """
-
     query_id=$(clickhouse client --query "select queryID() from ($query) limit 1")
 
     clickhouse client --multiquery --multiline  --query """
@@ -92,5 +79,18 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     LIMIT 1;
 
     DROP TABLE test_02226;
+    """
+
+    clickhouse client --multiquery --multiline  --query """
+    SELECT * FROM test_02226 WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
+
+    SET enable_filesystem_cache_on_write_operations = 1;
+
+    TRUNCATE TABLE test_02226;
+    SELECT count() FROM test_02226;
+
+    SYSTEM DROP FILESYSTEM CACHE;
+
+    INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
     """
 done

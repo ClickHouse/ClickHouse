@@ -77,10 +77,6 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool supportsAppend() const override { return true; }
-
-    std::string getUniqueId(const std::string & path) const override;
-
     std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return false; }
