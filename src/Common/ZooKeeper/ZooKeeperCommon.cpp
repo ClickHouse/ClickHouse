@@ -931,6 +931,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Read;
         else if constexpr (num == OpNum::Multi)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
+        else if constexpr (num == OpNum::CheckNotExists)
+            res->not_exists = true;
 
         return res;
     });
@@ -956,6 +958,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
+    registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
 }
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to)
