@@ -11,11 +11,12 @@ Deletes existing entity. If the `IF EXISTS` clause is specified, these queries d
 ## DROP DATABASE
 
 Deletes all tables inside the `db` database, then deletes the `db` database itself.
+If the `IF EMPTY` clause is specified database will be dropped only if all related tables are empty.
 
 Syntax:
 
 ``` sql
-DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
+DROP DATABASE [IF EXISTS] [IF EMPTY] db [ON CLUSTER cluster] [SYNC]
 ```
 
 ## DROP TABLE
@@ -29,7 +30,7 @@ Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
 Syntax:
 
 ``` sql
-DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY] [db.]name [ON CLUSTER cluster] [SYNC]
 ```
 
 ## DROP DICTIONARY
