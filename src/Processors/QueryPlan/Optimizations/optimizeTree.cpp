@@ -80,14 +80,17 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
             if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
                 throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                "Too many optimizations applied to query plan. Current limit {}",
-                                max_optimizations_to_apply);
+                                "Too many optimizations applied to query plan. Current limit {} - {}",
+                                max_optimizations_to_apply,
+                                total_applied_optimizations);
 
             /// Try to apply optimization.
             auto update_depth = optimization.apply(frame.node, nodes);
             if (update_depth)
                 ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
+            if (total_applied_optimizations == max_optimizations_to_apply)
+                break;
         }
 
         /// Traverse `max_update_depth` layers of tree again.

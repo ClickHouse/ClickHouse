@@ -11,8 +11,7 @@ struct Settings;
 
 struct QueryPlanOptimizationSettings
 {
-    /// If not zero, throw if too many optimizations were applied to query plan.
-    /// It helps to avoid infinite optimization loop.
+    /// Default is 0, if 'passes' is received that value is used instead
     size_t max_optimizations_to_apply = 0;
 
     /// If disabled, no optimization applied.

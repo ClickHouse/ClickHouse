@@ -73,6 +73,8 @@ public:
         bool indexes = false;
         /// Add information about sorting
         bool sorting = false;
+        /// Add information about passes
+        bool passes = false;
     };
 
     struct ExplainPipelineOptions

@@ -193,6 +193,7 @@ struct QueryPlanSettings
     /// Apply query plan optimizations.
     bool optimize = true;
     bool json = false;
+    Int64 passes = 0;
 
     constexpr static char name[] = "PLAN";
 
@@ -205,6 +206,9 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
+        };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings{{"passes", passes}};
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -453,7 +457,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+            {
+                auto query_plan_optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
+                query_plan_optimization_settings.max_optimizations_to_apply = settings.passes;
+
+                plan.optimize(query_plan_optimization_settings);
+            }
 
             if (settings.json)
             {
@@ -547,7 +556,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 BuildQueryPipelineSettings::fromContext(context));
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+            {
+                auto query_plan_optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
+                query_plan_optimization_settings.max_optimizations_to_apply = settings.passes;
+
+                plan.optimize(query_plan_optimization_settings);
+            }
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;
