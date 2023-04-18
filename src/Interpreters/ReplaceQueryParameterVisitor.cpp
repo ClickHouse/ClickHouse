@@ -68,8 +68,18 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     auto search = query_parameters.find(name);
     if (search != query_parameters.end())
         return search->second;
-    else
-        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
+    else {
+        try {
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
+        }
+        catch (const Exception & e) {
+            // Add a message saying what parameter failed to parse
+            String errorMsg = e.message() + " - Parameter failed to parse: " + backQuote(name);
+
+            // Rethrow the exception with the updated message
+            throw Exception(e.code(), errorMsg);
+        }
+    }
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
@@ -124,6 +134,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     /// Keep the original alias.
     ast->setAlias(alias);
 }
+
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
 {
