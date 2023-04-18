@@ -24,7 +24,7 @@ public:
     ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
-    RabbitMQConsumerPtr getBuffer() { return consumer; }
+    void updateChannel(RabbitMQConnection & connection) { consumer->updateChannel(connection); }
 
     Chunk generate() override;
 
