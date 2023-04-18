@@ -9,6 +9,7 @@ import logging
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
+from github.Repository import Repository
 
 from ci_config import CI_CONFIG, REQUIRED_CHECKS
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
@@ -17,6 +18,7 @@ from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 RETRY = 5
 CommitStatuses = List[CommitStatus]
 MERGEABLE_NAME = "Mergeable Check"
+GH_REPO = None  # type: Optional[Repository]
 
 
 class RerunHelper:
@@ -57,7 +59,7 @@ def override_status(status: str, check_name: str, invert: bool = False) -> str:
 def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
     for i in range(retry_count):
         try:
-            repo = gh.get_repo(GITHUB_REPOSITORY)
+            repo = get_repo(gh)
             commit = repo.get_commit(commit_sha)
             break
         except Exception as ex:
@@ -113,8 +115,16 @@ def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:
     return list(filtered.values())
 
 
+def get_repo(gh: Github) -> Repository:
+    global GH_REPO
+    if GH_REPO is not None:
+        return GH_REPO
+    GH_REPO = gh.get_repo(GITHUB_REPOSITORY)
+    return GH_REPO
+
+
 def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
-    repo = gh.get_repo(GITHUB_REPOSITORY)
+    repo = get_repo(gh)
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.remove_from_labels(label)
@@ -122,7 +132,7 @@ def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
 
 
 def post_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
-    repo = gh.get_repo(GITHUB_REPOSITORY)
+    repo = get_repo(gh)
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.add_to_labels(label)
