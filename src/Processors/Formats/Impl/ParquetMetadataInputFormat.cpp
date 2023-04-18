@@ -135,7 +135,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
 }
 
 ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
+    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_)
 {
     checkHeader(getPort().getHeader());
 }
