@@ -831,3 +831,13 @@ You can see which parts of `s` were stored using the sparse serialization:
 │ s      │ Sparse             │
 └────────┴────────────────────┘
 ```
+
+## clean_deleted_rows
+
+Enable/disable automatic deletion of rows flagged as `is_deleted` when perform `OPTIMIZE ... FINAL` on a table using the ReplacingMergeTree engine. When disabled, the `CLEANUP` keyword has to be added to the `OPTIMIZE ... FINAL` to have the same behaviour.
+
+Possible values:
+
+-   `Always` or `Never`.
+
+Default value: `Never`
