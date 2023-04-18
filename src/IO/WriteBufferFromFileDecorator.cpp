@@ -1,6 +1,7 @@
 #include "WriteBufferFromFileDecorator.h"
 
 #include <IO/WriteBuffer.h>
+#include <IO/SwapHelper.h>
 
 namespace DB
 {
@@ -13,12 +14,18 @@ WriteBufferFromFileDecorator::WriteBufferFromFileDecorator(std::unique_ptr<Write
 
 void WriteBufferFromFileDecorator::finalizeImpl()
 {
-    next();
 
+    /// In case of exception in preFinalize as a part of finalize call
+    /// WriteBufferFromFileDecorator.finalized is set as true
+    /// but impl->finalized is remain false
+    /// That leads to situation when the destructor of impl is called with impl->finalized equal false.
     if (!is_prefinalized)
         WriteBufferFromFileDecorator::preFinalize();
 
-    impl->finalize();
+    {
+        SwapHelper swap(*this, *impl);
+        impl->finalize();
+    }
 }
 
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
@@ -31,11 +38,21 @@ WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    /// It is not a mistake that swap is called here
+    /// Swap has been called at constructor, it should be called at destructor
+    /// In oreder to provide valid buffer for impl's d-tor call
+    swap(*impl);
 }
 
 void WriteBufferFromFileDecorator::sync()
 {
-    impl->sync();
+    next();
+
+    {
+        SwapHelper swap(*this, *impl);
+        impl->sync();
+    }
 }
 
 std::string WriteBufferFromFileDecorator::getFileName() const
@@ -45,11 +62,22 @@ std::string WriteBufferFromFileDecorator::getFileName() const
     return std::string();
 }
 
+void WriteBufferFromFileDecorator::preFinalize()
+{
+    next();
+
+    {
+        SwapHelper swap(*this, *impl);
+        impl->preFinalize();
+    }
+
+    is_prefinalized = true;
+}
+
 void WriteBufferFromFileDecorator::nextImpl()
 {
-    swap(*impl);
+    SwapHelper swap(*this, *impl);
     impl->next();
-    swap(*impl);
 }
 
 }
