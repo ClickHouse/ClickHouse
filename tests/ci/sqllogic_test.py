@@ -17,11 +17,15 @@ from pr_info import FORCE_TESTS_LABEL, PRInfo
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import override_status, post_commit_status
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    override_status,
+    post_commit_status,
+)
 from report import TestResults, read_test_results
 
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
 
@@ -103,8 +107,9 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
