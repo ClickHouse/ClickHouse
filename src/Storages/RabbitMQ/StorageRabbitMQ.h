@@ -140,9 +140,6 @@ private:
     /// Counter for producers, needed for channel id.
     /// Needed to generate unique producer identifiers.
     std::atomic<size_t> producer_id = 1;
-    /// Has connection background task completed successfully?
-    /// It is started only once -- in constructor.
-    std::atomic<bool> rabbit_is_ready = false;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
@@ -163,7 +160,6 @@ private:
     bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    void initializeBuffers();
     bool initialized = false;
 
     /// Functions working in the background

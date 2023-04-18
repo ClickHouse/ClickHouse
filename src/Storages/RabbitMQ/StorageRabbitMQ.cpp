@@ -287,7 +287,7 @@ void StorageRabbitMQ::stopLoopIfNoReaders()
 
 void StorageRabbitMQ::startLoop()
 {
-    assert(rabbit_is_ready);
+    chassert(initialized);
     connection->getHandler().updateLoopState(Loop::RUN);
     looping_task->activateAndSchedule();
 }
@@ -307,13 +307,23 @@ void StorageRabbitMQ::decrementReader()
 
 void StorageRabbitMQ::connectionFunc()
 {
-    if (rabbit_is_ready)
+    if (initialized)
         return;
 
-    if (connection->reconnect())
-        initRabbitMQ();
-    else
-        connection_task->scheduleAfter(RESCHEDULE_MS);
+    try
+    {
+        if (connection->reconnect())
+            initRabbitMQ();
+
+        streaming_task->scheduleAfter(RESCHEDULE_MS);
+        return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    connection_task->scheduleAfter(RESCHEDULE_MS);
 }
 
 
@@ -349,46 +359,70 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
 
 void StorageRabbitMQ::initRabbitMQ()
 {
-    if (shutdown_called || rabbit_is_ready)
+    if (shutdown_called || initialized)
         return;
 
     if (use_user_setup)
     {
         queues.emplace_back(queue_base);
-        rabbit_is_ready = true;
-        return;
     }
-
-    try
+    else
     {
-        auto rabbit_channel = connection->createChannel();
-
-        /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
-
-        initExchange(*rabbit_channel);
-        bindExchange(*rabbit_channel);
-
-        for (const auto i : collections::range(0, num_queues))
-            bindQueue(i + 1, *rabbit_channel);
-
-        if (queues.size() != num_queues)
+        try
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected all queues to be initialized (but having {}/{})",
-                queues.size(), num_queues);
-        }
+            auto rabbit_channel = connection->createChannel();
 
-        LOG_TRACE(log, "RabbitMQ setup completed");
-        rabbit_is_ready = true;
-        rabbit_channel->close();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        if (!is_attach)
+            /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
+
+            initExchange(*rabbit_channel);
+            bindExchange(*rabbit_channel);
+
+            for (const auto i : collections::range(0, num_queues))
+                bindQueue(i + 1, *rabbit_channel);
+
+            if (queues.size() != num_queues)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected all queues to be initialized (but having {}/{})",
+                    queues.size(), num_queues);
+            }
+
+            LOG_TRACE(log, "RabbitMQ setup completed");
+            rabbit_channel->close();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (is_attach)
+                return; /// A user will have to reattach the table.
             throw;
+        }
     }
+
+    LOG_TRACE(log, "Registering {} conumers", num_consumers);
+
+    for (size_t i = 0; i < num_consumers; ++i)
+    {
+        try
+        {
+            auto consumer = createConsumer();
+            consumer->updateChannel(*connection);
+            consumers_ref.push_back(consumer);
+            pushConsumer(consumer);
+            ++num_created_consumers;
+        }
+        catch (...)
+        {
+            if (!is_attach)
+                throw;
+
+            tryLogCurrentException(log);
+        }
+    }
+
+    LOG_TRACE(log, "Registered {}/{} conumers", num_created_consumers, num_consumers);
+    initialized = true;
 }
 
 
@@ -655,7 +689,7 @@ void StorageRabbitMQ::read(
         size_t /* max_block_size */,
         size_t /* num_streams */)
 {
-    if (!rabbit_is_ready)
+    if (!initialized)
         throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "RabbitMQ setup not finished. Connection might be lost");
 
     if (num_created_consumers == 0)
@@ -684,8 +718,6 @@ void StorageRabbitMQ::read(
         if (!connection->reconnect())
             throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
     }
-
-    initializeBuffers();
 
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -752,35 +784,11 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
 
 void StorageRabbitMQ::startup()
 {
-    if (!rabbit_is_ready)
-    {
-        if (connection->isConnected())
-        {
-            try
-            {
-                initRabbitMQ();
-            }
-            catch (...)
-            {
-                if (!is_attach)
-                    throw;
-                tryLogCurrentException(log);
-            }
-        }
-        else
-        {
-            connection_task->activateAndSchedule();
-        }
-    }
-
-    for (size_t i = 0; i < num_consumers; ++i)
+    if (connection->isConnected())
     {
         try
         {
-            auto consumer = createConsumer();
-            consumers_ref.push_back(consumer);
-            pushConsumer(consumer);
-            ++num_created_consumers;
+            initRabbitMQ();
         }
         catch (...)
         {
@@ -789,8 +797,12 @@ void StorageRabbitMQ::startup()
             tryLogCurrentException(log);
         }
     }
+    else
+    {
+        connection_task->activateAndSchedule();
+    }
 
-    streaming_task->activateAndSchedule();
+    streaming_task->activate();
 }
 
 
@@ -955,21 +967,10 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 }
 
 
-void StorageRabbitMQ::initializeBuffers()
-{
-    assert(rabbit_is_ready);
-    if (!initialized)
-    {
-        for (const auto & consumer : consumers)
-            consumer->updateChannel(*connection);
-        initialized = true;
-    }
-}
-
-
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    if (rabbit_is_ready)
+    chassert(initialized);
+    if (initialized)
     {
         try
         {
@@ -981,7 +982,6 @@ void StorageRabbitMQ::streamingToViewsFunc()
 
             if (num_views && rabbit_connected)
             {
-                initializeBuffers();
                 auto start_time = std::chrono::steady_clock::now();
 
                 mv_attached.store(true);
@@ -1123,7 +1123,7 @@ bool StorageRabbitMQ::tryStreamToViews()
                 ++queue_empty;
 
             if (source->needChannelUpdate())
-                source->getBuffer()->updateChannel(*connection);
+                source->updateChannel(*connection);
 
             /* false is returned by the sendAck function in only two cases:
              * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
