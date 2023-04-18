@@ -2,7 +2,6 @@
 
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-#include <cctz/time_zone.h>
 #include <base/types.h>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
@@ -553,13 +552,16 @@ struct SettingFieldTimezone
     String value;
     bool changed = false;
 
-    explicit SettingFieldTimezone(std::string_view str = {}) { validateTimezone(std::string(str)); value = str; }
+    explicit SettingFieldTimezone(std::string_view str = {}) { validateTimezone(str); value = str; }
+//    explicit SettingFieldTimezone(std::string_view str = {}) { validateTimezone(std::string(str)); value = str; }
     explicit SettingFieldTimezone(const String & str) { validateTimezone(str); value = str; }
-    explicit SettingFieldTimezone(String && str) { validateTimezone(std::string(str)); value = std::move(str); }
+//    explicit SettingFieldTimezone(String && str) { validateTimezone(std::string(str)); value = std::move(str); }
+    explicit SettingFieldTimezone(String && str) { validateTimezone(str); value = std::move(str); }
     explicit SettingFieldTimezone(const char * str) { validateTimezone(str); value = str; }
     explicit SettingFieldTimezone(const Field & f) { const String & str = f.safeGet<const String &>(); validateTimezone(str); value = str; }
 
-    SettingFieldTimezone & operator =(std::string_view str) { validateTimezone(std::string(str)); value = str; changed = true; return *this; }
+//    SettingFieldTimezone & operator =(std::string_view str) { validateTimezone(std::string(str)); value = str; changed = true; return *this; }
+    SettingFieldTimezone & operator =(std::string_view str) { validateTimezone(str); value = str; changed = true; return *this; }
     SettingFieldTimezone & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldTimezone & operator =(String && str) { validateTimezone(str); value = std::move(str); changed = true; return *this; }
     SettingFieldTimezone & operator =(const char * str) { *this = std::string_view{str}; return *this; }
@@ -575,12 +577,13 @@ struct SettingFieldTimezone
     void readBinary(ReadBuffer & in);
 
 private:
-    cctz::time_zone validated_tz;
-    void validateTimezone(const std::string & tz_str)
-    {
-        if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
-    }
+    static void validateTimezone(std::string_view str);
+//    cctz::time_zone validated_tz;
+//    void validateTimezone(const std::string & tz_str)
+//    {
+//        if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+//            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
+//    }
 };
 
 /// Can keep a value of any type. Used for user-defined settings.

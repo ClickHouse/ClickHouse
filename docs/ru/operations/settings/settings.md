@@ -4075,9 +4075,9 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 
 Значение по умолчанию: `false`
 
-## timezone {#timezone}
+## session_timezone {#session_timezone}
 
-Задаёт значение часового пояса (timezone) по умолчанию для текущей сессии вместо часового пояса сервера. То есть, все значения DateTime/DateTime64, для которых явно не задан параметр timezone, будут интерпретированы как относящиеся к указанной зоне.
+Задаёт значение часового пояса (session_timezone) по умолчанию для текущей сессии вместо часового пояса сервера. То есть, все значения DateTime/DateTime64, для которых явно не задан параметр timezone, будут интерпретированы как относящиеся к указанной зоне.
 
 Примеры:
 ```clickhouse
@@ -4087,13 +4087,13 @@ Europe/Berlin	Europe/Berlin
 ```
 
 ```clickhouse
-SELECT timeZone(), serverTimezone() SETTINGS timezone = 'Asia/Novosibirsk' FORMAT TSV
+SELECT timeZone(), serverTimezone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT TSV
 
 Asia/Novosibirsk	Europe/Berlin
 ```
 
 ```clickhouse
-SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS timezone = 'America/Denver' FORMAT TSV
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
 
 1999-12-13 07:23:23.123
 ```

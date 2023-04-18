@@ -1680,7 +1680,6 @@ void Context::applySettingChange(const SettingChange & change)
 void Context::applySettingsChanges(const SettingsChanges & changes)
 {
     auto lock = getLock();
-
     for (const SettingChange & change : changes)
         applySettingChange(change);
     applySettingsQuirks(settings);
