@@ -185,12 +185,10 @@ def main():
         check_name,
     )
 
-    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
-
+    post_commit_status(commit, status, report_url, description, check_name, pr_info)
     print(f"::notice:: {check_name} Report url: {report_url}")
 
     ch_helper = ClickHouseHelper()
-
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
         test_results,
@@ -200,11 +198,7 @@ def main():
         report_url,
         check_name,
     )
-
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    print(f"::notice Result: '{status}', '{description}', '{report_url}'")
-    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)
 
 
 if __name__ == "__main__":

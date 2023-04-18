@@ -208,7 +208,7 @@ if __name__ == "__main__":
 
     # Until it pass all tests, do not block CI, report "success"
     assert description is not None
-    post_commit_status(gh, pr_info.sha, check_name, description, "success", report_url)
+    post_commit_status(commit, "success", report_url, description, check_name, pr_info)
 
     if status != "success":
         if FORCE_TESTS_LABEL in pr_info.labels:

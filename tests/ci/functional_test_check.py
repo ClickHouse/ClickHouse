@@ -287,7 +287,7 @@ def main():
             state = override_status("success", check_name, validate_bugfix_check)
             if args.post_commit_status == "commit_status":
                 post_commit_status(
-                    gh, pr_info.sha, check_name_with_group, NO_CHANGES_MSG, state, ""
+                    commit, state, "", NO_CHANGES_MSG, check_name_with_group, pr_info
                 )
             elif args.post_commit_status == "file":
                 post_commit_status_to_file(
@@ -374,16 +374,16 @@ def main():
     if args.post_commit_status == "commit_status":
         if "parallelreplicas" in check_name.lower():
             post_commit_status(
-                gh,
-                pr_info.sha,
-                check_name_with_group,
-                description,
+                commit,
                 "success",
                 report_url,
+                description,
+                check_name_with_group,
+                pr_info,
             )
         else:
             post_commit_status(
-                gh, pr_info.sha, check_name_with_group, description, state, report_url
+                commit, state, report_url, description, check_name_with_group, pr_info
             )
     elif args.post_commit_status == "file":
         if "parallelreplicas" in check_name.lower():
