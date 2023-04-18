@@ -571,6 +571,12 @@ try
                 CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
                 UInt64 compression_level = 3;
 
+                if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None) {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
+                }
+
                 if (query_with_output->compression_level)
                 {
                     const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
@@ -585,8 +591,14 @@ try
                             range.second);
                 }
 
+                auto flags = O_WRONLY | O_EXCL;
+                if (query_with_output->is_outfile_append)
+                    flags |= O_APPEND;
+                else
+                    flags |= O_CREAT;
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
                     static_cast<int>(compression_level)
                 );
