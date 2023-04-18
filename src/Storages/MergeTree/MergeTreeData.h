@@ -431,8 +431,6 @@ public:
 
     bool supportsLightweightDelete() const override;
 
-    void checkSuspiciousIndices(const ASTFunction & index_funtion) const;
-
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;

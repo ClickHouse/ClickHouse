@@ -176,6 +176,19 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
+static void checkSuspiciousIndices(const ASTFunction & index_function)
+{
+    NameSet index_key_set;
+    for (const auto & child : index_function.arguments->children)
+    {
+        const auto & tree_hash = child->getTreeHash();
+        const String key = toString(tree_hash.first);
+
+        if (!index_key_set.emplace(key).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Primary key or secondary indices contains duplicate expressios");
+    }
+}
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
@@ -999,21 +1012,6 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     }
     return res;
 }
-
-void MergeTreeData::checkSuspiciousIndices(const ASTFunction & index_function) const
-{
-    NameSet index_key_set;
-    for (const auto & child : index_function.arguments->children)
-    {
-        const auto & tree_hash = child->getTreeHash();
-        const String key = toString(tree_hash.first);
-
-        if (!index_key_set.emplace(key).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Primary key or secondary indices contains duplicate expressios");
-    }
-}
-
 
 String MergeTreeData::MergingParams::getModeName() const
 {
