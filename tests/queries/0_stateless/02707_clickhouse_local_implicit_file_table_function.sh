@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 dir=${CLICKHOUSE_TEST_UNIQUE_NAME}
 [[ -d $dir ]] && rm -rd $dir
 mkdir $dir
+
 # Create temporary csv file for tests
 echo '"id","str","int","text"' > $dir/tmp.csv
 echo '1,"abc",123,"abacaba"' >> $dir/tmp.csv
@@ -40,4 +41,5 @@ SHOW DATABASES;
 DROP DATABASE test02707;
 """ | grep "test02707"
 
+# Remove temporary dir with files
 rm -rd $dir
