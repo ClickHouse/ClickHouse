@@ -127,6 +127,15 @@ namespace
 
             if (args_size == 3)
             {
+                if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                    || (isString(type_x) != isString(type_arr_to_nested)))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} has signature: "
+                        "transform(T, Array(T), Array(U), U) -> U; "
+                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
+                        getName());
+
                 auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, type_x});
                 if (!ret)
                     throw Exception(
