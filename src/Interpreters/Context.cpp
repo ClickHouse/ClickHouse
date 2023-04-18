@@ -3017,7 +3017,8 @@ std::map<String, ClusterPtr> Context::getClusters() const
 
     if (shared->cluster_discovery)
     {
-        for (const auto & [name, cluster] : shared->cluster_discovery->getClusters())
+        const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
+        for (const auto & [name, cluster] : cluster_discovery_map)
             clusters.emplace(name, cluster);
     }
     return clusters;
