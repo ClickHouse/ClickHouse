@@ -13,6 +13,7 @@
             "max_repetition_level": "0",
             "physical_type": "INT32",
             "logical_type": "Int(bitWidth=16, isSigned=false)",
+            "is_nullable": false,
             "compression": "LZ4",
             "encodings": [
                 "RLE_DICTIONARY",
@@ -27,6 +28,7 @@
             "max_repetition_level": "0",
             "physical_type": "BYTE_ARRAY",
             "logical_type": "None",
+            "is_nullable": false,
             "compression": "LZ4",
             "encodings": [
                 "RLE_DICTIONARY",
@@ -41,6 +43,7 @@
             "max_repetition_level": "0",
             "physical_type": "INT32",
             "logical_type": "Int(bitWidth=8, isSigned=false)",
+            "is_nullable": true,
             "compression": "LZ4",
             "encodings": [
                 "RLE_DICTIONARY",
@@ -152,3 +155,58 @@
         }
     ]
 }
+{
+    "num_columns": "3",
+    "format_version": "2.6"
+}
+{
+    "columns": [
+        {
+            "name": "number",
+            "path": "number",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "INT32",
+            "logical_type": "Int(bitWidth=16, isSigned=false)",
+            "is_nullable": false,
+            "compression": "LZ4",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        },
+        {
+            "name": "str",
+            "path": "str",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "BYTE_ARRAY",
+            "logical_type": "None",
+            "is_nullable": false,
+            "compression": "LZ4",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        },
+        {
+            "name": "mod",
+            "path": "mod",
+            "max_definition_level": "1",
+            "max_repetition_level": "0",
+            "physical_type": "INT32",
+            "logical_type": "Int(bitWidth=8, isSigned=false)",
+            "is_nullable": true,
+            "compression": "LZ4",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        }
+    ]
+}
+1
+1
