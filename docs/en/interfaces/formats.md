@@ -918,7 +918,7 @@ Example:
 
 ## PrettyJSONEachRow {#prettyjsoneachrow}
 
-Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable onlt for output.
+Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable only for output.
 
 Example
 
