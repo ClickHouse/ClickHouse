@@ -351,7 +351,7 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
         auto & nullable_distinct_count = assert_cast<ColumnNullable &>(statistics_column.getColumn(2));
         size_t distinct_count = statistics->distinct_count();
         /// It can be set but still be 0 because of a bug: https://github.com/apache/arrow/issues/27644
-        /// If we see distinct_count = 0 with non 0 values in chunk, set it to NULL.
+        /// If we see distinct_count = 0 with non 0 values in chunk, set it to NULL
         if (distinct_count == 0 && statistics->num_values() != 0)
         {
             nullable_distinct_count.insertDefault();
