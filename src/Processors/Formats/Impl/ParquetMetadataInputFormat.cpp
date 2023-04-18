@@ -106,7 +106,7 @@ void checkHeader(const Block & header)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected column: {}. ParquetMetadata format allows only the next columns: num_columns, num_rows, num_row_groups, "
-                "format_version, columns, row_groups", name);
+                "format_version, total_byte_size, total_compressed_size, columns, row_groups", name);
 
         if (!it->second->equals(*type))
             throw Exception(
