@@ -13,11 +13,17 @@ set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     library-bridge.cpp
 )
 
+set(CLICKHOUSE_LIBRARY_BRIDGE_EXTERNAL_SOURCES
+    ${CMAKE_CURRENT_BINARY_DIR}/../../src/Storages/System/StorageSystemTimeZones.generated.cpp
+)
+
 if (OS_LINUX)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
 endif ()
 
-clickhouse_add_executable(clickhouse-library-bridge ${CLICKHOUSE_LIBRARY_BRIDGE_SOURCES})
+clickhouse_add_executable(clickhouse-library-bridge
+                          ${CLICKHOUSE_LIBRARY_BRIDGE_SOURCES}
+                          ${CLICKHOUSE_LIBRARY_BRIDGE_EXTERNAL_SOURCES})
 
 target_link_libraries(clickhouse-library-bridge PRIVATE
     daemon
