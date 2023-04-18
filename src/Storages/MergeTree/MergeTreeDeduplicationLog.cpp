@@ -160,7 +160,10 @@ void MergeTreeDeduplicationLog::rotate()
     existing_logs.emplace(current_log_number, log_description);
 
     if (current_writer)
+    {
+        current_writer->finalize();
         current_writer->sync();
+    }
 
     current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 }

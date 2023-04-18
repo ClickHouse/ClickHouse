@@ -544,6 +544,7 @@ try
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
+        buf->finalize();
         buf->sync();
     }
     return true;
