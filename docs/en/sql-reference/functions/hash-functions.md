@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/hash-functions
-sidebar_position: 50
+sidebar_position: 85
 sidebar_label: Hash
 ---
 

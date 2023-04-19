@@ -1,7 +1,10 @@
 ---
 slug: /en/sql-reference/functions/distance-functions
+sidebar_position: 55
+sidebar_label: Distance
 ---
-# Distance functions
+
+# Distance Functions
 
 ## L1Norm
 

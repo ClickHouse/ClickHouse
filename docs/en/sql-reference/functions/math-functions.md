@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/math-functions
-sidebar_position: 44
+sidebar_position: 125
 sidebar_label: Mathematical
 ---
 

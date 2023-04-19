@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/logical-functions
-sidebar_position: 37
+sidebar_position: 110
 sidebar_label: Logical
 ---
 
