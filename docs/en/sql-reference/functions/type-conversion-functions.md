@@ -8,9 +8,7 @@ sidebar_label: Type Conversion
 
 ## Common Issues with Data Conversion
 
-ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion). In particular,
-- the result of addition or multiplication of two integers is unsigned unless one of the integers is signed,
-- the result of addition or multiplication of two integers is of the next bigger integer type such that every possible result can be represented (e.g. `UInt8 + UInt16 = UInt32`). Size promotion only happens for integers up to 32 bit. If one of the integers has 64 or more bits, the result of addition or multiplication is of the same type as the bigger of the input integers (e.g. `UInt16 + UInt128 = UInt128`) - while this introduces a risk of overflows around the value range boundary it ensures that calculations are performed quickly using the maximum native integer width of 64 bit.
+ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
 `to<type>` functions and [cast](#castx-t) behave differently in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
 
