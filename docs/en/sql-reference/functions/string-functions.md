@@ -26,11 +26,11 @@ The function also works for [arrays](array-functions.md#function-empty) or [UUID
 
 **Arguments**
 
--   `x` — Input value. [String](../data-types/string.md).
+- `x` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
--   Returns `1` for an empty string or `0` for a non-empty string.
+- Returns `1` for an empty string or `0` for a non-empty string.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -66,11 +66,11 @@ The function also works for [arrays](array-functions.md#function-notempty) or [U
 
 **Arguments**
 
--   `x` — Input value. [String](../data-types/string.md).
+- `x` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
--   Returns `1` for a non-empty string or `0` for an empty string string.
+- Returns `1` for a non-empty string or `0` for an empty string string.
 
 Type: [UInt8](../data-types/int-uint.md).
 
@@ -123,13 +123,13 @@ leftPad('string', 'length'[, 'pad_string'])
 
 **Arguments**
 
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that needs to be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--   The resulting string of the given length.
+- The resulting string of the given length.
 
 Type: [String](../data-types/string.md).
 
@@ -161,13 +161,13 @@ leftPadUTF8('string','length'[, 'pad_string'])
 
 **Arguments**
 
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that needs to be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--   The resulting string of the given length.
+- The resulting string of the given length.
 
 Type: [String](../data-types/string.md).
 
@@ -199,13 +199,13 @@ rightPad('string', 'length'[, 'pad_string'])
 
 **Arguments**
 
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that needs to be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--   The resulting string of the given length.
+- The resulting string of the given length.
 
 Type: [String](../data-types/string.md).
 
@@ -237,13 +237,13 @@ rightPadUTF8('string','length'[, 'pad_string'])
 
 **Arguments**
 
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
+- `string` — Input string that needs to be padded. [String](../data-types/string.md).
+- `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+- `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
 
--   The resulting string of the given length.
+- The resulting string of the given length.
 
 Type: [String](../data-types/string.md).
 
@@ -299,7 +299,7 @@ toValidUTF8(input_string)
 
 **Arguments**
 
--   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+- `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
@@ -329,8 +329,8 @@ repeat(s, n)
 
 **Arguments**
 
--   `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
--   `n` — The number of times to repeat the string. [UInt or Int](../../sql-reference/data-types/int-uint.md).
+- `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
+- `n` — The number of times to repeat the string. [UInt or Int](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -511,7 +511,7 @@ base58Encode(plaintext)
 
 **Returned value**
 
--   A string containing encoded value of 1st argument.
+- A string containing encoded value of 1st argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -546,7 +546,7 @@ base58Decode(encoded_text)
 
 **Returned value**
 
--   A string containing decoded value of 1st argument.
+- A string containing decoded value of 1st argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -599,8 +599,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 
 **Returned values**
 
--   1, if the string starts with the specified prefix.
--   0, if the string does not start with the specified prefix.
+- 1, if the string starts with the specified prefix.
+- 0, if the string does not start with the specified prefix.
 
 **Example**
 
@@ -631,8 +631,8 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
--   `trim_character` — Specified characters for trim. [String](../../sql-reference/data-types/string.md).
--   `input_string` — String for trim. [String](../../sql-reference/data-types/string.md).
+- `trim_character` — Specified characters for trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — String for trim. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -670,7 +670,7 @@ Alias: `ltrim(input_string)`.
 
 **Arguments**
 
--   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -708,7 +708,7 @@ Alias: `rtrim(input_string)`.
 
 **Arguments**
 
--   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -746,7 +746,7 @@ Alias: `trim(input_string)`.
 
 **Arguments**
 
--   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
+- `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -800,11 +800,11 @@ normalizeQuery(x)
 
 **Arguments**
 
--   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Sequence of characters with placeholders.
+- Sequence of characters with placeholders.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -836,11 +836,11 @@ normalizedQueryHash(x)
 
 **Arguments**
 
--   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Hash value.
+- Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
@@ -872,11 +872,11 @@ normalizeUTF8NFC(words)
 
 **Arguments**
 
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+- `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   String transformed to NFC normalization form.
+- String transformed to NFC normalization form.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -908,11 +908,11 @@ normalizeUTF8NFD(words)
 
 **Arguments**
 
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+- `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   String transformed to NFD normalization form.
+- String transformed to NFD normalization form.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -944,11 +944,11 @@ normalizeUTF8NFKC(words)
 
 **Arguments**
 
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+- `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   String transformed to NFKC normalization form.
+- String transformed to NFKC normalization form.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -980,11 +980,11 @@ normalizeUTF8NFKD(words)
 
 **Arguments**
 
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+- `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   String transformed to NFKD normalization form.
+- String transformed to NFKD normalization form.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -1018,11 +1018,11 @@ encodeXMLComponent(x)
 
 **Arguments**
 
--   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   The sequence of characters with escape characters.
+- The sequence of characters with escape characters.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -1059,11 +1059,11 @@ decodeXMLComponent(x)
 
 **Arguments**
 
--   `x` — A sequence of characters. [String](../../sql-reference/data-types/string.md).
+- `x` — A sequence of characters. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   The sequence of characters after replacement.
+- The sequence of characters after replacement.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -1085,7 +1085,7 @@ Result:
 
 **See Also**
 
--   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
+- [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
 
 
 
@@ -1121,11 +1121,11 @@ extractTextFromHTML(x)
 
 **Arguments**
 
--   `x` — input text. [String](../../sql-reference/data-types/string.md).
+- `x` — input text. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Extracted text.
+- Extracted text.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -1170,11 +1170,11 @@ concatWithSeparator(sep, expr1, expr2, expr3...)
 ```
 
 **Arguments**
--   sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
--   exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 **Returned values**
--   The concatenated String.
+- The concatenated String.
 
 **Example**
 

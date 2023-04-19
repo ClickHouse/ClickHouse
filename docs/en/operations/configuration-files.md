@@ -14,10 +14,10 @@ All XML files should have the same root element, usually `<clickhouse>`. As for 
 
 Some settings specified in the main configuration file can be overridden in other configuration files:
 
--   The `replace` or `remove` attributes can be specified for the elements of these configuration files.
--   If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
--   If `replace` is specified, it replaces the entire element with the specified one.
--   If `remove` is specified, it deletes the element.
+- The `replace` or `remove` attributes can be specified for the elements of these configuration files.
+- If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
+- If `replace` is specified, it replaces the entire element with the specified one.
+- If `remove` is specified, it deletes the element.
 
 You can also declare attributes as coming from environment variables by using `from_env="VARIABLE_NAME"`:
 

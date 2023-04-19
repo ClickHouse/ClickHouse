@@ -96,7 +96,7 @@ Result:
 
 **See also**
 
--   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+- [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST
 
@@ -195,8 +195,8 @@ Result:
 
 **See also**
 
--   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
+- [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
+- [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW COLUMNS
 
@@ -244,7 +244,7 @@ Result:
 
 **See also**
 
--    [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
+-  [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
 
 ## SHOW DICTIONARIES
 
@@ -560,7 +560,7 @@ Result:
 
 **See Also**
 
--   [system.settings](../../operations/system-tables/settings.md) table
+- [system.settings](../../operations/system-tables/settings.md) table
 
 ## SHOW ENGINES
 
@@ -572,4 +572,4 @@ Outputs the content of the [system.table_engines](../../operations/system-tables
 
 **See Also**
 
--   [system.table_engines](../../operations/system-tables/table_engines.md) table
+- [system.table_engines](../../operations/system-tables/table_engines.md) table
