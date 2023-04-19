@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include "Common/logger_useful.h"
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -47,14 +48,34 @@ getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std:
     return original_distinct_columns;
 }
 
-size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
+size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, bool parallel)
 {
-    /// check if it is preliminary distinct node
+    if (parent_node->children.size() != 1)
+        return 0;
+
+    QueryPlan::Node * distinct_node_parent = parent_node;
+    QueryPlan::Node * distinct_node = parent_node->children.front();
+    DistinctStep * distinct = typeid_cast<DistinctStep *>(distinct_node->step.get());
+    if (!distinct)
+        return 0;
+
+    if (distinct->isPreliminary())
+        return 0;
+
+    /// find preliminary distinct
+    QueryPlan::Node * pre_distinct_node = nullptr;
     DistinctStep * pre_distinct = nullptr;
-    if (auto * distinct = typeid_cast<DistinctStep *>(parent_node->step.get()); distinct)
+    QueryPlan::Node * node = distinct_node;
+    while (!node->children.empty())
     {
-        if (distinct->isPreliminary())
-            pre_distinct = distinct;
+        pre_distinct = typeid_cast<DistinctStep *>(node->step.get());
+        if (pre_distinct && pre_distinct->isPreliminary())
+        {
+            pre_distinct_node = node;
+            break;
+        }
+
+        node = node->children.front();
     }
     if (!pre_distinct)
         return 0;
@@ -64,7 +85,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// (2) gather transforming steps to update their sorting properties later
     /// (3) gather actions DAG to find original names for columns in distinct step later
     std::vector<ITransformingStep *> steps_to_update;
-    QueryPlan::Node * node = parent_node;
+    node = pre_distinct_node;
     std::vector<ActionsDAGPtr> dag_stack;
     while (!node->children.empty())
     {
@@ -98,7 +119,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
         return 0;
 
     /// get original names for DISTINCT columns
-    const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputStream().header.getColumnsWithTypeAndName();
     auto original_distinct_columns = getOriginalDistinctColumns(distinct_columns, dag_stack);
 
     /// check if DISTINCT has the same columns as sorting key
@@ -127,11 +148,26 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (output_data_stream.sort_scope != DataStream::SortScope::Chunk && number_of_sorted_distinct_columns <= output_sort_desc.size())
         return 0;
 
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Handle PRELIMITARY DISTINCT");
     /// update input order info in read_from_merge_tree step
-    const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
-    bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
-    if (!can_read)
-        return 0;
+    if (parallel)
+    {
+        if (!read_from_merge_tree->requestReadingInOrderNoIntersection(distinct->getLimitHint()))
+            return 0;
+
+        /// delete final distinct
+        distinct_node_parent->children.clear();
+        distinct_node_parent->children.push_back(distinct_node->children.front());
+        return 1;
+    }
+    else
+    {
+        const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
+        bool can_read
+            = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, distinct->getLimitHint());
+        if (!can_read)
+            return 0;
+    }
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();

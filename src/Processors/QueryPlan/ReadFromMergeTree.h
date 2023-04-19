@@ -156,6 +156,8 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    bool requestReadingInOrderNoIntersection(size_t limit);
+    bool getReadingInOrderNoIntersection() const { return read_in_order_no_intersection; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
@@ -256,7 +258,7 @@ private:
         const InputOrderInfoPtr & input_order_info);
 
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection);
+        RangesInDataParts && parts, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection, bool add_merging_final=true);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
@@ -264,6 +266,8 @@ private:
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
+
+    bool read_in_order_no_intersection = false;
 };
 
 struct MergeTreeDataSelectAnalysisResult

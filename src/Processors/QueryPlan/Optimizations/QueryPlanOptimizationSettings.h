@@ -23,6 +23,7 @@ struct QueryPlanOptimizationSettings
 
     /// if distinct in order optimization is enabled
     bool distinct_in_order = false;
+    bool distinct_in_order_parallel = false;
 
     /// If read-in-order optimisation is enabled
     bool read_in_order = true;

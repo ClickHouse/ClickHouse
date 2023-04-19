@@ -56,7 +56,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 /// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
-size_t tryDistinctReadInOrder(QueryPlan::Node * node);
+size_t tryDistinctReadInOrder(QueryPlan::Node * node, bool parallel);
 
 /// Remove redundant sorting
 void tryRemoveRedundantSorting(QueryPlan::Node * root);

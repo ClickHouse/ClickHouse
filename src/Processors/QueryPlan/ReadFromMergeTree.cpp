@@ -933,7 +933,7 @@ static void addMergingFinal(
 
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection, bool add_merging_final)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
@@ -950,11 +950,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     /// then we will create a pipe for each partition that will run selecting processor and merging processor
     /// for the parts with this partition. In the end we will unite all the pipes.
     std::vector<RangesInDataParts::iterator> parts_to_merge_ranges;
-    auto it = parts_with_ranges.begin();
-    parts_to_merge_ranges.push_back(it);
+    parts_to_merge_ranges.push_back(parts_with_ranges.begin());
 
     if (settings.do_not_merge_across_partitions_select_final)
     {
+        auto it = parts_with_ranges.begin();
         while (it != parts_with_ranges.end())
         {
             it = std::find_if(
@@ -996,12 +996,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 lonely_parts.push_back(std::move(*parts_to_merge_ranges[range_index]));
                 continue;
             }
-            else
+
+            for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
-                for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
-                {
-                    new_parts.emplace_back(part_it->data_part, part_it->part_index_in_query, part_it->ranges);
-                }
+                new_parts.emplace_back(part_it->data_part, part_it->part_index_in_query, part_it->ranges);
             }
 
             if (new_parts.empty())
@@ -1051,26 +1049,24 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             continue;
         }
 
-        Names sort_columns = metadata_for_reading->getSortingKeyColumns();
-        SortDescription sort_description;
-        sort_description.compile_sort_description = settings.compile_sort_description;
-        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+        if (add_merging_final)
+        {
+            Names sort_columns = metadata_for_reading->getSortingKeyColumns();
+            SortDescription sort_description;
+            sort_description.compile_sort_description = settings.compile_sort_description;
+            sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
 
-        size_t sort_columns_size = sort_columns.size();
-        sort_description.reserve(sort_columns_size);
+            size_t sort_columns_size = sort_columns.size();
+            sort_description.reserve(sort_columns_size);
 
-        Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
+            Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
-        for (size_t i = 0; i < sort_columns_size; ++i)
-            sort_description.emplace_back(sort_columns[i], 1, 1);
+            for (size_t i = 0; i < sort_columns_size; ++i)
+                sort_description.emplace_back(sort_columns[i], 1, 1);
 
-        for (auto & pipe : pipes)
-            addMergingFinal(
-                pipe,
-                sort_description,
-                data.merging_params,
-                partition_key_columns,
-                max_block_size);
+            for (auto & pipe : pipes)
+                addMergingFinal(pipe, sort_description, data.merging_params, partition_key_columns, max_block_size);
+        }
 
         partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -1369,6 +1365,12 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
+bool ReadFromMergeTree::requestReadingInOrderNoIntersection(size_t)
+{
+    read_in_order_no_intersection = true;
+    return true;
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
 {
     /// if dirction is not set, use current one
@@ -1560,6 +1562,10 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection);
+    }
+    else if (read_in_order_no_intersection)
+    {
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, false);
     }
     else if (input_order_info)
     {
