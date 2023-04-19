@@ -256,11 +256,11 @@ where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as 
 `column_i` is a name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped),
 `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
 
--   `CSV`, `JSON`, `XML` (similar to the formats of the same names)
--   `Escaped` (similar to `TSV`)
--   `Quoted` (similar to `Values`)
--   `Raw` (without escaping, similar to `TSVRaw`)
--   `None` (no escaping rule, see further)
+- `CSV`, `JSON`, `XML` (similar to the formats of the same names)
+- `Escaped` (similar to `TSV`)
+- `Quoted` (similar to `Values`)
+- `Raw` (without escaping, similar to `TSVRaw`)
+- `None` (no escaping rule, see further)
 
 If an escaping rule is omitted, then `None` will be used. `XML` is suitable only for output.
 
@@ -276,15 +276,15 @@ The `format_template_rows_between_delimiter` setting specifies the delimiter bet
 
 Setting `format_template_resultset` specifies the path to the file, which contains a format string for resultset. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
--   `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
--   `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
--   `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
--   `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
--   `rows` is the total number of output rows
--   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
--   `time` is the request execution time in seconds
--   `rows_read` is the number of rows has been read
--   `bytes_read` is the number of bytes (uncompressed) has been read
+- `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+- `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
+- `min` is the row with minimum values in `format_template_row` format (when extremes are set to 1)
+- `max` is the row with maximum values in `format_template_row` format (when extremes are set to 1)
+- `rows` is the total number of output rows
+- `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
+- `time` is the request execution time in seconds
+- `rows_read` is the number of rows has been read
+- `bytes_read` is the number of bytes (uncompressed) has been read
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
 If the `format_template_resultset` setting is an empty string, `${data}` is used as the default value.
@@ -620,8 +620,8 @@ ClickHouse supports [NULL](/docs/en/sql-reference/syntax.md), which is displayed
 
 **See Also**
 
--   [JSONEachRow](#jsoneachrow) format
--   [output_format_json_array_of_rows](/docs/en/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting
+- [JSONEachRow](#jsoneachrow) format
+- [output_format_json_array_of_rows](/docs/en/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting
 
 For JSON input format, if setting [input_format_json_validate_types_from_metadata](/docs/en/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to 1,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
@@ -1131,8 +1131,8 @@ INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021
 
 ClickHouse allows:
 
--   Any order of key-value pairs in the object.
--   Omitting some values.
+- Any order of key-value pairs in the object.
+- Omitting some values.
 
 ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You do not have to separate them with line breaks.
 
@@ -1152,8 +1152,8 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
--   If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
--   If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
+- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 :::note
 When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
@@ -1482,8 +1482,8 @@ For [NULL](/docs/en/sql-reference/syntax.md/#null-literal) support, an additiona
 
 Similar to [RowBinary](#rowbinary), but with added header:
 
--   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
--   N `String`s specifying column names
+- [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+- N `String`s specifying column names
 
 :::note
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
@@ -1495,9 +1495,9 @@ Otherwise, the first row will be skipped.
 
 Similar to [RowBinary](#rowbinary), but with added header:
 
--   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
--   N `String`s specifying column names
--   N `String`s specifying column types
+- [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+- N `String`s specifying column names
+- N `String`s specifying column types
 
 :::note
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
@@ -1907,8 +1907,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 Column names must:
 
--   start with `[A-Za-z_]`
--   subsequently contain only `[A-Za-z0-9_]`
+- start with `[A-Za-z_]`
+- subsequently contain only `[A-Za-z0-9_]`
 
 Output Avro file compression and sync interval can be configured with [output_format_avro_codec](/docs/en/operations/settings/settings-formats.md/#output_format_avro_codec) and [output_format_avro_sync_interval](/docs/en/operations/settings/settings-formats.md/#output_format_avro_sync_interval) respectively.
 
@@ -2206,17 +2206,17 @@ Each line of imported data is parsed according to the regular expression.
 
 When working with the `Regexp` format, you can use the following settings:
 
--   `format_regexp` — [String](/docs/en/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+- `format_regexp` — [String](/docs/en/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
 
--   `format_regexp_escaping_rule` — [String](/docs/en/sql-reference/data-types/string.md). The following escaping rules are supported:
+- `format_regexp_escaping_rule` — [String](/docs/en/sql-reference/data-types/string.md). The following escaping rules are supported:
 
-    -   CSV (similarly to [CSV](#csv))
-    -   JSON (similarly to [JSONEachRow](#jsoneachrow))
-    -   Escaped (similarly to [TSV](#tabseparated))
-    -   Quoted (similarly to [Values](#data-format-values))
-    -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
+    - CSV (similarly to [CSV](#csv))
+    - JSON (similarly to [JSONEachRow](#jsoneachrow))
+    - Escaped (similarly to [TSV](#tabseparated))
+    - Quoted (similarly to [Values](#data-format-values))
+    - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
 
--   `format_regexp_skip_unmatched` — [UInt8](/docs/en/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+- `format_regexp_skip_unmatched` — [UInt8](/docs/en/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
 

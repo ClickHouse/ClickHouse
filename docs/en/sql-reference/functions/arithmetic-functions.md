@@ -145,12 +145,12 @@ max2(value1, value2)
 
 **Arguments**
 
--   `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
--   `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+- `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+- `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
--   The maximum of two values.
+- The maximum of two values.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -182,12 +182,12 @@ min2(value1, value2)
 
 **Arguments**
 
--   `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
--   `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+- `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+- `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
--   The minimum of two values.
+- The minimum of two values.
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
@@ -225,13 +225,13 @@ multiplyDecimal(a, b[, result_scale])
 
 **Arguments**
 
--   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+- `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
+- `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
+- `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   The result of multiplication with given scale.
+- The result of multiplication with given scale.
 
 Type: [Decimal256](../../sql-reference/data-types/decimal.md).
 
@@ -297,13 +297,13 @@ divideDecimal(a, b[, result_scale])
 
 **Arguments**
 
--   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
+- `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
+- `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
+- `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   The result of division with given scale.
+- The result of division with given scale.
 
 Type: [Decimal256](../../sql-reference/data-types/decimal.md).
 
