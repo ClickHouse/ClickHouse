@@ -274,7 +274,15 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             = short_circuit_function_evaluation_for_nulls && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-        auto temporary_result_type = removeNullable(result_type);
+
+        DataTypePtr temporary_result_type;
+        if (resolver)
+        {
+            auto temporary_function_base = resolver->build(temporary_columns);
+            temporary_result_type = temporary_function_base->getResultType();
+        }
+        else
+            temporary_result_type = removeNullable(result_type);
 
         if (!should_short_circuit)
         {
