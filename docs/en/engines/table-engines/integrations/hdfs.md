@@ -17,7 +17,7 @@ ENGINE = HDFS(URI, format)
 **Engine Parameters**
 
 - `URI` - whole file URI in HDFS. The path part of `URI` may contain globs. In this case the table would be readonly.
--  `format` - specifies one of the available file formats. To perform
+- `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
@@ -83,12 +83,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
-    -  'hdfs://hdfs1:9000/some_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/some_dir/some_file_3'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_1'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_2'
-    -  'hdfs://hdfs1:9000/another_dir/some_file_3'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_1'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_2'
+    - 'hdfs://hdfs1:9000/some_dir/some_file_3'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_1'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_2'
+    - 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -145,7 +145,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 
 | **parameter**                                         | **default value**       |
-| -                                                   | -                     |
+| -                                                  | -                    |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
 | dfs\_client\_read\_shortcircuit                       | true                    |
 | output\_replace-datanode-on-failure                   | true                    |
@@ -195,7 +195,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 #### ClickHouse extras {#clickhouse-extras}
 
 | **parameter**                                         | **default value**       |
-| -                                                   | -                     |
+| -                                                  | -                    |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
 |libhdfs3\_conf                                         | ""                      |

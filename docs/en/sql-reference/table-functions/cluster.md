@@ -25,7 +25,7 @@ clusterAllReplicas('cluster_name', db, table[, sharding_key])
 
 - `cluster_name` – Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers. 
 - `db.table` or `db`, `table` - Name of a database and a table.  
-- `sharding_key` -  A sharding key. Optional. Needs to be specified if the cluster has more than one shard. 
+- `sharding_key` - A sharding key. Optional. Needs to be specified if the cluster has more than one shard. 
 
 **Returned value**
 

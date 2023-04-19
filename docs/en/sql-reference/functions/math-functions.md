@@ -431,8 +431,8 @@ sign(x)
 **Returned value**
 
 - -1 for `x < 0`
--  0 for `x = 0`
--  1 for `x > 0`
+- 0 for `x = 0`
+- 1 for `x > 0`
 
 **Examples**
 

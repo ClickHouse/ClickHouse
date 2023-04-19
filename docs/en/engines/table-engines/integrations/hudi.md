@@ -49,4 +49,4 @@ CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 
 ## See also
 
--  [hudi table function](/docs/en/sql-reference/table-functions/hudi.md)
+- [hudi table function](/docs/en/sql-reference/table-functions/hudi.md)

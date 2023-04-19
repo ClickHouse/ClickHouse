@@ -45,11 +45,11 @@ Union
 
 ## EXPLAIN Types
 
--  `AST` — Abstract syntax tree.
--  `SYNTAX` — Query text after AST-level optimizations.
--  `QUERY TREE` — Query tree after Query Tree level optimizations.
--  `PLAN` — Query execution plan.
--  `PIPELINE` — Query execution pipeline.
+- `AST` — Abstract syntax tree.
+- `SYNTAX` — Query text after AST-level optimizations.
+- `QUERY TREE` — Query tree after Query Tree level optimizations.
+- `PLAN` — Query execution plan.
+- `PIPELINE` — Query execution pipeline.
 
 ### EXPLAIN AST
 

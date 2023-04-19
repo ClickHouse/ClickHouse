@@ -49,4 +49,4 @@ CREATE TABLE iceberg_table ENGINE=Iceberg(iceberg_conf, filename = 'test_table')
 
 ## See also
 
--  [iceberg table function](/docs/en/sql-reference/table-functions/iceberg.md)
+- [iceberg table function](/docs/en/sql-reference/table-functions/iceberg.md)
