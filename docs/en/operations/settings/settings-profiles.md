@@ -77,3 +77,53 @@ The example specifies two profiles: `default` and `web`.
 The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings.
 
 The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
+
+## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
+
+Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
+
+Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
+
+Modifying the setting for one query or user does not affect other queries.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+```xml title=/etc/clickhouse-server/users.d/users.xml
+<clickhouse>
+    <profiles>
+        <default>
+          <max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+          ...
+```
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+The maximum number of simultaneously processed queries related to MergeTree table per user.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+```xml title=/etc/clickhouse-server/users.d/users.xml
+<clickhouse>
+    <profiles>
+        <climited-users>
+          <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
+          ...
+```
+
+**See Also**
+
+-   [max_concurrent_queries](#max-concurrent-queries)

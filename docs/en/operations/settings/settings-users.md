@@ -131,7 +131,7 @@ To open access only from localhost, specify:
 
 ### user_name/profile {#user-nameprofile}
 
-You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information, see [Profiles of Settings](../../operations/settings/settings-profiles.md).
+You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information, see [setting profiles](../../operations/settings/settings-profiles.md).
 
 ### user_name/quota {#user-namequota}
 

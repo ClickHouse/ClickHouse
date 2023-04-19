@@ -847,48 +847,6 @@ Default value: `0`.
 <max_concurrent_select_queries>100</max_concurrent_select_queries>
 ```
 
-## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
-
-The maximum number of simultaneously processed queries related to MergeTree table per user.
-
-Possible values:
-
--   Positive integer.
--   0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
-```
-
-## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
-
-Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
-
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
-
-Modifying the setting for one query or user does not affect other queries.
-
-Possible values:
-
--   Positive integer.
--   0 — No limit.
-
-Default value: `0`.
-
-**Example**
-
-``` xml
-<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
-```
-
-**See Also**
-
--   [max_concurrent_queries](#max-concurrent-queries)
-
 ## max_connections {#max-connections}
 
 The maximum number of inbound connections.
