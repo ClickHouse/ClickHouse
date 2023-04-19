@@ -192,7 +192,7 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
@@ -456,32 +456,34 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            |
-| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            |
-| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            |
-| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            |
-| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            |
-| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            |
-| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
-| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
-| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            |
-| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            |
-| hasTokenCaseInsensitive                                                                                    | ✗           | ✗      | ✗          | ✔          | ✗            |
-| hasTokenCaseInsensitiveOrNull                                                                              | ✗           | ✗      | ✗          | ✔          | ✗            |
+| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | inverted |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|----------|
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔        |
+| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            | ✔        |
+| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            | ✔        |
+| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔        |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
+| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
+| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
+| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
+| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
+| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
+| hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗        |
+| hasTokenCaseInsensitiveOrNull (*)                                                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗        |
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
+
+(*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 :::note
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
@@ -872,7 +874,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`.
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
-The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/settings/settings.md/#background_move_pool_size) setting.
+The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
 
 ### Details {#details}
 
@@ -1092,7 +1094,7 @@ Other parameters:
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
 
-  :::warning Zero-copy replication is not ready for production
+  :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
   :::
 

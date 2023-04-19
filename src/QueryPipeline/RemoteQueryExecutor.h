@@ -263,7 +263,6 @@ private:
     bool got_duplicated_part_uuids = false;
 
     /// Parts uuids, collected from remote replicas
-    std::mutex duplicated_part_uuids_mutex;
     std::vector<UUID> duplicated_part_uuids;
 
     PoolMode pool_mode = PoolMode::GET_MANY;

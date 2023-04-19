@@ -13,6 +13,40 @@ incompatible datatypes (for example from `String` to `Int`). Make sure to check 
 
 ClickHouse generally uses the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
+`to<type>` functions and [cast](#castx-t) have different behaviour in some cases, for example in case of [LowCardinality](../data-types/lowcardinality.md): [cast](#castx-t) removes [LowCardinality](../data-types/lowcardinality.md) trait `to<type>` functions don't. The same with [Nullable](../data-types/nullable.md), this behaviour is not compatible with SQL standard, and it can be changed using [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting.
+
+Example:
+
+```sql
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+    
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
 ## toInt(8\|16\|32\|64\|128\|256)
 
 Converts an input value to a value the [Int](/docs/en/sql-reference/data-types/int-uint.md) data type. This function family includes:
@@ -737,6 +771,44 @@ Result:
 └────────────┴───────┘
 ```
 
+## toDecimalString
+
+Converts a numeric value to String with the number of fractional digits in the output specified by the user.
+
+**Syntax**
+
+``` sql
+toDecimalString(number, scale)
+```
+
+**Parameters**
+
+-   `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+-   `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+    * Maximum scale for [Decimal](/docs/en/sql-reference/data-types/decimal.md) and [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+    * Maximum scale for [Float](/docs/en/sql-reference/data-types/float.md) is 60.
+
+**Returned value**
+
+-   Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
+    The number is rounded up or down according to common arithmetics in case requested scale is smaller than original number's scale.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
+```
+
+Result:
+
+```response
+┌toDecimalString(CAST('64.32', 'Float64'), 5)─┐
+│ 64.32000                                    │
+└─────────────────────────────────────────────┘
+```
+
 ## reinterpretAsUInt(8\|16\|32\|64)
 
 ## reinterpretAsInt(8\|16\|32\|64)
@@ -956,7 +1028,7 @@ Result:
 
 **See also**
 
--   [cast_keep_nullable](/docs/en/operations/settings/settings.md/#cast_keep_nullable) setting
+-   [cast_keep_nullable](../../operations/settings/settings.md/#cast_keep_nullable) setting
 
 ## accurateCast(x, T)
 
@@ -1173,7 +1245,6 @@ Returns DateTime values parsed from input string according to a MySQL style form
 **Supported format specifiers**
 
 All format specifiers listed in [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) except:
-- %f: fractional second
 - %Q: Quarter (1-4) 
 
 **Example**
@@ -1187,6 +1258,16 @@ SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 ```
 
 Alias: `TO_TIMESTAMP`.
+
+## parseDateTimeOrZero
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeOrNull
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+Alias: `str_to_date`.
 
 ## parseDateTimeInJodaSyntax {#type_conversion_functions-parseDateTimeInJodaSyntax}
 
@@ -1226,6 +1307,14 @@ SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', '
 │                                                                     2023-02-24 14:53:31 │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## parseDateTimeInJodaSyntaxOrZero
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeInJodaSyntaxOrNull
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort

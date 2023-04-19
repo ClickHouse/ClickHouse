@@ -15,6 +15,7 @@
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
 #include <boost/range/algorithm/copy.hpp>
+#include <base/scope_guard.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -84,6 +85,12 @@ BackupEntriesCollector::BackupEntriesCollector(
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
+    , global_zookeeper_retries_info(
+        "BackupEntriesCollector",
+        log,
+        context->getSettingsRef().backup_restore_keeper_max_retries,
+        context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+        context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
 {
 }
 
@@ -123,7 +130,6 @@ BackupEntries BackupEntriesCollector::run()
     runPostTasks();
 
     /// No more backup entries or tasks are allowed after this point.
-    setStage(Stage::WRITING_BACKUP);
 
     return std::move(backup_entries);
 }
@@ -483,7 +489,10 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     try
     {
-        db_tables = database->getTablesForBackup(filter_by_table_name, context);
+        /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
+        auto zookeeper_retries_info = global_zookeeper_retries_info;
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", zookeeper_retries_info, nullptr);
+        retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)
     {
@@ -746,6 +755,7 @@ void BackupEntriesCollector::addPostTask(std::function<void()> task)
 /// Runs all the tasks added with addPostCollectingTask().
 void BackupEntriesCollector::runPostTasks()
 {
+    LOG_TRACE(log, "Will run {} post tasks", post_tasks.size());
     /// Post collecting tasks can add other post collecting tasks, our code is fine with that.
     while (!post_tasks.empty())
     {
@@ -753,6 +763,7 @@ void BackupEntriesCollector::runPostTasks()
         post_tasks.pop();
         std::move(task)();
     }
+    LOG_TRACE(log, "All post tasks successfully executed");
 }
 
 size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)

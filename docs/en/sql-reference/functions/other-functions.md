@@ -792,7 +792,7 @@ neighbor(column, offset[, default_value])
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
-:::warning
+:::tip
 It can reach the neighbor rows only inside the currently processed data block.
 :::
 
@@ -902,7 +902,7 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-:::warning
+:::tip
 It can reach the previous row only inside the currently processed data block.
 :::
 
@@ -986,7 +986,7 @@ Each event has a start time and an end time. The start time is included in the e
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
-:::warning
+:::tip
 Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception. Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
 :::
 
@@ -1674,7 +1674,7 @@ Result:
 
 Accumulates states of an aggregate function for each row of a data block.
 
-:::warning
+:::tip
 The state is reset for each new data block.
 :::
 

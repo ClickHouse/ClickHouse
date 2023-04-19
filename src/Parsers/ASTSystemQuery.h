@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
+#include <Parsers/SyncReplicaMode.h>
 
 #include "config.h"
 
@@ -102,13 +103,13 @@ public:
     String disk;
     UInt64 seconds{};
 
-    String filesystem_cache_path;
+    String filesystem_cache_name;
 
     String backup_name;
 
     String schema_cache_storage;
 
-    bool strict_sync = false;
+    SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     String getID(char) const override { return "SYSTEM query"; }
 

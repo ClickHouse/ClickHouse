@@ -417,7 +417,7 @@ Example: The table contains discounts for each advertiser in the format:
 
 To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](#dictionary-key-and-fields). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
-:::warning
+:::note
 Values of `range_min` and `range_max` should fit in `Int64` type.
 :::
 
@@ -706,7 +706,7 @@ Set a large enough cache size. You need to experiment to select the number of ce
 3.  Assess memory consumption using the `system.dictionaries` table.
 4.  Increase or decrease the number of cells until the required memory consumption is reached.
 
-:::warning
+:::note
 Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 :::
 
@@ -1888,7 +1888,7 @@ ClickHouse supports the following types of keys:
 
 An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
 
-:::warning
+:::note
 You must not describe key as an attribute.
 :::
 

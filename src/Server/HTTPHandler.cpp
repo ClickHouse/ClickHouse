@@ -442,10 +442,10 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunreachable-code"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
@@ -623,7 +623,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path(server.context()->getGlobalTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -1059,13 +1059,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-        int exception_code = getCurrentExceptionCode();
-
-        trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+        trySendExceptionToClient(status.message, status.code, request, response, used_output);
 
         if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute("clickhouse.exception_code", exception_code);
+            thread_trace_context->root_span.addAttribute(status);
     }
 
     used_output.finalize();

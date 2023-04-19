@@ -270,7 +270,6 @@ void AWSInstanceProfileCredentialsProvider::Reload()
 
 void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
 {
-    LOG_DEBUG(logger, "Checking if latest credential pull has expired.");
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
     if (!IsTimeToRefresh(load_frequency_ms))
     {
@@ -418,11 +417,13 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::refreshIfExpired()
 S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request,
-        uint64_t expiration_window_seconds)
+        CredentialsConfiguration credentials_configuration)
 {
     auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
+
+    /// we don't provide any credentials to avoid signing
+    if (credentials_configuration.no_sign_request)
+        return;
 
     /// add explicit credentials to the front of the chain
     /// because it's manually defined by the user
@@ -432,7 +433,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         return;
     }
 
-    if (use_environment_credentials)
+    if (credentials_configuration.use_environment_credentials)
     {
         static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
         static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
@@ -453,7 +454,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
                 configuration.put_request_throttler);
-            AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration, expiration_window_seconds));
+            AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration, credentials_configuration.expiration_window_seconds));
         }
 
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
@@ -519,7 +520,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
             auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
-            auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !use_insecure_imds_request);
+            auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
             AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
             LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");

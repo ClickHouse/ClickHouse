@@ -25,7 +25,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning
+:::note
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -257,6 +257,7 @@ The path to the table in ZooKeeper.
 ``` xml
 <default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
 ```
+
 ## default_replica_name {#default_replica_name}
 
  The replica name in ZooKeeper.
@@ -418,6 +419,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```
+
 ## hsts_max_age  {#hsts-max-age}
 
 Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.
@@ -1045,7 +1047,7 @@ Default value: `0`.
 
 Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
 
-Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
+Before changing it, please also take a look at related MergeTree settings, such as [number_of_free_entries_in_pool_to_lower_max_size_of_merge](../../operations/settings/merge-tree-settings.md#number-of-free-entries-in-pool-to-lower-max-size-of-merge) and [number_of_free_entries_in_pool_to_execute_mutation](../../operations/settings/merge-tree-settings.md#number-of-free-entries-in-pool-to-execute-mutation).
 
 Possible values:
 
@@ -1113,7 +1115,7 @@ Default value: 8.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime.
 
 Possible values:
 
@@ -1129,7 +1131,7 @@ Default value: 8.
 
 ## background_common_pool_size {#background_common_pool_size}
 
-Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime.
 
 Possible values:
 
@@ -1143,6 +1145,25 @@ Default value: 8.
 <background_common_pool_size>36</background_common_pool_size>
 ```
 
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+## background_schedule_pool_size {#background_schedule_pool_size}
+
+Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md/#server-settings-dns-cache-update-period).
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 128.
 
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
@@ -1368,7 +1389,7 @@ The following settings are available:
 
 Changed settings take effect immediately.
 
-:::warning
+:::note
 Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size` or disable the query cache altogether.
 :::
 

@@ -50,7 +50,7 @@ There are multiple ways of user identification:
     CREATE USER name2 IDENTIFIED WITH plaintext_password BY 'my_password'
     ```
 
-    :::warning
+    :::tip
     The password is stored in a SQL text file in `/var/lib/clickhouse/access`, so it's not a good idea to use `plaintext_password`. Try `sha256_password` instead, as demonstrated next...
     :::
 
@@ -76,7 +76,7 @@ There are multiple ways of user identification:
     ATTACH USER name3 IDENTIFIED WITH sha256_hash BY '0C268556C1680BEF0640AAC1E7187566704208398DA31F03D18C74F5C5BE5053' SALT '4FB16307F5E10048196966DD7E6876AE53DE6A1D1F625488482C75F14A5097C7';
     ```
 
-    :::note
+    :::tip
     If you have already created a hash value and corresponding salt value for a username, then you can use `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`. For identification with `sha256_hash` using `SALT` - hash must be calculated from concatenation of 'password' and 'salt'.
     :::
 
@@ -109,7 +109,7 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 -   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
 -   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
-:::warning
+:::tip
 ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 :::
 

@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <chrono>
 #include <cerrno>
@@ -516,6 +517,12 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
+}
+
+void ReplxxLineReader::disableBracketedPaste()
+{
+    bracketed_paste_enabled = false;
+    rx.disable_bracketed_paste();
 }
 
 }

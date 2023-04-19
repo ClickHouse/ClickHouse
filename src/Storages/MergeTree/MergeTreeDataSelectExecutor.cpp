@@ -35,6 +35,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/UUID.h>
+#include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -45,6 +46,12 @@
 #include <IO/WriteBufferFromOStream.h>
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeDataSelectExecutorThreads;
+    extern const Metric MergeTreeDataSelectExecutorThreadsActive;
+}
 
 namespace DB
 {
@@ -1077,7 +1084,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         else
         {
             /// Parallel loading of data parts.
-            ThreadPool pool(num_threads);
+            ThreadPool pool(
+                CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+                CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+                num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
