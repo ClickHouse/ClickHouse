@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/rounding-functions
 sidebar_position: 45
 sidebar_label: Rounding
 ---
@@ -194,15 +193,9 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 ## roundAge(num)
 
-Accepts a number. If the number is
--   smaller than 1, it returns 0,
--   between 1 and 17, it returns 17,
--   between 18 and 24, it returns 18,
--   between 25 and 34, it returns 25,
--   between 35 and 44, it returns 35,
--   between 45 and 54, it returns 45,
--   larger than 55, it returns 55.
+Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. 
 
 ## roundDown(num, arr)
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
+

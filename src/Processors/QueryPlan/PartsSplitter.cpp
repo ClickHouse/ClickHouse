@@ -13,7 +13,6 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 using namespace DB;
 
@@ -78,7 +77,7 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             RangeEnd,
         };
 
-        [[ maybe_unused ]] bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
+        bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
 
         Values value;
         MarkRangeWithPartIdx range;
@@ -94,8 +93,7 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             parts_ranges_queue.push(
                 {index_access->getValue(part_idx, range.begin), {range, part_idx}, PartsRangesIterator::EventType::RangeStart});
             const auto & index_granularity = parts[part_idx].data_part->index_granularity;
-            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
-            if (value_is_defined_at_end_mark)
+            if (index_granularity.hasFinalMark() && range.end + 1 == index_granularity.getMarksCount())
                 parts_ranges_queue.push(
                     {index_access->getValue(part_idx, range.end), {range, part_idx}, PartsRangesIterator::EventType::RangeEnd});
         }

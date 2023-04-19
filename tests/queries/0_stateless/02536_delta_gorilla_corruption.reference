@@ -1,9 +1,0 @@
-Original bug: the same query executed multiple times yielded different results.
-For unclear reasons this happened only in Release builds, not in Debug builds.
-0
-0
-0
-The same issue in a much smaller repro happens also in Debug builds
-0
-1
-3

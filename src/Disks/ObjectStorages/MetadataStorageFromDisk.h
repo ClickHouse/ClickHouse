@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <Disks/IDisk.h>
@@ -11,14 +10,12 @@
 namespace DB
 {
 
-/// Store metadata on a separate disk
-/// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromDiskTransaction;
 
-    mutable SharedMutex metadata_mutex;
+    mutable std::shared_mutex metadata_mutex;
 
     DiskPtr disk;
     std::string object_storage_root_path;
@@ -26,7 +23,7 @@ private:
 public:
     MetadataStorageFromDisk(DiskPtr disk_, const std::string & object_storage_root_path_);
 
-    MetadataTransactionPtr createTransaction() override;
+    MetadataTransactionPtr createTransaction() const override;
 
     const std::string & getPath() const override;
 
@@ -54,8 +51,6 @@ public:
 
     std::string readFileToString(const std::string & path) const override;
 
-    std::string readInlineDataToString(const std::string & path) const override;
-
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
     uint32_t getHardlinkCount(const std::string & path) const override;
@@ -68,8 +63,8 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
-    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const;
+    DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
@@ -96,8 +91,6 @@ public:
     void commit() final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
-
-    void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
     void createEmptyMetadataFile(const std::string & path) override;
 
@@ -132,8 +125,6 @@ public:
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
     void unlinkMetadata(const std::string & path) override;
-
-
 };
 
 

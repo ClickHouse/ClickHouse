@@ -8,9 +8,9 @@ namespace DB
 
 class IntersectOrExceptStep : public IQueryPlanStep
 {
-public:
-    using Operator = ASTSelectIntersectExceptQuery::Operator;
+using Operator = ASTSelectIntersectExceptQuery::Operator;
 
+public:
     /// max_threads is used to limit the number of threads for result pipeline.
     IntersectOrExceptStep(DataStreams input_streams_, Operator operator_, size_t max_threads_ = 0);
 
@@ -24,6 +24,7 @@ private:
     Block header;
     Operator current_operator;
     size_t max_threads;
+    Processors processors;
 };
 
 }

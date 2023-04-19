@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/third-party/gui
 sidebar_position: 28
 sidebar_label: Visual Interfaces
 ---
@@ -197,18 +196,6 @@ Features:
 
 The client is available for instant usage through github pages: https://metrico.github.io/clickhouse-mate/
 
-### Uptrace {#uptrace}
-
-[Uptrace](https://github.com/uptrace/uptrace) is an APM tool that provides distributed tracing and metrics powered by OpenTelemetry and ClickHouse.
-
-Features:
-
-- [OpenTelemetry tracing](https://uptrace.dev/opentelemetry/distributed-tracing.html), metrics, and logs.
-- Email/Slack/PagerDuty notifications using AlertManager.
-- SQL-like query language to aggregate spans.
-- Promql-like language to query metrics.
-- Pre-built metrics dashboards.
-- Multiple users/projects via YAML config.
 
 ## Commercial {#commercial}
 
@@ -306,3 +293,5 @@ License: [commercial](https://tablum.io/pricing) product with 3-month free perio
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)
+
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

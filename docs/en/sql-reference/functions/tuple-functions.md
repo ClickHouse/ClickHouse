@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/functions/tuple-functions
 sidebar_position: 66
 sidebar_label: Tuples
-title: "Functions for Working with Tuples"
 ---
+
+# Functions for Working with Tuples
 
 ## tuple
 
@@ -22,15 +22,15 @@ tuple(x, y, …)
 ## tupleElement
 
 A function that allows getting a column from a tuple.
+‘N’ is the column index, starting from 1. ‘N’ must be a constant. ‘N’ must be a strict postive integer no greater than the size of the tuple.
+There is no cost to execute the function.
 
-If the second argument is a number `n`, it is the column index, starting from 1. If the second argument is a string `s`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or element for such name does not exist, the default value returned instead of throw exception. The second and third arguments if provided are always must be constant. There is no cost to execute the function.
-
-The function implements the operator `x.n` and `x.s`.
+The function implements the operator `x.N`.
 
 **Syntax**
 
 ``` sql
-tupleElement(tuple, n/s [, default_value])
+tupleElement(tuple, n)
 ```
 
 ## untuple
@@ -208,7 +208,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-referen
 Query:
 
 ``` sql
-CREATE TABLE tupletest (col Tuple(user_ID UInt64, session_ID UInt64)) ENGINE = Memory;
+CREATE TABLE tupletest (`col` Tuple(user_ID UInt64, session_ID UInt64) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES (tuple( 100, 2502)), (tuple(1,100));
 
@@ -227,11 +227,11 @@ Result:
 It is possible to transform colums to rows using this function:
 
 ``` sql
-CREATE TABLE tupletest (col Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
+CREATE TABLE tupletest (`col` Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
 
 INSERT INTO tupletest VALUES(tuple(3.3, 5.5, 6.6));
 
-SELECT arrayJoin(tupleToNameValuePairs(col)) FROM tupletest;
+SELECT arrayJoin(tupleToNameValuePairs(col))FROM tupletest;
 ```
 
 Result:

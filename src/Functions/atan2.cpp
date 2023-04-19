@@ -15,7 +15,7 @@ namespace
 
 REGISTER_FUNCTION(Atan2)
 {
-    factory.registerFunction<FunctionAtan2>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAtan2>(FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -3,4 +3,4 @@ INSERT INTO enum VALUES ('hello');
 
 SELECT count() FROM enum WHERE x = 'hello';
 SELECT count() FROM enum WHERE x = 'world';
-SELECT count() FROM enum WHERE x = 'xyz'; -- { serverError 691 }
+SELECT count() FROM enum WHERE x = 'xyz'; -- { serverError 36 }

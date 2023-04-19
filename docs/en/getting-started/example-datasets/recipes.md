@@ -1,10 +1,10 @@
 ---
-slug: /en/getting-started/example-datasets/recipes
 sidebar_label: Recipes Dataset
-title: "Recipes Dataset"
 ---
 
-The RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
+# Recipes Dataset
+
+RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
 
 ## Download and Unpack the Dataset
 
@@ -80,7 +80,7 @@ Result:
 
 ### Top Components by the Number of Recipes:
 
-In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join.md) function to expand an array into a set of rows.
+In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to expand an array into a set of rows.
 
 Query:
 
@@ -185,7 +185,7 @@ Result:
 10 rows in set. Elapsed: 0.215 sec. Processed 2.23 million rows, 1.48 GB (10.35 million rows/s., 6.86 GB/s.)
 ```
 
-In this example, we involve [has](../../sql-reference/functions/array-functions.md#hasarr-elem) function to filter by array elements and sort by the number of directions.
+In this example, we involve [has](../../sql-reference/functions/array-functions/#hasarr-elem) function to filter by array elements and sort by the number of directions.
 
 There is a wedding cake that requires the whole 126 steps to produce! Show that directions:
 
@@ -335,3 +335,5 @@ Result:
 ### Online Playground
 
 The dataset is also available in the [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+
+[Original article](https://clickhouse.com/docs/en/getting-started/example-datasets/recipes/) <!--hide-->

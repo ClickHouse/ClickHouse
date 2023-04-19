@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantiles
 sidebar_position: 201
 ---
 
@@ -9,7 +8,7 @@ sidebar_position: 201
 
 Syntax: `quantiles(level1, level2, …)(x)`
 
-All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantileInterpolatedWeighted`, `quantilesTDigest`, `quantilesBFloat16`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
+All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`, `quantilesBFloat16`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
 
 ## quantilesExactExclusive
 
@@ -113,60 +112,4 @@ Result:
 ┌─quantilesExactInclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(x)─┐
 │ [249.75,499.5,749.25,899.1,949.05,989.01,998.001]                   │
 └─────────────────────────────────────────────────────────────────────┘
-```
-
-## quantilesApprox
-
-`quantilesApprox` works similarly with `quantileApprox` but allows us to calculate quantities at different levels simultaneously and returns an array.
-
-**Syntax**
-
-``` sql
-quantilesApprox(accuracy, level1, level2, ...)(expr)
-```
-
-**Returned value**
-
--   [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
-
-Type of array values:
-
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
-
-**Example**
-
-Query:
-
-
-``` sql
-SELECT quantilesApprox(1, 0.25, 0.5, 0.75)(number + 1)
-FROM numbers(1000)
-
-┌─quantilesApprox(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [1,1,1]                                              │
-└──────────────────────────────────────────────────────┘
-
-SELECT quantilesApprox(10, 0.25, 0.5, 0.75)(number + 1)
-FROM numbers(1000)
-
-┌─quantilesApprox(10, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [156,413,659]                                         │
-└───────────────────────────────────────────────────────┘
-
-
-SELECT quantilesApprox(100, 0.25, 0.5, 0.75)(number + 1)
-FROM numbers(1000)
-
-┌─quantilesApprox(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [251,498,741]                                          │
-└────────────────────────────────────────────────────────┘
-
-SELECT quantilesApprox(1000, 0.25, 0.5, 0.75)(number + 1)
-FROM numbers(1000)
-
-┌─quantilesApprox(1000, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [249,499,749]                                           │
-└─────────────────────────────────────────────────────────┘
 ```

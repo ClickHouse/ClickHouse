@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
@@ -13,11 +12,14 @@
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
-#include "config.h"
+#include <Common/config.h>
 #include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    include <llvm/IR/IRBuilder.h>
+#    pragma GCC diagnostic pop
 #endif
 
 
@@ -40,7 +42,7 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
@@ -51,25 +53,12 @@ struct UnaryOperationImpl
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            vectorImplAVX512BW(a, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            vectorImplAVX512F(a, c);
-            return;
-        }
-
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorImplAVX2(a, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::SSE42))
+        else if (isArchSupported(TargetArch::SSE42))
         {
             vectorImplSSE42(a, c);
             return;
@@ -89,7 +78,7 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
         ColumnFixedString::Chars & c)
     {
@@ -101,25 +90,12 @@ struct FixedStringUnaryOperationImpl
     static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            vectorImplAVX512BW(a, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            vectorImplAVX512F(a, c);
-            return;
-        }
-
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorImplAVX2(a, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::SSE42))
+        else if (isArchSupported(TargetArch::SSE42))
         {
             vectorImplSSE42(a, c);
             return;
@@ -169,8 +145,7 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
             DataTypeDecimal<Decimal256>,
-            DataTypeFixedString,
-            DataTypeInterval
+            DataTypeFixedString
         >(type, std::forward<F>(f));
     }
 
@@ -236,12 +211,6 @@ public:
                     return false;
                 result = std::make_shared<DataType>(type.getN());
             }
-            else if constexpr (std::is_same_v<DataTypeInterval, DataType>)
-            {
-                if constexpr (!IsUnaryOperation<Op>::negate)
-                    return false;
-                result = std::make_shared<DataTypeInterval>(type.getKind());
-            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -258,8 +227,8 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), String(name));
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + String(name),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return result;
     }
 
@@ -336,7 +305,7 @@ public:
             return false;
         });
         if (!valid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}'s argument does not match the expected data type", getName());
+            throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
 
         return result_column;
     }

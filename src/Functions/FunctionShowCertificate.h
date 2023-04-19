@@ -1,9 +1,6 @@
 #pragma once
 
-#include "config.h"
-
-#include <memory>
-#include <string>
+#include <Common/config.h>
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
@@ -15,7 +12,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <base/scope_guard.h>
 
 #if USE_SSL
     #include <openssl/x509v3.h>
@@ -37,17 +33,13 @@ class FunctionShowCertificate : public IFunction
 public:
     static constexpr auto name = "showCertificate";
 
-    static FunctionPtr create(ContextPtr ctx)
+    static FunctionPtr create(ContextPtr)
     {
 #if !defined(USE_SSL) || USE_SSL == 0
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support is disabled");
 #endif
-        return std::make_shared<FunctionShowCertificate>(ctx->getQueryContext()->getClientInfo().certificate);
+        return std::make_shared<FunctionShowCertificate>();
     }
-
-    std::string certificate;
-
-    explicit FunctionShowCertificate(const std::string & certificate_ = "") : certificate(certificate_) {}
 
     String getName() const override { return name; }
 
@@ -69,15 +61,7 @@ public:
         if (input_rows_count)
         {
 #if USE_SSL
-            std::unique_ptr<Poco::Crypto::X509Certificate> x509_cert;
-            if (!certificate.empty())
-                x509_cert = std::make_unique<Poco::Crypto::X509Certificate>(certificate);
-
-            const X509 * cert = x509_cert ?
-                x509_cert->certificate() :
-                SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
-
-            if (cert)
+            if (const X509 * cert = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext()))
             {
                 BIO * b = BIO_new(BIO_s_mem());
                 SCOPE_EXIT(

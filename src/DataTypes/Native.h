@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/Exception.h>
@@ -9,7 +9,12 @@
 #    include <DataTypes/DataTypeNullable.h>
 #    include <Columns/ColumnConst.h>
 #    include <Columns/ColumnNullable.h>
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #    include <llvm/IR/IRBuilder.h>
+
+#    pragma GCC diagnostic pop
 
 
 namespace DB
@@ -23,12 +28,6 @@ static inline bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
     return data_type.isNativeInt() || data_type.isFloat() || data_type.isEnum();
-}
-
-static inline llvm::Type * toNullableType(llvm::IRBuilderBase & builder, llvm::Type * type)
-{
-    auto * is_null_type = builder.getInt1Ty();
-    return llvm::StructType::get(type, is_null_type);
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
@@ -133,7 +132,7 @@ static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataType
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
     if (value->getType()->isFloatingPointTy())
-        return b.CreateFCmpUNE(value, zero);
+        return b.CreateFCmpONE(value, zero); /// QNaN is false
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
 }
@@ -219,7 +218,7 @@ static inline std::pair<llvm::Value *, llvm::Value *> nativeCastToCommon(llvm::I
         size_t rhs_bit_width = rhs->getType()->getIntegerBitWidth() + (!rhs_is_signed && lhs_is_signed);
 
         size_t max_bit_width = std::max(lhs_bit_width, rhs_bit_width);
-        common = b.getIntNTy(static_cast<unsigned>(max_bit_width));
+        common = b.getIntNTy(max_bit_width);
     }
     else
     {

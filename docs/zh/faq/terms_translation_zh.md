@@ -1,8 +1,4 @@
----
-slug: /zh/faq/terms_translation_zh
----
 # 术语翻译约定
-
 本文档用来维护从英文翻译成中文的术语集。
 
 
@@ -38,3 +34,5 @@ Arguments           参数
 ```
 
 3. See also         参见
+
+

@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/cpp
 sidebar_position: 24
 sidebar_label: C++ Client Library
 ---

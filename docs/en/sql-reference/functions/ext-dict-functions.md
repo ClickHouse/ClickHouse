@@ -1,20 +1,19 @@
 ---
-slug: /en/sql-reference/functions/ext-dict-functions
 sidebar_position: 58
-sidebar_label: Dictionaries
+sidebar_label: External Dictionaries
 ---
 
-# Functions for Working with Dictionaries
-
-:::note
+:::note    
 For dictionaries created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 :::
 
-For information on connecting and configuring dictionaries, see [Dictionaries](../../sql-reference/dictionaries/index.md).
+# Functions for Working with External Dictionaries
+
+For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 ## dictGet, dictGetOrDefault, dictGetOrNull
 
-Retrieves values from a dictionary.
+Retrieves values from an external dictionary.
 
 ``` sql
 dictGet('dict_name', attr_names, id_expr)
@@ -31,7 +30,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 **Returned value**
 
--   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+-   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
 -   If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
@@ -52,7 +51,7 @@ Create a text file `ext-dict-test.csv` containing the following:
 
 The first column is `id`, the second column is `c1`.
 
-Configure the dictionary:
+Configure the external dictionary:
 
 ``` xml
 <clickhouse>
@@ -112,7 +111,7 @@ Create a text file `ext-dict-mult.csv` containing the following:
 
 The first column is `id`, the second is `c1`, the third is `c2`.
 
-Configure the dictionary:
+Configure the external dictionary:
 
 ``` xml
 <clickhouse>
@@ -151,7 +150,7 @@ Perform the query:
 
 ``` sql
 SELECT
-    dictGet('ext-dict-mult', ('c1','c2'), number + 1) AS val,
+    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
     toTypeName(val) AS type
 FROM system.numbers
 LIMIT 3;
@@ -185,7 +184,7 @@ INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), to
 INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
 ```
 
-Create the dictionary:
+Create the external dictionary:
 
 ```sql
 CREATE DICTIONARY range_key_dictionary
@@ -226,7 +225,7 @@ Result:
 
 **See Also**
 
--   [Dictionaries](../../sql-reference/dictionaries/index.md)
+-   [External Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)
 
 ## dictHas
 
@@ -250,7 +249,7 @@ Type: `UInt8`.
 
 ## dictGetHierarchy
 
-Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/index.md#hierarchical-dictionaries).
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical.md).
 
 **Syntax**
 
@@ -416,7 +415,6 @@ Functions:
 -   `dictGetDateTime`
 -   `dictGetUUID`
 -   `dictGetString`
--   `dictGetIPv4`, `dictGetIPv6`
 
 All these functions have the `OrDefault` modification. For example, `dictGetDateOrDefault`.
 
@@ -436,7 +434,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Returned value**
 
--   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+-   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
 -   If there is no requested `id_expr` in the dictionary then:
 

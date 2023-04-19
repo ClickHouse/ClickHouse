@@ -133,36 +133,6 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
         identifiers.emplace_back(identifier);
 }
 
-
-/// Clean aliases and use aliased name
-/// Transforms `(a = b as c) AND (x = y)` to `(a = c) AND (x = y)`
-static void useAliasInsteadOfIdentifier(const ASTPtr & predicate)
-{
-    if (!predicate->as<ASTSubquery>())
-    {
-        for (auto & children : predicate->children)
-            useAliasInsteadOfIdentifier(children);
-    }
-
-    if (const auto alias = predicate->tryGetAlias(); !alias.empty())
-    {
-        if (ASTIdentifier * identifier = predicate->as<ASTIdentifier>())
-            identifier->setShortName(alias);
-        predicate->setAlias({});
-    }
-}
-
-static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IAST::Hash> & hashes)
-{
-    for (const auto & pred : splitConjunctionsAst(ast))
-    {
-        /// Clone not to modify `ast`
-        ASTPtr pred_copy = pred->clone();
-        useAliasInsteadOfIdentifier(pred_copy);
-        hashes.emplace(pred_copy->getTreeHash());
-    }
-}
-
 bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns)
 {
     if ((!optimize_final && subquery.final())
@@ -174,26 +144,11 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         return false;
 
     Names outer_columns = table_columns.columns.getNames();
-
-    /// Do not add same conditions twice to avoid extra rewrites with exponential blowup
-    /// (e.g. in case of deep complex query with lots of JOINs)
-    std::set<IAST::Hash> hashes;
-    getConjunctionHashesFrom(subquery.where(), hashes);
-    getConjunctionHashesFrom(subquery.having(), hashes);
-
-    bool is_changed = false;
     for (const auto & predicate : predicates)
     {
         std::vector<ASTIdentifier *> identifiers;
         ASTPtr optimize_predicate = predicate->clone();
         cleanAliasAndCollectIdentifiers(optimize_predicate, identifiers);
-
-        auto predicate_hash = optimize_predicate->getTreeHash();
-        if (hashes.contains(predicate_hash))
-            continue;
-
-        hashes.emplace(predicate_hash);
-        is_changed = true;
 
         for (const auto & identifier : identifiers)
         {
@@ -215,7 +170,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
             subquery.having() ? makeASTFunction("and", optimize_predicate, subquery.having()) : optimize_predicate);
     }
 
-    return is_changed;
+    return true;
 }
 
 }

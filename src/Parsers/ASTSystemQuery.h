@@ -2,9 +2,8 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
-#include <Parsers/SyncReplicaMode.h>
 
-#include "config.h"
+#include "config_core.h"
 
 
 namespace DB
@@ -26,27 +25,20 @@ public:
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
-        DROP_QUERY_CACHE,
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
         DROP_FILESYSTEM_CACHE,
         DROP_SCHEMA_CACHE,
-#if USE_AWS_S3
-        DROP_S3_CLIENT_CACHE,
-#endif
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
-        WAIT_LOADING_PARTS,
         DROP_REPLICA,
-        DROP_DATABASE_REPLICA,
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
-        SYNC_FILE_CACHE,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
@@ -55,7 +47,6 @@ public:
         RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
-        RELOAD_USERS,
         RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,
@@ -103,13 +94,11 @@ public:
     String disk;
     UInt64 seconds{};
 
-    String filesystem_cache_name;
+    String filesystem_cache_path;
 
     String backup_name;
 
     String schema_cache_storage;
-
-    SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     String getID(char) const override { return "SYSTEM query"; }
 

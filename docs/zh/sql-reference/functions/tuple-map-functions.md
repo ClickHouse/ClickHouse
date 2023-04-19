@@ -1,0 +1,1 @@
+../../../en/sql-reference/functions/tuple-map-functions.md

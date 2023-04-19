@@ -74,11 +74,6 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
     }
 }
 
-bool ASTStorage::isExtendedStorageDefinition() const
-{
-    return partition_by || primary_key || order_by || sample_by || settings;
-}
-
 
 class ASTColumnsElement : public IAST
 {
@@ -220,8 +215,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
-    if (as_table_function)
-        res->set(res->as_table_function, as_table_function->clone());
     if (comment)
         res->set(res->comment, comment->clone());
 
@@ -309,10 +302,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "")
                           << quoteString(*attach_from_path);
 
+        if (live_view_timeout)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
+                          << *live_view_timeout;
+
         if (live_view_periodic_refresh)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH" << (settings.hilite ? hilite_none : "")
-                << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
+            if (live_view_timeout)
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
+            else
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH" << (settings.hilite ? hilite_none : "");
+
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
                 << *live_view_periodic_refresh;
         }
 
@@ -370,7 +371,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             FormatStateStacked frame_nested = frame;
             columns_list->formatImpl(settings, state, frame_nested);
             settings.ostr << (settings.one_line ? ")" : "\n)");
-            frame.expression_list_always_start_on_new_line = false;
+            frame.expression_list_always_start_on_new_line = false; //-V519
         }
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
@@ -398,7 +399,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.one_line ? ")" : "\n)");
     }
 
-    frame.expression_list_always_start_on_new_line = false;
+    frame.expression_list_always_start_on_new_line = false; //-V519
 
     if (inner_storage)
     {
@@ -440,10 +441,10 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (select)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
-                      << settings.nl_or_ws
-                      << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
+                      << (comment ? "(" : "")
+                      << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (comment ? ")" : "") << (settings.hilite ? hilite_none : "");
+        settings.ostr << (comment ? ")" : "");
     }
 
     if (comment)
@@ -451,13 +452,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
         comment->formatImpl(settings, state, frame);
     }
-}
-
-bool ASTCreateQuery::isParameterizedView() const
-{
-    if (is_ordinary_view && select && select->hasQueryParameters())
-        return true;
-    return false;
 }
 
 }

@@ -91,17 +91,17 @@ public:
 
     void sendReadTaskResponse(const String &) override
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
+        throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
+    void sendMergeTreeReadTaskResponse(PartitionReadResponse) override
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
+        throw Exception("sendMergeTreeReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }
 
     Packet receivePacket() override;
 
-    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
 
     void disconnect() override;
 
@@ -196,6 +196,12 @@ private:
     Epoll epoll;
     ContextPtr context;
     const Settings & settings;
+
+    /// The following two fields are from settings but can be referenced outside the lifetime of
+    /// settings when connection is drained asynchronously.
+    Poco::Timespan drain_timeout;
+    bool allow_changing_replica_until_first_data_packet;
+
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;

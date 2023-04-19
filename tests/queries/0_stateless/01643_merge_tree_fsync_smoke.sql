@@ -1,5 +1,3 @@
--- Tags: no-s3-storage
-
 drop table if exists data_01643;
 
 select 'default';

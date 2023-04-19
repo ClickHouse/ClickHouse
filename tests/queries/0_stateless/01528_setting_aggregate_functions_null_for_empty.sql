@@ -33,7 +33,4 @@ SELECT sumOrNull(n) FROM defaults;
 SELECT count(n) FROM defaults;
 SELECT countOrNull(n) FROM defaults;
 
-
-EXPLAIN SYNTAX SELECT sumIf(1, number > 0) FROM numbers(10) WHERE 0;
-
 DROP TABLE defaults;

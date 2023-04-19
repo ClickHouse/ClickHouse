@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Common/FileCache.h>
+#include <Common/FileCacheSettings.h>
 
 namespace Poco
 {
@@ -19,8 +19,6 @@ class CachedObjectStorage final : public IObjectStorage
 {
 public:
     CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const FileCacheSettings & cache_settings_, const String & cache_config_name_);
-
-    DataSourceDescription getDataSourceDescription() const override;
 
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
@@ -72,7 +70,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
+    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -87,7 +85,7 @@ public:
 
     String getObjectsNamespace() const override;
 
-    const std::string & getCacheName() const override { return cache_config_name; }
+    const String & getCacheBasePath() const override { return cache->getBasePath(); }
 
     std::string generateBlobNameForPath(const std::string & path) override;
 
@@ -100,8 +98,6 @@ public:
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
-
-    bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
 
     const std::string & getCacheConfigName() const { return cache_config_name; }
 

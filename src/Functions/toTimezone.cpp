@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -66,7 +67,7 @@ public:
     Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
     {
         const bool b = is_constant_timezone;
-        return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b, .is_strict = b };
+        return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b };
     }
 
 private:
@@ -89,17 +90,16 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), arguments.size());
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto which_type = WhichDataType(arguments[0].type);
         if (!which_type.isDateTime() && !which_type.isDateTime64())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                "Should be DateTime or DateTime64", arguments[0].type->getName(), getName());
+            throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+                ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-
         if (which_type.isDateTime())
             return std::make_shared<DataTypeDateTime>(time_zone_name);
 

@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_CASSANDRA
 
@@ -32,7 +32,7 @@ CassandraSource::CassandraSource(
     , has_more_pages(cass_true)
 {
     description.init(sample_block);
-    cassandraCheck(cass_statement_set_paging_size(statement, static_cast<int>(max_block_size)));
+    cassandraCheck(cass_statement_set_paging_size(statement, max_block_size));
 }
 
 void CassandraSource::insertValue(IColumn & column, ValueType type, const CassValue * cass_value)
@@ -143,7 +143,7 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, const CassVa
             break;
         }
         default:
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type : {}", static_cast<int>(type));
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type : {}", std::to_string(static_cast<int>(type)));
     }
 }
 
@@ -260,7 +260,7 @@ void CassandraSource::assertTypes(const CassResultPtr & result)
                 expected_text = "uuid";
                 break;
             default:
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type : {}", static_cast<int>(description.types[i].first));
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type : {}", std::to_string(static_cast<int>(description.types[i].first)));
         }
 
         CassValueType got = cass_result_column_type(result, i);

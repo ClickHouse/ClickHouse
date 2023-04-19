@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/table-functions/remote
----
 # remote, remoteSecure {#remote-remotesecure}
 
 允许您访问远程服务器，而无需创建 `Distributed` 表。`remoteSecure` - 与 `remote` 相同，但是会使用加密链接。
@@ -103,3 +100,5 @@ CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
 INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALUES ('test', 42);
 SELECT * FROM remote_table;
 ```
+
+[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/remote/) <!--hide-->

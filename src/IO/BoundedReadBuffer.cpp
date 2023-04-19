@@ -1,5 +1,4 @@
 #include "BoundedReadBuffer.h"
-#include <IO/SwapHelper.h>
 
 namespace DB
 {
@@ -19,6 +18,14 @@ void BoundedReadBuffer::setReadUntilEnd()
     read_until_position.reset();
 }
 
+SeekableReadBuffer::Range BoundedReadBuffer::getRemainingReadRange() const
+{
+    std::optional<size_t> right_bound_included;
+    if (read_until_position)
+        right_bound_included = *read_until_position - 1;
+    return Range{file_offset_of_buffer_end, right_bound_included};
+}
+
 off_t BoundedReadBuffer::getPosition()
 {
     return file_offset_of_buffer_end - (working_buffer.end() - pos);
@@ -29,12 +36,10 @@ bool BoundedReadBuffer::nextImpl()
     if (read_until_position && file_offset_of_buffer_end == *read_until_position)
         return false;
 
-    bool result;
-    {
-        SwapHelper swap(*this, *impl);
-        result = impl->next();
-    }
-    chassert(file_offset_of_buffer_end + available() == impl->getFileOffsetOfBufferEnd());
+    swap(*impl);
+    auto result = impl->next();
+    swap(*impl);
+
     if (result && read_until_position)
     {
         size_t remaining_size_to_read = *read_until_position - file_offset_of_buffer_end;
@@ -59,7 +64,7 @@ off_t BoundedReadBuffer::seek(off_t off, int whence)
     auto result = impl->seek(off, whence);
     swap(*impl);
 
-    file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
+    file_offset_of_buffer_end = result;
     return result;
 }
 

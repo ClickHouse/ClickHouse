@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Common/logger_useful.h>
 #include <base/types.h>
-#include <Core/Types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Poco/Logger.h>
 #include <cassert>
@@ -61,7 +61,7 @@ enum class QueryCancellationState
 
 // Usually it's hard to set some reasonable hard memory limit
 // (especially, the default value). This class introduces new
-// mechanism for the limiting of memory usage.
+// mechanisim for the limiting of memory usage.
 // Soft limit represents guaranteed amount of memory query/user
 // may use. It's allowed to exceed this limit. But if hard limit
 // is reached, query with the biggest overcommit ratio
@@ -82,7 +82,7 @@ protected:
     virtual void pickQueryToExcludeImpl() = 0;
 
     // This mutex is used to disallow concurrent access
-    // to picked_tracker and cancellation_state variables.
+    // to picked_tracker and cancelation_state variables.
     std::mutex overcommit_m;
     std::condition_variable cv;
 

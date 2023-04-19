@@ -6,7 +6,7 @@
 #include <city.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
@@ -86,7 +86,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
             {
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
                     << message_hardware_failure;
-                throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+                throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
             }
 
             flip_bit(tmp_data, bit_pos);    /// Restore
@@ -101,10 +101,10 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     {
         message << ". The mismatch is caused by single bit flip in checksum. "
             << message_hardware_failure;
-        throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
     }
 
-    throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+    throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
 }
 
 static void readHeaderAndGetCodecAndSize(
@@ -129,9 +129,11 @@ static void readHeaderAndGetCodecAndSize(
         }
         else
         {
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Data compressed with different methods, given method "
-                            "byte 0x{}, previous method byte 0x{}",
-                            getHexUIntLowercase(method), getHexUIntLowercase(codec->getMethodByte()));
+            throw Exception("Data compressed with different methods, given method byte 0x"
+                            + getHexUIntLowercase(method)
+                            + ", previous method byte 0x"
+                            + getHexUIntLowercase(codec->getMethodByte()),
+                            ErrorCodes::CANNOT_DECOMPRESS);
         }
     }
 
@@ -142,13 +144,14 @@ static void readHeaderAndGetCodecAndSize(
     assert(size_decompressed > 0);
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "
-                        "Most likely corrupted data.", size_compressed_without_checksum);
+        throw Exception("Too large size_compressed_without_checksum: "
+                        + toString(size_compressed_without_checksum)
+                        + ". Most likely corrupted data.",
+                        ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
     if (size_compressed_without_checksum < header_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
-            "the compressed data size ({}, this should include header size) is less than the header size ({})",
-            size_compressed_without_checksum, static_cast<size_t>(header_size));
+        throw Exception("Can't decompress data: the compressed data size (" + toString(size_compressed_without_checksum)
+            + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);
 }
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
@@ -264,9 +267,11 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
         }
         else
         {
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Data compressed with different methods, given method "
-                            "byte 0x{}, previous method byte 0x{}",
-                            getHexUIntLowercase(method), getHexUIntLowercase(codec->getMethodByte()));
+            throw Exception("Data compressed with different methods, given method byte 0x"
+                            + getHexUIntLowercase(method)
+                            + ", previous method byte 0x"
+                            + getHexUIntLowercase(codec->getMethodByte()),
+                            ErrorCodes::CANNOT_DECOMPRESS);
         }
     }
 }
@@ -274,7 +279,7 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
-    codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
+    codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
 }
 
 void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
@@ -295,7 +300,7 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }
     else
-        codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
+        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
 void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const

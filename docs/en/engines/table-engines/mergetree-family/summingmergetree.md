@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/summingmergetree
 sidebar_position: 50
 sidebar_label:  SummingMergeTree
 ---
@@ -34,7 +33,7 @@ For a description of request parameters, see [request description](../../../sql-
 `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
     The columns must be of a numeric type and must not be in the primary key.
 
- If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
+    If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
 
 ### Query clauses
 
@@ -44,7 +43,7 @@ When creating a `SummingMergeTree` table the same [clauses](../../../engines/tab
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+:::warning
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
@@ -130,63 +129,14 @@ then this nested table is interpreted as a mapping of `key => (values...)`, and 
 Examples:
 
 ``` text
-DROP TABLE IF EXISTS nested_sum;
-CREATE TABLE nested_sum
-(
-    date Date,
-    site UInt32,
-    hitsMap Nested(
-        browser String,
-        imps UInt32,
-        clicks UInt32
-    )
-) ENGINE = SummingMergeTree
-PRIMARY KEY (date, site);
-
-INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['Firefox', 'Opera'], [10, 5], [2, 1]);
-INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['Chrome', 'Firefox'], [20, 1], [1, 1]);
-INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['IE'], [22], [0]);
-INSERT INTO nested_sum VALUES ('2020-01-01', 10, ['Chrome'], [4], [3]);
-
-OPTIMIZE TABLE nested_sum FINAL; -- emulate merge 
-
-SELECT * FROM nested_sum;
-┌───────date─┬─site─┬─hitsMap.browser───────────────────┬─hitsMap.imps─┬─hitsMap.clicks─┐
-│ 2020-01-01 │   10 │ ['Chrome']                        │ [4]          │ [3]            │
-│ 2020-01-01 │   12 │ ['Chrome','Firefox','IE','Opera'] │ [20,11,22,5] │ [1,3,0,1]      │
-└────────────┴──────┴───────────────────────────────────┴──────────────┴────────────────┘
-
-SELECT
-    site,
-    browser,
-    impressions,
-    clicks
-FROM
-(
-    SELECT
-        site,
-        sumMap(hitsMap.browser, hitsMap.imps, hitsMap.clicks) AS imps_map
-    FROM nested_sum
-    GROUP BY site
-)
-ARRAY JOIN
-    imps_map.1 AS browser,
-    imps_map.2 AS impressions,
-    imps_map.3 AS clicks;
-
-┌─site─┬─browser─┬─impressions─┬─clicks─┐
-│   12 │ Chrome  │          20 │      1 │
-│   12 │ Firefox │          11 │      3 │
-│   12 │ IE      │          22 │      0 │
-│   12 │ Opera   │           5 │      1 │
-│   10 │ Chrome  │           4 │      3 │
-└──────┴─────────┴─────────────┴────────┘
+[(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
+[(1, 100)] + [(1, 150)] -> [(1, 250)]
+[(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
+[(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
 When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
-## Related Content
-
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

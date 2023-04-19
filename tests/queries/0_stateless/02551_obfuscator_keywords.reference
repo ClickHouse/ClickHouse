@@ -1,3 +1,0 @@
-select 1 order by 1 with fill step 1
-SELECT id,  untuple(id) FROM id
-SELECT 1 IS NULL

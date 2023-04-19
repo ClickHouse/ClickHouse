@@ -27,15 +27,6 @@ void registerTableFunctions()
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
-    registerTableFunctionOSS(factory);
-    registerTableFunctionHudi(factory);
-#if USE_PARQUET
-    registerTableFunctionDeltaLake(factory);
-#endif
-#if USE_AVRO
-    registerTableFunctionIceberg(factory);
-#endif
-
 #endif
 
 #if USE_HDFS
@@ -68,7 +59,6 @@ void registerTableFunctions()
     registerTableFunctionDictionary(factory);
 
     registerTableFunctionFormat(factory);
-    registerTableFunctionExplain(factory);
 }
 
 }

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/grant
 sidebar_position: 38
 sidebar_label: GRANT
 ---
@@ -105,8 +104,7 @@ Hierarchy of privileges:
 -   [CREATE](#grant-create)
     -   `CREATE DATABASE`
     -   `CREATE TABLE`
-        -   `CREATE ARBITRARY TEMPORARY TABLE`
-            -   `CREATE TEMPORARY TABLE`
+        -   `CREATE TEMPORARY TABLE`
     -   `CREATE VIEW`
     -   `CREATE DICTIONARY`
     -   `CREATE FUNCTION`
@@ -222,7 +220,7 @@ By default, a user account or a role has no privileges.
 
 If a user or a role has no privileges, it is displayed as [NONE](#grant-none) privilege.
 
-Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](../../sql-reference/statements/optimize.md) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
+Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
 
 ### SELECT
 
@@ -305,17 +303,16 @@ Examples of how this hierarchy is treated:
 -   The `MODIFY SETTING` privilege allows modifying table engine settings. It does not affect settings or server configuration parameters.
 -   The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
 -   The `DETACH` operation needs the [DROP](#grant-drop) privilege.
--   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/kill.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
+-   To stop mutation by the [KILL MUTATION](../../sql-reference/statements/misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
 ### CREATE
 
-Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/attach.md) DDL-queries according to the following hierarchy of privileges:
+Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/misc.md#attach) DDL-queries according to the following hierarchy of privileges:
 
 -   `CREATE`. Level: `GROUP`
     -   `CREATE DATABASE`. Level: `DATABASE`
     -   `CREATE TABLE`. Level: `TABLE`
-        -   `CREATE ARBITRARY TEMPORARY TABLE`. Level: `GLOBAL`
-            -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
+        -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
     -   `CREATE VIEW`. Level: `VIEW`
     -   `CREATE DICTIONARY`. Level: `DICTIONARY`
 
@@ -325,7 +322,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 ### DROP
 
-Allows executing [DROP](../../sql-reference/statements/drop.md) and [DETACH](../../sql-reference/statements/detach.md) queries according to the following hierarchy of privileges:
+Allows executing [DROP](../../sql-reference/statements/misc.md#drop) and [DETACH](../../sql-reference/statements/misc.md#detach) queries according to the following hierarchy of privileges:
 
 -   `DROP`. Level: `GROUP`
     -   `DROP DATABASE`. Level: `DATABASE`
@@ -335,13 +332,13 @@ Allows executing [DROP](../../sql-reference/statements/drop.md) and [DETACH](../
 
 ### TRUNCATE
 
-Allows executing [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Allows executing [TRUNCATE](../../sql-reference/statements/misc.md#truncate-statement) queries.
 
 Privilege level: `TABLE`.
 
 ### OPTIMIZE
 
-Allows executing [OPTIMIZE TABLE](../../sql-reference/statements/optimize.md) queries.
+Allows executing [OPTIMIZE TABLE](../../sql-reference/statements/misc.md#misc_operations-optimize) queries.
 
 Privilege level: `TABLE`.
 
@@ -361,7 +358,7 @@ A user has the `SHOW` privilege if it has any other privilege concerning the spe
 
 ### KILL QUERY
 
-Allows executing [KILL](../../sql-reference/statements/kill.md#kill-query) queries according to the following hierarchy of privileges:
+Allows executing [KILL](../../sql-reference/statements/misc.md#kill-query-statement) queries according to the following hierarchy of privileges:
 
 Privilege level: `GLOBAL`.
 
@@ -484,3 +481,4 @@ Doesn’t grant any privileges.
 ### ADMIN OPTION
 
 The `ADMIN OPTION` privilege allows a user to grant their role to another user.
+

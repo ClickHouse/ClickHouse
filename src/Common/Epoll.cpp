@@ -2,8 +2,8 @@
 
 #include "Epoll.h"
 #include <Common/Exception.h>
-#include <base/defines.h>
 #include <unistd.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -60,7 +60,7 @@ void Epoll::remove(int fd)
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
 {
     if (events_count == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
+        throw Exception("There are no events in epoll", ErrorCodes::LOGICAL_ERROR);
 
     int ready_size;
     int timeout = blocking ? -1 : 0;
@@ -70,6 +70,9 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 
         if (ready_size == -1 && errno != EINTR)
             throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
+
+        if (errno == EINTR)
+            LOG_TEST(&Poco::Logger::get("Epoll"), "EINTR");
     }
     while (ready_size <= 0 && (ready_size != 0 || blocking));
 
@@ -79,10 +82,7 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 Epoll::~Epoll()
 {
     if (epoll_fd != -1)
-    {
-        int err = close(epoll_fd);
-        chassert(!err || errno == EINTR);
-    }
+        close(epoll_fd);
 }
 
 }

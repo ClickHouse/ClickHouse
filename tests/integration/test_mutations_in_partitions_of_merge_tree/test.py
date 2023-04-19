@@ -19,14 +19,6 @@ node2 = cluster.add_instance(
     stay_alive=True,
 )
 
-node3 = cluster.add_instance(
-    "node3",
-    main_configs=["configs/logs_config.xml", "configs/cluster.xml"],
-    user_configs=["configs/max_threads.xml"],
-    with_zookeeper=True,
-    stay_alive=True,
-)
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -188,20 +180,3 @@ def test_trivial_alter_in_partition_replicated_merge_tree(started_cluster):
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))
         node2.query("DROP TABLE IF EXISTS {}".format(name))
-
-
-def test_mutation_max_streams(started_cluster):
-    try:
-        node3.query("DROP TABLE IF EXISTS t_mutations")
-
-        node3.query("CREATE TABLE t_mutations (a UInt32) ENGINE = MergeTree ORDER BY a")
-        node3.query("INSERT INTO t_mutations SELECT number FROM numbers(10000000)")
-
-        node3.query(
-            "ALTER TABLE t_mutations DELETE WHERE a = 300000",
-            settings={"mutations_sync": "2"},
-        )
-
-        assert node3.query("SELECT count() FROM t_mutations") == "9999999\n"
-    finally:
-        node3.query("DROP TABLE IF EXISTS t_mutations")

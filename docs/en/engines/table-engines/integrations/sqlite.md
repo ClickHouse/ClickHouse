@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/integrations/sqlite
 sidebar_position: 7
 sidebar_label: SQLite
 ---
@@ -58,3 +57,6 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 
 -   [SQLite](../../../engines/database-engines/sqlite.md) engine
 -   [sqlite](../../../sql-reference/table-functions/sqlite.md) table function
+
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/sqlite/) <!--hide-->

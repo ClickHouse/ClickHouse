@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
@@ -175,10 +174,6 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 - `br`
 - `deflate`
 - `xz`
-- `zstd`
-- `lz4`
-- `bz2`
-- `snappy`
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
@@ -244,7 +239,7 @@ The username and password can be indicated in one of three ways:
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-2.  In the ‘user’ and ‘password’ URL parameters (*We do not recommend using this method as the parameter might be logged by web proxy and cached in the browser*). Example:
+1.  In the ‘user’ and ‘password’ URL parameters. Example:
 
 <!-- -->
 
@@ -252,7 +247,7 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-3.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+1.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
 
 <!-- -->
 
@@ -309,7 +304,6 @@ The HTTP interface allows passing external data (external temporary tables) for 
 ## Response Buffering {#response-buffering}
 
 You can enable response buffering on the server-side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
-Also settings `http_response_buffer_size` and `http_wait_end_of_query` can be used.
 
 `buffer_size` determines the number of bytes in the result to buffer in the server memory. If a result body is larger than this threshold, the buffer is written to the HTTP channel, and the remaining data is sent directly to the HTTP channel.
 
@@ -333,35 +327,6 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-### Tabs in URL Parameters
-
-Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
-
-```bash
-curl -sS "http://localhost:8123" -d "SELECT splitByChar('\t', 'abc      123')"
-```
-
-```response
-['abc','123']
-```
-
-However, if you try to encode an actual tab using `%09` in a URL parameter, it won't get parsed properly:
-
-```bash
-curl -sS "http://localhost:8123?param_arg1=abc%09123" -d "SELECT splitByChar('\t', {arg1:String})"
-Code: 457. DB::Exception: Value abc	123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
-```
-
-If you are using URL parameters, you will need to encode the `\t` as `%5C%09`. For example:
-
-```bash
-curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar('\t', {arg1:String})"
-```
-
-```response
-['abc','123']
-```
-
 ## Predefined HTTP Interface {#predefined_http_interface}
 
 ClickHouse supports specific queries through the HTTP interface. For example, you can write data to a table as follows:
@@ -370,7 +335,7 @@ ClickHouse supports specific queries through the HTTP interface. For example, yo
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-ClickHouse also supports Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter).
+ClickHouse also supports Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/percona-lab/clickhouse_exporter).
 
 Example:
 
@@ -475,7 +440,7 @@ Next are the configuration methods for different `type`.
 
 The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
-:::note
+:::warning
 To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
 :::
 
@@ -506,7 +471,7 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-:::note
+:::warning
 In one `predefined_query_handler` only supports one `query` of an insert type.
 :::
 

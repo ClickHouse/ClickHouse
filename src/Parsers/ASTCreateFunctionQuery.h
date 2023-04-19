@@ -25,8 +25,6 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateFunctionQuery>(clone()); }
 
     String getFunctionName() const;
-
-    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 
 }

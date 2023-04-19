@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/mysql
 sidebar_position: 50
 sidebar_label: MySQL
 ---
@@ -60,7 +59,7 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-:::note
+:::warning
 By now these variables are stubs and don't correspond to anything.
 :::
 
@@ -148,3 +147,5 @@ SELECT * FROM mysql_db.mysql_table
 │      3 │     4 │
 └────────┴───────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->

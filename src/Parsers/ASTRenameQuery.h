@@ -3,8 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -19,22 +17,8 @@ class ASTRenameQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 public:
     struct Table
     {
-        ASTPtr database;
-        ASTPtr table;
-
-        String getDatabase() const
-        {
-            String name;
-            tryGetIdentifierNameInto(database, name);
-            return name;
-        }
-
-        String getTable() const
-        {
-            String name;
-            tryGetIdentifierNameInto(table, name);
-            return name;
-        }
+        String database;
+        String table;
     };
 
     struct Element
@@ -72,10 +56,10 @@ public:
         query.cluster.clear();
         for (Element & elem : query.elements)
         {
-            if (!elem.from.database)
-                elem.from.database = std::make_shared<ASTIdentifier>(params.default_database);
-            if (!elem.to.database)
-                elem.to.database = std::make_shared<ASTIdentifier>(params.default_database);
+            if (elem.from.database.empty())
+                elem.from.database = params.default_database;
+            if (elem.to.database.empty())
+                elem.to.database = params.default_database;
         }
 
         return query_ptr;
@@ -93,9 +77,9 @@ protected:
             if (elements.at(0).if_exists)
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
 
-            settings.ostr << backQuoteIfNeed(elements.at(0).from.getDatabase());
+            settings.ostr << backQuoteIfNeed(elements.at(0).from.database);
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-            settings.ostr << backQuoteIfNeed(elements.at(0).to.getDatabase());
+            settings.ostr << backQuoteIfNeed(elements.at(0).to.database);
             formatOnCluster(settings);
             return;
         }
@@ -119,9 +103,9 @@ protected:
 
             if (it->if_exists)
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
-            settings.ostr << (it->from.database ? backQuoteIfNeed(it->from.getDatabase()) + "." : "") << backQuoteIfNeed(it->from.getTable())
+            settings.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table)
                 << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "")
-                << (it->to.database ? backQuoteIfNeed(it->to.getDatabase()) + "." : "") << backQuoteIfNeed(it->to.getTable());
+                << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
         }
 
         formatOnCluster(settings);

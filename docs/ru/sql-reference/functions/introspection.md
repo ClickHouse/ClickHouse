@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/introspection
 sidebar_position: 65
 sidebar_label: "Функции интроспекции"
 ---
@@ -10,7 +9,6 @@ sidebar_label: "Функции интроспекции"
 
 :::danger "Предупреждение"
     Эти функции выполняются медленно и могут приводить к нежелательным последствиям в плане безопасности.
-:::
 
 Для правильной работы функций интроспекции:
 
@@ -22,7 +20,7 @@ sidebar_label: "Функции интроспекции"
 
 ClickHouse сохраняет отчеты профилировщика в [журнал трассировки](../../operations/system-tables/trace_log.md#system_tables-trace_log) в системной таблице. Убедитесь, что таблица и профилировщик настроены правильно.
 
-## addressToLine {#addresstoline}
+## addresssToLine {#addresstoline}
 
 Преобразует адрес виртуальной памяти внутри процесса сервера ClickHouse в имя файла и номер строки в исходном коде ClickHouse.
 
@@ -372,3 +370,5 @@ SELECT logTrace('logTrace message');
 │                            0 │
 └──────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/query_language/functions/introspection/) <!--hide-->

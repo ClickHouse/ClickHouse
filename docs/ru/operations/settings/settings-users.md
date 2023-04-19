@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: "Настройки пользователей"
 ---
@@ -162,3 +161,4 @@ sidebar_label: "Настройки пользователей"
 ```
 
 Элемент `filter` содержать любое выражение, возвращающее значение типа [UInt8](../../sql-reference/data-types/int-uint.md). Обычно он содержит сравнения и логические операторы. Строки `database_name.table1`, для которых фильтр возвращает 0 не выдаются пользователю. Фильтрация несовместима с операциями `PREWHERE` и отключает оптимизацию `WHERE→PREWHERE`.
+

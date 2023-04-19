@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/map
 sidebar_position: 65
 sidebar_label: Map(key, value)
 ---
@@ -109,7 +108,3 @@ Result:
 -   [map()](../../sql-reference/functions/tuple-map-functions.md#function-map) function
 -   [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
 
-
-## Related content
-
-- Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

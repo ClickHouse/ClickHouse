@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/stochasticlinearregression
 sidebar_position: 221
 ---
 

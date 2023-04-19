@@ -1,8 +1,7 @@
 #pragma once
 
+#include "ZooKeeper.h"
 #include <functional>
-
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace zkutil
 {

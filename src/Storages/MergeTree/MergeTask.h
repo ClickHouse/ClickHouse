@@ -58,10 +58,9 @@ public:
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
-        bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
-        bool need_prefix,
-        IMergeTreeDataPart * parent_part_,
+        const IMergeTreeDataPart * parent_part_,
+        const IDataPartStorageBuilder * parent_path_storage_builder_,
         String suffix_,
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
@@ -82,14 +81,13 @@ public:
             global_ctx->space_reservation = std::move(space_reservation_);
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
-            global_ctx->cleanup = std::move(cleanup_);
             global_ctx->parent_part = std::move(parent_part_);
+            global_ctx->parent_path_storage_builder = std::move(parent_path_storage_builder_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
-            global_ctx->need_prefix = need_prefix;
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
@@ -102,6 +100,11 @@ public:
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
         return global_ctx->promise.get_future();
+    }
+
+    DataPartStorageBuilderPtr getBuilder()
+    {
+        return global_ctx->data_part_storage_builder;
     }
 
     bool execute();
@@ -124,7 +127,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct GlobalRuntimeContext : public IStageRuntimeContext
+    struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
     {
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
@@ -138,13 +141,13 @@ private:
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
-        IMergeTreeDataPart * parent_part{nullptr};
+        const IMergeTreeDataPart * parent_part{nullptr};
+        const IDataPartStorageBuilder * parent_path_storage_builder{nullptr};
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
         bool deduplicate{false};
         Names deduplicate_by_columns{};
-        bool cleanup{false};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
@@ -165,6 +168,7 @@ private:
         std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
+        DataPartStorageBuilderPtr data_part_storage_builder;
 
         /// If lightweight delete mask is present then some input rows are filtered out right after reading.
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
@@ -176,7 +180,6 @@ private:
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
 
         MergeTreeTransactionPtr txn;
-        bool need_prefix;
 
         scope_guard temporary_directory_lock;
     };
@@ -186,11 +189,10 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
+    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Dependencies
         String suffix;
-        bool need_prefix;
         MergeTreeData::MergingParams merging_params{};
 
         DiskPtr tmp_disk{nullptr};
@@ -199,7 +201,7 @@ private:
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<PocoTemporaryFile> rows_sources_file{nullptr};
+        std::unique_ptr<TemporaryFile> rows_sources_file{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
@@ -259,10 +261,10 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct VerticalMergeRuntimeContext : public IStageRuntimeContext
+    struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<PocoTemporaryFile> rows_sources_file;
+        std::unique_ptr<TemporaryFile> rows_sources_file;
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes;
@@ -331,7 +333,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
+    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Only one dependency
         bool need_sync{false};

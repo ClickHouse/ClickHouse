@@ -1,9 +1,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Core/ServerUUID.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -12,8 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key, Poco::Logger * log)
@@ -46,10 +43,10 @@ String Macros::expand(const String & s,
         return s;
 
     if (info.level && s.size() > 65536)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Too long string while expanding macros");
+        throw Exception("Too long string while expanding macros", ErrorCodes::SYNTAX_ERROR);
 
     if (info.level >= 10)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Too deep recursion while expanding macros: '{}'", s);
+        throw Exception("Too deep recursion while expanding macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
 
     /// If config file contains explicit special macro, then we do not expand it in this mode.
     if (!enable_special_macros && info.expand_special_macros_only)
@@ -74,7 +71,7 @@ String Macros::expand(const String & s,
         ++begin;
         size_t end = s.find('}', begin);
         if (end == String::npos)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unbalanced {{ and }} in string with macros: '{}'", s);
+            throw Exception("Unbalanced { and } in string with macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
 
         String macro_name = s.substr(begin, end - begin);
         auto it = macros.find(macro_name);
@@ -98,24 +95,16 @@ String Macros::expand(const String & s,
         else if (macro_name == "uuid" && !info.expand_special_macros_only)
         {
             if (info.table_id.uuid == UUIDHelpers::Nil)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Macro 'uuid' and empty arguments of ReplicatedMergeTree "
-                                "are supported only for ON CLUSTER queries with Atomic database engine");
+                throw Exception("Macro 'uuid' and empty arguments of ReplicatedMergeTree "
+                                "are supported only for ON CLUSTER queries with Atomic database engine",
+                                ErrorCodes::SYNTAX_ERROR);
             /// For ON CLUSTER queries we don't want to require all macros definitions in initiator's config.
             /// However, initiator must check that for cross-replication cluster zookeeper_path does not contain {uuid} macro.
             /// It becomes impossible to check if {uuid} is contained inside some unknown macro.
             if (info.level)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Macro 'uuid' should not be inside another macro");
+                throw Exception("Macro 'uuid' should not be inside another macro", ErrorCodes::SYNTAX_ERROR);
             res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
-        }
-        else if (macro_name == "server_uuid")
-        {
-            auto uuid = ServerUUID::get();
-            if (UUIDHelpers::Nil == uuid)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Macro {server_uuid} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
-            res += toString(uuid);
-            info.expanded_other = true;
         }
         else if (info.shard && macro_name == "shard")
         {
@@ -137,8 +126,9 @@ String Macros::expand(const String & s,
             info.has_unknown = true;
         }
         else
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro '{}' in config while processing substitutions in "
-                            "'{}' at '{}' or macro is not supported here", macro_name, s, toString(begin));
+            throw Exception("No macro '" + macro_name +
+                "' in config while processing substitutions in '" + s + "' at '"
+                + toString(begin) + "' or macro is not supported here", ErrorCodes::SYNTAX_ERROR);
 
         pos = end + 1;
     }
@@ -154,7 +144,7 @@ String Macros::getValue(const String & key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;
-    throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro {} in config", key);
+    throw Exception("No macro " + key + " in config", ErrorCodes::SYNTAX_ERROR);
 }
 
 

@@ -14,10 +14,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
-#include <Common/NamedCollections/NamedCollections.h>
 
 namespace DB
 {
@@ -82,7 +80,7 @@ Pipe StorageMeiliSearch::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    unsigned)
 {
     storage_snapshot->check(column_names);
 
@@ -99,9 +97,9 @@ Pipe StorageMeiliSearch::read(
         for (const auto & el : query_params->children)
         {
             auto str = el->getColumnName();
-            auto it = std::find(str.begin(), str.end(), '=');
+            auto it = find(str.begin(), str.end(), '=');
             if (it == str.end())
-                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "meiliMatch function must have parameters of the form \'key=value\'");
+                throw Exception("meiliMatch function must have parameters of the form \'key=value\'", ErrorCodes::BAD_QUERY_PARAMETER);
 
             String key(str.begin() + 1, it);
             String value(it + 1, str.end() - 1);
@@ -129,18 +127,18 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
 
 MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        validateNamedCollection(*named_collection, {"url", "index"}, {"key"});
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
-        String url = named_collection->get<String>("url");
-        String index = named_collection->get<String>("index");
-        String key = named_collection->getOrDefault<String>("key", "");
+        String url = common_configuration.addresses_expr;
+        String index = common_configuration.table;
+        String key = common_configuration.password;
 
         if (url.empty() || index.empty())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")");
+            throw Exception(
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")", ErrorCodes::BAD_ARGUMENTS);
         }
 
         return MeiliSearchConfiguration(url, index, key);
@@ -149,8 +147,9 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
     {
         if (engine_args.size() < 2 || 3 < engine_args.size())
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")");
+            throw Exception(
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         for (auto & engine_arg : engine_args)

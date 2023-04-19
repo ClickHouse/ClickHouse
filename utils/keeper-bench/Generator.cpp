@@ -162,19 +162,6 @@ ZooKeeperRequestPtr SetRequestGenerator::generate()
     return request;
 }
 
-void MixedRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
-{
-    for (auto & generator : generators)
-        generator->startup(zookeeper);
-}
-
-ZooKeeperRequestPtr MixedRequestGenerator::generate()
-{
-    pcg64 rng(randomSeed());
-    std::uniform_int_distribution<size_t> distribution(0, generators.size() - 1);
-
-    return generators[distribution(rng)]->generate();
-}
 
 void GetRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
 {
@@ -328,13 +315,7 @@ std::unique_ptr<IGenerator> getGenerator(const std::string & name)
     {
         return std::make_unique<SetRequestGenerator>("/set_generator", 5);
     }
-    else if (name == "mixed_small_data")
-    {
-        std::vector<std::unique_ptr<IGenerator>> generators;
-        generators.push_back(std::make_unique<SetRequestGenerator>("/set_generator", 5));
-        generators.push_back(std::make_unique<GetRequestGenerator>("/get_generator", 10, 32));
-        return std::make_unique<MixedRequestGenerator>(std::move(generators));
-    }
+
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", name);
 }
