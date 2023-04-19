@@ -222,16 +222,11 @@ void RemoteFSHandler::run()
 void RemoteFSHandler::extractConnectionSettingsFromContext(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    send_exception_with_stack_trace = settings.calculate_text_stack_trace;
     send_timeout = settings.send_timeout;
     receive_timeout = settings.receive_timeout;
     poll_interval = settings.poll_interval;
     idle_connection_timeout = settings.idle_connection_timeout;
     interactive_delay = settings.interactive_delay;
-    sleep_in_send_tables_status = settings.sleep_in_send_tables_status_ms;
-    unknown_packet_in_send_data = settings.unknown_packet_in_send_data;
-    sleep_in_receive_cancel = settings.sleep_in_receive_cancel_ms;
-    sleep_after_receiving_query = settings.sleep_after_receiving_query_ms;
 }
 
 void RemoteFSHandler::receiveHello()
