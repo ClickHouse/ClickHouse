@@ -17,6 +17,8 @@ struct CurrentMemoryTracker
     /// Throws MEMORY_LIMIT_EXCEEDED (if it's allowed to throw exceptions)
     static void injectFault();
 
+    static thread_local std::function<void(Int64, bool)> before_alloc;
+    static thread_local std::function<void(Int64)> before_free;
 private:
     [[nodiscard]] static AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded);
 };
