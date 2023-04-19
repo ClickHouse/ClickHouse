@@ -683,6 +683,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/loadavg", loadavg);
         }
     }
 
@@ -700,6 +701,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/uptime", uptime);
         }
     }
 
@@ -887,6 +889,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/stat", proc_stat);
         }
     }
 
@@ -1007,6 +1010,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/meminfo", meminfo);
         }
     }
 
@@ -1059,6 +1063,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/cpuinfo", cpuinfo);
         }
     }
 
@@ -1076,6 +1081,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/sys/fs/file-nr", file_nr);
         }
     }
 
@@ -1308,6 +1314,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/net/dev", net_dev);
         }
     }
 
