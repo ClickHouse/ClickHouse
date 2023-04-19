@@ -766,7 +766,7 @@ static_assert(
 
 
 /// For any other value types.
-template <bool IS_NULLABLE = false, bool IS_NULL_GREATER = false>
+template <bool IS_NULLABLE = false>
 struct SingleValueDataGeneric
 {
 private:
@@ -778,7 +778,6 @@ private:
 public:
     static constexpr bool is_nullable = IS_NULLABLE;
     static constexpr bool is_any = false;
-    static constexpr bool is_null_greater = IS_NULL_GREATER;
 
     bool has() const
     {
@@ -881,26 +880,13 @@ public:
             {
                 Field new_value;
                 column.get(row_num, new_value);
-                if constexpr (!is_null_greater)
+                if (!value.isNull() && (new_value.isNull() || new_value < value))
                 {
-                    if (!value.isNull() && (new_value.isNull() || new_value < value))
-                    {
-                        value = new_value;
-                        return true;
-                    }
-                    else
-                        return false;
+                    value = new_value;
+                    return true;
                 }
                 else
-                {
-                    if ((value.isNull() && !new_value.isNull()) || (!new_value.isNull() && new_value < value))
-                    {
-                        value = new_value;
-                        return true;
-                    }
-
                     return false;
-                }
             }
             else
             {
@@ -928,24 +914,12 @@ public:
                 change(to, arena);
                 return true;
             }
-            if constexpr (!is_null_greater)
+            if (to.value.isNull() || (!value.isNull() && to.value < value))
             {
-                if (to.value.isNull() || (!value.isNull() && to.value < value))
-                {
-                    value = to.value;
-                    return true;
-                }
-                return false;
+                value = to.value;
+                return true;
             }
-            else
-            {
-                if ((value.isNull() && !to.value.isNull()) || (!to.value.isNull() || to.value < value))
-                {
-                    value = to.value;
-                    return true;
-                }
-                return false;
-            }
+            return false;
         }
         else
         {
@@ -972,24 +946,12 @@ public:
             {
                 Field new_value;
                 column.get(row_num, new_value);
-                if constexpr (is_null_greater)
+                if (!value.isNull() && (new_value.isNull() || value < new_value))
                 {
-                    if (!value.isNull() && (new_value.isNull() || value < new_value))
-                    {
-                        value = new_value;
-                        return true;
-                    }
-                    return false;
+                    value = new_value;
+                    return true;
                 }
-                else
-                {
-                    if ((value.isNull() && !new_value.isNull()) || (!new_value.isNull() && value < new_value))
-                    {
-                        value = new_value;
-                        return true;
-                    }
-                    return false;
-                }
+                return false;
             }
             else
             {
@@ -1012,25 +974,12 @@ public:
             return false;
         if constexpr (is_nullable)
         {
-            if constexpr (is_null_greater)
+            if (!value.isNull() && (to.value.isNull() || value < to.value))
             {
-                if (!value.isNull() && (to.value.isNull() || value < to.value))
-                {
-                    value = to.value;
-                    return true;
-                }
-                return false;
+                value = to.value;
+                return true;
             }
-            else
-            {
-                if ((value.isNull() && !to.value.isNull()) || (!to.value.isNull() && value < to.value))
-                {
-                    value = to.value;
-                    return true;
-                }
-                return false;
-
-            }
+            return false;
         }
         else
         {

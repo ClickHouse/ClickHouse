@@ -9,7 +9,7 @@ Selects the first encountered value, similar to `any`, but could accept NULL.
 
 ## examples
 
-```sq;
+```sql
 insert into test_data (a,b) values (1,null), (2,3), (4, 5), (6,null)
 ```
 
