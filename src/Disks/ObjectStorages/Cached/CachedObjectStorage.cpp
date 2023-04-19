@@ -86,45 +86,8 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
 {
     if (objects.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
-
     assert(!objects[0].getPathKeyForCache().empty());
-
-    /// Add cache relating settings to ReadSettings.
-    auto modified_read_settings = patchSettings(read_settings);
-    auto implementation_buffer = object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
-
-    /// If underlying read buffer does caching on its own, do not wrap it in caching buffer.
-    if (implementation_buffer->isIntegratedWithFilesystemCache()
-        && modified_read_settings.enable_filesystem_cache_on_lower_level)
-    {
-        return implementation_buffer;
-    }
-    else
-    {
-        if (!file_size)
-            file_size = implementation_buffer->getFileSize();
-
-        auto implementation_buffer_creator = [objects, modified_read_settings, read_hint, file_size, this]()
-        {
-            return std::make_unique<BoundedReadBuffer>(
-                object_storage->readObjects(objects, modified_read_settings, read_hint, file_size));
-        };
-
-        /// TODO: A test is needed for the case of non-s3 storage and *Log family engines.
-        std::string path = objects[0].absolute_path;
-        FileCache::Key key = getCacheKey(objects[0].getPathKeyForCache());
-
-        return std::make_unique<CachedOnDiskReadBufferFromFile>(
-            path,
-            key,
-            cache,
-            implementation_buffer_creator,
-            modified_read_settings,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
-            file_size.value(),
-            /* allow_seeks */true,
-            /* use_external_buffer */false);
-    }
+    return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
@@ -135,7 +98,6 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 {
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
 }
-
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
