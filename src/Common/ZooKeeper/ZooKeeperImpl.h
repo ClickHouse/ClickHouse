@@ -197,24 +197,13 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
-    void setServerCompletelyStarted();
-
 private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
 
-    /// Fault injection
-    void maybeInjectSendFault();
-    void maybeInjectRecvFault();
-    void maybeInjectSendSleep();
-    void maybeInjectRecvSleep();
-    void setupFaultDistributions();
-    std::atomic_flag inject_setup = ATOMIC_FLAG_INIT;
     std::optional<std::bernoulli_distribution> send_inject_fault;
     std::optional<std::bernoulli_distribution> recv_inject_fault;
-    std::optional<std::bernoulli_distribution> send_inject_sleep;
-    std::optional<std::bernoulli_distribution> recv_inject_sleep;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
@@ -255,30 +244,8 @@ private:
     Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
-    /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
-    class ThreadReference
-    {
-    public:
-        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
-        {
-            std::lock_guard<std::mutex> l(lock);
-            thread = std::move(thread_);
-            return *this;
-        }
-
-        void join()
-        {
-            std::lock_guard<std::mutex> l(lock);
-            if (thread.joinable())
-                thread.join();
-        }
-    private:
-        std::mutex lock;
-        ThreadFromGlobalPool thread;
-    };
-
-    ThreadReference send_thread;
-    ThreadReference receive_thread;
+    ThreadFromGlobalPool send_thread;
+    ThreadFromGlobalPool receive_thread;
 
     Poco::Logger * log;
 

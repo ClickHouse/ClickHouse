@@ -1,6 +1,5 @@
 #include <Analyzer/MatcherNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -205,19 +204,17 @@ QueryTreeNodePtr MatcherNode::cloneImpl() const
     return matcher_node;
 }
 
-ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr MatcherNode::toASTImpl() const
 {
     ASTPtr result;
     ASTPtr transformers;
 
-    const auto & column_transformers = getColumnTransformers().getNodes();
-
-    if (!column_transformers.empty())
+    if (!children.empty())
     {
         transformers = std::make_shared<ASTColumnsTransformerList>();
 
-        for (const auto & column_transformer : column_transformers)
-            transformers->children.push_back(column_transformer->toAST(options));
+        for (const auto & child : children)
+            transformers->children.push_back(child->toAST());
     }
 
     if (matcher_type == MatcherNodeType::ASTERISK)

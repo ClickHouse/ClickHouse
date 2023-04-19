@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
 }
@@ -90,7 +89,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     catch (const Exception & e)
     {
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
+            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);

@@ -34,7 +34,10 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
         window_bits += 16;
     }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
     int rc = deflateInit2(&zstr, compression_level, Z_DEFLATED, window_bits, 8, Z_DEFAULT_STRATEGY);
+#pragma GCC diagnostic pop
 
     if (rc != Z_OK)
         throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
@@ -60,7 +63,7 @@ void ZlibDeflatingWriteBuffer::nextImpl()
             out->position() = out->buffer().end() - zstr.avail_out;
 
             if (rc != Z_OK)
-                throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflate failed: {}", zError(rc));
+                throw Exception(std::string("deflate failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
         }
         while (zstr.avail_in > 0 || zstr.avail_out == 0);
     }
@@ -99,7 +102,7 @@ void ZlibDeflatingWriteBuffer::finalizeBefore()
         out->position() = out->buffer().end() - zstr.avail_out;
 
         if (rc != Z_OK)
-            throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflate failed: {}", zError(rc));
+            throw Exception(std::string("deflate failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
     while (zstr.avail_out == 0);
 
@@ -118,7 +121,7 @@ void ZlibDeflatingWriteBuffer::finalizeBefore()
         }
 
         if (rc != Z_OK)
-            throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflate finalizeImpl() failed: {}", zError(rc));
+            throw Exception(std::string("deflate finalizeImpl() failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
 }
 
@@ -128,7 +131,7 @@ void ZlibDeflatingWriteBuffer::finalizeAfter()
     {
         int rc = deflateEnd(&zstr);
         if (rc != Z_OK)
-            throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateEnd failed: {}", zError(rc));
+            throw Exception(std::string("deflateEnd failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
     catch (...)
     {

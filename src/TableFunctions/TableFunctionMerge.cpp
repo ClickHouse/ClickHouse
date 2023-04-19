@@ -5,8 +5,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
@@ -38,23 +36,6 @@ namespace
     }
 }
 
-std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
-{
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
-    std::vector<size_t> result;
-
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "REGEXP")
-            result.push_back(i);
-    }
-
-    return result;
-}
 
 void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {

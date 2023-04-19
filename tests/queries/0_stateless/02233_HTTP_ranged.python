@@ -122,7 +122,7 @@ class HttpProcessor(BaseHTTPRequestHandler):
     get_call_num = 0
     responses_to_get = []
 
-    def send_head(self, from_get=False):
+    def send_head(self, from_get = False):
         if self.headers["Range"] and HttpProcessor.allow_range:
             try:
                 self.range = parse_byte_range(self.headers["Range"])
@@ -146,9 +146,7 @@ class HttpProcessor(BaseHTTPRequestHandler):
             self.send_error(416, "Requested Range Not Satisfiable")
             return None
 
-        retry_range_request = (
-            first != 0 and from_get is True and len(HttpProcessor.responses_to_get) > 0
-        )
+        retry_range_request = first != 0 and from_get is True and len(HttpProcessor.responses_to_get) > 0
         if retry_range_request:
             code = HttpProcessor.responses_to_get.pop()
             if code not in HttpProcessor.responses:
@@ -246,9 +244,7 @@ def run_test(allow_range, settings, check_retries=False):
             raise Exception("HTTP Range was not used when supported")
 
         if check_retries and len(HttpProcessor.responses_to_get) > 0:
-            raise Exception(
-                "Expected to get http response 500, which had to be retried, but 200 ok returned and then retried"
-            )
+            raise Exception("Expected to get http response 500, which had to be retried, but 200 ok returned and then retried")
 
         if retries_num > 0:
             expected_get_call_num += retries_num - 1
@@ -267,7 +263,7 @@ def run_test(allow_range, settings, check_retries=False):
 
 
 def main():
-    settings = {"max_download_buffer_size": 20}
+    settings = {"max_download_buffer_size" : 20}
 
     # Test Accept-Ranges=False
     run_test(allow_range=False, settings=settings)
@@ -275,7 +271,7 @@ def main():
     run_test(allow_range=True, settings=settings)
 
     # Test Accept-Ranges=True, parallel download is used
-    settings = {"max_download_buffer_size": 10}
+    settings = {"max_download_buffer_size" : 10}
     run_test(allow_range=True, settings=settings)
 
     # Test Accept-Ranges=True, parallel download is not used,

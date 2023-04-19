@@ -79,7 +79,7 @@ public:
                 arguments[1],
         };
 
-        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
+        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns); //-V557
         return func_if->execute(if_columns, result_type, input_rows_count);
     }
 

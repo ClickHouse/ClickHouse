@@ -45,15 +45,6 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
-TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
-    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
-{}
-
-TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Metric metric_scope)
-    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
-    , current_metric_scope(metric_scope)
-{}
-
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
     if (file_cache)
@@ -124,7 +115,7 @@ struct TemporaryFileStream::OutputWriter
         , out_compressed_buf(*out_buf)
         , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
-        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", path);
+        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to {}", path);
     }
 
     OutputWriter(std::unique_ptr<WriteBufferToFileSegment> out_buf_, const Block & header_)
@@ -133,7 +124,7 @@ struct TemporaryFileStream::OutputWriter
         , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
         LOG_TEST(&Poco::Logger::get("TemporaryFileStream"),
-            "Writing to temporary file {}",
+            "Writing to {}",
             static_cast<const WriteBufferToFileSegment *>(out_buf.get())->getFileName());
     }
 

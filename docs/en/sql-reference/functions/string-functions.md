@@ -6,7 +6,7 @@ sidebar_label: Strings
 
 # Functions for Working with Strings
 
-:::note
+:::note    
 Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
 :::
 
@@ -124,7 +124,7 @@ leftPad('string', 'length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -162,7 +162,7 @@ leftPadUTF8('string','length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -200,7 +200,7 @@ rightPad('string', 'length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -238,7 +238,7 @@ rightPadUTF8('string','length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
+-   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -330,7 +330,7 @@ repeat(s, n)
 **Arguments**
 
 -   `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
--   `n` — The number of times to repeat the string. [UInt or Int](../../sql-reference/data-types/int-uint.md).
+-   `n` — The number of times to repeat the string. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -1193,42 +1193,6 @@ Result:
 ```
 
 ## concatWithSeparatorAssumeInjective
-
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
-
-## soundex
-
-Returns the [Soundex code](https://en.wikipedia.org/wiki/Soundex) of a string.
-
-**Syntax**
-
-``` sql
-soundex(val)
-```
-
-**Arguments**
-
-- `val` - Input value. [String](../data-types/string.md)
-
-**Returned value**
-
-- The Soundex code of the input value. [String](../data-types/string.md)
-
-**Example**
-
-Query:
-
-``` sql
-select soundex('aksel');
-```
-
-Result:
-
-``` text
-┌─soundex('aksel')─┐
-│ A240             │
-└──────────────────┘
-```
-

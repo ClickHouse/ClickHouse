@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/StorageView.h>
@@ -22,11 +21,6 @@ const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
     return *create.select;
 }
 
-std::vector<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
-{
-    return {0};
-}
-
 void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
@@ -46,15 +40,8 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
     assert(create.select);
     assert(create.children.size() == 1);
     assert(create.children[0]->as<ASTSelectWithUnionQuery>());
-
-    Block sample_block;
-
-    if (context->getSettingsRef().allow_experimental_analyzer)
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
-    else
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
-
-    return ColumnsDescription(sample_block.getNamesAndTypesList());
+    auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+    return ColumnsDescription(sample.getNamesAndTypesList());
 }
 
 StoragePtr TableFunctionView::executeImpl(

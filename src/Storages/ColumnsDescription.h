@@ -35,9 +35,8 @@ struct GetColumnsOptions
         Materialized = 2,
         Aliases = 4,
         Ephemeral = 8,
-        OrdinaryAndAliases = Ordinary | Aliases,
+
         AllPhysical = Ordinary | Materialized,
-        AllPhysicalAndAliases = AllPhysical | Aliases,
         All = AllPhysical | Aliases | Ephemeral,
     };
 
@@ -132,7 +131,6 @@ public:
     NamesAndTypesList getInsertable() const; /// ordinary + ephemeral
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getEphemeral() const;
-    NamesAndTypesList getWithDefaultExpression() const; // columns with default expression, for example set by `CREATE TABLE` statement
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + ephemeral
     /// Returns .size0/.null/...
@@ -163,7 +161,7 @@ public:
         {
             String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
             appendHintsMessage(exception_message, column_name);
-            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
         }
 
         removeSubcolumns(it->name);

@@ -9,10 +9,11 @@
 #include <list>
 
 #include <base/types.h>
+#include <Common/logger_useful.h>
+#include <Common/ThreadPool.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
-#include <IO/S3/Requests.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
@@ -21,7 +22,13 @@
 
 namespace Aws::S3
 {
-class Client;
+class S3Client;
+}
+
+namespace Aws::S3::Model
+{
+    class UploadPartRequest;
+    class PutObjectRequest;
 }
 
 namespace DB
@@ -40,10 +47,10 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromS3(
-        std::shared_ptr<const S3::Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3Settings::RequestSettings & request_settings,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -68,11 +75,11 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(S3::UploadPartRequest & req);
+    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
-    void fillPutRequest(S3::PutObjectRequest & req);
+    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
     void processPutRequest(const PutObjectTask & task);
 
     void waitForReadyBackGroundTasks();
@@ -81,9 +88,10 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::RequestSettings request_settings;
-    const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
-    const std::shared_ptr<const S3::Client> client_ptr;
+    const S3Settings::RequestSettings::PartUploadSettings settings;
+    const bool check_objects_after_upload = false;
+    const size_t max_unexpected_write_error_retries = 4;
+    const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
     size_t upload_part_size = 0;

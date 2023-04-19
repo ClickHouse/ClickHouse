@@ -11,10 +11,12 @@
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <boost/geometry.hpp>
-#pragma clang diagnostic pop
+
+#pragma GCC diagnostic pop
 
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -598,13 +600,13 @@ struct CallPointInPolygon<>
     template <typename T, typename PointInPolygonImpl>
     static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(y).name()));
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(x).name()));
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
 

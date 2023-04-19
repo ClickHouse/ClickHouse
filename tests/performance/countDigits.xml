@@ -1,6 +1,0 @@
-<test>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(countDigits(RegionID))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(countDigits(AdvEngineID))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(countDigits(ClientIP))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(countDigits(WatchID))</query>
-</test>

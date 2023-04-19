@@ -5,7 +5,7 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageS3Cluster.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -50,7 +50,7 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
     void parseArguments(const ASTPtr &, ContextPtr) override;
 
-    mutable StorageS3Cluster::Configuration configuration;
+    StorageS3ClusterConfiguration configuration;
     ColumnsDescription structure_hint;
 };
 

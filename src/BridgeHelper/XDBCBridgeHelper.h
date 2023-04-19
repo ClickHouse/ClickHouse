@@ -11,7 +11,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/ShellCommand.h>
-#include <IO/ConnectionTimeouts.h>
+#include <Common/logger_useful.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
 
@@ -62,12 +63,10 @@ public:
     XDBCBridgeHelper(
             ContextPtr context_,
             Poco::Timespan http_timeout_,
-            const std::string & connection_string_,
-            bool use_connection_pooling_)
+            const std::string & connection_string_)
         : IXDBCBridgeHelper(context_->getGlobalContext())
         , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
         , connection_string(connection_string_)
-        , use_connection_pooling(use_connection_pooling_)
         , http_timeout(http_timeout_)
         , config(context_->getGlobalContext()->getConfigRef())
     {
@@ -97,7 +96,7 @@ protected:
     {
         try
         {
-            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, getHTTPTimeouts(), credentials);
+            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
             return checkString(PING_OK_ANSWER, buf);
         }
         catch (...)
@@ -133,7 +132,6 @@ protected:
         uri.setHost(bridge_host);
         uri.setPort(bridge_port);
         uri.setScheme("http");
-        uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
         return uri;
     }
 
@@ -148,7 +146,6 @@ private:
 
     Poco::Logger * log;
     std::string connection_string;
-    bool use_connection_pooling;
     Poco::Timespan http_timeout;
     std::string bridge_host;
     size_t bridge_port;
@@ -160,10 +157,6 @@ private:
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
-    ConnectionTimeouts getHTTPTimeouts()
-    {
-        return ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), {getContext()->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
-    }
 
 protected:
     using URLParams = std::vector<std::pair<std::string, std::string>>;
@@ -196,9 +189,8 @@ protected:
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
             uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
-            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
             bool res;
             readBoolText(res, buf);
@@ -218,9 +210,8 @@ protected:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
-            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
             std::string character;
             readStringBinary(character, buf);

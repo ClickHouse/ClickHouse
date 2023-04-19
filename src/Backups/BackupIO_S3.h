@@ -7,7 +7,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3Settings.h>
-#include <Interpreters/Context_fwd.h>
+#include <aws/s3/S3Client.h>
 
 
 namespace DB
@@ -23,16 +23,13 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
-    void copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
-                        WriteMode write_mode, const WriteSettings & write_settings) override;
     DataSourceDescription getDataSourceDescription() const override;
 
 private:
     S3::URI s3_uri;
-    std::shared_ptr<S3::Client> client;
+    std::shared_ptr<Aws::S3::S3Client> client;
     ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
-    Poco::Logger * log;
 };
 
 
@@ -76,7 +73,8 @@ private:
     void removeFilesBatch(const Strings & file_names);
 
     S3::URI s3_uri;
-    std::shared_ptr<S3::Client> client;
+    std::shared_ptr<Aws::S3::S3Client> client;
+    ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
     Poco::Logger * log;
     std::optional<bool> supports_batch_delete;

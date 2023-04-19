@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ResourceLink.h>
+#include <IO/ResourceRequest.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 

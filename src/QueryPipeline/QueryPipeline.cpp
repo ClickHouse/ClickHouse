@@ -18,9 +18,8 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/StreamInQueryCacheTransform.h>
+#include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 
@@ -130,79 +129,50 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
-    std::vector<IProcessor *> processors;
-    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
+
+    /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
+    std::vector<LimitTransform *> limits;
+    std::vector<RemoteSource *> remote_sources;
+
     std::unordered_set<IProcessor *> visited;
-    bool has_limit = false;
 
     struct QueuedEntry
     {
         IProcessor * processor;
-        LimitTransform * limit_processor;
-        ssize_t limit_input_port;
+        bool visited_limit;
     };
 
     std::queue<QueuedEntry> queue;
 
-    queue.push({ output_format, nullptr, -1 });
+    queue.push({ output_format, false });
     visited.emplace(output_format);
 
     while (!queue.empty())
     {
         auto * processor = queue.front().processor;
-        auto * limit_processor = queue.front().limit_processor;
-        auto limit_input_port = queue.front().limit_input_port;
+        auto visited_limit = queue.front().visited_limit;
         queue.pop();
 
-        /// Set counter based on the following cases:
-        ///   1. Remote: Set counter on Remote
-        ///   2. Limit ... PartialSorting: Set counter on PartialSorting
-        ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
-        ///   4. Limit ... Remote: Set counter on Remote
-        ///   5. Limit ... : Set counter on the input port of Limit
-
-        /// Case 1.
-        if (typeid_cast<RemoteSource *>(processor) && !limit_processor)
+        if (!visited_limit)
         {
-            processors.emplace_back(processor);
+            if (auto * limit = typeid_cast<LimitTransform *>(processor))
+            {
+                visited_limit = true;
+                limits.emplace_back(limit);
+            }
+
+            if (auto * source = typeid_cast<RemoteSource *>(processor))
+                remote_sources.emplace_back(source);
+        }
+        else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
+        {
+            if (!rows_before_limit_at_least)
+                rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
+
+            sorting->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+
+            /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
             continue;
-        }
-
-        if (auto * limit = typeid_cast<LimitTransform *>(processor))
-        {
-            has_limit = true;
-
-            /// Ignore child limits
-            if (limit_processor)
-                continue;
-
-            limit_processor = limit;
-            limit_candidates[limit_processor] = {};
-        }
-        else if (limit_processor)
-        {
-            /// Case 2.
-            if (typeid_cast<PartialSortingTransform *>(processor))
-            {
-                processors.emplace_back(processor);
-                limit_candidates[limit_processor].push_back(limit_input_port);
-                continue;
-            }
-
-            /// Case 3.
-            if (auto * having = typeid_cast<TotalsHavingTransform *>(processor))
-            {
-                if (having->hasFilter())
-                    continue;
-            }
-
-            /// Case 4.
-            if (typeid_cast<RemoteSource *>(processor))
-            {
-                processors.emplace_back(processor);
-                limit_candidates[limit_processor].push_back(limit_input_port);
-                continue;
-            }
         }
 
         /// Skip totals and extremes port for output format.
@@ -210,58 +180,37 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
             if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, limit_processor, limit_input_port });
+                queue.push({ child_processor, visited_limit });
 
             continue;
         }
 
-        if (limit_processor == processor)
+        for (auto & child_port : processor->getInputs())
         {
-            ssize_t i = 0;
-            for (auto & child_port : processor->getInputs())
-            {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
-                if (visited.emplace(child_processor).second)
-                    queue.push({ child_processor, limit_processor, i });
-                ++i;
-            }
-        }
-        else
-        {
-            for (auto & child_port : processor->getInputs())
-            {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
-                if (visited.emplace(child_processor).second)
-                    queue.push({ child_processor, limit_processor, limit_input_port });
-            }
+            auto * child_processor = &child_port.getOutputPort().getProcessor();
+            if (visited.emplace(child_processor).second)
+                queue.push({ child_processor, visited_limit });
         }
     }
 
-    /// Case 5.
-    for (auto && [limit, ports] : limit_candidates)
-    {
-        /// If there are some input ports which don't have the counter, add it to LimitTransform.
-        if (ports.size() < limit->getInputs().size())
-        {
-            processors.push_back(limit);
-            for (auto port : ports)
-                limit->setInputPortHasCounter(port);
-        }
-    }
-
-    if (!processors.empty())
+    if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
-        for (auto & processor : processors)
-            processor->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
-        /// If there is a limit, then enable rows_before_limit_at_least
-        /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
-        if (has_limit)
-            rows_before_limit_at_least->add(0);
+        for (auto & limit : limits)
+            limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
-        output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+        for (auto & source : remote_sources)
+            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
+
+    /// If there is a limit, then enable rows_before_limit_at_least
+    /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
+    if (!limits.empty())
+        rows_before_limit_at_least->add(0);
+
+    if (rows_before_limit_at_least)
+        output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 }
 
 
@@ -576,7 +525,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     return true;
 }
 
-void QueryPipeline::streamIntoQueryCache(std::shared_ptr<StreamInQueryCacheTransform> transform)
+void QueryPipeline::streamIntoQueryResultCache(std::shared_ptr<StreamInQueryResultCacheTransform> transform)
 {
     assert(pulling());
 
@@ -585,16 +534,16 @@ void QueryPipeline::streamIntoQueryCache(std::shared_ptr<StreamInQueryCacheTrans
     processors->emplace_back(transform);
 }
 
-void QueryPipeline::finalizeWriteInQueryCache()
+void QueryPipeline::finalizeWriteInQueryResultCache()
 {
     auto it = std::find_if(
         processors->begin(), processors->end(),
-        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryCacheTransform *>(&*processor); });
+        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); });
 
-    /// the pipeline should theoretically contain just one StreamInQueryCacheTransform
+    /// the pipeline should theoretically contain just one StreamInQueryResultCacheTransform
 
     if (it != processors->end())
-        dynamic_cast<StreamInQueryCacheTransform &>(**it).finalizeWriteInQueryCache();
+        dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();
 }
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)

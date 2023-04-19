@@ -23,20 +23,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(const FileCacheSettings & settings)
-    : cache_base_path(settings.base_path)
-    , max_size(settings.max_size)
-    , max_element_size(settings.max_elements)
-    , max_file_segment_size(settings.max_file_segment_size)
-    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
-    , enable_cache_hits_threshold(settings.enable_cache_hits_threshold)
-    , enable_filesystem_query_cache_limit(settings.enable_filesystem_query_cache_limit)
-    , enable_bypass_cache_with_threashold(settings.enable_bypass_cache_with_threashold)
-    , bypass_cache_threashold(settings.bypass_cache_threashold)
+FileCache::FileCache(
+    const String & cache_base_path_,
+    const FileCacheSettings & cache_settings_)
+    : cache_base_path(cache_base_path_)
+    , max_size(cache_settings_.max_size)
+    , max_element_size(cache_settings_.max_elements)
+    , max_file_segment_size(cache_settings_.max_file_segment_size)
+    , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
+    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
+    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
+    , enable_bypass_cache_with_threashold(cache_settings_.enable_bypass_cache_with_threashold)
+    , bypass_cache_threashold(cache_settings_.bypass_cache_threashold)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
-    , max_stash_element_size(settings.max_elements)
+    , max_stash_element_size(cache_settings_.max_elements)
 {
 }
 
@@ -1397,7 +1399,7 @@ FileCache::QueryContextPtr FileCache::getOrSetQueryContext(
     if (context)
         return context;
 
-    auto query_context = std::make_shared<QueryContext>(settings.filesystem_cache_max_download_size, settings.skip_download_if_exceeds_query_cache);
+    auto query_context = std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache);
     auto query_iter = query_map.emplace(query_id, query_context).first;
     return query_iter->second;
 }
@@ -1406,10 +1408,10 @@ FileCache::QueryContextHolder FileCache::getQueryContextHolder(const String & qu
 {
     std::lock_guard cache_lock(mutex);
 
-    if (!enable_filesystem_query_cache_limit || settings.filesystem_cache_max_download_size == 0)
+    if (!enable_filesystem_query_cache_limit || settings.max_query_cache_size == 0)
         return {};
 
-    /// if enable_filesystem_query_cache_limit is true, and filesystem_cache_max_download_size large than zero,
+    /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
     /// we create context query for current query.
     auto context = getOrSetQueryContext(query_id, settings, cache_lock);
     return QueryContextHolder(query_id, this, context);

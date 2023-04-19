@@ -6,7 +6,6 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
 
 
@@ -35,7 +34,14 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
 
 LocalConnection::~LocalConnection()
 {
-    state.reset();
+    try
+    {
+        state.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 bool LocalConnection::hasReadPendingData() const
@@ -181,7 +187,7 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -285,7 +291,7 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -502,7 +508,7 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
+void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

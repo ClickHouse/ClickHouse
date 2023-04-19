@@ -60,16 +60,6 @@ struct AsciiImpl
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", AsciiName::name);
     }
 
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", AsciiName::name);
-    }
-
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", AsciiName::name);
-    }
-
 private:
     static Int32 doAscii(const ColumnString::Chars & buf, size_t offset, size_t size)
     {

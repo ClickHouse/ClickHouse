@@ -144,8 +144,8 @@ else
     # For Replicated database it will fail on initiator before enqueueing distributed DDL
     expected=0
 fi
-check_span $expected $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}' AND kind = 'PRODUCER'"
-check_span $expected $trace_id "%DDLWorker::processTask%" "kind = 'CONSUMER'"
+check_span $expected $trace_id "%executeDDLQueryOnCluster%" "attribute['clickhouse.cluster']='${cluster_name}'"
+check_span $expected $trace_id "%DDLWorker::processTask%"
 
 if [ $cluster_name = "test_shard_localhost" ]; then
     # There should be two 'query' spans, one is for the HTTPHandler, the other is for the DDL executing in DDLWorker.

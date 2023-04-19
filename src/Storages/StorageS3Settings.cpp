@@ -116,17 +116,20 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     if (!upload_part_size_multiply_factor)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_factor cannot be zero");
+            "Setting upload_part_size_multiply_factor cannot be zero",
+            upload_part_size_multiply_factor);
 
     if (!upload_part_size_multiply_parts_count_threshold)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
+            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero",
+            upload_part_size_multiply_parts_count_threshold);
 
     if (!max_part_number)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_part_number cannot be zero");
+            "Setting max_part_number cannot be zero",
+            max_part_number);
 
     static constexpr size_t max_part_number_limit = 10000;
     if (max_part_number > max_part_number_limit)
@@ -166,7 +169,6 @@ S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
     max_single_read_retries = collection.getOrDefault<UInt64>("max_single_read_retries", max_single_read_retries);
     max_connections = collection.getOrDefault<UInt64>("max_connections", max_connections);
     list_object_keys_size = collection.getOrDefault<UInt64>("list_object_keys_size", list_object_keys_size);
-    throw_on_zero_files_match = collection.getOrDefault<bool>("throw_on_zero_files_match", throw_on_zero_files_match);
 }
 
 S3Settings::RequestSettings::RequestSettings(
@@ -181,7 +183,6 @@ S3Settings::RequestSettings::RequestSettings(
     max_connections = config.getUInt64(key + "max_connections", settings.s3_max_connections);
     check_objects_after_upload = config.getBool(key + "check_objects_after_upload", settings.s3_check_objects_after_upload);
     list_object_keys_size = config.getUInt64(key + "list_object_keys_size", settings.s3_list_object_keys_size);
-    throw_on_zero_files_match = config.getBool(key + "throw_on_zero_files_match", settings.s3_throw_on_zero_files_match);
 
     /// NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
@@ -231,9 +232,6 @@ void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settin
     if ((!if_changed || settings.s3_max_put_rps.changed || settings.s3_max_put_burst.changed) && settings.s3_max_put_rps)
         put_request_throttler = std::make_shared<Throttler>(
             settings.s3_max_put_rps, settings.s3_max_put_burst ? settings.s3_max_put_burst : Throttler::default_burst_seconds * settings.s3_max_put_rps);
-
-    if (!if_changed || settings.s3_throw_on_zero_files_match)
-        throw_on_zero_files_match = settings.s3_throw_on_zero_files_match;
 }
 
 void S3Settings::RequestSettings::updateFromSettings(const Settings & settings)

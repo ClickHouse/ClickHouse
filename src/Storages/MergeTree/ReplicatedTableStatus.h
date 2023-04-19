@@ -25,7 +25,6 @@ struct ReplicatedTableStatus
     UInt64 absolute_delay;
     UInt8 total_replicas;
     UInt8 active_replicas;
-    UInt64 lost_part_count;
     String last_queue_update_exception;
     /// If the error has happened fetching the info from ZooKeeper, this field will be set.
     String zookeeper_exception;

@@ -47,7 +47,6 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
-    void parseConnectionsCredentials();
     std::vector<String> loadWarningMessages();
 };
 }

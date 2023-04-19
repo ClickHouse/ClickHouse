@@ -1,11 +1,13 @@
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -29,7 +31,7 @@ namespace DB
 /** DoubleDelta column codec implementation.
  *
  * Based on Gorilla paper: http://www.vldb.org/pvldb/vol8/p1816-teller.pdf, which was extended
- * to support 64bit types. The drawback is 1 extra bit for 32-bit wide deltas: 5-bit prefix
+ * to support 64bit types. The drawback is 1 extra bit for 32-byte wide deltas: 5-bit prefix
  * instead of 4-bit prefix.
  *
  * This codec is best used against monotonic integer sequences with constant (or almost constant)
@@ -131,7 +133,6 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
-    bool isDeltaCompression() const override { return true; }
 
 private:
     UInt8 data_bytes_size;
@@ -143,8 +144,6 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
-    extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 namespace
@@ -549,28 +548,10 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
     factory.registerCompressionCodecWithType("DoubleDelta", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        /// Default bytes size is 1.
-        UInt8 data_bytes_size = 1;
-        if (arguments && !arguments->children.empty())
-        {
-            if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "DoubleDelta codec must have 1 parameter, given {}", arguments->children.size());
+        if (arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta does not accept any arguments");
 
-            const auto children = arguments->children;
-            const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "DoubleDelta codec argument must be unsigned integer");
-
-            size_t user_bytes_size = literal->value.safeGet<UInt64>();
-            if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Argument value for DoubleDelta codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
-            data_bytes_size = static_cast<UInt8>(user_bytes_size);
-        }
-        else if (column_type)
-        {
-            data_bytes_size = getDataBytesSize(column_type);
-        }
-
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }

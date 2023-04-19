@@ -53,8 +53,8 @@
     M(TableFunctionExecute, "Number of table function calls.") \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.") \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
-    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided).") \
-    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation).") \
+    M(QueryResultCacheHits, "Number of times a query result has been found in the query result cache (and query computation was avoided).") \
+    M(QueryResultCacheMisses, "Number of times a query result has not been found in the query result cache (and required query computation).") \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
@@ -63,7 +63,7 @@
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "Total time spent waiting for data to receive or receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
-    M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
+    M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries..") \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     \
@@ -75,14 +75,10 @@
     M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.") \
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.") \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.") \
-    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttler.") \
-    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server'/'max_remote_read_network_bandwidth' throttling.") \
-    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttler.") \
-    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server'/'max_remote_write_network_bandwidth' throttling.") \
-    M(LocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttler.") \
-    M(LocalReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_read_bandwidth_for_server'/'max_local_read_bandwidth' throttling.") \
-    M(LocalWriteThrottlerBytes, "Bytes passed through 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttler.") \
-    M(LocalWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_local_write_bandwidth_for_server'/'max_local_write_bandwidth' throttling.") \
+    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server' throttler.") \
+    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server' throttling.") \
+    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server' throttler.") \
+    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server' throttling.") \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
@@ -170,8 +166,6 @@
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
-    M(LoadedMarksCount, "Number of marks loaded (total across columns).") \
-    M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.") \
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
@@ -249,7 +243,7 @@ The server successfully detected this situation and will download merged part fr
     M(RWLockWritersWaitMilliseconds, "Total time spent waiting for a write lock to be acquired (in a heavy RWLock).") \
     M(DNSError, "Total count of errors in DNS resolution") \
     \
-    M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).") \
+    M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(MemoryOvercommitWaitTimeMicroseconds, "Total time spent in waiting for memory to be freed in OvercommitTracker.") \
@@ -332,6 +326,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3ListObjects, "Number of S3 API ListObjects calls.") \
     M(S3HeadObject,  "Number of S3 API HeadObject calls.") \
     M(S3GetObjectAttributes, "Number of S3 API GetObjectAttributes calls.") \
+    M(S3GetObjectMetadata, "Number of S3 API GetObject calls for getting metadata.") \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.") \
     M(S3UploadPart, "Number of S3 API UploadPart calls.") \
@@ -345,6 +340,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
     M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.") \
     M(DiskS3GetObjectAttributes, "Number of DiskS3 API GetObjectAttributes calls.") \
+    M(DiskS3GetObjectMetadata, "Number of DiskS3 API GetObject calls for getting metadata.") \
     M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.") \
     M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.") \
     M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.") \
@@ -353,14 +349,11 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
-    M(ReadBufferFromS3Microseconds, "Time spent on reading from S3.") \
-    M(ReadBufferFromS3InitMicroseconds, "Time spent initializing connection to S3.") \
+    M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
     \
-    M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.") \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
-    M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.") \
     \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
@@ -384,8 +377,6 @@ The server successfully detected this situation and will download merged part fr
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
-    M(MergeTreePrefetchedReadPoolInit, "Time spent preparing tasks in MergeTreePrefetchedReadPool") \
-    M(WaitPrefetchTaskMicroseconds, "Time spend waiting for prefetched reader") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
@@ -419,7 +410,7 @@ The server successfully detected this situation and will download merged part fr
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
-    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were initialiseded as two-level for aggregation.") \
+    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
     \
     M(MergeTreeMetadataCacheGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
     M(MergeTreeMetadataCachePut, "Number of rocksdb puts(used for merge tree metadata cache)") \
@@ -483,28 +474,14 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
-    M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
-    M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
-    M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
-    M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
-    \
-    M(ReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the initiator server side.") \
-    M(MergeTreeReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the initiator server side.") \
-    \
-    M(ReadTaskRequestsSent, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
-    M(MergeTreeReadTaskRequestsSent, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSent, "The number of announcement sent from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
-    M(ReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
-    M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
 
 namespace ProfileEvents
 {
 
-#define M(NAME, DOCUMENTATION) extern const Event NAME = Event(__COUNTER__);
+#define M(NAME, DOCUMENTATION) extern const Event NAME = __COUNTER__;
     APPLY_FOR_EVENTS(M)
 #undef M
-constexpr Event END = Event(__COUNTER__);
+constexpr Event END = __COUNTER__;
 
 /// Global variable, initialized by zeros.
 Counter global_counters_array[END] {};
@@ -526,7 +503,7 @@ void Counters::resetCounters()
 {
     if (counters)
     {
-        for (Event i = Event(0); i < num_counters; ++i)
+        for (Event i = 0; i < num_counters; ++i)
             counters[i].store(0, std::memory_order_relaxed);
     }
 }
@@ -544,7 +521,7 @@ Counters::Snapshot::Snapshot()
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
-    for (Event i = Event(0); i < num_counters; ++i)
+    for (Event i = 0; i < num_counters; ++i)
         res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
     return res;
 }
@@ -620,7 +597,7 @@ CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
 {
     init();
-    for (Event i = Event(0); i < Counters::num_counters; ++i)
+    for (Event i = 0; i < Counters::num_counters; ++i)
         increment_holder[i] = static_cast<Increment>(after[i]) - static_cast<Increment>(before[i]);
 }
 

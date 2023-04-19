@@ -31,28 +31,22 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).roaring_bitmap_with_small_set.add(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+        this->data(place).rbs.add(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).roaring_bitmap_with_small_set.merge(this->data(rhs).roaring_bitmap_with_small_set);
+        this->data(place).rbs.merge(this->data(rhs).rbs);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
-    {
-        this->data(place).roaring_bitmap_with_small_set.write(buf);
-    }
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).rbs.write(buf); }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
-    {
-        this->data(place).roaring_bitmap_with_small_set.read(buf);
-    }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).rbs.read(buf); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(
-            static_cast<T>(this->data(place).roaring_bitmap_with_small_set.size()));
+            static_cast<T>(this->data(place).rbs.size()));
     }
 };
 
@@ -87,7 +81,7 @@ public:
         if (!data_lhs.init)
         {
             data_lhs.init = true;
-            data_lhs.roaring_bitmap_with_small_set.merge(data_rhs.roaring_bitmap_with_small_set);
+            data_lhs.rbs.merge(data_rhs.rbs);
         }
         else
         {
@@ -106,7 +100,7 @@ public:
         if (!data_lhs.init)
         {
             data_lhs.init = true;
-            data_lhs.roaring_bitmap_with_small_set.merge(data_rhs.roaring_bitmap_with_small_set);
+            data_lhs.rbs.merge(data_rhs.rbs);
         }
         else
         {
@@ -134,7 +128,7 @@ public:
         if (*version >= 1)
             DB::writeBoolText(this->data(place).init, buf);
 
-        this->data(place).roaring_bitmap_with_small_set.write(buf);
+        this->data(place).rbs.write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
@@ -144,13 +138,13 @@ public:
 
         if (*version >= 1)
             DB::readBoolText(this->data(place).init, buf);
-        this->data(place).roaring_bitmap_with_small_set.read(buf);
+        this->data(place).rbs.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(
-            static_cast<T>(this->data(place).roaring_bitmap_with_small_set.size()));
+            static_cast<T>(this->data(place).rbs.size()));
     }
 };
 
@@ -160,7 +154,7 @@ class BitmapAndPolicy
 {
 public:
     static constexpr auto name = "groupBitmapAnd";
-    static void apply(Data & lhs, const Data & rhs) { lhs.roaring_bitmap_with_small_set.rb_and(rhs.roaring_bitmap_with_small_set); }
+    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_and(rhs.rbs); }
 };
 
 template <typename Data>
@@ -168,7 +162,7 @@ class BitmapOrPolicy
 {
 public:
     static constexpr auto name = "groupBitmapOr";
-    static void apply(Data & lhs, const Data & rhs) { lhs.roaring_bitmap_with_small_set.rb_or(rhs.roaring_bitmap_with_small_set); }
+    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_or(rhs.rbs); }
 };
 
 template <typename Data>
@@ -176,7 +170,7 @@ class BitmapXorPolicy
 {
 public:
     static constexpr auto name = "groupBitmapXor";
-    static void apply(Data & lhs, const Data & rhs) { lhs.roaring_bitmap_with_small_set.rb_xor(rhs.roaring_bitmap_with_small_set); }
+    static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_xor(rhs.rbs); }
 };
 
 template <typename T, typename Data>

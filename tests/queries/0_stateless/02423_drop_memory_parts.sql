@@ -1,5 +1,3 @@
--- Tags: no-s3-storage
-
 DROP TABLE IF EXISTS table_in_memory;
 
 CREATE TABLE table_in_memory

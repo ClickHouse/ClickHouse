@@ -309,19 +309,6 @@ def test_predefined_connection_configuration(started_cluster):
     result = instance.query("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
     assert int(result) == 200
 
-    instance.query(
-        """
-    DROP DICTIONARY IF EXISTS dict;
-    CREATE DICTIONARY dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(MYSQL(NAME mysql4 connection_pool_size 1 close_connection 1 share_connection 1))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    """
-    )
-    result = instance.query("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
-    assert int(result) == 200
-
 
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:

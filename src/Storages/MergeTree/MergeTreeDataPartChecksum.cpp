@@ -1,13 +1,12 @@
 #include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
 
 
 namespace DB
@@ -44,24 +43,17 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
         throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for file {} in data part", name);
 }
 
-void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
+void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & path) const
 {
-    /// Skip inverted index files, these have a default MergeTreeDataPartChecksum with file_size == 0
-    if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
+    if (!disk->exists(path))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fullPath(disk, path));
+    if (disk->isDirectory(path))
+        // This is a projection, no need to check its size.
         return;
-
-    if (!storage.exists(name))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
-
-    // This is a projection, no need to check its size.
-    if (storage.isDirectory(name))
-        return;
-
-    UInt64 size = storage.getFileSize(name);
+    UInt64 size = disk->getFileSize(path);
     if (size != file_size)
-        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-            "{} has unexpected size: {} instead of {}",
-            fs::path(storage.getRelativePath()) / name, size, file_size);
+        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "{} has unexpected size: {} instead of {}",
+                        fullPath(disk, path), size, file_size);
 }
 
 
@@ -79,10 +71,6 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     {
         const String & name = it.first;
 
-        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
-            continue;
-
         auto jt = rhs.files.find(name);
         if (jt == rhs.files.end())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No file {} in data part", name);
@@ -91,12 +79,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     }
 }
 
-void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
+void MergeTreeDataPartChecksums::checkSizes(const DiskPtr & disk, const String & path) const
 {
     for (const auto & it : files)
     {
         const String & name = it.first;
-        it.second.checkSize(storage, name);
+        it.second.checkSize(disk, path + name);
     }
 }
 

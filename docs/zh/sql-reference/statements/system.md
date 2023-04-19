@@ -124,9 +124,10 @@ ClickHouse可以管理 [MergeTree](../../engines/table-engines/mergetree-family/
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
 
-:::note
-`DETACH / ATTACH` 表操作会在后台进行表的merge操作，甚至当所有MergeTree表的合并操作已经停止的情况下。
-:::
+
+!!! note "Note"
+    `DETACH / ATTACH` 表操作会在后台进行表的merge操作，甚至当所有MergeTree表的合并操作已经停止的情况下。
+
 
 ### START MERGES {#query_language-system-start-merges}
 
@@ -240,7 +241,7 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 
 ``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT | PULL]
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### RESTART REPLICA {#query_language-system-restart-replica}

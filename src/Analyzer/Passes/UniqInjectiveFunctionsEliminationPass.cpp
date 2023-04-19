@@ -25,17 +25,11 @@ bool isUniqFunction(const String & function_name)
         function_name == "uniqTheta";
 }
 
-class UniqInjectiveFunctionsEliminationVisitor : public InDepthQueryTreeVisitorWithContext<UniqInjectiveFunctionsEliminationVisitor>
+class UniqInjectiveFunctionsEliminationVisitor : public InDepthQueryTreeVisitor<UniqInjectiveFunctionsEliminationVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<UniqInjectiveFunctionsEliminationVisitor>;
-    using Base::Base;
-
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_injective_functions_inside_uniq)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || !isUniqFunction(function_node->getFunctionName()))
             return;
@@ -87,9 +81,9 @@ public:
 
 }
 
-void UniqInjectiveFunctionsEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void UniqInjectiveFunctionsEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    UniqInjectiveFunctionsEliminationVisitor visitor(std::move(context));
+    UniqInjectiveFunctionsEliminationVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

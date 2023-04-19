@@ -15,9 +15,8 @@ sidebar_label: SAMPLE
 -   当您的原始数据不准确时，所以近似不会明显降低质量。
 -   业务需求的目标是近似结果（为了成本效益，或者向高级用户推销确切结果）。
 
-:::note
-您只能使用采样中的表 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 族，并且只有在表创建过程中指定了采样表达式（请参阅 [MergeTree引擎](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
-:::
+!!! note "注"
+    您只能使用采样中的表 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) 族，并且只有在表创建过程中指定了采样表达式（请参阅 [MergeTree引擎](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
 
 下面列出了数据采样的功能:
 

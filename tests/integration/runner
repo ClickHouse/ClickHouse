@@ -243,18 +243,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-random",
-        action="store",
-        dest="no_random",
-        help="Disable tests order randomization",
+        "--no-random", action="store", dest="no_random", help="Disable tests order randomization"
     )
 
     parser.add_argument(
-        "--pre-pull",
-        action="store_true",
-        default=False,
-        dest="pre_pull",
-        help="Pull images for docker_compose before all other actions",
+        "--pre-pull", action="store_true", default=False, dest="pre_pull", help="Pull images for docker_compose before all other actions"
     )
 
     parser.add_argument(
@@ -312,6 +305,7 @@ if __name__ == "__main__":
     rand_args = ""
     # if not args.no_random:
     #     rand_args += f"--random-seed={os.getpid()}"
+
 
     net = ""
     if args.network:
@@ -422,11 +416,8 @@ if __name__ == "__main__":
         name=CONTAINER_NAME,
     )
 
-    cmd = cmd_base + " " + args.command
-    cmd_pre_pull = (
-        cmd_base
-        + " find /compose -name docker_compose_*.yml -exec docker-compose -f '{}' pull \;"
-    )
+    cmd = cmd_base + " " +  args.command
+    cmd_pre_pull = cmd_base + " find /compose -name docker_compose_*.yml -exec docker-compose -f '{}' pull \;"
 
     containers = subprocess.check_output(
         f"docker ps --all --quiet --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",

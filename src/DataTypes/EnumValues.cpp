@@ -10,7 +10,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int EMPTY_DATA_PASSED;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename T>
@@ -69,7 +69,7 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
         }
         auto hints = this->getHints(field_name.toString());
         auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element '{}' for enum{}", field_name.toString(), hints_string);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown element '{}' for enum {}", field_name.toString(), hints_string);
     }
     return it->getMapped();
 }

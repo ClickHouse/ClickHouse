@@ -18,7 +18,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
-#include <Analyzer/Utils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
@@ -38,7 +37,6 @@
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 
 namespace DB
 {
@@ -62,8 +60,6 @@ void JoinClause::dump(WriteBuffer & buffer) const
             for (const auto & dag_node : dag_nodes)
             {
                 dag_nodes_dump += dag_node->result_name;
-                dag_nodes_dump += " ";
-                dag_nodes_dump += dag_node->result_type->getName();
                 dag_nodes_dump += ", ";
             }
 
@@ -468,10 +464,10 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                 }
 
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &join_expression_actions->addCast(*left_key_node, common_type, {});
+                    left_key_node = &join_expression_actions->addCast(*left_key_node, common_type);
 
                 if (!right_key_node->result_type->equals(*common_type))
-                    right_key_node = &join_expression_actions->addCast(*right_key_node, common_type, {});
+                    right_key_node = &join_expression_actions->addCast(*right_key_node, common_type);
             }
 
             join_expression_actions->addOrReplaceInOutputs(*left_key_node);
@@ -517,7 +513,23 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     if (!join_node_typed.getJoinExpression())
         return {};
 
-    return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
+    const auto * constant_node = join_node_typed.getJoinExpression()->as<ConstantNode>();
+    if (!constant_node)
+        return {};
+
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 namespace
@@ -607,8 +619,8 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name_ = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name_)
+        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
+        if (!table_column_name)
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;

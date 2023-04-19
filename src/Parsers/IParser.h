@@ -1,7 +1,6 @@
 #pragma once
 
 #include <absl/container/inlined_vector.h>
-#include <algorithm>
 #include <memory>
 
 #include <Core/Defines.h>
@@ -96,13 +95,13 @@ public:
       */
     virtual bool parse(Pos & pos, ASTPtr & node, Expected & expected) = 0;
 
-    bool ignore(Pos & pos, Expected & expected)
+    bool ignore(Pos & pos, Expected & expected)  // -V1071
     {
         ASTPtr ignore_node;
         return parse(pos, ignore_node, expected);
     }
 
-    bool ignore(Pos & pos)
+    bool ignore(Pos & pos)  // -V1071
     {
         Expected expected;
         return ignore(pos, expected);

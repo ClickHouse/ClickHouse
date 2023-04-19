@@ -5,6 +5,7 @@
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/AsynchronousReader.h>
 #include <string>
 #include <memory>
 #include <hdfs/hdfs.h>

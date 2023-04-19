@@ -55,10 +55,7 @@ struct SettingFieldNumber
 
 using SettingFieldUInt64 = SettingFieldNumber<UInt64>;
 using SettingFieldInt64 = SettingFieldNumber<Int64>;
-using SettingFieldUInt32 = SettingFieldNumber<UInt32>;
-using SettingFieldInt32 = SettingFieldNumber<Int32>;
 using SettingFieldFloat = SettingFieldNumber<float>;
-using SettingFieldDouble = SettingFieldNumber<double>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
 /** Wraps any SettingField to support special value 'auto' that can be checked with `is_auto` flag.
@@ -132,9 +129,6 @@ struct SettingAutoWrapper
 using SettingFieldUInt64Auto = SettingAutoWrapper<SettingFieldUInt64>;
 using SettingFieldInt64Auto = SettingAutoWrapper<SettingFieldInt64>;
 using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
-using SettingFieldUInt32Auto = SettingAutoWrapper<SettingFieldUInt32>;
-using SettingFieldInt32Auto = SettingAutoWrapper<SettingFieldInt32>;
-using SettingFieldDoubleAuto = SettingAutoWrapper<SettingFieldDouble>;
 
 /* Similar to SettingFieldUInt64Auto with small differences to behave like regular UInt64, supported to compatibility.
  * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
@@ -245,6 +239,8 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
+#ifndef KEEPER_STANDALONE_BUILD
+
 struct SettingFieldMap
 {
 public:
@@ -267,6 +263,8 @@ public:
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
+
+#endif
 
 struct SettingFieldChar
 {
@@ -404,7 +402,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         auto it = map.find(value); \
         if (it != map.end()) \
             return it->second; \
-        throw Exception::createDeprecated( \
+        throw Exception( \
             "Unexpected value of " #NEW_NAME ":" + std::to_string(std::underlying_type<EnumType>::type(value)), \
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
@@ -430,7 +428,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
             msg += "'" + String{name} + "'"; \
         } \
         msg += "]"; \
-        throw Exception::createDeprecated(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
+        throw Exception(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
     }
 
 // Mostly like SettingFieldEnum, but can have multiple enum values (or none) set at once.
@@ -453,8 +451,8 @@ struct SettingFieldMultiEnum
     explicit operator StorageType() const { return value.getValue(); }
     explicit operator Field() const { return toString(); }
 
-    SettingFieldMultiEnum & operator= (StorageType x) { changed = true; value.setValue(x); return *this; }
-    SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
+    SettingFieldMultiEnum & operator= (StorageType x) { changed = x != value.getValue(); value.setValue(x); return *this; }
+    SettingFieldMultiEnum & operator= (ValueType x) { changed = !(x == value); value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
 
     String toString() const

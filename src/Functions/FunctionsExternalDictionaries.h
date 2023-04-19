@@ -182,7 +182,7 @@ public:
 
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected a string",
+                "Illegal type {} of first argument of function, expected a string",
                 arguments[0]->getName(),
                 getName());
 
@@ -416,7 +416,7 @@ public:
 
             if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
+                    "Illegal type {} of fourth argument of function must be convertible to Int64.",
                     range_col_type->getName(),
                     getName());
 
@@ -692,10 +692,8 @@ private:
         auto return_type = impl.getReturnTypeImpl(arguments);
 
         if (!return_type->equals(*result_type))
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Function {} dictionary attribute has different type {} expected {}",
-                    getName(),
-                    return_type->getName(),
-                    result_type->getName());
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Dictionary attribute has different type {} expected {}",
+                    return_type->getName(), result_type->getName());
 
         return impl.executeImpl(arguments, return_type, input_rows_count);
     }
@@ -721,6 +719,9 @@ struct NameDictGetDateTime { static constexpr auto name = "dictGetDateTime"; };
 struct NameDictGetUUID { static constexpr auto name = "dictGetUUID"; };
 struct NameDictGetIPv4 { static constexpr auto name = "dictGetIPv4"; };
 struct NameDictGetIPv6 { static constexpr auto name = "dictGetIPv6"; };
+struct NameDictGetDecimal32 { static constexpr auto name = "dictGetDecimal32"; };
+struct NameDictGetDecimal64 { static constexpr auto name = "dictGetDecimal64"; };
+struct NameDictGetDecimal128 { static constexpr auto name = "dictGetDecimal128"; };
 struct NameDictGetString { static constexpr auto name = "dictGetString"; };
 
 using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8>;
@@ -738,6 +739,9 @@ using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime, NameDictGetDat
 using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID, NameDictGetUUID>;
 using FunctionDictGetIPv4 = FunctionDictGet<DataTypeIPv4, NameDictGetIPv4>;
 using FunctionDictGetIPv6 = FunctionDictGet<DataTypeIPv6, NameDictGetIPv6>;
+using FunctionDictGetDecimal32 = FunctionDictGet<DataTypeDecimal<Decimal32>, NameDictGetDecimal32>;
+using FunctionDictGetDecimal64 = FunctionDictGet<DataTypeDecimal<Decimal64>, NameDictGetDecimal64>;
+using FunctionDictGetDecimal128 = FunctionDictGet<DataTypeDecimal<Decimal128>, NameDictGetDecimal128>;
 using FunctionDictGetString = FunctionDictGet<DataTypeString, NameDictGetString>;
 
 template<typename DataType, typename Name>
@@ -758,6 +762,9 @@ struct NameDictGetDateTimeOrDefault { static constexpr auto name = "dictGetDateT
 struct NameDictGetUUIDOrDefault { static constexpr auto name = "dictGetUUIDOrDefault"; };
 struct NameDictGetIPv4OrDefault { static constexpr auto name = "dictGetIPv4OrDefault"; };
 struct NameDictGetIPv6OrDefault { static constexpr auto name = "dictGetIPv6OrDefault"; };
+struct NameDictGetDecimal32OrDefault { static constexpr auto name = "dictGetDecimal32OrDefault"; };
+struct NameDictGetDecimal64OrDefault { static constexpr auto name = "dictGetDecimal64OrDefault"; };
+struct NameDictGetDecimal128OrDefault { static constexpr auto name = "dictGetDecimal128OrDefault"; };
 struct NameDictGetStringOrDefault { static constexpr auto name = "dictGetStringOrDefault"; };
 
 using FunctionDictGetUInt8OrDefault = FunctionDictGetOrDefault<DataTypeUInt8, NameDictGetUInt8OrDefault>;
@@ -775,6 +782,9 @@ using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTi
 using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID, NameDictGetUUIDOrDefault>;
 using FunctionDictGetIPv4OrDefault = FunctionDictGetOrDefault<DataTypeIPv4, NameDictGetIPv4OrDefault>;
 using FunctionDictGetIPv6OrDefault = FunctionDictGetOrDefault<DataTypeIPv6, NameDictGetIPv6OrDefault>;
+using FunctionDictGetDecimal32OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal32>, NameDictGetDecimal32OrDefault>;
+using FunctionDictGetDecimal64OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal64>, NameDictGetDecimal64OrDefault>;
+using FunctionDictGetDecimal128OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal128>, NameDictGetDecimal128OrDefault>;
 using FunctionDictGetStringOrDefault = FunctionDictGetOrDefault<DataTypeString, NameDictGetStringOrDefault>;
 
 class FunctionDictGetOrNull final : public IFunction
@@ -1068,11 +1078,11 @@ public:
     FunctionDictGetDescendantsExecutable(
         String name_,
         size_t level_,
-        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index_,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> dictionary_helper_)
         : name(std::move(name_))
         , level(level_)
-        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index_))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
         , dictionary_helper(std::move(dictionary_helper_))
     {}
 
@@ -1110,13 +1120,13 @@ public:
         const DataTypes & argument_types_,
         const DataTypePtr & result_type_,
         size_t level_,
-        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index_,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> helper_)
         : name(std::move(name_))
         , argument_types(argument_types_)
         , result_type(result_type_)
         , level(level_)
-        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index_))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
         , helper(std::move(helper_))
     {}
 

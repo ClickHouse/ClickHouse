@@ -4,7 +4,6 @@
 #include <Core/SortDescription.h>
 
 #include <Parsers/IAST.h>
-#include <Parsers/SelectUnionMode.h>
 
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ActionsDAG.h>
@@ -17,8 +16,6 @@
 
 #include <Planner/PlannerContext.h>
 
-#include <Storages/SelectQueryInfo.h>
-
 namespace DB
 {
 
@@ -29,7 +26,7 @@ String dumpQueryPlan(QueryPlan & query_plan);
 String dumpQueryPipeline(QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
+Block buildCommonHeaderForUnion(const Blocks & queries_headers);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
@@ -64,26 +61,5 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 
 /// Returns `and` function node that has condition nodes as its arguments
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
-
-/// Replace tables nodes and table function nodes with dummy table nodes
-using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
-QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
-    const ContextPtr & context,
-    ResultReplacementMap * result_replacement_map = nullptr);
-
-/// Build subquery to read specified columns from table expression
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context);
-
-SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
-
-/// Build filter for specific table_expression
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
-
-ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
 }

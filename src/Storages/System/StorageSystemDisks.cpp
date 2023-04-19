@@ -2,7 +2,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 
 namespace DB
 {
@@ -78,7 +77,7 @@ Pipe StorageSystemDisks::read(
 
         String cache_path;
         if (disk_ptr->supportsCache())
-            cache_path = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).settings.base_path;
+            cache_path = disk_ptr->getCacheBasePath();
 
         col_cache_path->insert(cache_path);
     }

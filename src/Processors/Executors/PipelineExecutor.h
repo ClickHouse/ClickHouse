@@ -3,12 +3,12 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/logger_useful.h>
+#include <Common/ThreadPool.h>
 #include <Common/ConcurrencyControl.h>
 
 #include <queue>
 #include <mutex>
-#include <memory>
 
 
 namespace DB
@@ -50,9 +50,6 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel();
 
-    /// Cancel processors which only read data from source. May be called from another thread.
-    void cancelReading();
-
     /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
     bool checkTimeLimit();
     /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
@@ -70,8 +67,8 @@ private:
     // Concurrency control related
     ConcurrencyControl::AllocationPtr slots;
     ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
-    std::unique_ptr<ThreadPool> pool;
-    std::atomic_size_t threads = 0;
+    std::mutex threads_mutex;
+    std::vector<ThreadFromGlobalPool> threads;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -81,7 +78,6 @@ private:
     bool trace_processors = false;
 
     std::atomic_bool cancelled = false;
-    std::atomic_bool cancelled_reading = false;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
@@ -95,6 +91,7 @@ private:
     void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
+    void joinThreads();
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads);

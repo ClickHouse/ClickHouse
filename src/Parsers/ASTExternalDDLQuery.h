@@ -4,7 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 
-
 namespace DB
 {
 
@@ -39,8 +38,6 @@ public:
         from->formatImpl(settings, state, stacked);
         external_ddl->formatImpl(settings, state, stacked);
     }
-
-    QueryKind getQueryKind() const override { return QueryKind::ExternalDDL; }
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {

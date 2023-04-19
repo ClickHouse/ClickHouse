@@ -121,7 +121,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (!tryReadIntText(addition_exp, buf))
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse exponent while reading decimal");
+                        throw ParsingException("Cannot parse exponent while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return false;
                 }
@@ -134,7 +134,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (digits_only)
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected symbol while reading decimal");
+                        throw ParsingException("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                     return false;
                 }
                 stop = true;

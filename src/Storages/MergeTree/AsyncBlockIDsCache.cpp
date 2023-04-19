@@ -31,11 +31,10 @@ std::vector<String> AsyncBlockIDsCache::getChildren()
 {
     auto zookeeper = storage.getZooKeeper();
 
-    auto watch_callback = [last_time = this->last_updatetime.load()
-                           , update_min_interval = this->update_min_interval
-                           , task = task->shared_from_this()](const Coordination::WatchResponse &)
+    auto watch_callback = [&](const Coordination::WatchResponse &)
     {
         auto now = std::chrono::steady_clock::now();
+        auto last_time = last_updatetime.load();
         if (now - last_time < update_min_interval)
         {
             std::chrono::milliseconds sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(update_min_interval - (now - last_time));

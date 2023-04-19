@@ -24,23 +24,20 @@ RabbitMQConsumer::RabbitMQConsumer(
         size_t channel_id_base_,
         const String & channel_base_,
         Poco::Logger * log_,
-        uint32_t queue_size_)
+        uint32_t queue_size_,
+        const std::atomic<bool> & stopped_)
         : event_handler(event_handler_)
         , queues(queues_)
         , channel_base(channel_base_)
         , channel_id_base(channel_id_base_)
         , log(log_)
+        , stopped(stopped_)
         , received(queue_size_)
 {
 }
 
-void RabbitMQConsumer::shutdown()
-{
-    stopped = true;
-    cv.notify_one();
-}
 
-void RabbitMQConsumer::closeConnections()
+void RabbitMQConsumer::closeChannel()
 {
     if (consumer_channel)
         consumer_channel->close();
@@ -68,8 +65,6 @@ void RabbitMQConsumer::subscribe()
                         message.hasTimestamp() ? message.timestamp() : 0,
                         redelivered, AckTracker(delivery_tag, channel_id)}))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
-
-                cv.notify_one();
             }
         })
         .onError([&](const char * message)

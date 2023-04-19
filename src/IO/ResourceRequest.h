@@ -8,14 +8,28 @@ namespace DB
 
 // Forward declarations
 class ISchedulerQueue;
+class ISchedulerNode;
 class ISchedulerConstraint;
 
 /// Cost in terms of used resource (e.g. bytes for network IO)
 using ResourceCost = Int64;
 constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
 
+/// Internal identifier of a resource (for arrays; unique per scheduler)
+using ResourceIdx = size_t;
+constexpr ResourceIdx ResourceIdxNotSet = ResourceIdx(-1);
+
 /// Timestamps (nanoseconds since epoch)
 using ResourceNs = UInt64;
+
+/*
+ * Info required for resource consumption.
+ */
+struct ResourceLink
+{
+    ISchedulerQueue * queue = nullptr;
+    bool operator==(const ResourceLink &) const = default;
+};
 
 /*
  * Request for a resource consumption. The main moving part of the scheduling subsystem.
@@ -51,36 +65,25 @@ public:
 
     /// Request outcome
     /// Should be filled during resource consumption
-    bool successful;
+    bool successful = true;
 
     /// Scheduler node to be notified on consumption finish
     /// Auto-filled during request enqueue/dequeue
-    ISchedulerConstraint * constraint;
+    ISchedulerConstraint * constraint = nullptr;
 
     /// Timestamps for introspection
-    ResourceNs enqueue_ns;
-    ResourceNs execute_ns;
-    ResourceNs finish_ns;
+    ResourceNs enqueue_ns = 0;
+    ResourceNs execute_ns = 0;
+    ResourceNs finish_ns = 0;
 
     explicit ResourceRequest(ResourceCost cost_ = 1)
-    {
-        reset(cost_);
-    }
-
-    void reset(ResourceCost cost_)
-    {
-        cost = cost_;
-        successful = true;
-        constraint = nullptr;
-        enqueue_ns = 0;
-        execute_ns = 0;
-        finish_ns = 0;
-    }
+        : cost(cost_)
+    {}
 
     virtual ~ResourceRequest() = default;
 
     /// Callback to trigger resource consumption.
-    /// IMPORTANT: it is called from scheduler thread and must be fast,
+    /// IMPORTANT: is called from scheduler thread and must be fast,
     /// just triggering start of a consumption, not doing the consumption itself
     /// (e.g. setting an std::promise or creating a job in a thread pool)
     virtual void execute() = 0;

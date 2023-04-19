@@ -363,7 +363,7 @@ size_t PeekableReadBuffer::offsetFromCheckpointInOwnMemory() const
 size_t PeekableReadBuffer::offsetFromCheckpoint() const
 {
     if (!checkpoint)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "There is no checkpoint");
+        throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
 
     if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
     {

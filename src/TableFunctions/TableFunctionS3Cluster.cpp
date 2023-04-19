@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 
+#include <Storages/StorageS3Cluster.h>
 #include <Storages/StorageS3.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
@@ -46,7 +47,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     ASTs & args = args_func.at(0)->children;
 
     for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+        arg = evaluateConstantExpressionAsLiteral(arg, context);
 
     constexpr auto fmt_string = "The signature of table function {} could be the following:\n"
                                 " - cluster, url\n"
@@ -59,7 +60,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
                                 " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method";
     auto message = PreformattedMessage{fmt::format(fmt_string, getName()), fmt_string};
     if (args.size() < 2 || args.size() > 7)
-        throw Exception::createDeprecated(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// This arguments are always the first
     configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
@@ -72,8 +73,8 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     clipped_args.reserve(args.size());
     std::copy(args.begin() + 1, args.end(), std::back_inserter(clipped_args));
 
-    /// StorageS3ClusterConfiguration inherints from StorageS3::Configuration, so it is safe to upcast it.
-    TableFunctionS3::parseArgumentsImpl(message.text, clipped_args, context, static_cast<StorageS3::Configuration &>(configuration));
+    /// StorageS3ClusterConfiguration inherints from StorageS3Configuration, so it is safe to upcast it.
+    TableFunctionS3::parseArgumentsImpl(message.message, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));
 }
 
 
@@ -81,9 +82,8 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
 {
     context->checkAccess(getSourceAccessType());
 
-    configuration.update(context);
     if (configuration.structure == "auto")
-        return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
+        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
 
     return parseColumnsListFromString(configuration.structure, context);
 }
@@ -110,11 +110,11 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageS3>(
             configuration,
-            context,
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
             /* comment */String{},
+            context,
             /* format_settings */std::nullopt, /// No format_settings for S3Cluster
             /*distributed_processing=*/true);
     }

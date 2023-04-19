@@ -124,36 +124,21 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
         else
         {
-            StorageID from_table_id{elem.from_database_name, elem.from_table_name};
-            StorageID to_table_id{elem.to_database_name, elem.to_table_name};
-            std::vector<StorageID> ref_dependencies;
-            std::vector<StorageID> loading_dependencies;
-
+            std::vector<StorageID> dependencies;
             if (!exchange_tables)
-            {
-                bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
-                std::tie(ref_dependencies, loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
-            }
+                dependencies = database_catalog.removeDependencies(StorageID(elem.from_database_name, elem.from_table_name),
+                                                                   getContext()->getSettingsRef().check_table_dependencies);
 
-            try
-            {
-                database->renameTable(
-                    getContext(),
-                    elem.from_table_name,
-                    *database_catalog.getDatabase(elem.to_database_name),
-                    elem.to_table_name,
-                    exchange_tables,
-                    rename.dictionary);
+            database->renameTable(
+                getContext(),
+                elem.from_table_name,
+                *database_catalog.getDatabase(elem.to_database_name),
+                elem.to_table_name,
+                exchange_tables,
+                rename.dictionary);
 
-                DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
-            }
-            catch (...)
-            {
-                /// Restore dependencies if RENAME fails
-                DatabaseCatalog::instance().addDependencies(from_table_id, ref_dependencies, loading_dependencies);
-                throw;
-            }
+            if (!dependencies.empty())
+                DatabaseCatalog::instance().addDependencies(StorageID(elem.to_database_name, elem.to_table_name), dependencies);
         }
     }
 
@@ -189,18 +174,18 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
     {
         if (type == RenameType::RenameTable)
         {
-            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.getDatabase(), elem.from.getTable());
-            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.database, elem.from.table);
+            required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.database, elem.to.table);
             if (rename.exchange)
             {
-                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT , elem.from.getDatabase(), elem.from.getTable());
-                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT , elem.from.database, elem.from.table);
+                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.database, elem.to.table);
             }
         }
         else if (type == RenameType::RenameDatabase)
         {
-            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.getDatabase());
-            required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to.getDatabase());
+            required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.database);
+            required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to.database);
         }
         else
         {
@@ -212,18 +197,19 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
 
 void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
+    elem.query_kind = "Rename";
     const auto & rename = ast->as<const ASTRenameQuery &>();
     for (const auto & element : rename.elements)
     {
         {
-            String database = backQuoteIfNeed(!element.from.database ? getContext()->getCurrentDatabase() : element.from.getDatabase());
+            String database = backQuoteIfNeed(element.from.database.empty() ? getContext()->getCurrentDatabase() : element.from.database);
             elem.query_databases.insert(database);
-            elem.query_tables.insert(database + "." + backQuoteIfNeed(element.from.getTable()));
+            elem.query_tables.insert(database + "." + backQuoteIfNeed(element.from.table));
         }
         {
-            String database = backQuoteIfNeed(!element.to.database ? getContext()->getCurrentDatabase() : element.to.getDatabase());
+            String database = backQuoteIfNeed(element.to.database.empty() ? getContext()->getCurrentDatabase() : element.to.database);
             elem.query_databases.insert(database);
-            elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.getTable()));
+            elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.table));
         }
     }
 }

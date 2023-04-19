@@ -1,8 +1,5 @@
 #include <Analyzer/QueryNode.h>
 
-#include <fmt/core.h>
-
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -20,14 +17,10 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Analyzer/Utils.h>
+#include <fmt/core.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
     : IQueryTreeNode(children_size)
@@ -43,7 +36,7 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_)
-    : QueryNode(std::move(context_), {} /*settings_changes*/)
+    : QueryNode(context_, {} /*settings_changes*/)
 {}
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -192,7 +185,10 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
+        {
             buffer << fmt::format(" {}={}", change.name, toString(change.value));
+        }
+        buffer << '\n';
     }
 }
 
@@ -260,7 +256,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     return result_query_node;
 }
 
-ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr QueryNode::toASTImpl() const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
     select_query->distinct = is_distinct;
@@ -272,72 +268,54 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_all = is_group_by_all;
 
     if (hasWith())
-        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());
 
-    auto projection_ast = getProjection().toAST(options);
-    auto & projection_expression_list_ast = projection_ast->as<ASTExpressionList &>();
-    size_t projection_expression_list_ast_children_size = projection_expression_list_ast.children.size();
-    if (projection_expression_list_ast_children_size != getProjection().getNodes().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid projection conversion to AST");
-
-    if (!projection_columns.empty())
-    {
-        for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
-        {
-            auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
-
-            if (ast_with_alias)
-                ast_with_alias->setAlias(projection_columns[i].name);
-        }
-    }
-
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, getProjection().toAST());
 
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree(), options);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree());
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())
-        select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, getPrewhere()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, getPrewhere()->toAST());
 
     if (getWhere())
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST());
 
     if (!is_group_by_all && hasGroupBy())
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST());
 
     if (hasHaving())
-        select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST());
 
     if (hasWindow())
-        select_query->setExpression(ASTSelectQuery::Expression::WINDOW, getWindow().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::WINDOW, getWindow().toAST());
 
     if (hasOrderBy())
-        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST());
 
     if (hasInterpolate())
-        select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, getInterpolate()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, getInterpolate()->toAST());
 
     if (hasLimitByLimit())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, getLimitByLimit()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, getLimitByLimit()->toAST());
 
     if (hasLimitByOffset())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, getLimitByOffset()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, getLimitByOffset()->toAST());
 
     if (hasLimitBy())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, getLimitBy().toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, getLimitBy().toAST());
 
     if (hasLimit())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, getLimit()->toAST());
 
     if (hasOffset())
-        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST());
 
     if (hasSettingsChanges())
     {
         auto settings_query = std::make_shared<ASTSetQuery>();
         settings_query->changes = settings_changes;
-        settings_query->is_standalone = false;
         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     }
 

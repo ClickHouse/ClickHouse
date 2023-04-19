@@ -251,7 +251,7 @@ def test_restore_another_bucket_path(cluster, db_atomic, zero_copy):
     node_another_bucket = cluster.instances["node_another_bucket"]
 
     create_restore_file(node_another_bucket, bucket="root")
-    node_another_bucket.restart_clickhouse(stop_start_wait_sec=120)
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket, "test", schema, attach=True, db_atomic=db_atomic, uuid=uuid
     )

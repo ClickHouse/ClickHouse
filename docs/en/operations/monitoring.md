@@ -2,7 +2,6 @@
 slug: /en/operations/monitoring
 sidebar_position: 45
 sidebar_label: Monitoring
-description: You can monitor the utilization of hardware resources and also ClickHouse server metrics.
 ---
 
 # Monitoring
@@ -17,12 +16,15 @@ You can monitor:
 
 ## Resource Utilization {#resource-utilization}
 
-ClickHouse also monitors the state of hardware resources by itself such as:
+ClickHouse does not monitor the state of hardware resources by itself.
+
+It is highly recommended to set up monitoring for:
 
 -   Load and temperature on processors.
--   Utilization of storage system, RAM and network.
 
-This data is collected in the `system.asynchronous_metric_log` table.
+    You can use [dmesg](https://en.wikipedia.org/wiki/Dmesg), [turbostat](https://www.linux.org/docs/man8/turbostat.html) or other instruments.
+
+-   Utilization of storage system, RAM and network.
 
 ## ClickHouse Server Metrics {#clickhouse-server-metrics}
 

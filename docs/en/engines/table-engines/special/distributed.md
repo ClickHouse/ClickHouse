@@ -141,10 +141,6 @@ Clusters are configured in the [server configuration file](../../../operations/c
              be used as current user for the query.
         -->
         <!-- <secret></secret> -->
-        
-        <!-- Optional. Whether distributed DDL queries (ON CLUSTER clause) are allowed for this cluster. Default: true (allowed). -->        
-        <!-- <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries> -->
-        
         <shard>
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
@@ -188,7 +184,7 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 
 - `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server does not start. If you change the DNS record, restart the server.
 - `port` – The TCP port for messenger activity (`tcp_port` in the config, usually set to 9000). Not to be confused with `http_port`.
-- `user` – Name of the user for connecting to a remote server. Default value is the `default` user. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](../../../guides/sre/user-management/index.md).
+- `user` – Name of the user for connecting to a remote server. Default value is the `default` user. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
 - `secure` - Whether to use a secure SSL/TLS connection. Usually also requires specifying the port (the default secure port is `9440`). The server should listen on `<tcp_port_secure>9440</tcp_port_secure>` and be configured with correct certificates.
 - `compression` - Use data compression. Default value: `true`.

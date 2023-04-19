@@ -7,6 +7,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <base/types.h>
+#include <aws/s3/S3Client.h>
 #include <functional>
 #include <memory>
 
@@ -20,7 +21,7 @@ class SeekableReadBuffer;
 /// however copyS3File() is faster and spends less network traffic and memory.
 /// The parameters `src_offset` and `src_size` specify a part in the source to copy.
 void copyS3File(
-    const std::shared_ptr<const S3::Client> & s3_client,
+    const std::shared_ptr<const Aws::S3::S3Client> & s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
@@ -41,7 +42,7 @@ void copyDataToS3File(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    const std::shared_ptr<const S3::Client> & dest_s3_client,
+    const std::shared_ptr<const Aws::S3::S3Client> & dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,

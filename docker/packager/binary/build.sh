@@ -175,9 +175,8 @@ fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    # Coverity does not understand ZSTD.
-    tar -cvz -f "coverity-scan.tar.gz" cov-int
-    mv "coverity-scan.tar.gz" /output
+    tar -cv --zstd -f "coverity-scan.tar.zst" cov-int
+    mv "coverity-scan.tar.zst" /output
 fi
 
 ccache_status

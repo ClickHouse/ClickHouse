@@ -99,7 +99,7 @@ Pipe StorageMeiliSearch::read(
         for (const auto & el : query_params->children)
         {
             auto str = el->getColumnName();
-            auto it = std::find(str.begin(), str.end(), '=');
+            auto it = find(str.begin(), str.end(), '=');
             if (it == str.end())
                 throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "meiliMatch function must have parameters of the form \'key=value\'");
 
@@ -129,7 +129,7 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
 
 MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
         validateNamedCollection(*named_collection, {"url", "index"}, {"key"});
 
@@ -139,8 +139,8 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
 
         if (url.empty() || index.empty())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")");
+            throw Exception(
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")", ErrorCodes::BAD_ARGUMENTS);
         }
 
         return MeiliSearchConfiguration(url, index, key);
@@ -149,8 +149,9 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
     {
         if (engine_args.size() < 2 || 3 < engine_args.size())
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")");
+            throw Exception(
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         for (auto & engine_arg : engine_args)

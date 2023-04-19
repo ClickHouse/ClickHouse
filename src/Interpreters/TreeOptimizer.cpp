@@ -23,8 +23,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteSumIfFunctionVisitor.h>
-#include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -39,6 +37,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
@@ -659,12 +658,6 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
-void optimizeArrayExistsFunctions(ASTPtr & query)
-{
-    RewriteArrayExistsFunctionVisitor::Data data = {};
-    RewriteArrayExistsFunctionVisitor(data).visit(query);
-}
-
 void optimizeMultiIfToIf(ASTPtr & query)
 {
     OptimizeMultiIfToIfVisitor::Data data;
@@ -797,9 +790,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
 
-    if (settings.optimize_rewrite_array_exists_to_has)
-        optimizeArrayExistsFunctions(query);
-
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
         optimizeInjectiveFunctionsInsideUniq(query, context);
@@ -809,7 +799,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube)
+    {
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
+    }
 
     /// Remove duplicate ORDER BY and DISTINCT from subqueries.
     if (settings.optimize_duplicate_order_by_and_distinct)

@@ -4,12 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-if [ -z ${ENABLE_ANALYZER+x} ]; then
-    ENABLE_ANALYZER=0
-fi
-
-DISABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"
@@ -26,13 +22,13 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC"
-$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN $query"
+$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN header=1 $query"
 
 function run_query {
     echo "-- query"
     echo "$1"
     echo "-- explain"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN $1"
+    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN header=1 $1"
     echo "-- execute"
     $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$1"
 }
@@ -236,63 +232,6 @@ FROM
     ORDER BY number ASC
 )
 ORDER BY number ASC"
-run_query "$query"
-
-echo "-- sum() with Floats depends on order, -> sorting is not removed here"
-query="SELECT
-    toTypeName(sum(v)),
-    sum(v)
-FROM
-(
-    SELECT v
-    FROM
-    (
-        SELECT CAST('9007199254740992', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-    )
-    ORDER BY v ASC
-)"
-run_query "$query"
-
-echo "-- sum() with Nullable(Floats) depends on order, -> sorting is not removed here"
-query="SELECT
-    toTypeName(sum(v)),
-    sum(v)
-FROM
-(
-    SELECT v
-    FROM
-    (
-        SELECT '9007199254740992'::Nullable(Float64) AS v
-        UNION ALL
-        SELECT '1'::Nullable(Float64) AS v
-        UNION ALL
-        SELECT '1'::Nullable(Float64) AS v
-    )
-    ORDER BY v ASC
-)"
-run_query "$query"
-
-echo "-- sumIf() with Floats depends on order, -> sorting is not removed here"
-query="SELECT
-    toTypeName(sumIf(v, v > 0)),
-    sumIf(v, v > 0)
-FROM
-(
-    SELECT v
-    FROM
-    (
-        SELECT CAST('9007199254740992', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-    )
-    ORDER BY v ASC
-)"
 run_query "$query"
 
 echo "-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function"

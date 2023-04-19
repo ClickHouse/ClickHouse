@@ -90,7 +90,7 @@ Checks whether the sequence contains an event chain that matches the pattern.
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-:::note
+:::warning
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
 
@@ -176,7 +176,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
-:::note
+:::warning
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
 

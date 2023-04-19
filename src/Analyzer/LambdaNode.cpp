@@ -1,6 +1,5 @@
 #include <Analyzer/LambdaNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -66,24 +65,22 @@ QueryTreeNodePtr LambdaNode::cloneImpl() const
     return std::make_shared<LambdaNode>(argument_names, getExpression());
 }
 
-ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr LambdaNode::toASTImpl() const
 {
     auto lambda_function_arguments_ast = std::make_shared<ASTExpressionList>();
 
     auto tuple_function = std::make_shared<ASTFunction>();
     tuple_function->name = "tuple";
-    tuple_function->children.push_back(children[arguments_child_index]->toAST(options));
+    tuple_function->children.push_back(children[arguments_child_index]->toAST());
     tuple_function->arguments = tuple_function->children.back();
 
     lambda_function_arguments_ast->children.push_back(std::move(tuple_function));
-    lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST(options));
+    lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST());
 
     auto lambda_function_ast = std::make_shared<ASTFunction>();
     lambda_function_ast->name = "lambda";
     lambda_function_ast->children.push_back(std::move(lambda_function_arguments_ast));
     lambda_function_ast->arguments = lambda_function_ast->children.back();
-
-    lambda_function_ast->is_lambda_function = true;
 
     return lambda_function_ast;
 }

@@ -118,9 +118,3 @@ void CurrentMemoryTracker::free(Int64 size)
     }
 }
 
-void CurrentMemoryTracker::injectFault()
-{
-    if (auto * memory_tracker = getMemoryTracker())
-        memory_tracker->injectFault();
-}
-

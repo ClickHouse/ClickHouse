@@ -17,10 +17,10 @@ Supported platforms:
 
 The following tutorial is based on the Ubuntu Linux system. With appropriate changes, it should also work on any other Linux distribution.
 
-### Install Prerequisites {#install-prerequisites}
+### Install Git, CMake, Python and Ninja {#install-git-cmake-python-and-ninja}
 
 ``` bash
-sudo apt-get install git cmake ccache python3 ninja-build yasm gawk
+sudo apt-get install git cmake ccache python3 ninja-build
 ```
 
 Or cmake3 instead of cmake on older systems.
@@ -56,13 +56,13 @@ Gcc cannot be used.
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
 ``` bash
-git clone --recursive --shallow-submodules git@github.com:ClickHouse/ClickHouse.git
+git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 
 or
 
 ``` bash
-git clone --recursive --shallow-submodules https://github.com/ClickHouse/ClickHouse.git
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 ```
 
 ### Build ClickHouse {#build-clickhouse}
@@ -85,17 +85,15 @@ The build requires the following components:
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.15 or newer
 -   Ninja
--   C++ compiler: clang-15 or newer
+-   C++ compiler: clang-14 or newer
 -   Linker: lld
--   Yasm
--   Gawk
 
 If all the components are installed, you may build in the same way as the steps above.
 
 Example for Ubuntu Eoan:
 ``` bash
 sudo apt update
-sudo apt install git cmake ninja-build clang++ python yasm gawk
+sudo apt install git cmake ninja-build clang++ python
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -104,7 +102,7 @@ ninja
 
 Example for OpenSUSE Tumbleweed:
 ``` bash
-sudo zypper install git cmake ninja clang-c++ python lld yasm gawk
+sudo zypper install git cmake ninja clang-c++ python lld
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -114,7 +112,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-sudo yum --nogpg install git cmake make clang python3 ccache yasm gawk
+sudo yum --nogpg install git cmake make clang python3 ccache
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -159,3 +157,4 @@ The CI checks build the binaries on each commit to [ClickHouse](https://github.c
 1. Find the type of package for your operating system that you need and download the files.
 
 ![build artifact check](images/find-build-artifact.png)
+

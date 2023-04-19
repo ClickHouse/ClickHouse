@@ -9,6 +9,8 @@ if (WITH_COVERAGE)
   # disable coverage for contib files and build with optimisations
   if (COMPILER_CLANG)
       add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  else()
+      add_compile_options(-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE_LIST})
   endif()
 endif()
 
@@ -77,6 +79,7 @@ add_contrib (re2-cmake re2)
 add_contrib (xz-cmake xz)
 add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
+add_contrib (poco-cmake poco)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
 add_contrib (zlib-ng-cmake zlib-ng)
@@ -112,7 +115,6 @@ endif()
 
 add_contrib (llvm-project-cmake llvm-project)
 add_contrib (libfuzzer-cmake llvm-project)
-add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 
 add_contrib (aws-cmake
@@ -138,7 +140,6 @@ add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
-add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 
@@ -188,8 +189,6 @@ add_contrib (annoy-cmake annoy)
 add_contrib (xxHash-cmake xxHash)
 
 add_contrib (google-benchmark-cmake google-benchmark)
-
-add_contrib (ulid-c-cmake ulid-c)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

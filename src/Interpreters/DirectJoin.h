@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/logger_useful.h>
 
 #include <Core/Block.h>
 

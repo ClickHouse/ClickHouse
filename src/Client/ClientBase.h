@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Common/NamePrompter.h"
-#include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
@@ -15,7 +14,6 @@
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace po = boost::program_options;
@@ -131,7 +129,7 @@ protected:
 
 
 private:
-    void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
+    void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
@@ -166,7 +164,6 @@ private:
     void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
-    bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
@@ -215,7 +212,6 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
-    MergeTreeSettings cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
     std::optional<ThreadStatus> thread_status;
@@ -302,7 +298,6 @@ protected:
     std::vector<HostAndPort> hosts_and_ports{};
 
     bool allow_repeated_settings = false;
-    bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
 

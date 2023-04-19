@@ -99,7 +99,7 @@ public:
     /// Read row with raw values.
     virtual std::vector<String> readRowForHeaderDetection()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented for format reader");
+        throw Exception("Method readRowAndGetFieldsAndDataTypes is not implemented for format reader", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Skip single field, it's used to skip unknown columns.
@@ -127,7 +127,7 @@ public:
 
     virtual FormatSettings::EscapingRule getEscapingRule() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Format reader doesn't have an escaping rule");
+        throw Exception("Format reader doesn't have an escaping rule", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 protected:

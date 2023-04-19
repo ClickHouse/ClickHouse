@@ -4,9 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
-#include <Common/logger_useful.h>
 #include <IO/EmptyReadBuffer.h>
-#include <base/sleep.h>
 
 namespace DB
 {
@@ -35,7 +33,6 @@ RabbitMQSource::RabbitMQSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
-    UInt64 max_execution_time_,
     bool ack_in_suffix_)
     : RabbitMQSource(
         storage_,
@@ -44,7 +41,6 @@ RabbitMQSource::RabbitMQSource(
         context_,
         columns,
         max_block_size_,
-        max_execution_time_,
         ack_in_suffix_)
 {
 }
@@ -56,7 +52,6 @@ RabbitMQSource::RabbitMQSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
-    UInt64 max_execution_time_,
     bool ack_in_suffix_)
     : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
@@ -67,8 +62,6 @@ RabbitMQSource::RabbitMQSource(
     , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , log(&Poco::Logger::get("RabbitMQSource"))
-    , max_execution_time_ms(max_execution_time_)
 {
     storage.incrementReader();
 }
@@ -114,6 +107,19 @@ Chunk RabbitMQSource::generate()
     return chunk;
 }
 
+bool RabbitMQSource::checkTimeLimit() const
+{
+    if (max_execution_time != 0)
+    {
+        auto elapsed_ns = total_stopwatch.elapsed();
+
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            return false;
+    }
+
+    return true;
+}
+
 Chunk RabbitMQSource::generateImpl()
 {
     if (!consumer)
@@ -122,30 +128,28 @@ Chunk RabbitMQSource::generateImpl()
         consumer = storage.popConsumer(timeout);
     }
 
-    if (is_finished || !consumer || consumer->isConsumerStopped())
+    if (!consumer || is_finished)
         return {};
 
-    /// Currently it is one time usage source: to make sure data is flushed
-    /// strictly by timeout or by block size.
     is_finished = true;
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+    auto input_format = FormatFactory::instance().getInputFormat(
+            storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size);
 
     StreamingFormatExecutor executor(non_virtual_header, input_format);
+
     size_t total_rows = 0;
 
     while (true)
     {
-        size_t new_rows = 0;
+        if (consumer->queueEmpty())
+            break;
 
-        if (consumer->hasPendingMessages())
-        {
-            if (auto buf = consumer->consume())
-                new_rows = executor.execute(*buf);
-        }
+        size_t new_rows = 0;
+        if (auto buf = consumer->consume())
+            new_rows = executor.execute(*buf);
 
         if (new_rows)
         {
@@ -168,40 +172,12 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[5]->insert(timestamp);
             }
 
-            total_rows += new_rows;
-        }
-        else if (total_rows == 0)
-        {
-            break;
+            total_rows = total_rows + new_rows;
         }
 
-        bool is_time_limit_exceeded = false;
-        UInt64 remaining_execution_time = 0;
-        if (max_execution_time_ms)
-        {
-            uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
-            is_time_limit_exceeded = max_execution_time_ms <= elapsed_time_ms;
-            if (!is_time_limit_exceeded)
-                remaining_execution_time = max_execution_time_ms - elapsed_time_ms;
-        }
-
-        if (total_rows >= max_block_size || consumer->isConsumerStopped() || is_time_limit_exceeded)
-        {
+        if (total_rows >= max_block_size || consumer->queueEmpty() || consumer->isConsumerStopped() || !checkTimeLimit())
             break;
-        }
-        else if (new_rows == 0)
-        {
-            if (remaining_execution_time)
-                consumer->waitForMessages(remaining_execution_time);
-            else
-                consumer->waitForMessages();
-        }
     }
-
-    LOG_TEST(
-        log,
-        "Flushing {} rows (max block size: {}, time: {} / {} ms)",
-        total_rows, max_block_size, total_stopwatch.elapsedMilliseconds(), max_execution_time_ms);
 
     if (total_rows == 0)
         return {};

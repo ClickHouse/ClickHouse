@@ -4,16 +4,15 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
+#include "Storages/MergeTree/DataPartStorageOnDisk.h"
 #include <sys/time.h>
 
 namespace DB
@@ -177,13 +176,16 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             else if (action_type == ActionType::ADD_PART)
             {
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
+                auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
 
-                part = storage.getDataPartBuilder(part_name, single_disk_volume, part_name)
-                    .withPartType(MergeTreeDataPartType::InMemory)
-                    .withPartStorageType(MergeTreeDataPartStorageType::Full)
-                    .build();
+                part = storage.createPart(
+                    part_name,
+                    MergeTreeDataPartType::InMemory,
+                    MergeTreePartInfo::fromPartName(part_name, storage.format_version),
+                    data_part_storage);
 
                 part->uuid = metadata.part_uuid;
+
                 block = block_in.read();
 
                 if (storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock))
@@ -230,7 +232,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
 
             part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
-            part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
+            part->setColumns(block.getNamesAndTypesList(), {});
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 

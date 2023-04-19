@@ -215,26 +215,6 @@ CI_CONFIG = {
         "Stateful tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
-        # Stateful tests for parallel replicas
-        "Stateful tests (release, ParallelReplicas)": {
-            "required_build": "package_release",
-        },
-        "Stateful tests (debug, ParallelReplicas)": {
-            "required_build": "package_debug",
-        },
-        "Stateful tests (asan, ParallelReplicas)": {
-            "required_build": "package_asan",
-        },
-        "Stateful tests (msan, ParallelReplicas)": {
-            "required_build": "package_msan",
-        },
-        "Stateful tests (ubsan, ParallelReplicas)": {
-            "required_build": "package_ubsan",
-        },
-        "Stateful tests (tsan, ParallelReplicas)": {
-            "required_build": "package_tsan",
-        },
-        # End stateful tests for parallel replicas
         "Stateless tests (asan)": {
             "required_build": "package_asan",
         },
@@ -289,18 +269,6 @@ CI_CONFIG = {
         "Stress test (debug)": {
             "required_build": "package_debug",
         },
-        "Upgrade check (asan)": {
-            "required_build": "package_asan",
-        },
-        "Upgrade check (tsan)": {
-            "required_build": "package_tsan",
-        },
-        "Upgrade check (msan)": {
-            "required_build": "package_msan",
-        },
-        "Upgrade check (debug)": {
-            "required_build": "package_debug",
-        },
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
@@ -316,11 +284,8 @@ CI_CONFIG = {
         "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
-        "Compatibility check (amd64)": {
+        "Compatibility check": {
             "required_build": "package_release",
-        },
-        "Compatibility check (aarch64)": {
-            "required_build": "package_aarch64",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
@@ -374,9 +339,6 @@ CI_CONFIG = {
         },
         "SQLancer (debug)": {
             "required_build": "package_debug",
-        },
-        "Sqllogic test (release)": {
-            "required_build": "package_release",
         },
     },
 }  # type: dict

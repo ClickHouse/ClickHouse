@@ -15,10 +15,6 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.read_in_order = from.optimize_read_in_order && from.query_plan_read_in_order;
     settings.aggregation_in_order = from.optimize_aggregation_in_order && from.query_plan_aggregation_in_order;
     settings.remove_redundant_sorting = from.query_plan_remove_redundant_sorting;
-    settings.aggregate_partitions_independently = from.allow_aggregate_partitions_independently;
-    settings.remove_redundant_distinct = from.query_plan_remove_redundant_distinct;
-    settings.optimize_projection = from.allow_experimental_projection_optimization && from.query_plan_optimize_projection;
-    settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
     return settings;
 }
 

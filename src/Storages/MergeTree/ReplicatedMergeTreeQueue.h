@@ -3,7 +3,6 @@
 #include <optional>
 
 #include <Common/ActionBlocker.h>
-#include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -87,8 +86,8 @@ private:
     Queue queue;
 
     InsertsByTime inserts_by_time;
-    std::atomic<time_t> min_unprocessed_insert_time = 0;
-    std::atomic<time_t> max_processed_insert_time = 0;
+    time_t min_unprocessed_insert_time = 0;
+    time_t max_processed_insert_time = 0;
 
     time_t last_queue_update = 0;
 
@@ -106,9 +105,8 @@ private:
     ActiveDataPartSet virtual_parts;
 
 
-    /// We do not add DROP_PARTs to virtual_parts because they can intersect,
-    /// so we store them separately in this structure.
-    DropPartsRanges drop_parts;
+    /// Dropped ranges inserted into queue
+    DropPartsRanges drop_ranges;
 
     /// A set of mutations loaded from ZooKeeper.
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
@@ -165,7 +163,7 @@ private:
     /// A subscriber callback is called when an entry queue is deleted
     mutable std::mutex subscribers_mutex;
 
-    using SubscriberCallBack = std::function<void(size_t /* queue_size */, const String * /* removed_log_entry_id */)>;
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */)>;
     using Subscribers = std::list<SubscriberCallBack>;
     using SubscriberIterator = Subscribers::iterator;
 
@@ -182,8 +180,8 @@ private:
 
     Subscribers subscribers;
 
-    /// Notify subscribers about queue change (new queue size and entry that was removed)
-    void notifySubscribers(size_t new_queue_size, const String * removed_log_entry_id);
+    /// Notify subscribers about queue change
+    void notifySubscribers(size_t new_queue_size);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(
@@ -288,7 +286,7 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
-    ~ReplicatedMergeTreeQueue() = default;
+    ~ReplicatedMergeTreeQueue();
 
     /// Clears queue state
     void clear();
@@ -341,7 +339,8 @@ public:
       */
     void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper,
                                        const MergeTreePartInfo & part_info,
-                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
+                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
+                                       const String & fetch_entry_znode);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -394,10 +393,10 @@ public:
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
 
-    /// Return mutation commands for part which could be not applied to
-    /// it according to part mutation version. Used when we apply alter commands on fly,
+    /// Return mutation commands for part with smallest mutation version bigger
+    /// than data part version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
-    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
+    MutationCommands getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.
@@ -406,9 +405,8 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
-    /// Returns true if part_info is covered by some DROP_RANGE or DROP_PART
-    bool isGoingToBeDropped(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
-    bool isGoingToBeDroppedImpl(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const;
+    /// Returns true if part_info is covered by some DROP_RANGE
+    bool hasDropRange(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
 
     /// Check that part produced by some entry in queue and get source parts for it.
     /// If there are several entries return largest source_parts set. This rarely possible
@@ -426,9 +424,7 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode);
-
-    void notifySubscribersOnPartialShutdown();
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback);
 
     struct Status
     {
@@ -528,7 +524,7 @@ public:
     int32_t getVersion() const { return merges_version; }
 
     /// Returns true if there's a drop range covering new_drop_range_info
-    bool isGoingToBeDropped(const MergeTreePartInfo & new_drop_range_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
+    bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
 
     /// Returns virtual part covering part_name (if any) or empty string
     String getCoveringVirtualPart(const String & part_name) const;

@@ -30,8 +30,8 @@ explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order
 explain syntax select max(x1), x2 from test group by 2 order by 1, 2;
 explain syntax select 1 + greatest(x1, 1), x2 from test group by 1, 2;
 
-select max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
-select 1 + max(x1), x2 from test group by 1, 2; -- { serverError 43, 184 }
+select max(x1), x2 from test group by 1, 2; -- { serverError 43 }
+select 1 + max(x1), x2 from test group by 1, 2; -- { serverError 43 }
 
 explain syntax select x1 + x3, x3 from test group by 1, 2;
 

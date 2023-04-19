@@ -3,12 +3,10 @@
 #include <base/types.h>
 
 #include <IO/ResourceRequest.h>
-#include <IO/ResourceLink.h>
+#include <IO/ISchedulerQueue.h>
 #include <IO/ISchedulerConstraint.h>
 
-#include <condition_variable>
-#include <mutex>
-
+#include <future>
 
 namespace DB
 {
@@ -16,91 +14,44 @@ namespace DB
 /*
  * Scoped resource guard.
  * Waits for resource to be available in constructor and releases resource in destructor
- * IMPORTANT: multiple resources should not be locked concurrently by a single thread
  */
 class ResourceGuard
 {
 public:
     enum ResourceGuardCtor
     {
-        LockStraightAway, /// Locks inside constructor (default)
-
-        // WARNING: Only for tests. It is not exception-safe because `lock()` must be called after construction.
-        PostponeLocking /// Don't lock in constructor, but send request
+        LockStraightAway, /// Lock inside constructor (default)
+        PostponeLocking /// Don't lock in constructor, but during later `lock()` call
     };
 
-    enum RequestState
+    struct Request : public ResourceRequest
     {
-        Finished, // Last request has already finished; no concurrent access is possible
-        Enqueued, // Enqueued into the scheduler; thread-safe access is required
-        Dequeued  // Dequeued from the scheduler and is in consumption state; no concurrent access is possible
-    };
+        /// Promise to be set on request execution
+        std::promise<void> dequeued;
 
-    class Request : public ResourceRequest
-    {
-    public:
-        void enqueue(ResourceCost cost_, ResourceLink link_)
-        {
-            // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
-            chassert(state == Finished);
-            state = Enqueued;
-            ResourceRequest::reset(cost_);
-            link_.queue->enqueueRequestUsingBudget(this);
-        }
+        explicit Request(ResourceCost cost_ = 1)
+            : ResourceRequest(cost_)
+        {}
 
-        // This function is executed inside scheduler thread and wakes thread issued this `request`.
-        // That thread will continue execution and do real consumption of requested resource synchronously.
         void execute() override
         {
-            {
-                std::unique_lock lock(mutex);
-                chassert(state == Enqueued);
-                state = Dequeued;
-            }
-            dequeued_cv.notify_one();
+            // This function is executed inside scheduler thread and wakes thread issued this `request` (using ResourceGuard)
+            // That thread will continue execution and do real consumption of requested resource synchronously.
+            dequeued.set_value();
         }
-
-        void wait()
-        {
-            std::unique_lock lock(mutex);
-            dequeued_cv.wait(lock, [this] { return state == Dequeued; });
-        }
-
-        void finish()
-        {
-            // lock(mutex) is not required because `Dequeued` request cannot be used by the scheduler thread
-            chassert(state == Dequeued);
-            state = Finished;
-            if (constraint)
-                constraint->finishRequest(this);
-        }
-
-        static Request & local()
-        {
-            // Since single thread cannot use more than one resource request simultaneously,
-            // we can reuse thread-local request to avoid allocations
-            static thread_local Request instance;
-            return instance;
-        }
-
-    private:
-        std::mutex mutex;
-        std::condition_variable dequeued_cv;
-        RequestState state = Finished;
     };
 
     /// Creates pending request for resource; blocks while resource is not available (unless `PostponeLocking`)
     explicit ResourceGuard(ResourceLink link_, ResourceCost cost = 1, ResourceGuardCtor ctor = LockStraightAway)
         : link(link_)
-        , request(Request::local())
+        , request(cost)
     {
-        if (cost == 0)
-            link.queue = nullptr; // Ignore zero-cost requests
-        else if (link.queue)
+        if (link.queue)
         {
-            request.enqueue(cost, link);
+            dequeued_future = request.dequeued.get_future();
+            link.queue->enqueueRequest(&request);
             if (ctor == LockStraightAway)
-                request.wait();
+                lock();
         }
     }
 
@@ -113,16 +64,17 @@ public:
     void lock()
     {
         if (link.queue)
-            request.wait();
+            dequeued_future.get();
     }
 
-    /// Report resource consumption has finished
+    /// Report request execution has finished
     void unlock()
     {
         if (link.queue)
         {
-            request.finish();
-            link.queue = nullptr;
+            assert(!dequeued_future.valid()); // unlock must be called only after lock()
+            if (request.constraint)
+                request.constraint->finishRequest(&request);
         }
     }
 
@@ -132,8 +84,10 @@ public:
         request.successful = false;
     }
 
+public:
     ResourceLink link;
-    Request & request;
+    Request request;
+    std::future<void> dequeued_future;
 };
 
 }

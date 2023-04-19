@@ -8,8 +8,8 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/StorageConfiguration.h>
 
 
 namespace DB
@@ -136,7 +136,6 @@ public:
         ContextPtr context,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        const HTTPHeaderEntries & headers = {},
         const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     std::string getName() const override { return "StorageURLSink"; }
@@ -182,12 +181,16 @@ public:
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
-    struct Configuration : public StatelessTableEngineConfiguration
+    struct Configuration
     {
         std::string url;
         std::string http_method;
+
+        std::string format = "auto";
+        std::string compression_method = "auto";
+        std::string structure = "auto";
+
         HTTPHeaderEntries headers;
-        std::string addresses_expr;
     };
 
     static Configuration getConfiguration(ASTs & args, ContextPtr context);
@@ -220,6 +223,13 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    struct Configuration
+    {
+        String url;
+        String compression_method = "auto";
+        std::vector<std::pair<String, String>> headers;
+    };
 
 private:
     std::vector<String> uri_options;

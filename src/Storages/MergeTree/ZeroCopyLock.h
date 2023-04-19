@@ -12,7 +12,7 @@ namespace DB
 /// because due to bad abstraction we use it in MergeTreeData.
 struct ZeroCopyLock
 {
-    ZeroCopyLock(const zkutil::ZooKeeperPtr & zookeeper, const std::string & lock_path, const std::string & lock_message);
+    ZeroCopyLock(const zkutil::ZooKeeperPtr & zookeeper, const std::string & lock_path);
 
     bool isLocked() const { return lock->isLocked(); }
     /// Actual lock

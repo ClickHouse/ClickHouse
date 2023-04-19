@@ -46,11 +46,9 @@ $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 function thread_insert
 {
     # supress "Killed" messages from bash
-    i=0
     while true; do
-        export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
+        export ID="$TEST_MARK$RANDOM"
         bash -c insert_data 2>&1| grep -Fav "Killed"
-        i=$((i + 1))
     done
 }
 

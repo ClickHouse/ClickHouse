@@ -225,8 +225,8 @@ public:
             }
             else if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
             {
-                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, 0, timezone_x);
-                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, 0, timezone_y);
+                auto x_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
+                auto y_day_of_week = TransformDateTime64<ToDayOfWeekImpl>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
                 if ((x_day_of_week > y_day_of_week)
                     || ((x_day_of_week == y_day_of_week) && (a_comp.time.hour > b_comp.time.hour))
                     || ((a_comp.time.hour == b_comp.time.hour) && ((a_comp.time.minute > b_comp.time.minute)
@@ -448,11 +448,6 @@ private:
 REGISTER_FUNCTION(DateDiff)
 {
     factory.registerFunction<FunctionDateDiff<true>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("date_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("DATE_DIFF", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestampDiff", FunctionDateDiff<true>::name);
-    factory.registerAlias("timestamp_diff", FunctionDateDiff<true>::name);
-    factory.registerAlias("TIMESTAMP_DIFF", FunctionDateDiff<true>::name);
 }
 
 REGISTER_FUNCTION(TimeDiff)

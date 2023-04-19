@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/ConstantValue.h>
 
 namespace DB
 {
@@ -50,19 +49,19 @@ public:
     /// Returns true if constant node has source expression, false otherwise
     bool hasSourceExpression() const
     {
-        return source_expression != nullptr;
+        return children[source_child_index] != nullptr;
     }
 
     /// Get source expression
     const QueryTreeNodePtr & getSourceExpression() const
     {
-        return source_expression;
+        return children[source_child_index];
     }
 
     /// Get source expression
     QueryTreeNodePtr & getSourceExpression()
     {
-        return source_expression;
+        return children[source_child_index];
     }
 
     QueryTreeNodeType getNodeType() const override
@@ -84,14 +83,14 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl() const override;
 
 private:
     ConstantValuePtr constant_value;
     String value_string;
-    QueryTreeNodePtr source_expression;
 
-    static constexpr size_t children_size = 0;
+    static constexpr size_t children_size = 1;
+    static constexpr size_t source_child_index = 0;
 };
 
 }

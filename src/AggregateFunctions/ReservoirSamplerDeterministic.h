@@ -22,7 +22,6 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -164,11 +163,6 @@ public:
         if (size > total_values)
             size = total_values;
 
-        static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
-        if (unlikely(size > MAX_RESERVOIR_SIZE))
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Too large array size (maximum: {})", MAX_RESERVOIR_SIZE);
-
         samples.resize(size);
         for (size_t i = 0; i < size; ++i)
             DB::readPODBinary(samples[i], buf);
@@ -241,7 +235,7 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
+            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);

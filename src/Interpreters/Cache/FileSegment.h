@@ -159,7 +159,6 @@ public:
 
     FileSegmentKind getKind() const { return segment_kind; }
     bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
-    bool isUnbound() const { return is_unbound; }
 
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
@@ -221,7 +220,7 @@ public:
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
-    /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
+    /// Try to reserve exactly `size` bytes.
     /// Returns true if reservation was successful, false otherwise.
     bool reserve(size_t size_to_reserve);
 
@@ -243,11 +242,6 @@ public:
 
     void resetDownloader();
 
-    // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
-    // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
-    //
-    // The reader typically requires its internal_buffer to be assigned from the outside before
-    // calling next().
     RemoteFileReaderPtr getRemoteFileReader();
 
     RemoteFileReaderPtr extractRemoteFileReader();

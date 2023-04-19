@@ -41,7 +41,7 @@ To assert_cast(From && from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",

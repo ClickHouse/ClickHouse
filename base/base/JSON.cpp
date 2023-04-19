@@ -466,8 +466,9 @@ JSON::Pos JSON::searchField(const char * data, size_t size) const
     {
         if (!it->hasEscapes())
         {
-            const auto current_name = it->getRawName();
-            if (current_name.size() == size && 0 == memcmp(current_name.data(), data, size))
+            if (static_cast<int>(size) + 2 > it->dataEnd() - it->data())
+                continue;
+            if (!strncmp(data, it->data() + 1, size))
                 break;
         }
         else

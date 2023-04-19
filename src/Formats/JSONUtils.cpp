@@ -44,10 +44,11 @@ namespace JSONUtils
         {
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
             if (min_bytes != 0 && current_object_size > 10 * min_bytes)
-                throw ParsingException(ErrorCodes::INCORRECT_DATA,
-                    "Size of JSON object is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
-                    "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
-                    "most likely JSON is malformed", min_bytes, current_object_size);
+                throw ParsingException(
+                    "Size of JSON object is extremely large. Expected not greater than " + std::to_string(min_bytes)
+                        + " bytes, but current is " + std::to_string(current_object_size)
+                        + " bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely JSON is malformed",
+                    ErrorCodes::INCORRECT_DATA);
 
             if (quotes)
             {
@@ -198,7 +199,7 @@ namespace JSONUtils
     {
         try
         {
-            bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
+            bool as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
 
             if (yield_strings)
             {
@@ -241,15 +242,6 @@ namespace JSONUtils
         writeChar('"', out);
         writeCString(title, out);
         writeCString("\":", out);
-        writeCString(after_delimiter, out);
-    }
-
-    void writeTitlePretty(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
-    {
-        writeChar(' ', indent * 4, out);
-        writeChar('"', out);
-        writeCString(title, out);
-        writeCString("\": ", out);
         writeCString(after_delimiter, out);
     }
 
@@ -315,20 +307,10 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name,
         size_t indent,
-        const char * title_after_delimiter,
-        bool pretty_json)
+        const char * title_after_delimiter)
     {
         if (name.has_value())
-        {
-            if (pretty_json)
-            {
-                writeTitlePretty(name->data(), out, indent, title_after_delimiter);
-            }
-            else
-            {
-                writeTitle(name->data(), out, indent, title_after_delimiter);
-            }
-        }
+            writeTitle(name->data(), out, indent, title_after_delimiter);
 
         if (yield_strings)
         {
@@ -338,16 +320,7 @@ namespace JSONUtils
             writeJSONString(buf.str(), out, settings);
         }
         else
-        {
-            if (pretty_json)
-            {
-                serialization.serializeTextJSONPretty(column, row_num, out, settings, indent);
-            }
-            else
-            {
-                serialization.serializeTextJSON(column, row_num, out, settings);
-            }
-        }
+            serialization.serializeTextJSON(column, row_num, out, settings);
     }
 
     void writeColumns(

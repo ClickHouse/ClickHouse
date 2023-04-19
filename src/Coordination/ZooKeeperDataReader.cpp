@@ -6,7 +6,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/pathUtils.h>
 
@@ -466,7 +465,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
     if (request == nullptr)
         return true;
 
-    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests)
+    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests) // -V522
         if (subrequest == nullptr)
             return true;
     return false;

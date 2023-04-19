@@ -1,6 +1,7 @@
 #include "HTTPDictionarySource.h"
 #include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
@@ -38,7 +39,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     , configuration(configuration_)
     , sample_block(sample_block_)
     , context(context_)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
@@ -51,7 +52,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     , configuration(other.configuration)
     , sample_block(other.sample_block)
     , context(Context::createCopy(other.context))
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
     credentials.setUsername(other.credentials.getUsername());
     credentials.setPassword(other.credentials.getPassword());
@@ -99,6 +100,7 @@ QueryPipeline HTTPDictionarySource::loadAll()
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -119,6 +121,7 @@ QueryPipeline HTTPDictionarySource::loadUpdatedAll()
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -148,6 +151,7 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -177,6 +181,7 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         nullptr, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -289,7 +294,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries)
+            .header_entries = std::move(header_entries) //-V1030
         };
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);

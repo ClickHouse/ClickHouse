@@ -17,7 +17,7 @@ class TemporaryFileOnDisk
 {
 public:
     explicit TemporaryFileOnDisk(const DiskPtr & disk_);
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Metric metric_scope);
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, CurrentMetrics::Value metric_scope);
     explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix);
 
     ~TemporaryFileOnDisk();

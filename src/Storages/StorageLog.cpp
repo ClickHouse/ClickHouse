@@ -204,7 +204,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     auto create_stream_getter = [&](bool stream_for_prefix)
     {
-        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
+        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer * //-V1047
         {
             if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
                 return nullptr;
@@ -926,10 +926,7 @@ std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
 
 void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto local_context = backup_entries_collector.getContext();
-    ReadSettings read_settings = local_context->getBackupReadSettings();
-
-    auto lock_timeout = getLockTimeout(local_context);
+    auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -954,7 +951,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         backup_entries_collector.addBackupEntry(
             data_path_in_backup_fs / data_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, read_settings, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
+                disk, hardlink_file_path, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
     }
 
     /// __marks.mrk
@@ -967,7 +964,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         backup_entries_collector.addBackupEntry(
             data_path_in_backup_fs / marks_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, read_settings, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
+                disk, hardlink_file_path, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
@@ -1030,7 +1027,11 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append);
+            auto backup_entry = backup->readFile(file_path_in_backup);
+            auto in = backup_entry->getReadBuffer();
+            auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
+            copyData(*in, *out);
+            out->finalize();
         }
 
         if (use_marks_file)
@@ -1061,7 +1062,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
                 old_num_rows[i] = num_marks ? data_files[i].marks[num_marks - 1].rows : 0;
             }
 
-            auto marks_rb = backup->readFile(file_path_in_backup);
+            auto backup_entry = backup->readFile(file_path_in_backup);
+            auto marks_rb = backup_entry->getReadBuffer();
 
             for (size_t i = 0; i != num_extra_marks; ++i)
             {
@@ -1102,7 +1104,7 @@ void registerStorageLog(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
 
-        String disk_name = getDiskName(*args.storage_def, args.getContext());
+        String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return std::make_shared<StorageLog>(

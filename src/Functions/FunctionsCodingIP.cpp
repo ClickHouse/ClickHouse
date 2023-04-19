@@ -1,5 +1,7 @@
 #include <functional>
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
 
 #include <Functions/FunctionsCodingIP.h>
 
@@ -24,7 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
@@ -1129,9 +1131,7 @@ public:
 
         for (size_t i = 0; i < vec_res.size(); ++i)
         {
-            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                                            reinterpret_cast<const char *>(&vec_src[offsets_src[i] - 1]),
-                                            reinterpret_cast<unsigned char *>(buffer));
+            vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char *>(buffer));
             prev_offset = offsets_src[i];
         }
 

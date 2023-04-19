@@ -88,9 +88,9 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
             name, toString(min_required_args + 1));
 
     if (argument_types.size() > max_events_size + min_required_args)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        throw Exception(fmt::format(
             "Aggregate function '{}' requires at most {} (timestamp, value_column, ...{} events) arguments.",
-                name, max_events_size + min_required_args, max_events_size);
+                name, max_events_size + min_required_args, max_events_size), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (const auto * cond_arg = argument_types[2].get(); cond_arg && !isUInt8(cond_arg))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of aggregate function {}, "
@@ -100,8 +100,9 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type '{}' of {} argument of aggregate function '{}', must be UInt8", cond_arg->getName(), i + 1, name);
+            throw Exception(fmt::format(
+                "Illegal type '{}' of {} argument of aggregate function '{}', must be UInt8", cond_arg->getName(), i + 1, name),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     if (WhichDataType(argument_types[1].get()).idx != TypeIndex::String)

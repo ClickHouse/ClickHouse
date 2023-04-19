@@ -12,7 +12,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Core/Block.h>
 
 
@@ -181,15 +181,6 @@ namespace
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
         }
-        void operator() (const CustomType & x) const
-        {
-            UInt8 type = Field::Types::CustomType;
-            hash.update(type);
-            hash.update(x.getTypeName());
-            auto result = x.toString();
-            hash.update(result.size());
-            hash.update(result.data(), result.size());
-        }
         void operator() (const bool & x) const
         {
             UInt8 type = Field::Types::Bool;
@@ -261,11 +252,8 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     hash.get128(hash_data);
     result.resize(32);
     for (size_t i = 0; i < 16; ++i)
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        writeHexByteLowercase(hash_data[16 - 1 - i], &result[2 * i]);
-#else
         writeHexByteLowercase(hash_data[i], &result[2 * i]);
-#endif
+
     return result;
 }
 

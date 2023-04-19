@@ -11,14 +11,12 @@ cluster = ClickHouseCluster(__file__)
 main_configs = [
     "configs/remote_servers.xml",
     "configs/replicated_access_storage.xml",
-    "configs/replicated_user_defined_sql_objects.xml",
     "configs/backups_disk.xml",
     "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
 ]
 
 user_configs = [
     "configs/allow_database_types.xml",
-    "configs/zookeeper_retries.xml",
 ]
 
 node1 = cluster.add_instance(
@@ -430,39 +428,6 @@ def test_replicated_database_async():
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
 
 
-# By default `backup_restore_keeper_value_max_size` is 1 MB, but in this test we'll set it to 50 bytes just to check it works.
-def test_keeper_value_max_size():
-    node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x UInt32"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
-    )
-
-    node1.query("INSERT INTO tbl VALUES (111)")
-    node2.query("INSERT INTO tbl VALUES (222)")
-
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-    node1.query("SYSTEM STOP REPLICATED SENDS ON CLUSTER 'cluster' tbl")
-
-    node1.query("INSERT INTO tbl VALUES (333)")
-    node2.query("INSERT INTO tbl VALUES (444)")
-
-    backup_name = new_backup_name()
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}",
-        settings={"backup_restore_keeper_value_max_size": 50},
-    )
-
-    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
-
-    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-
-    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
-    assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
-
-
 @pytest.mark.parametrize(
     "interface, on_cluster", [("native", True), ("http", True), ("http", False)]
 )
@@ -637,50 +602,6 @@ def test_system_users():
         node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
     )
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
-
-
-def test_system_functions():
-    node1.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;")
-
-    node1.query("CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');")
-
-    backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE system.functions ON CLUSTER 'cluster' TO {backup_name}")
-
-    node1.query("DROP FUNCTION linear_equation")
-    node1.query("DROP FUNCTION parity_str")
-    assert_eq_with_retry(
-        node2, "SELECT name FROM system.functions WHERE name='parity_str'", ""
-    )
-
-    node1.query(
-        f"RESTORE TABLE system.functions ON CLUSTER 'cluster' FROM {backup_name}"
-    )
-
-    assert node1.query(
-        "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
-    ) == TSV([[0, 1], [1, 3], [2, 5]])
-
-    assert node1.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
-        [[0, "even"], [1, "odd"], [2, "even"]]
-    )
-
-    assert node2.query(
-        "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
-    ) == TSV([[0, 1], [1, 3], [2, 5]])
-
-    assert node2.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
-        [[0, "even"], [1, "odd"], [2, "even"]]
-    )
-
-    assert_eq_with_retry(
-        node2,
-        "SELECT name FROM system.functions WHERE name='parity_str'",
-        "parity_str\n",
-    )
-    assert node2.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
-        [[0, "even"], [1, "odd"], [2, "even"]]
-    )
 
 
 def test_projection():

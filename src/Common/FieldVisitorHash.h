@@ -36,7 +36,6 @@ public:
     void operator() (const DecimalField<Decimal128> & x) const;
     void operator() (const DecimalField<Decimal256> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
-    void operator() (const CustomType & x) const;
     void operator() (const bool & x) const;
 };
 

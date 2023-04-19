@@ -6,14 +6,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric DestroyAggregatesThreads;
-    extern const Metric DestroyAggregatesThreadsActive;
-}
 
 namespace DB
 {
@@ -92,10 +84,7 @@ struct ManyAggregatedData
             // Aggregation states destruction may be very time-consuming.
             // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
             // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::DestroyAggregatesThreads,
-                CurrentMetrics::DestroyAggregatesThreadsActive,
-                variants.size());
+            const auto pool = std::make_unique<ThreadPool>(variants.size());
 
             for (auto && variant : variants)
             {
@@ -111,10 +100,10 @@ struct ManyAggregatedData
                         {
                             SCOPE_EXIT_SAFE(
                                 if (thread_group)
-                                    CurrentThread::detachFromGroupIfNotDetached();
+                                    CurrentThread::detachQueryIfNotDetached();
                             );
                             if (thread_group)
-                                CurrentThread::attachToGroupIfDetached(thread_group);
+                                CurrentThread::attachToIfDetached(thread_group);
 
                             setThreadName("AggregDestruct");
                         });
@@ -160,9 +149,7 @@ public:
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
         size_t max_threads,
-        size_t temporary_data_merge_threads,
-        bool should_produce_results_in_order_of_bucket_number_ = true,
-        bool skip_merging_ = false);
+        size_t temporary_data_merge_threads);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -194,8 +181,6 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
-    bool should_produce_results_in_order_of_bucket_number = true;
-    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;

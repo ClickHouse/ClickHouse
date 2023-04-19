@@ -1,7 +1,0 @@
-(Expression)
-ExpressionTransform
-  (Limit)
-  Limit
-    (ReadFromMergeTree)
-    Concat 3 → 1
-      MergeTreeInOrder × 3 0 → 1

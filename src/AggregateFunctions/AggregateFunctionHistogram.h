@@ -221,7 +221,7 @@ private:
     }
 
 public:
-    AggregateFunctionHistogramData()
+    AggregateFunctionHistogramData() //-V730
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
@@ -292,10 +292,6 @@ public:
         readVarUInt(size, buf);
         if (size > max_bins * 2)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many bins");
-        static constexpr size_t max_size = 1_GiB;
-        if (size > max_size)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size in histogram (maximum: {})", max_size);
 
         buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }

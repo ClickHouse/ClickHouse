@@ -31,8 +31,8 @@ struct DataTypeValidationSettings
 void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings & settings);
 
 /// Parses a common argument for table functions such as table structure given in string
-[[nodiscard]] ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context);
+ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context);
 
-bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, const ContextPtr & context, String & error);
+bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, const ContextPtr & context);
 
 }

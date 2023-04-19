@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/RangeGenerator.h>
 #include <Storages/StorageS3Settings.h>
 #include "config.h"
 
@@ -18,7 +19,7 @@
 
 namespace Aws::S3
 {
-class Client;
+class S3Client;
 }
 
 namespace DB
@@ -29,7 +30,7 @@ namespace DB
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
     String version_id;
@@ -48,7 +49,7 @@ private:
 
 public:
     ReadBufferFromS3(
-        std::shared_ptr<const S3::Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
@@ -57,8 +58,7 @@ public:
         bool use_external_buffer = false,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
-        bool restricted_seek_ = false,
-        std::optional<size_t> file_size = std::nullopt);
+        bool restricted_seek_ = false);
 
     bool nextImpl() override;
 
@@ -69,7 +69,8 @@ public:
     size_t getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
-    void setReadUntilEnd() override;
+
+    Range getRemainingReadRange() const override;
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
@@ -79,9 +80,6 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
-
-    // If true, if we destroy impl now, no work was wasted. Just for metrics.
-    bool atEndOfRequestedRangeGuess();
 
     ReadSettings read_settings;
 
@@ -93,14 +91,15 @@ private:
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
-class ReadBufferS3Factory : public SeekableReadBufferFactory, public WithFileName
+class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
 {
 public:
     explicit ReadBufferS3Factory(
-        std::shared_ptr<const S3::Client> client_ptr_,
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
+        size_t range_step_,
         size_t object_size_,
         const S3Settings::RequestSettings & request_settings_,
         const ReadSettings & read_settings_)
@@ -109,23 +108,34 @@ public:
         , key(key_)
         , version_id(version_id_)
         , read_settings(read_settings_)
+        , range_generator(object_size_, range_step_)
+        , range_step(range_step_)
         , object_size(object_size_)
         , request_settings(request_settings_)
-    {}
+    {
+        assert(range_step > 0);
+        assert(range_step < object_size);
+    }
 
-    std::unique_ptr<SeekableReadBuffer> getReader() override;
+    SeekableReadBufferPtr getReader() override;
+
+    off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
     size_t getFileSize() override;
 
     String getFileName() const override { return bucket + "/" + key; }
 
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
     const String bucket;
     const String key;
     const String version_id;
     ReadSettings read_settings;
+
+    RangeGenerator range_generator;
+    size_t range_step;
     size_t object_size;
+
     const S3Settings::RequestSettings request_settings;
 };
 

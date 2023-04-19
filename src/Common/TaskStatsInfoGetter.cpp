@@ -1,6 +1,5 @@
 #include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
-#include <base/defines.h>
 #include <base/types.h>
 
 #include <unistd.h>
@@ -281,10 +280,7 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
     catch (...)
     {
         if (netlink_socket_fd >= 0)
-        {
-            int err = close(netlink_socket_fd);
-            chassert(!err || errno == EINTR);
-        }
+            close(netlink_socket_fd);
         throw;
     }
 }
@@ -318,10 +314,7 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
 TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
     if (netlink_socket_fd >= 0)
-    {
-        int err = close(netlink_socket_fd);
-        chassert(!err || errno == EINTR);
-    }
+        close(netlink_socket_fd);
 }
 
 }

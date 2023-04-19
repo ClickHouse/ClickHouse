@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
 
 # shellcheck disable=SC2154
 

@@ -24,7 +24,7 @@
 namespace DB
 {
 
-struct HashedDictionaryConfiguration
+struct HashedDictionaryStorageConfiguration
 {
     const UInt64 shards;
     const UInt64 shard_load_queue_backlog;
@@ -47,7 +47,7 @@ public:
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const HashedDictionaryConfiguration & configuration_,
+        const HashedDictionaryStorageConfiguration & configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
     ~HashedDictionary() override;
 
@@ -174,12 +174,11 @@ private:
     using NoAttributesCollectionType = std::conditional_t<sparse, NoAttributesCollectionTypeSparse, NoAttributesCollectionTypeNonSparse>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
-    using NullableSets = std::vector<NullableSet>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSets> is_nullable_sets;
+        std::optional<NullableSet> is_nullable_set;
 
         std::variant<
             CollectionsHolder<UInt8>,
@@ -244,11 +243,11 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename GetContainersFunc>
-    void getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func);
+    template <typename GetContainerFunc>
+    void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func);
 
-    template <typename GetContainersFunc>
-    void getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func) const;
+    template <typename GetContainerFunc>
+    void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func) const;
 
     void resize(size_t added_rows);
 
@@ -256,7 +255,7 @@ private:
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
-    const HashedDictionaryConfiguration configuration;
+    const HashedDictionaryStorageConfiguration configuration;
 
     std::vector<Attribute> attributes;
 
@@ -273,14 +272,14 @@ private:
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
-extern template class HashedDictionary<DictionaryKeyType::Simple, false, /*sparse*/ false /*sharded*/>;
-extern template class HashedDictionary<DictionaryKeyType::Simple, false /*sparse*/, true /*sharded*/>;
-extern template class HashedDictionary<DictionaryKeyType::Simple, true /*sparse*/, false /*sharded*/>;
-extern template class HashedDictionary<DictionaryKeyType::Simple, true /*sparse*/, true /*sharded*/>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ false, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ false, /* sharded= */ true>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ true, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ true, /* sharded= */ true>;
 
-extern template class HashedDictionary<DictionaryKeyType::Complex, false /*sparse*/, false /*sharded*/>;
-extern template class HashedDictionary<DictionaryKeyType::Complex, false /*sparse*/, true /*sharded*/>;
-extern template class HashedDictionary<DictionaryKeyType::Complex, true /*sparse*/, false /*sharded*/>;
-extern template class HashedDictionary<DictionaryKeyType::Complex, true /*sparse*/, true /*sharded*/>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ false, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ false, /* sharded= */ true>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ true, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ true, /* sharded= */ true>;
 
 }

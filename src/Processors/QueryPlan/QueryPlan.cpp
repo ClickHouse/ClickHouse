@@ -14,8 +14,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/QueryPlanVisitor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -168,7 +166,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
-
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
@@ -179,7 +176,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (last_pipeline)
         {
             frame.pipelines.emplace_back(std::move(last_pipeline));
-            last_pipeline = nullptr;
+            last_pipeline = nullptr; //-V1048
         }
 
         size_t next_child = frame.pipelines.size();
@@ -447,31 +444,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-static void updateDataStreams(QueryPlan::Node & root)
-{
-    class UpdateDataStreams : public QueryPlanVisitor<UpdateDataStreams, false>
-    {
-    public:
-        explicit UpdateDataStreams(QueryPlan::Node * root_) : QueryPlanVisitor<UpdateDataStreams, false>(root_) { }
-
-        static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
-
-        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
-        {
-            if (!parent_node || parent_node->children.size() != 1)
-                return;
-
-            if (!current_node->step->hasOutputStream())
-                return;
-
-            if (auto * parent_transform_step = dynamic_cast<ITransformingStep *>(parent_node->step.get()); parent_transform_step)
-                parent_transform_step->updateInputStream(current_node->step->getOutputStream());
-        }
-    };
-
-    UpdateDataStreams(&root).visit();
-}
-
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// optimization need to be applied before "mergeExpressions" optimization
@@ -482,8 +454,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
-
-    updateDataStreams(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

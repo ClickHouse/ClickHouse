@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
+#include <Poco/Version.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
@@ -41,7 +42,6 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/ServerUUID.h>
-#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
@@ -67,6 +67,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
+#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <IO/Resource/registerSchedulerNodes.h>
@@ -81,7 +82,9 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
+#if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
+#endif
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -91,7 +94,6 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Core/ServerSettings.h>
 #include <filesystem>
 #include <unordered_set>
 
@@ -124,10 +126,6 @@
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-#   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
 namespace CurrentMetrics
@@ -418,7 +416,7 @@ void Server::createServer(
         }
         else
         {
-            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
+            throw Exception{message, ErrorCodes::NETWORK_ERROR};
         }
     }
 }
@@ -463,7 +461,7 @@ int Server::run()
         Poco::Util::HelpFormatter help_formatter(Server::options());
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName() == "clickhouse-server" ? "clickhouse-server" : commandName() + " server");
+                                      commandName());
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -663,10 +661,7 @@ try
 
     MainThreadStatus::getInstance();
 
-    ServerSettings server_settings;
-    server_settings.loadSettingsFromConfig(config());
-
-    StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
+    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.
@@ -700,7 +695,7 @@ try
     {
         const String config_path = config().getString("config-file", "config.xml");
         const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
-        setenv("OPENSSL_CONF", config_dir.c_str(), true);
+        setenv("OPENSSL_CONF", config_dir.string(), true);
     }
 #endif
 
@@ -751,32 +746,16 @@ try
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(
-        server_settings.max_thread_pool_size,
-        server_settings.max_thread_pool_free_size,
-        server_settings.thread_pool_queue_size);
-
-#if USE_AZURE_BLOB_STORAGE
-    /// It makes sense to deinitialize libxml after joining of all threads
-    /// in global pool because libxml uses thread-local memory allocations via
-    /// 'pthread_key_create' and 'pthread_setspecific' which should be deallocated
-    /// at 'pthread_exit'. Deinitialization of libxml leads to call of 'pthread_key_delete'
-    /// and if it is done before joining of threads, allocated memory will not be freed
-    /// and there may be memory leaks in threads that used libxml.
-    GlobalThreadPool::instance().addOnDestroyCallback([]
-    {
-        Azure::Storage::_internal::XmlGlobalDeinitialize();
-    });
-#endif
+        config().getUInt("max_thread_pool_size", 10000),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000));
 
     IOThreadPool::initialize(
-        server_settings.max_io_thread_pool_size,
-        server_settings.max_io_thread_pool_free_size,
-        server_settings.io_thread_pool_queue_size);
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
 
-    BackupsIOThreadPool::initialize(
-        server_settings.max_backups_io_thread_pool_size,
-        server_settings.max_backups_io_thread_pool_free_size,
-        server_settings.backups_io_thread_pool_queue_size);
+    NamedCollectionUtils::loadFromConfig(config());
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -792,15 +771,15 @@ try
         }
     }
 
-    Poco::ThreadPool server_pool(3, server_settings.max_connections);
+    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
         global_context,
-        server_settings.asynchronous_metrics_update_period_s,
-        server_settings.asynchronous_heavy_metrics_update_period_s,
+        config().getUInt("asynchronous_metrics_update_period_s", 1),
+        config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;
@@ -815,8 +794,9 @@ try
         }
     );
 
-    zkutil::validateZooKeeperConfig(config());
-    bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
+    ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
+
+    bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -832,9 +812,6 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
-
-    /// We need to reload server settings because config could be updated via zookeeper.
-    server_settings.loadSettingsFromConfig(config());
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -955,7 +932,7 @@ try
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
-    std::string default_database = server_settings.default_database.toString();
+    std::string default_database = config().getString("default_database", "default");
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
@@ -969,7 +946,7 @@ try
         if (effective_user_id == 0)
         {
             message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
         }
         else
         {
@@ -981,7 +958,7 @@ try
 
     StatusFile status{path / "status", StatusFile::write_full_info};
 
-    ServerUUID::load(path / "uuid", log);
+    DB::ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -1046,18 +1023,21 @@ try
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
-    if (!server_settings.tmp_policy.value.empty())
+    if (auto temporary_policy = config().getString("tmp_policy", ""); !temporary_policy.empty())
     {
-        global_context->setTemporaryStoragePolicy(server_settings.tmp_policy, server_settings.max_temporary_data_on_disk_size);
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStoragePolicy(temporary_policy, max_size);
     }
-    else if (!server_settings.temporary_data_in_cache.value.empty())
+    else if (auto temporary_cache = config().getString("temporary_data_in_cache", ""); !temporary_cache.empty())
     {
-        global_context->setTemporaryStorageInCache(server_settings.temporary_data_in_cache, server_settings.max_temporary_data_on_disk_size);
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStorageInCache(temporary_cache, max_size);
     }
     else
     {
         std::string temporary_path = config().getString("tmp_path", path / "tmp/");
-        global_context->setTemporaryStoragePath(temporary_path, server_settings.max_temporary_data_on_disk_size);
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStoragePath(temporary_path, max_size);
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -1182,6 +1162,8 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    NamedCollectionUtils::loadFromSQL(global_context);
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         include_from_path,
@@ -1192,12 +1174,10 @@ try
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
-            ServerSettings server_settings_;
-            server_settings_.loadSettingsFromConfig(*config);
+            /// Limit on total memory usage
+            size_t max_server_memory_usage = config->getUInt64("max_server_memory_usage", 0);
 
-            size_t max_server_memory_usage = server_settings_.max_server_memory_usage;
-
-            double max_server_memory_usage_to_ram_ratio = server_settings_.max_server_memory_usage_to_ram_ratio;
+            double max_server_memory_usage_to_ram_ratio = config->getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
             size_t default_max_server_memory_usage = static_cast<size_t>(memory_amount * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
@@ -1225,7 +1205,8 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            total_memory_tracker.setAllowUseJemallocMemory(server_settings_.allow_use_jemalloc_memory);
+            bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
+            total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
@@ -1243,23 +1224,36 @@ try
 
             global_context->setRemoteHostFilter(*config);
 
-            global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
-            global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
+            /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
+            if (config->has("max_table_size_to_drop"))
+                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+
+            if (config->has("max_partition_size_to_drop"))
+                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
-            if (server_settings_.concurrent_threads_soft_limit_num > 0 && server_settings_.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = server_settings_.concurrent_threads_soft_limit_num;
-            if (server_settings_.concurrent_threads_soft_limit_ratio_to_cores > 0)
+            if (config->has("concurrent_threads_soft_limit_num"))
             {
-                auto value = server_settings_.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
+                auto value = config->getUInt64("concurrent_threads_soft_limit_num", 0);
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
+            }
+            if (config->has("concurrent_threads_soft_limit_ratio_to_cores"))
+            {
+                auto value = config->getUInt64("concurrent_threads_soft_limit_ratio_to_cores", 0) * std::thread::hardware_concurrency();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
             ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
 
-            global_context->getProcessList().setMaxSize(server_settings_.max_concurrent_queries);
-            global_context->getProcessList().setMaxInsertQueriesAmount(server_settings_.max_concurrent_insert_queries);
-            global_context->getProcessList().setMaxSelectQueriesAmount(server_settings_.max_concurrent_select_queries);
+            if (config->has("max_concurrent_queries"))
+                global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
+
+            if (config->has("max_concurrent_insert_queries"))
+                global_context->getProcessList().setMaxInsertQueriesAmount(config->getInt("max_concurrent_insert_queries", 0));
+
+            if (config->has("max_concurrent_select_queries"))
+                global_context->getProcessList().setMaxSelectQueriesAmount(config->getInt("max_concurrent_select_queries", 0));
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
@@ -1268,36 +1262,54 @@ try
             /// Note: If you specified it in the top level config (not it config of default profile)
             /// then ClickHouse will use it exactly.
             /// This is done for backward compatibility.
-            if (global_context->areBackgroundExecutorsInitialized())
+            if (global_context->areBackgroundExecutorsInitialized() && (config->has("background_pool_size") || config->has("background_merges_mutations_concurrency_ratio")))
             {
-                auto new_pool_size = server_settings_.background_pool_size;
-                auto new_ratio = server_settings_.background_merges_mutations_concurrency_ratio;
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
-                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings_.background_merges_mutations_scheduling_policy.toString());
+                auto new_pool_size = config->getUInt64("background_pool_size", 16);
+                auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
             }
 
-            if (global_context->areBackgroundExecutorsInitialized())
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
             {
-                auto new_pool_size = server_settings_.background_move_pool_size;
+                auto new_pool_size = config->getUInt64("background_move_pool_size");
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            if (global_context->areBackgroundExecutorsInitialized())
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_fetches_pool_size"))
             {
-                auto new_pool_size = server_settings_.background_fetches_pool_size;
+                auto new_pool_size = config->getUInt64("background_fetches_pool_size");
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            if (global_context->areBackgroundExecutorsInitialized())
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_common_pool_size"))
             {
-                auto new_pool_size = server_settings_.background_common_pool_size;
+                auto new_pool_size = config->getUInt64("background_common_pool_size");
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(server_settings_.background_buffer_flush_schedule_pool_size);
-            global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
+            if (config->has("background_buffer_flush_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_buffer_flush_schedule_pool_size");
+                global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_schedule_pool_size");
+                global_context->getSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_message_broker_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_message_broker_schedule_pool_size");
+                global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_distributed_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_distributed_schedule_pool_size");
+                global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
+            }
 
             if (config->has("resources"))
             {
@@ -1308,7 +1320,7 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(*config))
+                if (config->has("zookeeper"))
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
@@ -1319,8 +1331,9 @@ try
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
-            global_context->updateQueryCacheConfiguration(*config);
+#if USE_BORINGSSL
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
+#endif
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
@@ -1442,22 +1455,25 @@ try
     });
 
     /// Limit on total number of concurrently executed queries.
-    global_context->getProcessList().setMaxSize(server_settings.max_concurrent_queries);
+    global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
     /// Set up caches.
 
-    size_t max_cache_size = static_cast<size_t>(memory_amount * server_settings.cache_size_to_ram_max_ratio);
+    /// Lower cache size on low-memory systems.
+    double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
+    size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
 
-    String uncompressed_cache_policy = server_settings.uncompressed_cache_policy;
+    /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "SLRU");
     LOG_INFO(log, "Uncompressed cache policy name {}", uncompressed_cache_policy);
-    size_t uncompressed_cache_size = server_settings.uncompressed_cache_size;
+    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -1472,8 +1488,9 @@ try
             global_context,
             settings.async_insert_threads));
 
-    size_t mark_cache_size = server_settings.mark_cache_size;
-    String mark_cache_policy = server_settings.mark_cache_policy;
+    /// Size of cache for marks (index of MergeTree family of tables).
+    size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
+    String mark_cache_policy = config().getString("mark_cache_policy", "SLRU");
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -1482,19 +1499,31 @@ try
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
 
-    if (server_settings.index_uncompressed_cache_size)
-        global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);
+    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
+    if (index_uncompressed_cache_size)
+        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    if (server_settings.index_mark_cache_size)
-        global_context->setIndexMarkCache(server_settings.index_mark_cache_size);
+    /// Size of cache for index marks (index of MergeTree skip indices).
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
+    if (index_mark_cache_size)
+        global_context->setIndexMarkCache(index_mark_cache_size);
 
-    if (server_settings.mmap_cache_size)
-        global_context->setMMappedFileCache(server_settings.mmap_cache_size);
+    /// A cache for mmapped files.
+    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
+    if (mmap_cache_size)
+        global_context->setMMappedFileCache(mmap_cache_size);
 
     /// A cache for query results.
-    global_context->setQueryCache(config());
+    size_t query_result_cache_size = config().getUInt64("query_result_cache.size", 1_GiB);
+    if (query_result_cache_size)
+        global_context->setQueryResultCache(
+            query_result_cache_size,
+            config().getUInt64("query_result_cache.max_entries", 1024),
+            config().getUInt64("query_result_cache.max_entry_size", 1_MiB),
+            config().getUInt64("query_result_cache.max_entry_records", 30'000'000));
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
@@ -1518,8 +1547,10 @@ try
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
     }
+#if USE_BORINGSSL
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
+#endif
 
     SCOPE_EXIT({
         async_metrics.stop();
@@ -1577,7 +1608,7 @@ try
     /// context is destroyed.
     /// In addition this object has to be created before the loading of the tables.
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (server_settings.disable_internal_dns_cache)
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
     {
         /// Disable DNS caching at all
         DNSResolver::instance().setDisableCacheFlag();
@@ -1587,7 +1618,7 @@ try
     {
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, server_settings.dns_cache_update_period, server_settings.dns_max_consecutive_failures);
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
     }
 
     if (dns_cache_updater)
@@ -1617,12 +1648,11 @@ try
         /// that may execute DROP before loadMarkedAsDroppedTables() in background,
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
-        database_catalog.createBackgroundTasks();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
         startupSystemTables();
-        database_catalog.startupBackgroundCleanup();
+        database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
@@ -1852,7 +1882,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            if (server_settings.shutdown_wait_unfinished_queries)
+            if (!config().getBool("shutdown_wait_unfinished_queries", false))
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)

@@ -71,12 +71,9 @@ public:
         scale(scale_)
     {
         if (unlikely(precision < 1 || precision > maxPrecision()))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Precision {} is out of bounds (precision range: [1, {}])",
-                            std::to_string(precision), maxPrecision());
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Precision {} is out of bounds", std::to_string(precision));
         if (unlikely(scale > maxPrecision()))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                            std::to_string(scale), maxPrecision());
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", std::to_string(scale));
     }
 
     TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
@@ -192,8 +189,7 @@ template <template <typename> typename DecimalType>
 inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
     if (precision_value < DecimalUtils::min_precision || precision_value > DecimalUtils::max_precision<Decimal256>)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision: it must be between {} and {}, got {}",
-                        DecimalUtils::min_precision, DecimalUtils::max_precision<Decimal256>, precision_value);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision");
 
     if (static_cast<UInt64>(scale_value) > precision_value)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative scales and scales larger than precision are not supported");
