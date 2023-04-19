@@ -138,7 +138,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
-    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+    const bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
 
     if (stage == QueryProcessingStage::Complete)
     {
