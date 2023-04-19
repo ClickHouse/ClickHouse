@@ -47,7 +47,7 @@ public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
     #if USE_ENET
-    void processQuery(const ENetPack & params, WriteBuffer & out, ENetPack & response);
+    virtual void processQuery(const ENetPack & params, WriteBuffer & out, ENetPack & response) = 0;
     #endif
     virtual ~InterserverIOEndpoint() = default;
 

@@ -26,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
 ENetServer::ENetServer(IServer & iserver_) : ch_server(iserver_)
@@ -109,6 +108,7 @@ void ENetServer::run()
                     {
                         endpoint->processQuery(pck, out, resp_pck);
                     }
+
 
                     resp = enet_packet_create ("response",
                                             strlen ("response") + 1,

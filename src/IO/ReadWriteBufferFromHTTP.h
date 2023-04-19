@@ -23,6 +23,7 @@
 #include <Poco/URIStreamFactory.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
+#include <Server/ENetPacketMap.h>
 #include "config.h"
 #include "config_version.h"
 
@@ -107,16 +108,12 @@ namespace detail
             std::optional<size_t> begin;
             std::optional<size_t> end;
         };
+
         #if USE_ENET
         std::string protocol = "enet";
         #else
         std::string protocol = "tcp";
         #endif
-
-        void setProtocol(std::string protocol_)
-        {
-            protocol = protocol_;
-        }
 
     protected:
         Poco::URI uri;
@@ -230,8 +227,7 @@ namespace detail
                                 0 /* assume any amount of outgoing bandwidth */);
                     if (client == nullptr)
                     {
-                        fprintf (stderr,
-                                "An error occurred while trying to create an ENet client host.\n");
+                        LOG_ERROR(log, "An error occurred while trying to create an ENet client host.");
                     }
 
                     std::ostream stream(nullptr);
