@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/logger_useful.h>
 #include <Disks/DiskLocalCheckThread.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>

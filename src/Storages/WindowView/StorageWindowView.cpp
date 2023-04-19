@@ -725,12 +725,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
 
     if (!is_time_column_func_now)
     {
-        auto query_ = select_query->clone();
+        auto query = select_query->clone();
         DropTableIdentifierMatcher::Data drop_table_identifier_data;
-        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query_);
+        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query);
 
         WindowFunctionMatcher::Data query_info_data;
-        WindowFunctionMatcher::Visitor(query_info_data).visit(query_);
+        WindowFunctionMatcher::Visitor(query_info_data).visit(query);
 
         auto order_by = std::make_shared<ASTExpressionList>();
         auto order_by_elem = std::make_shared<ASTOrderByElement>();
@@ -749,12 +749,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     return select_with_union_query;
 }
 
-ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id_)
+ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id)
 {
     /// We will create a query to create an internal table.
     auto inner_create_query = std::make_shared<ASTCreateQuery>();
-    inner_create_query->setDatabase(inner_table_id_.getDatabaseName());
-    inner_create_query->setTable(inner_table_id_.getTableName());
+    inner_create_query->setDatabase(inner_table_id.getDatabaseName());
+    inner_create_query->setTable(inner_table_id.getTableName());
 
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
@@ -1208,7 +1208,7 @@ StorageWindowView::StorageWindowView(
         if (has_inner_target_table)
         {
             /// create inner target table
-            auto create_context_ = Context::createCopy(context_);
+            auto create_context = Context::createCopy(context_);
             auto target_create_query = std::make_shared<ASTCreateQuery>();
             target_create_query->setDatabase(table_id_.database_name);
             target_create_query->setTable(generateTargetTableName(table_id_));
@@ -1219,9 +1219,9 @@ StorageWindowView::StorageWindowView(
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, query.storage->ptr());
 
-            InterpreterCreateQuery create_interpreter_(target_create_query, create_context_);
-            create_interpreter_.setInternal(true);
-            create_interpreter_.execute();
+            InterpreterCreateQuery create_interpreter(target_create_query, create_context);
+            create_interpreter.setInternal(true);
+            create_interpreter.execute();
         }
     }
 
@@ -1609,7 +1609,7 @@ void StorageWindowView::drop()
 {
     /// Must be guaranteed at this point for database engine Atomic that has_inner_table == false,
     /// because otherwise will be a deadlock.
-    dropInnerTableIfAny(false, getContext());
+    dropInnerTableIfAny(true, getContext());
 }
 
 void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
@@ -1623,7 +1623,7 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
             ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync, /* ignore_sync_setting */ true);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
     }
     catch (...)
     {

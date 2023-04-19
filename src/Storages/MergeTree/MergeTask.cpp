@@ -246,7 +246,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         }
     }
 
-    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
+    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos);
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
@@ -273,7 +273,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
 
-    ctx->tmp_disk = global_ctx->context->getGlobalTemporaryVolume()->getDisk();
+    ctx->tmp_disk = global_ctx->context->getTemporaryVolume()->getDisk();
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -702,11 +702,13 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         if (projection.type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
+        const Settings & settings = global_ctx->context->getSettingsRef();
+
         ctx->tasks_for_projections.emplace_back(std::make_shared<MergeTask>(
             projection_future_part,
             projection.metadata,
             global_ctx->merge_entry,
-            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context),
+            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, settings),
             global_ctx->time_of_merge,
             global_ctx->context,
             global_ctx->space_reservation,

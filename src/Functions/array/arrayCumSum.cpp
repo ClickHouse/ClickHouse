@@ -29,28 +29,15 @@ struct ArrayCumSumImpl
     {
         WhichDataType which(expression_return);
 
-        if (which.isUInt())
-        {
-            if (which.isNativeUInt())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-            if (which.isUInt256())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt256>());
-            else
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt128>());
-        }
+        if (which.isNativeUInt())
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
 
-        if (which.isInt())
-        {
-            if (which.isNativeInt())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
-            if (which.isInt256())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt256>());
-            else
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt128>());
-        }
+        if (which.isNativeInt())
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 
         if (which.isFloat())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+
         if (which.isDecimal())
         {
             UInt32 scale = getDecimalScale(*expression_return);
@@ -67,8 +54,8 @@ struct ArrayCumSumImpl
 
 
     template <typename Src, typename Dst>
-    static void NO_SANITIZE_UNDEFINED
-    implConst(size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, Src src_value)
+    static void NO_SANITIZE_UNDEFINED implConst(
+        size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, Src src_value)
     {
         size_t pos = 0;
         for (const auto * end = offsets + size; offsets < end; ++offsets)
@@ -84,8 +71,8 @@ struct ArrayCumSumImpl
     }
 
     template <typename Src, typename Dst>
-    static void NO_SANITIZE_UNDEFINED
-    implVector(size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
+    static void NO_SANITIZE_UNDEFINED implVector(
+        size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
     {
         size_t pos = 0;
         for (const auto * end = offsets + size; offsets < end; ++offsets)
@@ -149,31 +136,35 @@ struct ArrayCumSumImpl
         implVector(offsets.size(), offsets.data(), res_values.data(), data.data());
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
         return true;
+
     }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         ColumnPtr res;
 
-        if (executeType<UInt8, UInt64>(mapped, array, res) || executeType<UInt16, UInt64>(mapped, array, res)
-            || executeType<UInt32, UInt64>(mapped, array, res) || executeType<UInt64, UInt64>(mapped, array, res)
-            || executeType<UInt128, UInt128>(mapped, array, res) || executeType<UInt256, UInt256>(mapped, array, res)
-            || executeType<Int8, Int64>(mapped, array, res) || executeType<Int16, Int64>(mapped, array, res)
-            || executeType<Int32, Int64>(mapped, array, res) || executeType<Int64, Int64>(mapped, array, res)
-            || executeType<Int128, Int128>(mapped, array, res) || executeType<Int256, Int256>(mapped, array, res)
-            || executeType<Float32, Float64>(mapped, array, res) || executeType<Float64, Float64>(mapped, array, res)
-            || executeType<Decimal32, Decimal128>(mapped, array, res) || executeType<Decimal64, Decimal128>(mapped, array, res)
-            || executeType<Decimal128, Decimal128>(mapped, array, res) || executeType<Decimal256, Decimal256>(mapped, array, res))
+        if (executeType< UInt8 , UInt64>(mapped, array, res) ||
+            executeType< UInt16, UInt64>(mapped, array, res) ||
+            executeType< UInt32, UInt64>(mapped, array, res) ||
+            executeType< UInt64, UInt64>(mapped, array, res) ||
+            executeType<  Int8 ,  Int64>(mapped, array, res) ||
+            executeType<  Int16,  Int64>(mapped, array, res) ||
+            executeType<  Int32,  Int64>(mapped, array, res) ||
+            executeType<  Int64,  Int64>(mapped, array, res) ||
+            executeType<Float32,Float64>(mapped, array, res) ||
+            executeType<Float64,Float64>(mapped, array, res) ||
+            executeType<Decimal32, Decimal128>(mapped, array, res) ||
+            executeType<Decimal64, Decimal128>(mapped, array, res) ||
+            executeType<Decimal128, Decimal128>(mapped, array, res) ||
+            executeType<Decimal256, Decimal256>(mapped, array, res))
             return res;
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSum: {}", mapped->getName());
     }
+
 };
 
-struct NameArrayCumSum
-{
-    static constexpr auto name = "arrayCumSum";
-};
+struct NameArrayCumSum { static constexpr auto name = "arrayCumSum"; };
 using FunctionArrayCumSum = FunctionArrayMapped<ArrayCumSumImpl, NameArrayCumSum>;
 
 REGISTER_FUNCTION(ArrayCumSum)

@@ -34,7 +34,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ResizeProcessor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -701,7 +700,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    const size_t max_num_streams)
+    size_t num_streams)
 {
     if (use_table_fd)
     {
@@ -732,8 +731,7 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    size_t num_streams = max_num_streams;
-    if (max_num_streams > paths.size())
+    if (num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;
@@ -791,15 +789,7 @@ Pipe StorageFile::read(
             std::move(read_buffer)));
     }
 
-    Pipe pipe = Pipe::unitePipes(std::move(pipes));
-    /// Parallelize output as much as possible
-    /// Note: number of streams can be 0 if paths is empty
-    ///       It happens if globs in file(path, ...) expands to empty set i.e. no files to process
-    if (num_streams > 0 && num_streams < max_num_streams)
-    {
-        pipe.resize(max_num_streams);
-    }
-    return pipe;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

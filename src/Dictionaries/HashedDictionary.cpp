@@ -114,18 +114,9 @@ public:
 
     ~ParallelDictionaryLoader()
     {
-        try
-        {
-            for (auto & queue : shards_queues)
-                queue->clearAndFinish();
-
-            /// NOTE: It is OK to not pass the exception next, since on success finish() should be called which will call wait()
-            pool.wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(dictionary.log, "Exception had been thrown during parallel load of the dictionary");
-        }
+        for (auto & queue : shards_queues)
+            queue->clearAndFinish();
+        pool.wait();
     }
 
 private:
@@ -139,13 +130,13 @@ private:
     void threadWorker(size_t shard)
     {
         Block block;
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder_;
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
         auto & shard_queue = *shards_queues[shard];
 
         while (shard_queue.pop(block))
         {
             Stopwatch watch;
-            dictionary.blockToAttributes(block, arena_holder_, shard);
+            dictionary.blockToAttributes(block, arena_holder, shard);
             UInt64 elapsed_ms = watch.elapsedMilliseconds();
             if (elapsed_ms > 1'000)
                 LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_ms, block.rows());

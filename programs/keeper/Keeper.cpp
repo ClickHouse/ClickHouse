@@ -17,6 +17,7 @@
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
@@ -213,7 +214,7 @@ int Keeper::run()
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName() == "clickhouse-keeper" ? "clickhouse-keeper" : commandName() + " keeper");
+                                      commandName());
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;

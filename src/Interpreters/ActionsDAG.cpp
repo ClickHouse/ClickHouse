@@ -1067,7 +1067,7 @@ ActionsDAGPtr ActionsDAG::clone() const
 void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
-    removeUnusedActions(/*allow_remove_inputs = */ false);
+    removeUnusedActions();
 }
 #endif
 
@@ -2511,64 +2511,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     }
 
     return result_dag;
-}
-
-FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
-    :actions(actions_)
-{
-    const auto & actions_outputs = actions->getOutputs();
-    for (const auto * output_node : actions_outputs)
-    {
-        /// find input node which refers to the output node
-        /// consider only aliases on the path
-        const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
-        }
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
-            index.emplace(output_node->result_name, node);
-    }
-}
-
-const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
-{
-    const auto it = index.find(output_name);
-    if (it == index.end())
-        return nullptr;
-
-    return it->second;
-}
-
-FindAliasForInputName::FindAliasForInputName(const ActionsDAGPtr & actions_)
-    :actions(actions_)
-{
-    const auto & actions_outputs = actions->getOutputs();
-    for (const auto * output_node : actions_outputs)
-    {
-        /// find input node which corresponds to alias
-        const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
-        }
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
-            /// node can have several aliases but we consider only the first one
-            index.emplace(node->result_name, output_node);
-    }
-}
-
-const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
-{
-    const auto it = index.find(name);
-    if (it == index.end())
-        return nullptr;
-
-    return it->second;
 }
 
 }

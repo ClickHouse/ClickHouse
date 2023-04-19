@@ -68,7 +68,8 @@ public:
         String timezone;
         if (arguments.size() == 2)
         {
-            timezone = extractTimeZoneNameFromColumn(arguments[1].column.get(), arguments[1].name);
+            if (arguments[1].column)
+                timezone = extractTimeZoneNameFromColumn(*arguments[1].column);
 
             if (timezone.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

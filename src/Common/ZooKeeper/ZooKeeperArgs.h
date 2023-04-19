@@ -37,10 +37,6 @@ struct ZooKeeperArgs
     UInt64 recv_sleep_ms = 0;
 
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;
-
-private:
-    void initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config);
-    void initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
 };
 
 }

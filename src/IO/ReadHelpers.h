@@ -17,7 +17,6 @@
 #include <Common/LocalDateTime.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
-#include <base/sort.h>
 #include <base/unit.h>
 
 #include <Core/Types.h>
@@ -38,6 +37,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
+
+#include <DataTypes/DataTypeDateTime.h>
 
 #include <double-conversion/double-conversion.h>
 
@@ -94,15 +95,19 @@ inline char parseEscapeSequence(char c)
 }
 
 
-/// Function throwReadAfterEOF is located in VarInt.h
+/// These functions are located in VarInt.h
+/// inline void throwReadAfterEOF()
 
 
 inline void readChar(char & x, ReadBuffer & buf)
 {
-    if (buf.eof()) [[unlikely]]
+    if (!buf.eof())
+    {
+        x = *buf.position();
+        ++buf.position();
+    }
+    else
         throwReadAfterEOF();
-    x = *buf.position();
-    ++buf.position();
 }
 
 
@@ -160,8 +165,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
     readVarUInt(size, buf);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size.");
 
     v.resize(size);
     for (size_t i = 0; i < size; ++i)
@@ -252,7 +256,7 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
 
 inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case = false)
 {
-    if (buf.eof()) [[unlikely]]
+    if (buf.eof())
         throwReadAfterEOF();
 
     switch (*buf.position())
@@ -307,7 +311,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 
     bool negative = false;
     UnsignedT res{};
-    if (buf.eof()) [[unlikely]]
+    if (buf.eof())
     {
         if constexpr (throw_exception)
             throwReadAfterEOF();
@@ -482,14 +486,14 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             throwReadAfterEOF();
     };
 
-    if (buf.eof()) [[unlikely]]
+    if (unlikely(buf.eof()))
         return on_error();
 
     if (is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
-        if (buf.eof()) [[unlikely]]
+        if (unlikely(buf.eof()))
             return on_error();
     }
 
@@ -1023,15 +1027,12 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
-    {
-        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_multiplier;
-    }
+        datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
     else
-    {
         is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
-        if (is_ok)
-            datetime64 *= negative_multiplier;
-    }
+
+    datetime64 *= negative_multiplier;
+
 
     return ReturnType(is_ok);
 }
@@ -1243,7 +1244,7 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 template <typename T>
 inline void readCSVSimple(T & x, ReadBuffer & buf)
 {
-    if (buf.eof()) [[unlikely]]
+    if (buf.eof())
         throwReadAfterEOF();
 
     char maybe_quote = *buf.position();

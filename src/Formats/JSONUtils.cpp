@@ -244,15 +244,6 @@ namespace JSONUtils
         writeCString(after_delimiter, out);
     }
 
-    void writeTitlePretty(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
-    {
-        writeChar(' ', indent * 4, out);
-        writeChar('"', out);
-        writeCString(title, out);
-        writeCString("\": ", out);
-        writeCString(after_delimiter, out);
-    }
-
     void writeObjectStart(WriteBuffer & out, size_t indent, const char * title)
     {
         if (title)
@@ -315,20 +306,10 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name,
         size_t indent,
-        const char * title_after_delimiter,
-        bool pretty_json)
+        const char * title_after_delimiter)
     {
         if (name.has_value())
-        {
-            if (pretty_json)
-            {
-                writeTitlePretty(name->data(), out, indent, title_after_delimiter);
-            }
-            else
-            {
-                writeTitle(name->data(), out, indent, title_after_delimiter);
-            }
-        }
+            writeTitle(name->data(), out, indent, title_after_delimiter);
 
         if (yield_strings)
         {
@@ -338,16 +319,7 @@ namespace JSONUtils
             writeJSONString(buf.str(), out, settings);
         }
         else
-        {
-            if (pretty_json)
-            {
-                serialization.serializeTextJSONPretty(column, row_num, out, settings, indent);
-            }
-            else
-            {
-                serialization.serializeTextJSON(column, row_num, out, settings);
-            }
-        }
+            serialization.serializeTextJSON(column, row_num, out, settings);
     }
 
     void writeColumns(

@@ -8,18 +8,11 @@ sidebar_label: Data Replication
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
-
-```sql
-ENGINE = ReplicatedReplacingMergeTree(
-    '/clickhouse/tables/{shard}/table_name',
-    '{replica}',
-    ver
-)
 ```
-
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+```
 with:
-
-```sql
+```
 ENGINE = ReplicatedReplacingMergeTree
 ```
 :::

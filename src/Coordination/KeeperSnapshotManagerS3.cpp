@@ -105,7 +105,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
             std::move(headers),
             S3::CredentialsConfiguration
             {
-                auth_settings.use_environment_credentials.value_or(true),
+                auth_settings.use_environment_credentials.value_or(false),
                 auth_settings.use_insecure_imds_request.value_or(false),
                 auth_settings.expiration_window_seconds.value_or(S3::DEFAULT_EXPIRATION_WINDOW_SECONDS),
                 auth_settings.no_sign_request.value_or(false),

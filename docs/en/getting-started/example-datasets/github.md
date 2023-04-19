@@ -2499,9 +2499,7 @@ LIMIT 20
 We welcome exact and improved solutions here.
 
 
-## Related Content
+# Related Content
 
-- Blog: [Git commits and our community](https://clickhouse.com/blog/clickhouse-git-community-commits)
-- Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
-- Blog: [Building a Real-time Analytics Apps with ClickHouse and Hex](https://clickhouse.com/blog/building-real-time-applications-with-clickhouse-and-hex-notebook-keeper-engine)
-- Blog: [A Story of Open-source GitHub Activity using ClickHouse + Grafana](https://clickhouse.com/blog/introduction-to-clickhouse-and-grafana-webinar)
+- [Git commits and our community](https://clickhouse.com/blog/clickhouse-git-community-commits)
+- [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

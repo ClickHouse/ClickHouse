@@ -31,15 +31,12 @@ SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 # They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
 # updated accordingly
-# The following lists are append only, try to avoid editing them
-# They atill could be cleaned out after the decent time though.
 LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
-        "Bug Fix (user-visible misbehavior in an official stable release)",
-        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
-        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
+        "Bug Fix (user-visible misbehaviour in official stable release)",
+        "Bug Fix (user-visible misbehavior in official stable release)",
     ],
     "pr-build": [
         "Build/Testing/Packaging Improvement",
@@ -132,7 +129,6 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
 
     category = ""
     entry = ""
-    description_error = ""
 
     i = 0
     while i < len(lines):
@@ -184,19 +180,19 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
             i += 1
 
     if not category:
-        description_error = "Changelog category is empty"
+        return "Changelog category is empty", category
+
     # Filter out the PR categories that are not for changelog.
-    elif re.match(
+    if re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        pass  # to not check the rest of the conditions
-    elif category not in CATEGORY_TO_LABEL:
-        description_error, category = f"Category '{category}' is not valid", ""
-    elif not entry:
-        description_error = f"Changelog entry required for category '{category}'"
+        return "", category
 
-    return description_error, category
+    if not entry:
+        return f"Changelog entry required for category '{category}'", category
+
+    return "", category
 
 
 if __name__ == "__main__":

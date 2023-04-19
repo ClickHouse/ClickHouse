@@ -108,7 +108,6 @@ NULLIF
 NVME
 NYPD
 NuRaft
-Observability
 OLAP
 OLTP
 ObjectId
@@ -132,7 +131,6 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
-PrettyJSONEachRow
 Protobuf
 ProtobufSingle
 QEMU
@@ -376,7 +374,6 @@ llvm
 localhost
 macOS
 mariadb
-mdadm
 miniselect
 msgpack
 msgpk
@@ -429,7 +426,6 @@ prettyspace
 prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
-prettyjsoneachrow
 prlimit
 prometheus
 proto

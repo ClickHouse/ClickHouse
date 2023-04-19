@@ -39,14 +39,8 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone --shallow-submodules git@github.com:your_github_username/ClickHouse.git
+    git clone --recursive --shallow-submodules git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
-
-Or (if you'd like to use sparse checkout for submodules and avoid checking out unneeded files):
-
-    git clone git@github.com:your_github_username/ClickHouse.git
-    cd ClickHouse
-    ./contrib/update-submodules.sh
 
 Note: please, substitute *your_github_username* with what is appropriate!
 

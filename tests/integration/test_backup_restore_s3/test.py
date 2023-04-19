@@ -9,9 +9,6 @@ node = cluster.add_instance(
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
     ],
-    user_configs=[
-        "configs/zookeeper_retries.xml",
-    ],
     with_minio=True,
 )
 

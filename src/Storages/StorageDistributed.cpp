@@ -1401,7 +1401,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    std::optional<NameDependencies> name_deps{};
+    auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1413,9 +1413,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
 
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,

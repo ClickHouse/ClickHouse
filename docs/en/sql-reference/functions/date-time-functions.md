@@ -645,7 +645,7 @@ For an alternative to `date\_diff`, see function `age`.
 date_diff('unit', startdate, enddate, [timezone])
 ```
 
-Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_DIFF`.
+Aliases: `dateDiff`, `DATE_DIFF`.
 
 **Arguments**
 
@@ -1264,7 +1264,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
-| %f       | fractional second, see 'Note 1' below                   | 1234560    |
+| %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
@@ -1276,16 +1276,16 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %k       | hour in 24h format (00-23)                              | 22         |
 | %l       | hour in 12h format (01-12)                              | 09         |
 | %m       | month as an integer number (01-12)                      | 01         |
-| %M       | full month name (January-December), see 'Note 2' below  | January    |
+| %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%i %p        | 10:30 PM   |
-| %R       | 24-hour HH:MM time, equivalent to %H:%i                 | 22:33      |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%M %p        | 10:30 PM   |
+| %R       | 24-hour HH:MM time, equivalent to %H:%M                 | 22:33      |
 | %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
 | %t       | horizontal-tab character (’)                            |            |
-| %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44   |
+| %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
 | %w       | weekday as a integer number with Sunday as 0 (0-6)      | 2          |
@@ -1294,10 +1294,6 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %Y       | Year                                                    | 2018       |
 | %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
-
-Note 1: In ClickHouse versions earlier than v23.4, `%f` prints a single zero (0) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0. The previous behavior can be restored using setting `formatdatetime_f_prints_single_zero = 1`.
-
-Note 2: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
 
 **Example**
 
@@ -1467,28 +1463,28 @@ Result:
 └───────────────────────┘
 ```
 
-## fromUnixTimestamp
+## FROM\_UNIXTIME
 
 Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
 
-fromUnixTimestamp uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+FROM_UNIXTIME uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
 
-Alias: `FROM_UNIXTIME`.
+Alias: `fromUnixTimestamp`.
 
 **Example:**
 
 Query:
 
 ```sql
-SELECT fromUnixTimestamp(423543535);
+SELECT FROM_UNIXTIME(423543535);
 ```
 
 Result:
 
 ```text
-┌─fromUnixTimestamp(423543535)─┐
-│          1983-06-04 10:58:55 │
-└──────────────────────────────┘
+┌─FROM_UNIXTIME(423543535)─┐
+│      1983-06-04 10:58:55 │
+└──────────────────────────┘
 ```
 
 When there are two or three arguments, the first an [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second a constant format string and the third an optional constant time zone string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
@@ -1496,7 +1492,7 @@ When there are two or three arguments, the first an [Integer](../../sql-referenc
 For example:
 
 ```sql
-SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
+SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 ```
 
 ```text
@@ -1509,12 +1505,11 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 
 -   [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
 
-## fromUnixTimestampInJodaSyntax
 
-Similar to fromUnixTimestamp, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+## fromUnixTimestampInJodaSyntax
+Similar to FROM_UNIXTIME, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
 **Example:**
-
 Query:
 ``` sql
 SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
@@ -1522,10 +1517,11 @@ SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
 
 Result:
 ```
-┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')────┐
+┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')─┐
 │ 2022-11-30 10:41:12                                                        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
+
 
 ## toModifiedJulianDay
 

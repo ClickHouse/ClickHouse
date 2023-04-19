@@ -50,18 +50,15 @@ public:
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
 
-        /// Is the entry compressed?
-        const bool is_compressed;
-
         Key(ASTPtr ast_,
-            Block header_,
-            const std::optional<String> & username_,
-            std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            Block header_, const std::optional<String> & username_,
+            std::chrono::time_point<std::chrono::system_clock> expires_at_);
 
         bool operator==(const Key & other) const;
         String queryStringFromAst() const;
     };
+
+    using QueryResult = Chunks;
 
 private:
     struct KeyHasher
@@ -71,7 +68,7 @@ private:
 
     struct QueryResultWeight
     {
-        size_t operator()(const Chunks & chunks) const;
+        size_t operator()(const QueryResult & chunks) const;
     };
 
     struct IsStale
@@ -80,7 +77,7 @@ private:
     };
 
     /// query --> query result
-    using Cache = CacheBase<Key, Chunks, KeyHasher, QueryResultWeight>;
+    using Cache = CacheBase<Key, QueryResult, KeyHasher, QueryResultWeight>;
 
     /// query --> query execution count
     using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
@@ -112,17 +109,12 @@ public:
         const size_t max_entry_size_in_rows;
         const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction and finalizeWrite() coincide with query start/end
         const std::chrono::milliseconds min_query_runtime;
-        const bool squash_partial_results;
-        const size_t max_block_size;
-        std::shared_ptr<Chunks> query_result TSA_GUARDED_BY(mutex) = std::make_shared<Chunks>();
+        std::shared_ptr<QueryResult> query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResult>();
         std::atomic<bool> skip_insert = false;
-        bool was_finalized = false;
 
         Writer(Cache & cache_, const Key & key_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-            std::chrono::milliseconds min_query_runtime_,
-            bool squash_partial_results_,
-            size_t max_block_size_);
+            std::chrono::milliseconds min_query_runtime_);
 
         friend class QueryCache; /// for createWriter()
     };
@@ -144,7 +136,7 @@ public:
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size);
+    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime);
 
     void reset();
 

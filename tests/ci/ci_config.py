@@ -375,9 +375,6 @@ CI_CONFIG = {
         "SQLancer (debug)": {
             "required_build": "package_debug",
         },
-        "Sqllogic test (release)": {
-            "required_build": "package_release",
-        },
     },
 }  # type: dict
 

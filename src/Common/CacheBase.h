@@ -12,6 +12,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <Common/logger_useful.h>
 #include <base/defines.h>
 
 

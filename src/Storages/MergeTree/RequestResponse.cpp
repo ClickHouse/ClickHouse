@@ -3,7 +3,7 @@
 
 #include <Core/ProtocolDefines.h>
 #include <Common/SipHash.h>
-#include <IO/VarInt.h>
+#include "IO/VarInt.h"
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -15,18 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PROTOCOL;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
-}
-
-namespace
-{
-     CoordinationMode validateAndGet(uint8_t candidate)
-    {
-        if (candidate <= static_cast<uint8_t>(CoordinationMode::MAX))
-            return static_cast<CoordinationMode>(candidate);
-
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown reading mode: {}", candidate);
-    }
 }
 
 void ParallelReadRequest::serialize(WriteBuffer & out) const
@@ -60,9 +48,7 @@ void ParallelReadRequest::deserialize(ReadBuffer & in)
             "from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    uint8_t mode_candidate;
-    readIntBinary(mode_candidate, in);
-    mode = validateAndGet(mode_candidate);
+    readIntBinary(mode, in);
     readIntBinary(replica_num, in);
     readIntBinary(min_number_of_marks, in);
     description.deserialize(in);
@@ -114,7 +100,6 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
     /// Must be the first
     writeIntBinary(version, out);
 
-    writeIntBinary(mode, out);
     description.serialize(out);
     writeIntBinary(replica_num, out);
 }
@@ -137,9 +122,6 @@ void InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
             "from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    uint8_t mode_candidate;
-    readIntBinary(mode_candidate, in);
-    mode = validateAndGet(mode_candidate);
     description.deserialize(in);
     readIntBinary(replica_num, in);
 }

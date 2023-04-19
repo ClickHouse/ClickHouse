@@ -58,8 +58,7 @@ struct QuantileExactBase
         size_t size = 0;
         readVarUInt(size, buf);
         if (unlikely(size > QUANTILE_EXACT_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", QUANTILE_EXACT_MAX_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
         array.resize(size);
         buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }

@@ -290,14 +290,12 @@ namespace
     {
     public:
         MemoryBackup(
-            ContextPtr context_,
             const StorageMetadataPtr & metadata_snapshot_,
             const std::shared_ptr<const Blocks> blocks_,
             const String & data_path_in_backup,
             const DiskPtr & temp_disk_,
             UInt64 max_compress_block_size_)
-            : context(context_)
-            , metadata_snapshot(metadata_snapshot_)
+            : metadata_snapshot(metadata_snapshot_)
             , blocks(blocks_)
             , temp_disk(temp_disk_)
             , max_compress_block_size(max_compress_block_size_)
@@ -328,8 +326,6 @@ namespace
 
         BackupEntries generate() override
         {
-            ReadSettings read_settings = context->getBackupReadSettings();
-
             BackupEntries backup_entries;
             backup_entries.resize(file_paths.size());
 
@@ -346,7 +342,7 @@ namespace
                 NativeWriter block_out{data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
-                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path, read_settings)};
+                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path)};
             }
 
             /// Writing index.mrk
@@ -355,7 +351,7 @@ namespace
                 auto index_mrk_out_compressed = temp_disk->writeFile(index_mrk_path);
                 CompressedWriteBuffer index_mrk_out{*index_mrk_out_compressed};
                 index.write(index_mrk_out);
-                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path, read_settings)};
+                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path)};
             }
 
             /// Writing columns.txt
@@ -393,7 +389,6 @@ namespace
             return backup_entries;
         }
 
-        ContextPtr context;
         StorageMetadataPtr metadata_snapshot;
         std::shared_ptr<const Blocks> blocks;
         DiskPtr temp_disk;
@@ -406,15 +401,11 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
+    auto temp_disk = backup_entries_collector.getContext()->getTemporaryVolume()->getDisk(0);
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
-    backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
-        backup_entries_collector.getContext(),
-        getInMemoryMetadataPtr(),
-        data.get(),
-        data_path_in_backup,
-        temp_disk,
-        max_compress_block_size)->getBackupEntries());
+    backup_entries_collector.addBackupEntries(
+        std::make_shared<MemoryBackup>(getInMemoryMetadataPtr(), data.get(), data_path_in_backup, temp_disk, max_compress_block_size)
+            ->getBackupEntries());
 }
 
 void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
@@ -426,7 +417,7 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && total_size_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
+    auto temp_disk = restorer.getContext()->getTemporaryVolume()->getDisk(0);
 
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup, temp_disk]

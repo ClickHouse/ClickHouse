@@ -36,7 +36,7 @@
 
 namespace detail
 {
-template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); } // NOLINT(misc-redundant-expression)
+template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); }
 
 #if defined(__SSE2__)
 template <char s0>

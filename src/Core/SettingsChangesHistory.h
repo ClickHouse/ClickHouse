@@ -101,8 +101,6 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
                {"query_plan_aggregation_in_order", 0, 1, "Enable some refactoring around query plan"},
                {"format_binary_max_string_size", 0, 1_GiB, "Prevent allocating large amount of memory"}}},
     {"22.11", {{"use_structure_from_insertion_table_in_table_functions", 0, 2, "Improve using structure from insertion table in table functions"}}},
-    {"23.4", {{"formatdatetime_f_prints_single_zero", true, false, "Improved compatibility with MySQL DATE_FORMAT()/STR_TO_DATE()"}}},
-    {"23.4", {{"formatdatetime_parsedatetime_m_is_month_name", false, true, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"}}},
     {"22.9", {{"force_grouping_standard_compatibility", false, true, "Make GROUPING function output the same as in SQL standard and other DBMS"}}},
     {"22.7", {{"cross_to_inner_join_rewrite", 1, 2, "Force rewrite comma join to inner"},
               {"enable_positional_arguments", false, true, "Enable positional arguments feature by default"},

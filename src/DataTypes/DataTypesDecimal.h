@@ -116,8 +116,7 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
         if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow while multiplying {} by scale {}",
-                                std::string(ToDataType::family_name), toString(value.value), toString(converted_value));
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
             else
                 return ReturnType(false);
         }
@@ -137,10 +136,7 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
             converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow: {} is not in range ({}, {})",
-                                std::string(ToDataType::family_name), toString(converted_value),
-                                toString(std::numeric_limits<typename ToFieldType::NativeType>::min()),
-                                toString(std::numeric_limits<typename ToFieldType::NativeType>::max()));
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
             else
                 return ReturnType(false);
         }

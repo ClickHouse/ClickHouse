@@ -8,6 +8,12 @@ option (SANITIZE "Enable one of the code sanitizers" "")
 
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
+# gcc with -nodefaultlibs does not add sanitizer libraries
+# with -static-libasan and similar
+macro(add_explicit_sanitizer_library lib)
+    target_link_libraries(global-libs INTERFACE "-Wl,-static -l${lib} -Wl,-Bdynamic")
+endmacro()
+
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
         # LLVM-15 has a bug in Address Sanitizer, preventing the usage of 'sanitize-address-use-after-scope',
@@ -22,6 +28,9 @@ if (SANITIZE)
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libasan")
         endif ()
+        if (COMPILER_GCC)
+            add_explicit_sanitizer_library(asan)
+        endif()
 
     elseif (SANITIZE STREQUAL "memory")
         # MemorySanitizer flags are set according to the official documentation:
@@ -49,6 +58,11 @@ if (SANITIZE)
         set (TSAN_FLAGS "-fsanitize=thread")
         if (COMPILER_CLANG)
             set (TSAN_FLAGS "${TSAN_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/tsan_suppressions.txt")
+        else()
+            set (MESSAGE "TSAN suppressions was not passed to the compiler (since the compiler is not clang)\n")
+            set (MESSAGE "${MESSAGE}Use the following command to pass them manually:\n")
+            set (MESSAGE "${MESSAGE}    export TSAN_OPTIONS=\"$TSAN_OPTIONS suppressions=${CMAKE_SOURCE_DIR}/tests/tsan_suppressions.txt\"")
+            message (WARNING "${MESSAGE}")
         endif()
 
 
@@ -60,6 +74,9 @@ if (SANITIZE)
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libtsan")
         endif ()
+        if (COMPILER_GCC)
+            add_explicit_sanitizer_library(tsan)
+        endif()
 
     elseif (SANITIZE STREQUAL "undefined")
         set (UBSAN_FLAGS "-fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
@@ -74,6 +91,11 @@ if (SANITIZE)
         endif()
         if (COMPILER_CLANG)
             set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/ubsan_suppressions.txt")
+        else()
+            set (MESSAGE "UBSAN suppressions was not passed to the compiler (since the compiler is not clang)\n")
+            set (MESSAGE "${MESSAGE}Use the following command to pass them manually:\n")
+            set (MESSAGE "${MESSAGE}        export UBSAN_OPTIONS=\"$UBSAN_OPTIONS suppressions=${CMAKE_SOURCE_DIR}/tests/ubsan_suppressions.txt\"")
+            message (WARNING "${MESSAGE}")
         endif()
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
@@ -84,6 +106,9 @@ if (SANITIZE)
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libubsan")
         endif ()
+        if (COMPILER_GCC)
+            add_explicit_sanitizer_library(ubsan)
+        endif()
 
         # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
         set (ENABLE_EMBEDDED_COMPILER 0 CACHE BOOL "")

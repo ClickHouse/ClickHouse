@@ -2,7 +2,6 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Backups/WithRetries.h>
 
 
 namespace DB
@@ -12,12 +11,9 @@ namespace DB
 class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    using RestoreKeeperSettings = WithRetries::KeeperSettings;
-
     RestoreCoordinationRemote(
         zkutil::GetZooKeeper get_zookeeper_,
         const String & root_zookeeper_path_,
-        const RestoreKeeperSettings & keeper_settings_,
         const String & restore_uuid_,
         const Strings & all_hosts_,
         const String & current_host_,
@@ -49,26 +45,25 @@ public:
     bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
 
 private:
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void createRootNodes();
     void removeAllNodes();
 
     class ReplicatedDatabasesMetadataSync;
 
-    /// get_zookeeper will provide a zookeeper client without any fault injection
     const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
-    const RestoreKeeperSettings keeper_settings;
     const String restore_uuid;
     const String zookeeper_path;
     const Strings all_hosts;
     const String current_host;
     const size_t current_host_index;
     const bool is_internal;
-    Poco::Logger * const log;
 
-    mutable WithRetries with_retries;
     std::optional<BackupCoordinationStageSync> stage_sync;
+
     mutable std::mutex mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper;
 };
 
 }

@@ -4,7 +4,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-#include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>

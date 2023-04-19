@@ -5,6 +5,7 @@
 #include <mutex>
 #include <type_traits>
 
+#include <Common/logger_useful.h>
 
 #include <base/StringRef.h>
 #include <Common/Arena.h>

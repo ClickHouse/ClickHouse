@@ -599,16 +599,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name);
+        lambda_actions, captured_column_names, lambda_arguments_names_and_types, result_type, lambda_expression_node_name);
     actions_stack.pop_back();
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
-    const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
-
-    if (!result_type->equals(*actions_node->result_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Lambda resolved type {} is not equal to type from actions DAG {}",
-            result_type, actions_node->result_type);
+    actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = level + 1; i < actions_stack_size; ++i)
@@ -632,7 +627,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     column.name = set_key;
     column.type = std::make_shared<DataTypeSet>();
 
-    bool set_is_created = planner_set.getSet().isCreated();
+    bool set_is_created = planner_set.getSet()->isCreated();
     auto column_set = ColumnSet::create(1, planner_set.getSet());
 
     if (set_is_created)

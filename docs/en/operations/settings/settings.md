@@ -40,39 +40,6 @@ SETTINGS additional_table_filters = (('table_1', 'x != 2'))
 └───┴──────┘
 ```
 
-## additional_result_filter
-
-An additional filter expression to apply to the result of `SELECT` query.
-This setting is not applied to any subquery.
-
-Default value: `''`.
-
-**Example**
-
-``` sql
-insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
-```
-```response
-┌─x─┬─y────┐
-│ 1 │ a    │
-│ 2 │ bb   │
-│ 3 │ ccc  │
-│ 4 │ dddd │
-└───┴──────┘
-```
-```sql
-SELECT *
-FROM table_1
-SETTINGS additional_result_filter = 'x != 2'
-```
-```response
-┌─x─┬─y────┐
-│ 1 │ a    │
-│ 3 │ ccc  │
-│ 4 │ dddd │
-└───┴──────┘
-```
-
 ## allow_nondeterministic_mutations {#allow_nondeterministic_mutations}
 
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
@@ -1467,28 +1434,6 @@ Possible values:
 - Positive integer >= 0.
 
 Default value: `0`
-
-## query_cache_compress_entries {#query-cache-compress-entries}
-
-Compress entries in the [query cache](../query-cache.md). Lessens the memory consumption of the query cache at the cost of slower inserts into / reads from it.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `1`
-
-## query_cache_squash_partial_results {#query-cache-squash-partial-results}
-
-Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `1`
 
 ## query_cache_ttl {#query-cache-ttl}
 
@@ -4104,44 +4049,3 @@ SELECT sum(number) FROM numbers(10000000000) SETTINGS partial_result_on_first_ca
 Possible values: `true`, `false`
 
 Default value: `false`
-## function_json_value_return_type_allow_nullable
-
-Control whether allow to return `NULL` when value is not exist for JSON_VALUE function.
-
-```sql
-SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
-
-┌─JSON_VALUE('{"hello":"world"}', '$.b')─┐
-│ ᴺᵁᴸᴸ                                   │
-└────────────────────────────────────────┘
-
-1 row in set. Elapsed: 0.001 sec.
-```
-
-Possible values:
-
--   true — Allow.
--   false — Disallow.
-
-Default value: `false`.
-
-## function_json_value_return_type_allow_complex
-
-Control whether allow to return complex type (such as: struct, array, map) for json_value function.
-
-```sql
-SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true
-
-┌─JSON_VALUE('{"hello":{"world":"!"}}', '$.hello')─┐
-│ {"world":"!"}                                    │
-└──────────────────────────────────────────────────┘
-
-1 row in set. Elapsed: 0.001 sec.
-```
-
-Possible values:
-
--   true — Allow.
--   false — Disallow.
-
-Default value: `false`.

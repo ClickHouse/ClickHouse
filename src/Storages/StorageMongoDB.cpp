@@ -7,6 +7,7 @@
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
+#include <Poco/Version.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>

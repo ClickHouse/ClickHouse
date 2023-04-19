@@ -294,8 +294,7 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many bins");
         static constexpr size_t max_size = 1_GiB;
         if (size > max_size)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size in histogram (maximum: {})", max_size);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in histogram.");
 
         buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }
