@@ -82,9 +82,9 @@ private:
 };
 
 template <class Func>
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, const String & name, Func && func)
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, Func && func)
 {
-    return std::make_shared<LoadJob>(std::move(dependencies), name, std::forward<Func>(func));
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), std::forward<Func>(func));
 }
 
 // `AsyncLoader` is a scheduler for DAG of `LoadJob`s. It tracks dependencies and priorities of jobs.
