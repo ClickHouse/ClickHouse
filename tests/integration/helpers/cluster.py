@@ -3868,6 +3868,7 @@ class ClickHouseInstance:
         while local_counter < retries:
             if not self.get_process_pid("clickhouse server"):
                 break
+            self.exec_in_container(["bash", "-c", "ps aux"], user="root")
             time.sleep(0.5)
             local_counter += 1
 
@@ -3928,6 +3929,7 @@ class ClickHouseInstance:
         while local_counter < retries:
             if not self.get_process_pid("clickhouse server"):
                 break
+            self.exec_in_container(["bash", "-c", "ps aux"], user="root")
             time.sleep(0.5)
             local_counter += 1
 
