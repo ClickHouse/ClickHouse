@@ -193,7 +193,15 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     if (null_presence.has_nullable)
     {
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-        auto temporary_result_type = removeNullable(result_type);
+
+        DataTypePtr temporary_result_type;
+        if (resolver)
+        {
+            auto temporary_function_base = resolver->build(temporary_columns);
+            temporary_result_type = temporary_function_base->getResultType();
+        }
+        else
+            temporary_result_type = removeNullable(result_type);
 
         auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
         return wrapInNullable(res, args, result_type, input_rows_count);
