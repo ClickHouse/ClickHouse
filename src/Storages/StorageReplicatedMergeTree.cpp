@@ -1059,6 +1059,21 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     }
 }
 
+void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path, const String & drop_replica,
+                                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out)
+{
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeperIfTableShutDown();
+
+    /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
+    /// However, the main use case is to drop dead replica, which cannot become active.
+    /// This check prevents only from accidental drop of some other replica.
+    if (zookeeper->exists(drop_zookeeper_path + "/replicas/" + drop_replica + "/is_active"))
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", drop_replica);
+
+    dropReplica(zookeeper, drop_zookeeper_path, drop_replica, logger, table_settings, has_metadata_out);
+}
+
+
 bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
         const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger)
 {

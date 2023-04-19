@@ -800,7 +800,6 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
         return false;
 
     ReplicatedTableStatus status;
-    auto zookeeper = getContext()->getZooKeeper();
     storage_replicated->getStatus(status);
 
     /// Do not allow to drop local replicas and active remote replicas
@@ -809,13 +808,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
 
-    /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
-    /// However, the main use case is to drop dead replica, which cannot become active.
-    /// This check prevents only from accidental drop of some other replica.
-    if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
-        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", query.replica);
-
-    storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, log);
+    storage_replicated->dropReplica(status.zookeeper_path, query.replica, log);
     LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
 
     return true;
