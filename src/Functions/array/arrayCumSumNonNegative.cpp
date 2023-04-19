@@ -34,20 +34,22 @@ struct ArrayCumSumNonNegativeImpl
         {
             if (which.isNativeUInt())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+            if (which.isUInt128())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt128>());
             if (which.isUInt256())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt256>());
-            else
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt128>());
+            UNREACHABLE();
         }
 
         if (which.isInt())
         {
             if (which.isNativeInt())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+            if (which.isInt128())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt128>());
             if (which.isInt256())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt256>());
-            else
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt128>());
+            UNREACHABLE();
         }
 
         if (which.isFloat())
@@ -64,14 +66,13 @@ struct ArrayCumSumNonNegativeImpl
             return std::make_shared<DataTypeArray>(nested);
         }
 
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayCumSumNonNegativeImpl cannot add values of type {}", expression_return->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayCumSumNonNegativeImpl cannot add values of type {}", expression_return->getName());
     }
 
 
     template <typename Src, typename Dst>
-    static void NO_SANITIZE_UNDEFINED
-    implVector(size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
+    static void NO_SANITIZE_UNDEFINED implVector(
+        size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
     {
         size_t pos = 0;
         for (const auto * end = offsets + size; offsets < end; ++offsets)
