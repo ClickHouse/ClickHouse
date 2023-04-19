@@ -36,7 +36,7 @@ Calculates the sum of two values `a` and `b`.
 plus(a, b)
 ```
 
-It is possible to add an integer and a date or date with time. The former operation increments the number of days in the date, the latter operation increments the number of seconds.
+It is possible to add an integer and a date or date with time. The former operation increments the number of days in the date, the latter operation increments the number of seconds in the date with time.
 
 Alias: `a + b` (operator)
 
@@ -291,7 +291,7 @@ Result:
 
 ## multiplyDecimal
 
-Multiplies decimals two values `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Multiplies two decimals `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
 
 The scale of the result can be explicitly specified by `result_scale`. If `result_scale` is not specified, it is assumed to be the maximum scale of the input values.
 
@@ -367,7 +367,7 @@ Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal m
 ## divideDecimal
 
 
-Divides two decimals two values `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+Divides two decimals `a` and `b`. The result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
 
 The scale of the result can be explicitly specified by `result_scale`. If `result_scale` is not specified, it is assumed to be the maximum scale of the input values.
 
