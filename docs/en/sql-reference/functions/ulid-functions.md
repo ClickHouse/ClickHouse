@@ -48,6 +48,39 @@ SELECT generateULID(1), generateULID(2)
 └────────────────────────────┴────────────────────────────┘
 ```
 
+## ULIDStringToDateTime
+
+This function extracts the timestamp from a ULID.
+
+**Syntax**
+
+``` sql
+ULIDStringToDateTime(ulid[, timezone])
+```
+
+**Arguments**
+
+-   `ulid` — Input ULID. [String](/docs/en/sql-reference/data-types/string.md) or [FixedString(26)](/docs/en/sql-reference/data-types/fixedstring.md).
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Timestamp with milliseconds precision.
+
+Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
+
+**Usage example**
+
+``` sql
+SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
+```
+
+``` text
+┌─ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')─┐
+│                            2022-12-28 00:40:37.616 │
+└────────────────────────────────────────────────────┘
+```
+
 ## See Also
 
 -   [UUID](../../sql-reference/functions/uuid-functions.md)

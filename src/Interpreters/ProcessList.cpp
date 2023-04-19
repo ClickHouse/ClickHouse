@@ -340,7 +340,7 @@ QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
-    ThreadGroupStatusPtr && thread_group_,
+    ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
@@ -362,7 +362,7 @@ QueryStatus::~QueryStatus()
 {
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
-    for (const auto & e : executors)
+    for (const auto & [_, e] : executors)
         assert(!e->executor);
 #endif
 
@@ -400,7 +400,9 @@ CancellationCode QueryStatus::cancelQuery(bool)
     {
         /// Create a snapshot of executors under a mutex.
         std::lock_guard lock(executors_mutex);
-        executors_snapshot = executors;
+        executors_snapshot.reserve(executors.size());
+        for (const auto & [_, e] : executors)
+            executors_snapshot.push_back(e);
     }
 
     /// We should call cancel() for each executor with unlocked executors_mutex, because
@@ -428,17 +430,24 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
-    assert(std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; }) == executors.end());
-    executors.push_back(std::make_shared<ExecutorHolder>(e));
+    assert(!executors.contains(e));
+    executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 {
-    std::lock_guard lock(executors_mutex);
-    auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
-    assert(it != executors.end());
-    /// Invalidate executor pointer inside holder, but don't remove holder from the executors (to avoid race with cancelQuery)
-    (*it)->remove();
+    ExecutorHolderPtr executor_holder;
+
+    {
+        std::lock_guard lock(executors_mutex);
+        assert(executors.contains(e));
+        executor_holder = executors[e];
+        executors.erase(e);
+    }
+
+    /// Invalidate executor pointer inside holder.
+    /// We should do it with released executors_mutex to avoid possible lock order inversion.
+    executor_holder->remove();
 }
 
 bool QueryStatus::checkTimeLimit()
@@ -616,7 +625,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
     if (global_context)
     {
         size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getTempDataOnDisk(), size_limit);
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
     }
 }
 

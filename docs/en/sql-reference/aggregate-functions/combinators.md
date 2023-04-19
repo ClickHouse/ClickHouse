@@ -285,3 +285,8 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
+
+
+## Related Content
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

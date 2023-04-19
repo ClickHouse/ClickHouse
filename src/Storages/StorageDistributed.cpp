@@ -29,6 +29,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
+#include <Common/CurrentMetrics.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -124,6 +125,12 @@ namespace ProfileEvents
     extern const Event DistributedRejectedInserts;
     extern const Event DistributedDelayedInserts;
     extern const Event DistributedDelayedInsertsMilliseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric StorageDistributedThreads;
+    extern const Metric StorageDistributedThreadsActive;
 }
 
 namespace DB
@@ -1394,7 +1401,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    auto name_deps = getDependentViewsByColumn(local_context);
+    std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1406,7 +1413,9 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
 
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
-            const auto & deps_mv = name_deps[command.column_name];
+            if (!name_deps)
+                name_deps = getDependentViewsByColumn(local_context);
+            const auto & deps_mv = name_deps.value()[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -1436,7 +1445,7 @@ void StorageDistributed::initializeFromDisk()
     const auto & disks = data_volume->getDisks();
 
     /// Make initialization for large number of disks parallel.
-    ThreadPool pool(disks.size());
+    ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, disks.size());
 
     for (const DiskPtr & disk : disks)
     {

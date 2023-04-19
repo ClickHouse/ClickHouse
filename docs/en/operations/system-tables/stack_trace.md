@@ -14,6 +14,10 @@ Columns:
 -   `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](../system-tables/query_log.md) system table.
 -   `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A [stack trace](https://en.wikipedia.org/wiki/Stack_trace) which represents a list of physical addresses where the called methods are stored.
 
+:::tip
+Check out the Knowledge Base for some handy queries, including [how to see what threads are currently running](https://clickhouse.com/docs/knowledgebase/find-expensive-queries) and [useful queries for troubleshooting](https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting).
+:::
+
 **Example**
 
 Enabling introspection functions:

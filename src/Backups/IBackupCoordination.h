@@ -1,14 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <fmt/format.h>
-#include <base/hex.h>
 #include <Core/Types.h>
 
 
 namespace DB
 {
 class Exception;
+struct BackupFileInfo;
+using BackupFileInfos = std::vector<BackupFileInfo>;
 enum class AccessEntityType;
 enum class UserDefinedSQLObjectType;
 
@@ -73,70 +72,14 @@ public:
     virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
     virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
 
-    struct FileInfo
-    {
-        String file_name;
-
-        UInt64 size = 0;
-        UInt128 checksum{0};
-
-        /// for incremental backups
-        UInt64 base_size = 0;
-        UInt128 base_checksum{0};
-
-        /// Name of the data file.
-        String data_file_name;
-
-        /// Suffix of an archive if the backup is stored as a series of archives.
-        String archive_suffix;
-
-        /// Position in the archive.
-        UInt64 pos_in_archive = static_cast<UInt64>(-1);
-
-        /// Note: this format doesn't allow to parse data back
-        /// It is useful only for debugging purposes
-        [[ maybe_unused ]] String describe()
-        {
-            String result;
-            result += fmt::format("file_name: {};\n", file_name);
-            result += fmt::format("size: {};\n", size);
-            result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
-            result += fmt::format("base_size: {};\n", base_size);
-            result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
-            result += fmt::format("data_file_name: {};\n", data_file_name);
-            result += fmt::format("archive_suffix: {};\n", archive_suffix);
-            result += fmt::format("pos_in_archive: {};\n", pos_in_archive);
-            return result;
-        }
-    };
-
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
-    virtual void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) = 0;
+    virtual void addFileInfos(BackupFileInfos && file_infos) = 0;
+    virtual BackupFileInfos getFileInfos() const = 0;
+    virtual BackupFileInfos getFileInfosForAllHosts() const = 0;
 
-    void addFileInfo(const FileInfo & file_info)
-    {
-        bool is_data_file_required;
-        addFileInfo(file_info, is_data_file_required);
-    }
-
-    /// Updates some fields (currently only `archive_suffix`) of a stored file's information.
-    virtual void updateFileInfo(const FileInfo & file_info) = 0;
-
-    virtual std::vector<FileInfo> getAllFileInfos() const = 0;
-    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
-    virtual bool hasFiles(const String & directory) const = 0;
-
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
-
-    virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
-    virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
-
-    /// Generates a new archive suffix, e.g. "001", "002", "003", ...
-    virtual String getNextArchiveSuffix() = 0;
-
-    /// Returns the list of all the archive suffixes which were generated.
-    virtual Strings getAllArchiveSuffixes() const = 0;
+    /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
+    virtual bool startWritingFile(size_t data_file_index) = 0;
 
     /// This function is used to check if concurrent backups are running
     /// other than the backup passed to the function

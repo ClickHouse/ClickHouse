@@ -1,5 +1,7 @@
 #include <IO/WriteBufferFromString.h>
+#include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 #include <Common/MemoryTracker.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -10,11 +12,20 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
 #endif
 
+
+namespace CurrentMetrics
+{
+    extern const Metric QueryPipelineExecutorThreads;
+    extern const Metric QueryPipelineExecutorThreadsActive;
+}
 
 namespace DB
 {
@@ -94,6 +105,9 @@ void PipelineExecutor::execute(size_t num_threads)
     if (num_threads < 1)
         num_threads = 1;
 
+    OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
+    span.addAttribute("clickhouse.thread_num", num_threads);
+
     try
     {
         executeImpl(num_threads);
@@ -108,6 +122,8 @@ void PipelineExecutor::execute(size_t num_threads)
     }
     catch (...)
     {
+        span.addAttribute(ExecutionStatus::fromCurrentException());
+
 #ifndef NDEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
 #endif
@@ -296,26 +312,23 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get());
     tasks.fill(queue);
 
-    std::unique_lock lock{threads_mutex};
-    threads.reserve(num_threads);
+    if (num_threads > 1)
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, num_threads);
 }
 
 void PipelineExecutor::spawnThreads()
 {
     while (auto slot = slots->tryAcquire())
     {
-        std::unique_lock lock{threads_mutex};
-        size_t thread_num = threads.size();
+        size_t thread_num = threads++;
 
         /// Count of threads in use should be updated for proper finish() condition.
         /// NOTE: this will not decrease `use_threads` below initially granted count
         tasks.upscale(thread_num + 1);
 
         /// Start new thread
-        threads.emplace_back([this, thread_num, thread_group = CurrentThread::getGroup(), slot = std::move(slot)]
+        pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), slot = std::move(slot)]
         {
-            /// ThreadStatus thread_status;
-
             SCOPE_EXIT_SAFE(
                 if (thread_group)
                     CurrentThread::detachFromGroupIfNotDetached();
@@ -339,23 +352,6 @@ void PipelineExecutor::spawnThreads()
     }
 }
 
-void PipelineExecutor::joinThreads()
-{
-    for (size_t thread_num = 0; ; thread_num++)
-    {
-        std::unique_lock lock{threads_mutex};
-        if (thread_num >= threads.size())
-            break;
-        if (threads[thread_num].joinable())
-        {
-            auto & thread = threads[thread_num];
-            lock.unlock(); // to avoid deadlock if thread we are going to join starts spawning threads
-            thread.join();
-        }
-    }
-    // NOTE: No races: all concurrent spawnThreads() calls are done from `threads`, but they're already joined.
-}
-
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
     initializeExecution(num_threads);
@@ -366,7 +362,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         if (!finished_flag)
         {
             finish();
-            joinThreads();
+            if (pool)
+                pool->wait();
         }
     );
 
@@ -374,7 +371,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     {
         spawnThreads(); // start at least one thread
         tasks.processAsyncTasks();
-        joinThreads();
+        pool->wait();
     }
     else
     {

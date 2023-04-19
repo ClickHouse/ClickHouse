@@ -45,7 +45,7 @@ When creating a `CollapsingMergeTree` table, the same [query clauses](../../../e
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::note
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 

@@ -18,6 +18,7 @@ main_configs = [
 
 user_configs = [
     "configs/allow_database_types.xml",
+    "configs/zookeeper_retries.xml",
 ]
 
 node1 = cluster.add_instance(
@@ -427,6 +428,39 @@ def test_replicated_database_async():
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
+
+
+# By default `backup_restore_keeper_value_max_size` is 1 MB, but in this test we'll set it to 50 bytes just to check it works.
+def test_keeper_value_max_size():
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt32"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (111)")
+    node2.query("INSERT INTO tbl VALUES (222)")
+
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+    node1.query("SYSTEM STOP REPLICATED SENDS ON CLUSTER 'cluster' tbl")
+
+    node1.query("INSERT INTO tbl VALUES (333)")
+    node2.query("INSERT INTO tbl VALUES (444)")
+
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}",
+        settings={"backup_restore_keeper_value_max_size": 50},
+    )
+
+    node1.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
+    assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV([111, 222, 333, 444])
 
 
 @pytest.mark.parametrize(

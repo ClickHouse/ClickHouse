@@ -10,7 +10,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 
 #include <memory>
 #include <mutex>

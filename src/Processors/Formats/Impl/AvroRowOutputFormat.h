@@ -23,7 +23,7 @@ class AvroSerializerTraits;
 class AvroSerializer
 {
 public:
-    AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>);
+    AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_);
     const avro::ValidSchema & getSchema() const { return valid_schema; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
@@ -41,6 +41,7 @@ private:
     std::vector<SerializeFn> serialize_fns;
     avro::ValidSchema valid_schema;
     std::unique_ptr<AvroSerializerTraits> traits;
+    const FormatSettings & settings;
 };
 
 class AvroRowOutputFormat final : public IRowOutputFormat
