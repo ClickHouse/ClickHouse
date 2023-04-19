@@ -1,4 +1,6 @@
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
 
 #include <cstring>
 #include <IO/BitHelpers.h>
@@ -16,6 +18,7 @@
 #include <vector>
 #include <typeinfo>
 #include <iostream>
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 using namespace DB;

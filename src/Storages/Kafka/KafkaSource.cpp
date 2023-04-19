@@ -101,8 +101,8 @@ Chunk KafkaSource::generateImpl()
     auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
-    auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
+    auto input_format = FormatFactory::instance().getInputFormat(
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size);
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
@@ -133,7 +133,7 @@ Chunk KafkaSource::generateImpl()
         {
             e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                 consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
-            throw std::move(e);
+            throw;
         }
     };
 

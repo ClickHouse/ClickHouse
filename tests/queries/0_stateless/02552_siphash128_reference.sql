@@ -203,5 +203,5 @@ select sipHash128ReferenceKeyed((toUInt64(0),toUInt64(0)),char(0, 1, 2, 3, 4, 5,
 select sipHash128ReferenceKeyed((0, 0), '1'); -- { serverError 48 }
 select sipHash128ReferenceKeyed(toUInt64(0), '1'); -- { serverError 48 }
 
-SELECT hex(sipHash128Reference()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128()) = '1CE422FEE7BD8DE20000000000000000';
-SELECT hex(sipHash128ReferenceKeyed()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128Keyed()) = '1CE422FEE7BD8DE20000000000000000';
+select hex(sipHash128Reference());
+select hex(sipHash128ReferenceKeyed());

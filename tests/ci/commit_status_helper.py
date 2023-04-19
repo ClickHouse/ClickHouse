@@ -6,12 +6,11 @@ import time
 from typing import List, Literal
 import logging
 
+from ci_config import CI_CONFIG, REQUIRED_CHECKS
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
-
-from ci_config import CI_CONFIG, REQUIRED_CHECKS
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 
 RETRY = 5

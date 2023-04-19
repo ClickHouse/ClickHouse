@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ubsan, no-cpu-aarch64, no-upgrade-check
+# Tags: no-fasttest, no-ubsan, no-cpu-aarch64, no-backward-compatibility-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -3401,41 +3401,7 @@ namespace
                     const auto & array_data_type = assert_cast<const DataTypeArray &>(*data_type);
 
                     if (!allow_repeat)
-                    {
-                        /// Case of nested Arrays. Nested Array can be a message with one repeated field.
-                        /// For example we have an column `arr Array(Array(UInt32))` and the next proto schema:
-                        /// message Message {
-                        ///     message NestedArray {
-                        ///         repeated uint32 nested = 2;
-                        ///     }
-                        ///     repeated NestedArray arr = 1;
-                        /// }
-                        if (field_descriptor.message_type() && field_descriptor.message_type()->field_count() == 1)
-                        {
-                            Names column_names = {field_descriptor.message_type()->field(0)->name()};
-                            DataTypes data_types = {data_type};
-                            /// Try to serialize as a nested message.
-                            std::vector<size_t> used_column_indices;
-                            auto message_serializer = buildMessageSerializerImpl(
-                                1,
-                                column_names.data(),
-                                data_types.data(),
-                                *field_descriptor.message_type(),
-                                /* with_length_delimiter = */ false,
-                                google_wrappers_special_treatment,
-                                &field_descriptor,
-                                used_column_indices,
-                                /* columns_are_reordered_outside = */ false,
-                                /* check_nested_while_filling_missing_columns = */ false);
-
-                            if (!message_serializer)
-                                return nullptr;
-
-                            return message_serializer;
-                        }
-
                         throwFieldNotRepeated(field_descriptor, column_name);
-                    }
 
                     auto nested_serializer = buildFieldSerializer(column_name, array_data_type.getNestedType(), field_descriptor,
                                                                   /* allow_repeat = */ false, // We do our repeating now, so for nested type we forget about the repeating.
@@ -3453,35 +3419,15 @@ namespace
                     const auto & tuple_data_type = assert_cast<const DataTypeTuple &>(*data_type);
                     size_t size_of_tuple = tuple_data_type.getElements().size();
 
-                    if (const auto * message_type = field_descriptor.message_type())
+                    if (tuple_data_type.haveExplicitNames() && field_descriptor.message_type())
                     {
-                        bool have_explicit_names = tuple_data_type.haveExplicitNames();
-                        Names element_names;
-                        if (have_explicit_names)
-                        {
-                            element_names = tuple_data_type.getElementNames();
-                        }
-                        else
-                        {
-                            /// Match unnamed Tuple elements and Message fields by position.
-                            size_t field_count = message_type->field_count();
-                            if (field_count != size_of_tuple)
-                                throw Exception(
-                                    ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
-                                    "The number of fields in Protobuf message ({}) is not equal to the number of elements in unnamed Tuple ({})",
-                                    field_count,
-                                    size_of_tuple);
-                            for (size_t i = 0; i != field_count; ++i)
-                                element_names.push_back(message_type->field(static_cast<int>(i))->name());
-                        }
-
                         /// Try to serialize as a nested message.
                         std::vector<size_t> used_column_indices;
                         auto message_serializer = buildMessageSerializerImpl(
                             size_of_tuple,
-                            element_names.data(),
+                            tuple_data_type.getElementNames().data(),
                             tuple_data_type.getElements().data(),
-                            *message_type,
+                            *field_descriptor.message_type(),
                             /* with_length_delimiter = */ false,
                             google_wrappers_special_treatment,
                             &field_descriptor,

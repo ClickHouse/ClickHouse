@@ -5,8 +5,8 @@
 #include <Poco/Event.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <iostream>
 #include <Common/scope_guard_safe.h>
-#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -32,18 +32,18 @@ struct CompletedPipelineExecutor::Data
     }
 };
 
-static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
+            CurrentThread::detachQueryIfNotDetached();
     );
     setThreadName("QueryCompPipeEx");
 
     try
     {
         if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+            CurrentThread::attachTo(thread_group);
 
         data.executor->execute(num_threads);
     }

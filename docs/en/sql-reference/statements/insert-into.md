@@ -4,7 +4,7 @@ sidebar_position: 33
 sidebar_label: INSERT INTO
 ---
 
-# INSERT INTO Statement
+# INSERT INTO Statement 
 
 Inserts data into a table.
 
@@ -89,20 +89,13 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the [command-line client](/docs/en/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/docs/en/interfaces/http/).
-
-:::note
-If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
-```sql
-INSERT INTO table SETTINGS ... FORMAT format_name data_set
-```
-:::
+You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces)”.
 
 ## Constraints
 
 If table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-## Inserting the Results of SELECT
+## Inserting the Results of `SELECT`
 
 **Syntax**
 
@@ -129,7 +122,7 @@ To insert a default value instead of `NULL` into a column with not nullable data
 INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
 ```
 
-Use the syntax above to insert data from a file, or files, stored on the **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause.
+Use the syntax above to insert data from a file, or files, stored on the **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause. 
 
 Compressed files are supported. The compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
@@ -191,7 +184,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
-INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table) 
     VALUES (100, 'inserted via remote()');
 SELECT * FROM simple_table;
 ```

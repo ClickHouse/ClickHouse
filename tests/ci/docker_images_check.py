@@ -96,6 +96,7 @@ def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
 def get_changed_docker_images(
     pr_info: PRInfo, images_dict: ImagesDict
 ) -> Set[DockerImage]:
+
     if not images_dict:
         return set()
 

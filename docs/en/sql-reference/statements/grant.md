@@ -105,8 +105,7 @@ Hierarchy of privileges:
 -   [CREATE](#grant-create)
     -   `CREATE DATABASE`
     -   `CREATE TABLE`
-        -   `CREATE ARBITRARY TEMPORARY TABLE`
-            -   `CREATE TEMPORARY TABLE`
+        -   `CREATE TEMPORARY TABLE`
     -   `CREATE VIEW`
     -   `CREATE DICTIONARY`
     -   `CREATE FUNCTION`
@@ -314,8 +313,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 -   `CREATE`. Level: `GROUP`
     -   `CREATE DATABASE`. Level: `DATABASE`
     -   `CREATE TABLE`. Level: `TABLE`
-        -   `CREATE ARBITRARY TEMPORARY TABLE`. Level: `GLOBAL`
-            -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
+        -   `CREATE TEMPORARY TABLE`. Level: `GLOBAL`
     -   `CREATE VIEW`. Level: `VIEW`
     -   `CREATE DICTIONARY`. Level: `DICTIONARY`
 

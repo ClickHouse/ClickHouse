@@ -24,7 +24,6 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
     -   [one-ck](https://github.com/lizhichao/one-ck)
     -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
-    -   [hyvor/clickhouse-php](https://github.com/hyvor/clickhouse-php)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)

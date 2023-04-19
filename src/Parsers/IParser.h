@@ -1,7 +1,6 @@
 #pragma once
 
 #include <absl/container/inlined_vector.h>
-#include <algorithm>
 #include <memory>
 
 #include <Core/Defines.h>

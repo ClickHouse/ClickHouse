@@ -52,6 +52,7 @@ public:
     };
 
     /// Takes already set connection.
+    /// We don't own connection, thus we have to drain it synchronously.
     RemoteQueryExecutor(
         Connection & connection,
         const String & query_, const Block & header_, ContextPtr context_,
@@ -67,6 +68,7 @@ public:
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
+        const ConnectionPoolWithFailoverPtr & pool,
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
@@ -189,9 +191,6 @@ private:
     Block totals;
     Block extremes;
 
-    std::function<std::unique_ptr<IConnections>()> create_connections;
-    std::unique_ptr<IConnections> connections;
-
     const String query;
     String query_id;
     ContextPtr context;
@@ -213,6 +212,12 @@ private:
     /// we create a RemoteQueryExecutor per replica and have to store additional info
     /// about the number of the current replica or the count of replicas at all.
     IConnections::ReplicaInfo replica_info;
+
+    std::function<std::shared_ptr<IConnections>()> create_connections;
+    /// Hold a shared reference to the connection pool so that asynchronous connection draining will
+    /// work safely. Make sure it's the first member so that we don't destruct it too early.
+    const ConnectionPoolWithFailoverPtr pool;
+    std::shared_ptr<IConnections> connections;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -255,6 +260,7 @@ private:
     std::atomic<bool> got_duplicated_part_uuids{ false };
 
     /// Parts uuids, collected from remote replicas
+    std::mutex duplicated_part_uuids_mutex;
     std::vector<UUID> duplicated_part_uuids;
 
     PoolMode pool_mode = PoolMode::GET_MANY;

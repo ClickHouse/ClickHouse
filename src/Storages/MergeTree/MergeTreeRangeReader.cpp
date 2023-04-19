@@ -3,7 +3,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/TargetSpecific.h>
-#include <Common/logger_useful.h>
 #include <Core/UUID.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -19,7 +18,9 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#      pragma clang diagnostic ignored "-Wreserved-identifier"
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
 #endif
 
 namespace DB

@@ -193,8 +193,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Delta);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        /// Default bytes size is 1.
-        UInt8 delta_bytes_size = 1;
+        UInt8 delta_bytes_size = 0;
 
         if (arguments && !arguments->children.empty())
         {
@@ -203,8 +202,8 @@ void registerCodecDelta(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be unsigned integer");
+            if (!literal)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be integer");
 
             size_t user_bytes_size = literal->value.safeGet<UInt64>();
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)

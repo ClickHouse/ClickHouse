@@ -61,11 +61,15 @@ struct AggregateFunctionMapCombinatorData<String>
 
     static void writeKey(String key, WriteBuffer & buf)
     {
-        writeStringBinary(key, buf);
+        writeVarUInt(key.size(), buf);
+        writeString(key, buf);
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        readStringBinary(key, buf);
+        UInt64 size;
+        readVarUInt(size, buf);
+        key.resize(size);
+        buf.readStrict(key.data(), size);
     }
 };
 

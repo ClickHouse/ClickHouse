@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
 
 namespace ProfileEvents
 {
@@ -33,7 +32,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
     auto & value_column = tuple_column.getColumn(1);
 
     size_t size = 0;
-    for (Event event = Event(0); event < Counters::num_counters; ++event)
+    for (Event event = 0; event < Counters::num_counters; ++event)
     {
         UInt64 value = counters[event];
 
@@ -55,7 +54,7 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     size_t rows = 0;
     auto & name_column = columns[NAME_COLUMN_INDEX];
     auto & value_column = columns[VALUE_COLUMN_INDEX];
-    for (Event event = Event(0); event < Counters::num_counters; ++event)
+    for (Event event = 0; event < Counters::num_counters; ++event)
     {
         Int64 value = snapshot.counters[event];
 
@@ -114,10 +113,34 @@ void getProfileEvents(
     block = std::move(temp_columns);
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();
+    auto const current_thread_id = CurrentThread::get().thread_id;
+    std::vector<ProfileEventsSnapshot> snapshots;
     ThreadIdToCountersSnapshot new_snapshots;
-
     ProfileEventsSnapshot group_snapshot;
     {
+        auto stats = thread_group->getProfileEventsCountersAndMemoryForThreads();
+        snapshots.reserve(stats.size());
+
+        for (auto & stat : stats)
+        {
+            auto const thread_id = stat.thread_id;
+            if (thread_id == current_thread_id)
+                continue;
+            auto current_time = time(nullptr);
+            auto previous_snapshot = last_sent_snapshots.find(thread_id);
+            auto increment =
+                previous_snapshot != last_sent_snapshots.end()
+                ? CountersIncrement(stat.counters, previous_snapshot->second)
+                : CountersIncrement(stat.counters);
+            snapshots.push_back(ProfileEventsSnapshot{
+                thread_id,
+                std::move(increment),
+                stat.memory_usage,
+                current_time
+            });
+            new_snapshots[thread_id] = std::move(stat.counters);
+        }
+
         group_snapshot.thread_id    = 0;
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
@@ -131,6 +154,11 @@ void getProfileEvents(
     }
     last_sent_snapshots = std::move(new_snapshots);
 
+    for (auto & snapshot : snapshots)
+    {
+        dumpProfileEvents(snapshot, columns, server_display_name);
+        dumpMemoryTracker(snapshot, columns, server_display_name);
+    }
     dumpProfileEvents(group_snapshot, columns, server_display_name);
     dumpMemoryTracker(group_snapshot, columns, server_display_name);
 

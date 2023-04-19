@@ -51,6 +51,7 @@ def find_previous_release(
 
     for release in releases:
         if release.version < server_version:
+
             # Check if the artifact exists on GitHub.
             # It can be not true for a short period of time
             # after creating a tag for a new release before uploading the packages.

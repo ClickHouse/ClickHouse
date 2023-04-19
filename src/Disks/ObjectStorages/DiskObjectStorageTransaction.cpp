@@ -670,44 +670,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 }
 
 
-void DiskObjectStorageTransaction::writeFileUsingCustomWriteObject(
-    const String & path,
-    WriteMode mode,
-    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-        custom_write_object_function)
-{
-    /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
-    auto blob_name = object_storage.generateBlobNameForPath(path);
-    std::optional<ObjectAttributes> object_attributes;
-
-    if (metadata_helper)
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter++;
-        object_attributes = {
-            {"path", path}
-        };
-        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
-    }
-
-    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
-    auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
-
-    operations_to_execute.emplace_back(std::move(write_operation));
-
-    /// We always use mode Rewrite because we simulate append using metadata and different files
-    size_t object_size = std::move(custom_write_object_function)(object, WriteMode::Rewrite, object_attributes);
-
-    /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
-    if (mode == WriteMode::Rewrite)
-        metadata_transaction->createMetadataFile(path, blob_name, object_size);
-    else
-        metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
-
-    metadata_transaction->commit();
-}
-
-
 void DiskObjectStorageTransaction::createHardLink(const std::string & src_path, const std::string & dst_path)
 {
     operations_to_execute.emplace_back(

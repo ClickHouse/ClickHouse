@@ -6,7 +6,7 @@ sidebar_label: WATCH
 
 # WATCH Statement (Experimental)
 
-:::note    
+:::warning    
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable live views and `WATCH` query using `set allow_experimental_live_view = 1`.
 :::
 

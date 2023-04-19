@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <string>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 

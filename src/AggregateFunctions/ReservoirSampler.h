@@ -24,7 +24,6 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -209,14 +208,7 @@ public:
     {
         DB::readIntBinary<size_t>(sample_count, buf);
         DB::readIntBinary<size_t>(total_values, buf);
-
-        size_t size = std::min(total_values, sample_count);
-        static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
-        if (unlikely(size > MAX_RESERVOIR_SIZE))
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Too large array size (maximum: {})", MAX_RESERVOIR_SIZE);
-
-        samples.resize(size);
+        samples.resize(std::min(total_values, sample_count));
 
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);

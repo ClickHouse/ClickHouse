@@ -1,4 +1,4 @@
-# rebuild in #47031
+# rebuild in #33610
 # docker build -t clickhouse/stateful-test .
 ARG FROM_TAG=latest
 FROM clickhouse/stateless-test:$FROM_TAG

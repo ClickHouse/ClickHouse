@@ -6,6 +6,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPRequestHandlerFactoryMain.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 

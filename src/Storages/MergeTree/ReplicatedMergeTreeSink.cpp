@@ -384,7 +384,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
       * TODO Too complex logic, you can do better.
       */
     size_t replicas_num = 0;
-    ZooKeeperRetriesControl quorum_retries_ctl("checkQuorumPrecondition", zookeeper_retries_info, context->getProcessListElement());
+    ZooKeeperRetriesControl quorum_retries_ctl("checkQuorumPrecondition", zookeeper_retries_info);
     quorum_retries_ctl.retryLoop(
         [&]()
         {
@@ -641,7 +641,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     Coordination::Error write_part_info_keeper_error = Coordination::Error::ZOK;
     std::vector<String> conflict_block_ids;
 
-    ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info, context->getProcessListElement());
+    ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info);
     retries_ctl.retryLoop([&]()
     {
         zookeeper->setKeeper(storage.getZooKeeper());
@@ -985,7 +985,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         }
         else if (Coordination::isUserError(multi_code))
         {
-            String failed_op_path = ops[zkutil::getFailedOpIndex(multi_code, responses)]->getPath();
+            String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
 
             auto contains = [](const auto & block_ids, const String & path)
             {
@@ -1002,7 +1002,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
             if (multi_code == Coordination::Error::ZNODEEXISTS && deduplicate_block && contains(block_id_path, failed_op_path))
             {
-                /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
+                /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
                 LOG_INFO(log, "Block with ID {} already exists (it was just appeared). Renaming part {} back to {}. Will retry write.",
                     toString(block_id), part->name, temporary_part_relative_path);
 
@@ -1073,26 +1073,13 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         }
     },
     [&zookeeper]() { zookeeper->cleanupEphemeralNodes(); });
-
     if (!conflict_block_ids.empty())
         return conflict_block_ids;
-
     if (isQuorumEnabled())
     {
-        ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info, context->getProcessListElement());
+        ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info);
         quorum_retries_ctl.retryLoop([&]()
         {
-            if (storage.is_readonly)
-            {
-                /// stop retries if in shutdown
-                if (storage.shutdown_called)
-                    throw Exception(
-                        ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
-
-                quorum_retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
-                return;
-            }
-
             zookeeper->setKeeper(storage.getZooKeeper());
 
             if (is_already_existing_part)

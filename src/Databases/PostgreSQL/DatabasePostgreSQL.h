@@ -8,6 +8,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {

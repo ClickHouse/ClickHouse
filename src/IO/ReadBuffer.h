@@ -54,12 +54,8 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
-    /** read next data and fill a buffer with it; set position to the beginning of the new data
-      * (but not necessarily to the beginning of working_buffer!);
-      * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong;
-      *
-      * if an exception was thrown, is the ReadBuffer left in a usable state? this varies across implementations;
-      * can the caller retry next() after an exception, or call other methods? not recommended
+    /** read next data and fill a buffer with it; set position to the beginning;
+      * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
       */
     bool next()
     {
@@ -215,21 +211,7 @@ public:
 
     /**
      * Set upper bound for read range [..., position).
-     * Useful for reading from remote filesystem, when it matters how much we read.
-     * Doesn't affect getFileSize().
-     * See also: SeekableReadBuffer::supportsRightBoundedReads().
-     *
-     * Behavior in weird cases is currently implementation-defined:
-     *  - setReadUntilPosition() below current position,
-     *  - setReadUntilPosition() above the end of the file,
-     *  - seek() to a position above the until position (even if you setReadUntilPosition() to a
-     *    higher value right after the seek!),
-     *
-     * Typical implementations discard any current buffers and connections, even if the position is
-     * adjusted only a little.
-     *
-     * Typical usage is to call it right after creating the ReadBuffer, before it started doing any
-     * work.
+     * Required for reading from remote filesystem, when it matters how much we read.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
 

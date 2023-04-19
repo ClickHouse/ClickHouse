@@ -27,7 +27,7 @@ limitations under the License. */
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
@@ -78,6 +78,7 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 {
     ASTPtr inner_query = select_query;
     std::optional<StorageID> dependent_table_storage_id;
+    bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
 
     while (true)
     {
@@ -99,6 +100,10 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 
         if (auto db_and_table = getDatabaseAndTable(*inner_select_query, 0))
         {
+            const auto * table_expression = getTableExpression(*inner_select_query, 0);
+            if (allow_experimental_analyzer && table_expression->database_and_table_name->tryGetAlias().empty())
+                table_expression->database_and_table_name->setAlias("__dependent_table");
+
             String select_database_name = db_and_table->database;
             String select_table_name = db_and_table->table;
 
@@ -236,18 +241,7 @@ StorageLiveView::StorageLiveView(
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
 
-    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask",
-        [this]
-        {
-            try
-            {
-                periodicRefreshTaskFunc();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Exception in LiveView periodic refresh task in BackgroundSchedulePool");
-            }
-        });
+    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
     periodic_refresh_task->deactivate();
 }
 
@@ -647,9 +641,9 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     }
     else
     {
-        auto inner_blocks_query_ = getInnerBlocksQuery();
+        auto inner_blocks_query = getInnerBlocksQuery();
         block_context->addExternalTable(getBlocksTableName(), std::move(blocks_storage_table_holder));
-        InterpreterSelectQuery interpreter(inner_blocks_query_,
+        InterpreterSelectQuery interpreter(inner_blocks_query,
             block_context,
             StoragePtr(),
             nullptr,

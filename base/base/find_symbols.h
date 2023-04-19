@@ -36,7 +36,7 @@
 
 namespace detail
 {
-template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); } // NOLINT(misc-redundant-expression)
+template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); }
 
 #if defined(__SSE2__)
 template <char s0>
@@ -159,22 +159,22 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 #endif
 
     for (; pos < end; ++pos)
-        if (   (num_chars == 1 && maybe_negate<positive>(is_in<c01>(*pos)))
-            || (num_chars == 2 && maybe_negate<positive>(is_in<c01, c02>(*pos)))
-            || (num_chars == 3 && maybe_negate<positive>(is_in<c01, c02, c03>(*pos)))
-            || (num_chars == 4 && maybe_negate<positive>(is_in<c01, c02, c03, c04>(*pos)))
-            || (num_chars == 5 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05>(*pos)))
-            || (num_chars == 6 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06>(*pos)))
-            || (num_chars == 7 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07>(*pos)))
-            || (num_chars == 8 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08>(*pos)))
-            || (num_chars == 9 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09>(*pos)))
-            || (num_chars == 10 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09, c10>(*pos)))
-            || (num_chars == 11 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11>(*pos)))
-            || (num_chars == 12 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12>(*pos)))
-            || (num_chars == 13 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13>(*pos)))
-            || (num_chars == 14 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14>(*pos)))
-            || (num_chars == 15 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15>(*pos)))
-            || (num_chars == 16 && maybe_negate<positive>(is_in<c01, c02, c03, c04, c05, c06, c07, c08, c09, c10, c11, c12, c13, c14, c15, c16>(*pos))))
+        if (   (num_chars >= 1 && maybe_negate<positive>(*pos == c01))
+            || (num_chars >= 2 && maybe_negate<positive>(*pos == c02))
+            || (num_chars >= 3 && maybe_negate<positive>(*pos == c03))
+            || (num_chars >= 4 && maybe_negate<positive>(*pos == c04))
+            || (num_chars >= 5 && maybe_negate<positive>(*pos == c05))
+            || (num_chars >= 6 && maybe_negate<positive>(*pos == c06))
+            || (num_chars >= 7 && maybe_negate<positive>(*pos == c07))
+            || (num_chars >= 8 && maybe_negate<positive>(*pos == c08))
+            || (num_chars >= 9 && maybe_negate<positive>(*pos == c09))
+            || (num_chars >= 10 && maybe_negate<positive>(*pos == c10))
+            || (num_chars >= 11 && maybe_negate<positive>(*pos == c11))
+            || (num_chars >= 12 && maybe_negate<positive>(*pos == c12))
+            || (num_chars >= 13 && maybe_negate<positive>(*pos == c13))
+            || (num_chars >= 14 && maybe_negate<positive>(*pos == c14))
+            || (num_chars >= 15 && maybe_negate<positive>(*pos == c15))
+            || (num_chars >= 16 && maybe_negate<positive>(*pos == c16)))
             return pos;
     return return_mode == ReturnMode::End ? end : nullptr;
 }

@@ -247,7 +247,7 @@ private:
 AccessControl::AccessControl()
     : MultipleAccessStorage("user directories"),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
-      role_cache(std::make_unique<RoleCache>(*this, 600)),
+      role_cache(std::make_unique<RoleCache>(*this)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
@@ -282,8 +282,6 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
-
-    role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
 }
 
 

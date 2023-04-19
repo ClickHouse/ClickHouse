@@ -145,7 +145,7 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::note
+:::warning
 Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 :::
 

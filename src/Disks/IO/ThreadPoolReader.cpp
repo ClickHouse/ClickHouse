@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Environment.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>
@@ -62,8 +61,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric Read;
-    extern const Metric ThreadPoolFSReaderThreads;
-    extern const Metric ThreadPoolFSReaderThreadsActive;
 }
 
 
@@ -88,7 +85,7 @@ static bool hasBugInPreadV2()
 #endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
-    : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, pool_size, pool_size, queue_size_))
+    : pool(pool_size, pool_size, queue_size_)
 {
 }
 
@@ -201,7 +198,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunner<Result>(*pool, "ThreadPoolRead");
+    auto schedule = threadPoolCallbackRunner<Result>(pool, "ThreadPoolRead");
 
     return schedule([request, fd]() -> Result
     {
@@ -243,11 +240,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     }, request.priority);
-}
-
-void ThreadPoolReader::wait()
-{
-    pool->wait();
 }
 
 }

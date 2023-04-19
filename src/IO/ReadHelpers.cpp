@@ -1,5 +1,5 @@
 #include <Core/Defines.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -18,7 +18,9 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#      pragma clang diagnostic ignored "-Wreserved-identifier"
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
 #endif
 
 namespace DB

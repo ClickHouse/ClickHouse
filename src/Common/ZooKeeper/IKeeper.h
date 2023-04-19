@@ -273,7 +273,7 @@ struct SetRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + data.size() + sizeof(version); }
+    size_t bytesSize() const override { return data.size() + data.size() + sizeof(version); }
 };
 
 struct SetResponse : virtual Response

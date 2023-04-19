@@ -4,7 +4,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-#include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
@@ -41,6 +40,7 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -62,7 +62,7 @@ public:
     {
         assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
-        std::lock_guard lock(mux);
+        std::lock_guard<std::mutex> lock(mux);
         if (input_port || output_port)
         {
             assert(input_port && output_port);

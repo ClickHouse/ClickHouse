@@ -82,7 +82,11 @@ public:
 
 
 #if !defined(POCO_NO_BYTESWAP_BUILTINS)
-#    if __has_builtin(__builtin_bswap32)
+#    if   defined(__clang__)
+#        if __has_builtin(__builtin_bswap32)
+#            define POCO_HAVE_GCC_BYTESWAP 1
+#        endif
+#    elif defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))
 #        define POCO_HAVE_GCC_BYTESWAP 1
 #    endif
 #endif

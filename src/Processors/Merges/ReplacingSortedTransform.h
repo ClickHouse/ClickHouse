@@ -20,7 +20,7 @@ public:
         bool use_average_block_sizes = false,
         bool cleanup = false)
         : IMergingTransform(
-            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
+            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
             header,
             num_inputs,
             std::move(description_),

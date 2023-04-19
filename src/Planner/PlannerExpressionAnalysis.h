@@ -48,7 +48,6 @@ struct WindowAnalysisResult
 struct SortAnalysisResult
 {
     ActionsDAGPtr before_order_by_actions;
-    bool has_with_fill = false;
 };
 
 struct LimitByAnalysisResult

@@ -327,3 +327,4 @@ TEST(ColumnSparse, GetPermutation)
 }
 
 #undef DUMP_COLUMN
+#undef DUMP_NON_DEFAULTS

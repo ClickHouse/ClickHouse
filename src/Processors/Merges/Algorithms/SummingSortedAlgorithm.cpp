@@ -328,11 +328,8 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 || endsWith(name, "Key")
                 || endsWith(name, "Type"))
             {
-                if (!nested_type.isValueRepresentedByInteger() &&
-                    !isStringOrFixedString(nested_type) &&
-                    !typeid_cast<const DataTypeIPv6 *>(&nested_type) &&
-                    !typeid_cast<const DataTypeUUID *>(&nested_type))
-                        break;
+                if (!nested_type.isValueRepresentedByInteger() && !isStringOrFixedString(nested_type))
+                    break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);
             }
@@ -453,7 +450,7 @@ static void postprocessChunk(
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
-            res_columns[desc.column_numbers[0]] = recursiveLowCardinalityTypeConversion(column, from_type, to_type);
+            res_columns[desc.column_numbers[0]] = recursiveTypeConversion(column, from_type, to_type);
         }
         else
             res_columns[desc.column_numbers[0]] = std::move(column);

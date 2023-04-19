@@ -107,8 +107,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 - [CREATE](#grant-create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
-        - `CREATE ARBITRARY TEMPORARY TABLE`
-            -   `CREATE TEMPORARY TABLE`
+        - `CREATE TEMPORARY TABLE`
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
     - `CREATE FUNCTION`
@@ -315,8 +314,7 @@ GRANT INSERT(x,y) ON db.table TO john
 - `CREATE`. Уровень: `GROUP`
     - `CREATE DATABASE`. Уровень: `DATABASE`
     - `CREATE TABLE`. Уровень: `TABLE`
-        - `CREATE ARBITRARY TEMPORARY TABLE`. Уровень: `GLOBAL`
-            - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
+        - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
     - `CREATE VIEW`. Уровень: `VIEW`
     - `CREATE DICTIONARY`. Уровень: `DICTIONARY`
 

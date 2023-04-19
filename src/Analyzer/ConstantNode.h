@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/ConstantValue.h>
 
 namespace DB
 {
@@ -84,7 +83,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl() const override;
 
 private:
     ConstantValuePtr constant_value;

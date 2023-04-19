@@ -123,14 +123,10 @@ Uses FinishSortingTransform: {}
 
 for query in queries:
     check_query(query["where"], query["order_by"], query["optimize"], False)
-    check_query(
-        query["where"], query["order_by"] + ["e"], query["optimize"], query["optimize"]
-    )
+    check_query(query["where"], query["order_by"] + ["e"], query["optimize"], query["optimize"])
 
     where_columns = [f"bitNot({col})" for col in query["where"]]
     check_query(where_columns, query["order_by"], query["optimize"], False)
-    check_query(
-        where_columns, query["order_by"] + ["e"], query["optimize"], query["optimize"]
-    )
+    check_query(where_columns, query["order_by"] + ["e"], query["optimize"], query["optimize"])
 
 print("OK")

@@ -5,6 +5,7 @@
 #if USE_LIBPQXX
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace Poco
 {
@@ -19,7 +20,6 @@ using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 
 namespace DB
 {
-class NamedCollection;
 
 class StoragePostgreSQL final : public IStorage
 {
@@ -63,8 +63,6 @@ public:
     };
 
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
-
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, bool require_table = true);
 
 private:
     String remote_table_name;

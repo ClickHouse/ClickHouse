@@ -3,7 +3,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 
-#include <Common/logger_useful.h>
 #include <Core/SortCursor.h>
 #include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1046,7 +1045,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
 
 void MergeJoin::initRightTableWriter()
 {
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getGlobalTemporaryVolume(),
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
                     right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
                     table_join->temporaryFilesCodec());
     disk_writer->addBlocks(right_blocks);

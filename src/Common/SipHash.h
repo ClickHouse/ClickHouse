@@ -164,16 +164,7 @@ public:
     template <typename T>
     ALWAYS_INLINE void update(const T & x)
     {
-        if constexpr (std::endian::native == std::endian::big)
-        {
-            T rev_x = x;
-            char *start = reinterpret_cast<char *>(&rev_x);
-            char *end = start + sizeof(T);
-            std::reverse(start, end);
-            update(reinterpret_cast<const char *>(&rev_x), sizeof(rev_x)); /// NOLINT
-        }
-        else
-            update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
     ALWAYS_INLINE void update(const std::string & x)

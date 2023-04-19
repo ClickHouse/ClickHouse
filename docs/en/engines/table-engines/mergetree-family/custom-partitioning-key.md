@@ -6,7 +6,7 @@ sidebar_label: Custom Partitioning Key
 
 # Custom Partitioning Key
 
-:::note
+:::warning
 In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months.
 
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
@@ -159,7 +159,7 @@ FROM session_log
 GROUP BY UserID;
 ```
 
-:::note
+:::warning
 Performance of such a query heavily depends on the table layout. Because of that the optimisation is not enabled by default.
 :::
 

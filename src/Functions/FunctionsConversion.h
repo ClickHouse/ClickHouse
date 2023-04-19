@@ -41,7 +41,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
-#include <Common/Concepts.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
@@ -804,7 +803,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name, Con
     }
 };
 
-static inline ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
+static ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 {
     ColumnUInt8::MutablePtr null_map = nullptr;
     if (const auto * col_null = checkAndGetColumn<ColumnNullable>(col.get()))

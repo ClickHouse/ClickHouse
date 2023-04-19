@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543
+personal_ws-1.1 en 484
 AArch
 ACLs
 AMQP
@@ -22,11 +22,8 @@ CSVWithNamesAndTypes
 CamelCase
 CapnProto
 CentOS
-ClickableSquare
 ClickHouse
 ClickHouse's
-CodeBlock
-CodeLLDB
 Config
 ConnectionDetails
 Contrib
@@ -54,13 +51,12 @@ HDDs
 Heredoc
 Homebrew
 Homebrew's
-HorizontalDivide
 Hostname
 IPv
 IntN
 Integrations
-JSONAsObject
 JSONAsString
+JSONAsObject
 JSONColumns
 JSONColumnsWithMetadata
 JSONCompact
@@ -84,12 +80,10 @@ Jemalloc
 Jepsen
 KDevelop
 LGPL
-LLDB
 LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
 LineAsString
-LinksDeployment
 LowCardinality
 MEMTABLE
 MSan
@@ -108,12 +102,10 @@ NULLIF
 NVME
 NYPD
 NuRaft
-Observability
-OLAP
-OLTP
 ObjectId
 Ok
-OpenSSL
+OLAP
+OLTP
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -132,10 +124,8 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
-PrettyJSONEachRow
 Protobuf
 ProtobufSingle
-QEMU
 QTCreator
 QueryCacheHits
 QueryCacheMisses
@@ -161,7 +151,6 @@ Submodules
 Subqueries
 TSVRaw
 TSan
-TabItem
 TabSeparated
 TabSeparatedRaw
 TabSeparatedRawWithNames
@@ -174,7 +163,6 @@ Testflows
 Tgz
 Toolset
 Tradeoff
-TwoColumnList
 UBSan
 UInt
 UIntN
@@ -184,18 +172,16 @@ Updatable
 Util
 Valgrind
 Vectorized
-VideoContainer
-ViewAllLink
 VirtualBox
 Werror
-WithNamesAndTypes
 Woboq
 WriteBuffer
 WriteBuffers
+WithNamesAndTypes
 XCode
 YAML
-YYYY
 Yasm
+YYYY
 Zipkin
 ZooKeeper
 ZooKeeper's
@@ -210,7 +196,6 @@ autostart
 avro
 avx
 aws
-backend
 backoff
 backticks
 benchmarking
@@ -320,7 +305,6 @@ instantiation
 integrational
 integrations
 interserver
-invariants
 jdbc
 jemalloc
 json
@@ -345,8 +329,8 @@ jsonstringseachrowwithprogress
 kafka
 kafkacat
 konsole
-laion
 latencies
+laion
 lexicographically
 libFuzzer
 libc
@@ -370,13 +354,11 @@ linearizability
 linearizable
 lineasstring
 linefeeds
-lineorder
 linux
 llvm
 localhost
 macOS
 mariadb
-mdadm
 miniselect
 msgpack
 msgpk
@@ -387,10 +369,9 @@ mutex
 mysql
 mysqldump
 mysqljs
-natively
 noop
-nullability
 nullable
+nullability
 num
 obfuscator
 odbc
@@ -429,7 +410,6 @@ prettyspace
 prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
-prettyjsoneachrow
 prlimit
 prometheus
 proto
@@ -548,7 +528,6 @@ xcode
 xml
 xz
 zLib
-zLinux
 zkcopy
 zlib
 znodes

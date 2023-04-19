@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
@@ -214,11 +213,6 @@ bool DataPartStorageOnDiskBase::isBroken() const
     return volume->getDisk()->isBroken();
 }
 
-bool DataPartStorageOnDiskBase::isReadonly() const
-{
-    return volume->getDisk()->isReadOnly();
-}
-
 void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
 {
     volume->getDisk()->syncRevision(revision);
@@ -317,7 +311,6 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const Name
 }
 
 void DataPartStorageOnDiskBase::backup(
-    const ReadSettings & read_settings,
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
     const String & path_in_backup,
@@ -393,7 +386,7 @@ void DataPartStorageOnDiskBase::backup(
 
         backup_entries.emplace_back(
             filepath_in_backup,
-            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, read_settings, file_size, file_hash, temp_dir_owner));
+            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, file_size, file_hash, temp_dir_owner));
     }
 }
 
@@ -690,7 +683,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);
-        request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
+
+        /// Inverted index
+        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_dict", true);
+        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_post", true);
+        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_seg", true);
+        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_sid", true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);

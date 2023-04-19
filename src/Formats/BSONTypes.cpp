@@ -1,6 +1,6 @@
 #include <Formats/BSONTypes.h>
 #include <Common/Exception.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 namespace DB
 {

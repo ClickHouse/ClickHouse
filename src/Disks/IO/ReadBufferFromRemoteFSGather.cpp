@@ -5,7 +5,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Common/logger_useful.h>
 #include <iostream>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
 

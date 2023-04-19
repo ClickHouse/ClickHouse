@@ -31,6 +31,8 @@ HedgedConnections::HedgedConnections(
     : hedged_connections_factory(pool_, &context_->getSettingsRef(), timeouts_, table_to_check_)
     , context(std::move(context_))
     , settings(context->getSettingsRef())
+    , drain_timeout(settings.drain_timeout)
+    , allow_changing_replica_until_first_data_packet(settings.allow_changing_replica_until_first_data_packet)
     , throttler(throttler_)
 {
     std::vector<Connection *> connections = hedged_connections_factory.getManyConnections(pool_mode);
@@ -261,7 +263,7 @@ Packet HedgedConnections::drain()
 
     while (!epoll.empty())
     {
-        ReplicaLocation location = getReadyReplicaLocation();
+        ReplicaLocation location = getReadyReplicaLocation(DrainCallback{drain_timeout});
         Packet packet = receivePacketFromReplica(location);
         switch (packet.type)
         {
@@ -288,10 +290,10 @@ Packet HedgedConnections::drain()
 Packet HedgedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    return receivePacketUnlocked({});
+    return receivePacketUnlocked({}, false /* is_draining */);
 }
 
-Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
+Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback, bool /* is_draining */)
 {
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
@@ -411,7 +413,7 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             {
                 /// If we are allowed to change replica until the first data packet,
                 /// just restart timeout (if it hasn't expired yet). Otherwise disable changing replica with this offset.
-                if (settings.allow_changing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
+                if (allow_changing_replica_until_first_data_packet && !replica.is_change_replica_timeout_expired)
                     replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
                 else
                     disableChangingReplica(replica_location);

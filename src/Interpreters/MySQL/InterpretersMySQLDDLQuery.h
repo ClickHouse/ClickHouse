@@ -13,8 +13,6 @@
 namespace DB
 {
 
-class NamesAndTypesList;
-
 namespace MySQLInterpreter
 {
     struct InterpreterDropImpl

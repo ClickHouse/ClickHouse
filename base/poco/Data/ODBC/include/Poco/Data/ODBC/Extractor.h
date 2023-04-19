@@ -466,7 +466,7 @@ namespace Data
             bool extractManualImpl(std::size_t pos, T & val, SQLSMALLINT cType)
             {
                 SQLRETURN rc = 0;
-                T value;
+                T value = (T)0;
 
                 resizeLengths(pos);
 

@@ -2,6 +2,7 @@
 
 #include <list>
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

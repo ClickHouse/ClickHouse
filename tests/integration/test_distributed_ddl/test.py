@@ -585,17 +585,6 @@ def test_replicated_without_arguments(test_cluster):
     test_cluster.pm_random_drops.push_rules(rules)
 
 
-def test_disabled_distributed_ddl(test_cluster):
-    instance = test_cluster.instances["ch1"]
-
-    assert (
-        "Distributed DDL queries are prohibited for the cluster"
-        in instance.query_and_get_error(
-            "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster_disabled_ddl'"
-        )
-    )
-
-
 if __name__ == "__main__":
     with contextmanager(test_cluster)() as ctx_cluster:
         for name, instance in list(ctx_cluster.instances.items()):
