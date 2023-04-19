@@ -24,24 +24,32 @@
 #include "Poco/Dynamic/Var.h"
 
 
-namespace Poco {
-namespace Data {
+namespace Poco
+{
+namespace Data
+{
 
-class Date;
-class Time;
+    class Date;
+    class Time;
 
-} } // namespace Poco::Data
-
-
-namespace Poco {
-namespace Dynamic {
-
-
-template <> Data_API Var::operator Poco::Data::Date () const;
-template <> Data_API Var::operator Poco::Data::Time () const;
+}
+} // namespace Poco::Data
 
 
-} } // namespace Poco::Dynamic
+namespace Poco
+{
+namespace Dynamic
+{
+
+
+    template <>
+    Data_API Var::operator Poco::Data::Date() const;
+    template <>
+    Data_API Var::operator Poco::Data::Time() const;
+
+
+}
+} // namespace Poco::Dynamic
 
 
 #endif // Data_DynamicDateTime_INCLUDED

@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/functions/conditional-functions
-sidebar_position: 43
-sidebar_label: 'Conditional '
+sidebar_position: 40
+sidebar_label: Conditional
 ---
 
 # Conditional Functions
@@ -22,9 +22,9 @@ You can use the [short_circuit_function_evaluation](../../operations/settings/se
 
 **Arguments**
 
--   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
--   `then` – The expression to return if condition is met.
--   `else` – The expression to return if condition is not met.
+- `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
+- `then` – The expression to return if condition is met.
+- `else` – The expression to return if condition is not met.
 
 **Returned values**
 
@@ -60,7 +60,7 @@ Result:
 └────────────┘
 ```
 
--   `then` and `else` must have the lowest common type.
+- `then` and `else` must have the lowest common type.
 
 **Example:**
 
@@ -106,13 +106,13 @@ Syntax: `cond ? then : else`
 
 Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise returns `else`.
 
--   `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
+- `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
 
--   `then` and `else` can be `NULL`
+- `then` and `else` can be `NULL`
 
 **See also**
 
--   [ifNotFinite](../../sql-reference/functions/other-functions.md#ifnotfinite).
+- [ifNotFinite](../../sql-reference/functions/other-functions.md#ifnotfinite).
 
 ## multiIf
 
@@ -128,9 +128,9 @@ You can use the [short_circuit_function_evaluation](../../operations/settings/se
 
 **Arguments**
 
--   `cond_N` — The condition for the function to return `then_N`.
--   `then_N` — The result of the function when executed.
--   `else` — The result of the function if none of the conditions is met.
+- `cond_N` — The condition for the function to return `then_N`.
+- `then_N` — The result of the function when executed.
+- `else` — The result of the function if none of the conditions is met.
 
 The function accepts `2N+1` parameters.
 

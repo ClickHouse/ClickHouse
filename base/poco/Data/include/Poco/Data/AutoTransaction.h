@@ -14,7 +14,6 @@
 //
 
 
-
 #ifndef Data_AutoTransaction_INCLUDED
 #define Data_AutoTransaction_INCLUDED
 
@@ -22,14 +21,17 @@
 #include "Poco/Data/Transaction.h"
 
 
-namespace Poco {
-namespace Data {
+namespace Poco
+{
+namespace Data
+{
 
 
-typedef Transaction AutoTransaction;
+    typedef Transaction AutoTransaction;
 
 
-} } // namespace Poco::Data
+}
+} // namespace Poco::Data
 
 
 #endif // Data_AutoTransaction_INCLUDED

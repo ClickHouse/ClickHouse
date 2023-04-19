@@ -7,7 +7,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -33,6 +32,12 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 }
 
 namespace zkutil
@@ -79,13 +84,23 @@ concept ZooKeeperResponse = std::derived_from<T, Coordination::Response>;
 template <ZooKeeperResponse ResponseType, bool try_multi>
 struct MultiReadResponses
 {
+    MultiReadResponses() = default;
+
     template <typename TResponses>
     explicit MultiReadResponses(TResponses responses_) : responses(std::move(responses_))
     {}
 
     size_t size() const
     {
-        return std::visit([](auto && resp) { return resp.size(); }, responses);
+        return std::visit(
+            [&]<typename TResponses>(const TResponses & resp) -> size_t
+            {
+                if constexpr (std::same_as<TResponses, std::monostate>)
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No responses set for MultiRead");
+                else
+                    return resp.size();
+            },
+            responses);
     }
 
     ResponseType & operator[](size_t index)
@@ -94,8 +109,10 @@ struct MultiReadResponses
             [&]<typename TResponses>(TResponses & resp) -> ResponseType &
             {
                 if constexpr (std::same_as<TResponses, RegularResponses>)
+                {
                     return dynamic_cast<ResponseType &>(*resp[index]);
-                else
+                }
+                else if constexpr (std::same_as<TResponses, ResponsesWithFutures>)
                 {
                     if constexpr (try_multi)
                     {
@@ -106,6 +123,10 @@ struct MultiReadResponses
                             throw KeeperException(error);
                     }
                     return resp[index];
+                }
+                else
+                {
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No responses set for MultiRead");
                 }
             },
             responses);
@@ -137,7 +158,7 @@ private:
         size_t size() const { return future_responses.size(); }
     };
 
-    std::variant<RegularResponses, ResponsesWithFutures> responses;
+    std::variant<std::monostate, RegularResponses, ResponsesWithFutures> responses;
 };
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
@@ -498,6 +519,8 @@ public:
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
+    void setServerCompletelyStarted();
+
 private:
     friend class EphemeralNodeHolder;
 
@@ -644,5 +667,11 @@ String extractZooKeeperName(const String & path);
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
+
+void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
+
+bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
+
+String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 
 }

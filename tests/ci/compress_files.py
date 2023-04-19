@@ -6,11 +6,11 @@ import os
 
 def compress_file_fast(path, archive_path):
     if archive_path.endswith(".zst"):
-        subprocess.check_call("zstd < {} > {}".format(path, archive_path), shell=True)
+        subprocess.check_call(f"zstd < {path} > {archive_path}", shell=True)
     elif os.path.exists("/usr/bin/pigz"):
-        subprocess.check_call("pigz < {} > {}".format(path, archive_path), shell=True)
+        subprocess.check_call(f"pigz < {path} > {archive_path}", shell=True)
     else:
-        subprocess.check_call("gzip < {} > {}".format(path, archive_path), shell=True)
+        subprocess.check_call(f"gzip < {path} > {archive_path}", shell=True)
 
 
 def compress_fast(path, archive_path, exclude=None):
@@ -28,9 +28,9 @@ def compress_fast(path, archive_path, exclude=None):
     if exclude is None:
         exclude_part = ""
     elif isinstance(exclude, list):
-        exclude_part = " ".join(["--exclude {}".format(x) for x in exclude])
+        exclude_part = " ".join([f"--exclude {x}" for x in exclude])
     else:
-        exclude_part = "--exclude {}".format(str(exclude))
+        exclude_part = f"--exclude {exclude}"
 
     fname = os.path.basename(path)
     if os.path.isfile(path):
@@ -38,9 +38,7 @@ def compress_fast(path, archive_path, exclude=None):
     else:
         path += "/.."
 
-    cmd = "tar {} {} -cf {} -C {} {}".format(
-        program_part, exclude_part, archive_path, path, fname
-    )
+    cmd = f"tar {program_part} {exclude_part} -cf {archive_path} -C {path} {fname}"
     logging.debug("compress_fast cmd: %s", cmd)
     subprocess.check_call(cmd, shell=True)
 
@@ -70,11 +68,9 @@ def decompress_fast(archive_path, result_path=None):
         )
 
     if result_path is None:
-        subprocess.check_call(
-            "tar {} -xf {}".format(program_part, archive_path), shell=True
-        )
+        subprocess.check_call(f"tar {program_part} -xf {archive_path}", shell=True)
     else:
         subprocess.check_call(
-            "tar {} -xf {} -C {}".format(program_part, archive_path, result_path),
+            f"tar {program_part} -xf {archive_path} -C {result_path}",
             shell=True,
         )

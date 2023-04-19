@@ -289,6 +289,18 @@ CI_CONFIG = {
         "Stress test (debug)": {
             "required_build": "package_debug",
         },
+        "Upgrade check (asan)": {
+            "required_build": "package_asan",
+        },
+        "Upgrade check (tsan)": {
+            "required_build": "package_tsan",
+        },
+        "Upgrade check (msan)": {
+            "required_build": "package_msan",
+        },
+        "Upgrade check (debug)": {
+            "required_build": "package_debug",
+        },
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
@@ -304,8 +316,11 @@ CI_CONFIG = {
         "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
-        "Compatibility check": {
+        "Compatibility check (amd64)": {
             "required_build": "package_release",
+        },
+        "Compatibility check (aarch64)": {
+            "required_build": "package_aarch64",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
@@ -359,6 +374,9 @@ CI_CONFIG = {
         },
         "SQLancer (debug)": {
             "required_build": "package_debug",
+        },
+        "Sqllogic test (release)": {
+            "required_build": "package_release",
         },
     },
 }  # type: dict

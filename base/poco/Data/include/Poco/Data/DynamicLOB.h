@@ -23,23 +23,32 @@
 #include "Poco/Dynamic/Var.h"
 
 
-namespace Poco {
-namespace Data {
+namespace Poco
+{
+namespace Data
+{
 
-template <typename T> class LOB;
-typedef LOB<unsigned char> BLOB;
-typedef LOB<char> CLOB;
+    template <typename T>
+    class LOB;
+    typedef LOB<unsigned char> BLOB;
+    typedef LOB<char> CLOB;
 
-} } // namespace Poco::Data
+}
+} // namespace Poco::Data
 
 
-namespace Poco {
-namespace Dynamic {
+namespace Poco
+{
+namespace Dynamic
+{
 
-template <> Data_API Var::operator Poco::Data::CLOB () const;
-template <> Data_API Var::operator Poco::Data::BLOB () const;
+    template <>
+    Data_API Var::operator Poco::Data::CLOB() const;
+    template <>
+    Data_API Var::operator Poco::Data::BLOB() const;
 
-} } // namespace Poco::Dynamic
+}
+} // namespace Poco::Dynamic
 
 
 #endif // Data_DynamicLOB_INCLUDED

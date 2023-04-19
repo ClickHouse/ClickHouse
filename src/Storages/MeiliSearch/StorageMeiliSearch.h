@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/IStorage.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
 

@@ -1,5 +1,8 @@
 #include "LocalServer.h"
 
+#include <sys/resource.h>
+#include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
@@ -37,7 +40,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -131,8 +133,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
-
-    NamedCollectionUtils::loadFromConfig(config());
 }
 
 
@@ -182,9 +182,9 @@ void LocalServer::tryInitPath()
             parent_folder = std::filesystem::temp_directory_path();
 
         }
-        catch (const fs::filesystem_error& e)
+        catch (const fs::filesystem_error & e)
         {
-            // tmp folder don't exists? misconfiguration? chroot?
+            // The tmp folder doesn't exist? Is it a misconfiguration? Or chroot?
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
@@ -223,8 +223,6 @@ void LocalServer::tryInitPath()
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
-
-    NamedCollectionUtils::loadFromSQL(global_context);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
@@ -394,6 +392,21 @@ try
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
+
+    /// Try to increase limit on number of open files.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NOFILE, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur < rlim.rlim_max)
+        {
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
+            int rc = setrlimit(RLIMIT_NOFILE, &rlim);
+            if (rc != 0)
+                std::cerr << fmt::format("Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString()) << '\n';
+        }
+    }
 
 #if defined(FUZZING_MODE)
     static bool first_time = true;
@@ -587,13 +600,13 @@ void LocalServer::processConfig()
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+        global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables).
     String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+        global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
@@ -654,8 +667,9 @@ void LocalServer::processConfig()
 
         if (!config().has("only-system-tables"))
         {
+            DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
-            DatabaseCatalog::instance().loadDatabases();
+            DatabaseCatalog::instance().startupBackgroundCleanup();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
@@ -685,27 +699,46 @@ void LocalServer::processConfig()
 [[ maybe_unused ]] static std::string getHelpHeader()
 {
     return
-        "usage: clickhouse-local [initial table definition] [--query <query>]\n"
+        "Usage: clickhouse local [initial table definition] [--query <query>]\n"
 
-        "clickhouse-local allows to execute SQL queries on your data files via single command line call."
-        " To do so, initially you need to define your data source and its format."
-        " After you can execute your SQL queries in usual manner.\n"
+        "clickhouse-local allows to execute SQL queries on your data files without running clickhouse-server.\n\n"
 
-        "There are two ways to define initial table keeping your data."
+        "It can run as command line tool that does single action or as interactive client."
+        " For interactive experience you can just run 'clickhouse local' or add --interactive argument to your command."
+        " It will set up tables, run queries and pass control as if it is clickhouse-client."
+        " Then you can execute your SQL queries in usual manner."
+        " Non-interactive mode requires query as an argument and exits when queries finish."
+        " Multiple SQL queries can be passed as --query argument.\n\n"
+
+        "To configure initial environment two ways are supported: queries or command line parameters."
+
         " Either just in first query like this:\n"
         "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
-        "Either through corresponding command line parameters --table --structure --input-format and --file.";
+        "Or through corresponding command line parameters --table --structure --input-format and --file.\n\n"
+
+        "clickhouse-local supports all features and engines of ClickHouse."
+        " You can query data from remote engines and store results locally or other way around."
+        " For table engines that actually store data on a disk like Log and MergeTree"
+        " clickhouse-local puts data to temporary directory that is not reused between runs.\n\n"
+        "clickhouse-local can be used to query data from stopped clickhouse-server installation with --path to"
+        " local directory with data.\n";
 }
 
 
 [[ maybe_unused ]] static std::string getHelpFooter()
 {
     return
+        "Note: If you have clickhouse installed on your system you can use 'clickhouse-local'"
+        " invocation with a dash.\n\n"
         "Example printing memory used by each Unix user:\n"
         "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
         "clickhouse-local -S \"user String, mem Float64\" -q"
             " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
-            " BY mem_total DESC FORMAT PrettyCompact\"";
+            " BY mem_total DESC FORMAT PrettyCompact\"\n\n"
+        "Example reading file from S3, converting format and writing to a file:\n"
+        "clickhouse-local --query \"SELECT c1 as version, c2 as date "
+        "FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv')"
+        " INTO OUTFILE '/tmp/versions.json'\"";
 }
 
 
@@ -713,7 +746,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 {
 #if defined(FUZZING_MODE)
     std::cout <<
-        "usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
+        "Usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
         "Note: It is important not to use only one letter keys with single dash for \n"
         "for clickhouse-local arguments. It may work incorrectly.\n"
 
@@ -881,4 +914,5 @@ catch (...)
 {
     return 1;
 }
+
 #endif

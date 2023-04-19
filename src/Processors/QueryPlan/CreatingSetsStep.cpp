@@ -21,7 +21,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -61,7 +60,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    if (subquery_for_set.set)
+    if (subquery_for_set.set_in_progress)
         settings.out << "Set: ";
 
     settings.out << description << '\n';
@@ -69,7 +68,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set)
+    if (subquery_for_set.set_in_progress)
         map.add("Set", description);
 }
 

@@ -209,6 +209,15 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
 
+    /// Write a file using a custom function to write an object to the disk's object storage.
+    /// This method is alternative to writeFile(), the difference is that writeFile() calls IObjectStorage::writeObject()
+    /// to write an object to the object storage while this method allows to specify a callback for that.
+    virtual void writeFileUsingCustomWriteObject(
+        const String & path,
+        WriteMode mode,
+        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+            custom_write_object_function);
+
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;
@@ -238,15 +247,15 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
+    virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
 
     virtual bool supportsCache() const { return false; }
 
     virtual NameSet getCacheLayersNames() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method `getCacheLayersNames()` is not implemented for disk: {}",
-                        getDataSourceDescription().type);
+            "Method `getCacheLayersNames()` is not implemented for disk: {}",
+            toString(getDataSourceDescription().type));
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -254,7 +263,9 @@ public:
     /// be multiple files in remote fs for single clickhouse file.
     virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Method `getStorageObjects()` not implemented for disk: {}",
+            toString(getDataSourceDescription().type));
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
@@ -272,8 +283,8 @@ public:
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method `getRemotePathsRecursive() not implemented for disk: {}`",
-                        getDataSourceDescription().type);
+            "Method `getRemotePathsRecursive() not implemented for disk: {}`",
+            toString(getDataSourceDescription().type));
     }
 
     /// Batch request to remove multiple files.
@@ -389,7 +400,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getObjectStorage() is not implemented for disk type: {}",
-            getDataSourceDescription().type);
+            toString(getDataSourceDescription().type));
     }
 
     /// Create disk object storage according to disk type.
@@ -400,7 +411,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            getDataSourceDescription().type);
+            toString(getDataSourceDescription().type));
     }
 
     virtual bool supportsStat() const { return false; }
@@ -413,6 +424,8 @@ public:
     bool isCustomDisk() const { return is_custom_disk; }
 
     void markDiskAsCustom() { is_custom_disk = true; }
+
+    virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
 
 protected:
     friend class DiskDecorator;
