@@ -675,7 +675,7 @@ bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 
 template <typename Client>
-void addCheckNotExistsRequest(Coordination::Requests requests, const Client & client, const std::string & path)
+void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
 {
     if (client.getApiVersion() >= DB::KeeperApiVersion::WITH_CHECK_NOT_EXISTS)
     {
