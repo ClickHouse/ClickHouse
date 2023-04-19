@@ -385,6 +385,8 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
+set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 add_library(global-group INTERFACE)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
@@ -426,10 +428,6 @@ endif ()
 ######################################
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-if (NOT SANITIZE)
-    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-endif()
 
 if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
     # Slightly more efficient code can be generated
@@ -493,8 +491,10 @@ macro (clickhouse_add_executable target)
     if (${type} STREQUAL EXECUTABLE)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
-            # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
+            if (NOT ${target} STREQUAL Git::Git)
+                # operator::new/delete for executables (MemoryTracker stuff)
+                target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+            endif()
         endif()
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
