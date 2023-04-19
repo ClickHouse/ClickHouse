@@ -58,7 +58,7 @@ public:
     void waitNoThrow() const noexcept;
 
     // Returns number of threads blocked by `wait()` or `waitNoThrow()` calls.
-    size_t waiters_count() const;
+    size_t waitersCount() const;
 
     const LoadJobSet dependencies; // Jobs to be done before this one (with ownership), it is `const` to make creation of cycles hard
     const String name;
