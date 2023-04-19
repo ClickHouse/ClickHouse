@@ -23,3 +23,5 @@ select 'sep1';
 SELECT transform(number, [2], [toDecimal32(1, 1)], materialize(80000)) as x FROM numbers(2);
 select 'sep2';
 SELECT transform(number, [2], [toDecimal32(1, 1)], 80000) as x FROM numbers(2);
+select 'sep3';
+SELECT transform(toDecimal32(2, 1), [toDecimal32(2, 1)], [1]);
