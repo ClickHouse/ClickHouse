@@ -37,9 +37,9 @@ class LoadJob : private boost::noncopyable
 {
 public:
     template <class Func>
-    LoadJob(LoadJobSet && dependencies_, const String & name_, Func && func_)
+    LoadJob(LoadJobSet && dependencies_, String name_, Func && func_)
         : dependencies(std::move(dependencies_))
-        , name(name_)
+        , name(std::move(name_))
         , func(std::forward<Func>(func_))
     {}
 
