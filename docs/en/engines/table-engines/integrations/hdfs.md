@@ -58,11 +58,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel.
--   Not supported:
-    -   `ALTER` and `SELECT...SAMPLE` operations.
-    -   Indexes.
-    -   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+- Reads and writes can be parallel.
+- Not supported:
+    - `ALTER` and `SELECT...SAMPLE` operations.
+    - Indexes.
+    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
   
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -72,10 +72,10 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
 
--   `*` — Substitutes any number of any characters except `/` including empty string.
--   `?` — Substitutes any single character.
--   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
--   `{N..M}` — Substitutes any number in range from N to M including both borders.
+- `*` — Substitutes any number of any characters except `/` including empty string.
+- `?` — Substitutes any single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
@@ -145,7 +145,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
+| -                                                   | -                     |
 | rpc\_client\_connect\_tcpnodelay                      | true                    |
 | dfs\_client\_read\_shortcircuit                       | true                    |
 | output\_replace-datanode-on-failure                   | true                    |
@@ -195,7 +195,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 #### ClickHouse extras {#clickhouse-extras}
 
 | **parameter**                                         | **default value**       |
-| -                                                     | -                       |
+| -                                                   | -                     |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
 |libhdfs3\_conf                                         | ""                      |
@@ -230,9 +230,9 @@ libhdfs3 support HDFS namenode HA.
 
 ## Virtual Columns {#virtual-columns}
 
--   `_path` — Path to the file.
--   `_file` — Name of the file.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
 
 **See Also**
 
--   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)

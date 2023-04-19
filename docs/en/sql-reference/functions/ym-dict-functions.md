@@ -118,13 +118,13 @@ regionToTopContinent(id[, geobase])
 
 **Arguments**
 
--   `id` — Region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
--   `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
+- `id` — Region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
+- `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
 
 **Returned value**
 
--   Identifier of the top level continent (the latter when you climb the hierarchy of regions).
--   0, if there is none.
+- Identifier of the top level continent (the latter when you climb the hierarchy of regions).
+- 0, if there is none.
 
 Type: `UInt32`.
 

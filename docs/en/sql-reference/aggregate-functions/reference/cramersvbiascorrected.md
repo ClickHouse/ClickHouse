@@ -18,7 +18,7 @@ cramersVBiasCorrected(column1, column2)
 
 **Arguments**
 
--   `column1` and `column2` are the columns to be compared
+- `column1` and `column2` are the columns to be compared
 
 **Returned value**
 

@@ -124,11 +124,11 @@ cosh(x)
 
 **Arguments**
 
--   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values from the interval: `1 <= cosh(x) < +∞`.
+- Values from the interval: `1 <= cosh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -160,11 +160,11 @@ acosh(x)
 
 **Arguments**
 
--   `x` — Hyperbolic cosine of angle. Values from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — Hyperbolic cosine of angle. Values from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   The angle, in radians. Values from the interval: `0 <= acosh(x) < +∞`.
+- The angle, in radians. Values from the interval: `0 <= acosh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -186,7 +186,7 @@ Result:
 
 **See Also**
 
--   [cosh(x)](../../sql-reference/functions/math-functions.md#coshx)
+- [cosh(x)](../../sql-reference/functions/math-functions.md#coshx)
 
 ## sinh(x)
 
@@ -200,11 +200,11 @@ sinh(x)
 
 **Arguments**
 
--   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values from the interval: `-∞ < sinh(x) < +∞`.
+- Values from the interval: `-∞ < sinh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -236,11 +236,11 @@ asinh(x)
 
 **Arguments**
 
--   `x` — Hyperbolic sine of angle. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — Hyperbolic sine of angle. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   The angle, in radians. Values from the interval: `-∞ < asinh(x) < +∞`.
+- The angle, in radians. Values from the interval: `-∞ < asinh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -262,7 +262,7 @@ Result:
 
 **See Also**
 
--   [sinh(x)](../../sql-reference/functions/math-functions.md#sinhx)
+- [sinh(x)](../../sql-reference/functions/math-functions.md#sinhx)
 
 ## atanh(x)
 
@@ -276,11 +276,11 @@ atanh(x)
 
 **Arguments**
 
--   `x` — Hyperbolic tangent of angle. Values from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — Hyperbolic tangent of angle. Values from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   The angle, in radians. Values from the interval: `-∞ < atanh(x) < +∞`.
+- The angle, in radians. Values from the interval: `-∞ < atanh(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -312,12 +312,12 @@ atan2(y, x)
 
 **Arguments**
 
--   `y` — y-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
--   `x` — x-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `y` — y-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — x-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   The angle `θ` such that `−π < θ ≤ π`, in radians.
+- The angle `θ` such that `−π < θ ≤ π`, in radians.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -349,12 +349,12 @@ hypot(x, y)
 
 **Arguments**
 
--   `x` — The first cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
--   `y` — The second cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — The first cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `y` — The second cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   The length of the hypotenuse of a right-angle triangle.
+- The length of the hypotenuse of a right-angle triangle.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -386,11 +386,11 @@ log1p(x)
 
 **Arguments**
 
--   `x` — Values from the interval: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — Values from the interval: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Values from the interval: `-∞ < log1p(x) < +∞`.
+- Values from the interval: `-∞ < log1p(x) < +∞`.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -412,7 +412,7 @@ Result:
 
 **See Also**
 
--   [log(x)](../../sql-reference/functions/math-functions.md#logx-lnx)
+- [log(x)](../../sql-reference/functions/math-functions.md#logx-lnx)
 
 ## sign(x)
 
@@ -426,7 +426,7 @@ sign(x)
 
 **Arguments**
 
--   `x` — Values from  `-∞` to `+∞`. Support all numeric types in ClickHouse.
+- `x` — Values from  `-∞` to `+∞`. Support all numeric types in ClickHouse.
 
 **Returned value**
 
@@ -490,11 +490,11 @@ degrees(x)
 
 **Arguments**
 
--   `x` — Input in radians. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — Input in radians. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Value in degrees.
+- Value in degrees.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -526,11 +526,11 @@ radians(x)
 
 **Arguments**
 
--   `x` — Input in degrees. [Float64](../../sql-reference/data-types/float.md#float32-float64).
+- `x` — Input in degrees. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
 **Returned value**
 
--   Value in radians.
+- Value in radians.
 
 Type: [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
