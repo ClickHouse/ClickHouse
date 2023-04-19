@@ -15,6 +15,8 @@ class IBackupEntry;
 /// Stores information about mutation in file mutation_*.txt.
 struct MergeTreeMutationEntry
 {
+    // using PartitionIds = std::vector<String>;
+
     time_t create_time = 0;
     MutationCommands commands;
 
@@ -30,6 +32,9 @@ struct MergeTreeMutationEntry
     time_t latest_fail_time = 0;
     String latest_fail_reason;
 
+    /// If no value, applied to all partitions. Not serialized.
+    std::optional<PartitionIds> partition_ids;
+
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::PrehistoricTID;
     /// CSN of transaction which has created mutation
@@ -38,7 +43,7 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                            PartitionIds && partition_ids, const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
@@ -50,6 +55,8 @@ struct MergeTreeMutationEntry
     void writeCSN(CSN csn_);
 
     std::shared_ptr<const IBackupEntry> backup() const;
+
+    bool affectsPartition(const String & partition_id) const;
 
     static String versionToFileName(UInt64 block_number_);
     static UInt64 tryParseFileName(const String & file_name_);
