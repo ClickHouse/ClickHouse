@@ -49,4 +49,4 @@ CREATE TABLE deltalake ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
 
 ## See also
 
--  [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)
+- [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)

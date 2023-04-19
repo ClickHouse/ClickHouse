@@ -19,7 +19,7 @@ cramersV(column1, column2)
 
 **Returned value**
 
--  a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).
+- a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).
 
 **Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 

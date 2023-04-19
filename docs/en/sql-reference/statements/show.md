@@ -244,7 +244,7 @@ Result:
 
 **See also**
 
--  [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
+- [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
 
 ## SHOW DICTIONARIES
 

@@ -543,8 +543,8 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 
 **Returned values**
 
--  `event_column[next_index]` — If the pattern is matched and next value exists.
--  `NULL` - If the pattern isn’t matched or next value doesn't exist.
+- `event_column[next_index]` — If the pattern is matched and next value exists.
+- `NULL` - If the pattern isn’t matched or next value doesn't exist.
 
 Type: [Nullable(String)](../../sql-reference/data-types/nullable.md).
 

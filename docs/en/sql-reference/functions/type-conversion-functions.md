@@ -950,7 +950,7 @@ x::t
 
 **Returned value**
 
--  Converted value.
+- Converted value.
 
 :::note
 If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
@@ -1789,7 +1789,7 @@ snowflakeToDateTime(value [, time_zone])
 
 **Returned value**
 
--  Input value converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
+- Input value converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
 
 **Example**
 
@@ -1825,7 +1825,7 @@ snowflakeToDateTime64(value [, time_zone])
 
 **Returned value**
 
--  Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type.
+- Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type.
 
 **Example**
 
