@@ -51,7 +51,7 @@ If it is executed in the context of a distributed table, then it generates a nor
 **Syntax**
 
 ``` sql
-timeZone()
+serverTimeZone()
 ```
 
 Alias: `ServerTimezone`, `servertimezone`.
