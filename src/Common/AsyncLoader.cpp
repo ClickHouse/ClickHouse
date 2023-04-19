@@ -52,7 +52,7 @@ void LoadJob::waitNoThrow() const noexcept
     waiters--;
 }
 
-size_t LoadJob::waiters_count() const
+size_t LoadJob::waitersCount() const
 {
     std::unique_lock lock{mutex};
     return waiters;

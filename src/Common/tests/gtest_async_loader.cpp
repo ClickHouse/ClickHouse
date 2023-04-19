@@ -3,6 +3,7 @@
 #include <barrier>
 #include <chrono>
 #include <mutex>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 #include <thread>
@@ -313,7 +314,7 @@ TEST(AsyncLoader, CancelExecutingJob)
     {
         task.remove(); // waits for (C)
     });
-    while (job->waiters_count() == 0)
+    while (job->waitersCount() == 0)
         std::this_thread::yield();
     ASSERT_EQ(job->status(), LoadStatus::PENDING);
     sync.arrive_and_wait(); // (B) sync with job
@@ -362,7 +363,7 @@ TEST(AsyncLoader, CancelExecutingTask)
         {
             task1.remove(); // waits for (C)
         });
-        while (blocker_job->waiters_count() == 0)
+        while (blocker_job->waitersCount() == 0)
             std::this_thread::yield();
         ASSERT_EQ(blocker_job->status(), LoadStatus::PENDING);
         sync.arrive_and_wait(); // (B) sync with job
@@ -384,10 +385,10 @@ TEST(AsyncLoader, JobFailure)
     AsyncLoaderTest t;
     t.loader.start();
 
-    std::string_view error_message = "test job failure";
+    std::string error_message = "test job failure";
 
     auto job_func = [&] (const LoadJobPtr &) {
-        throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
+        throw std::runtime_error(error_message);
     };
 
     auto job = makeLoadJob({}, "job", job_func);
