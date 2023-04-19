@@ -1457,13 +1457,8 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
     bool checkAuth(KeeperStorage & storage, int64_t session_id, bool is_local) const override
     {
-        StringRef path;
-        if (check_not_exists)
-            path = parentPath(zk_request->getPath());
-        else
-            path = zk_request->getPath();
-
-        return storage.checkACL(path, Coordination::ACL::Read, session_id, is_local);
+        auto path = zk_request->getPath();
+        return storage.checkACL(check_not_exists ? parentPath(path) : path, Coordination::ACL::Read, session_id, is_local);
     }
 
     std::vector<KeeperStorage::Delta>
@@ -1744,6 +1739,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
                     break;
                 case Coordination::OpNum::Check:
+                case Coordination::OpNum::CheckNotExists:
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
                     break;
