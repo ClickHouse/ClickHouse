@@ -6,6 +6,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
 #include <Backups/BackupEntryFromMemory.h>
+#include <Parsers/ASTPartition.h>
+
+#include <Common/logger_useful.h>
 
 #include <utility>
 
@@ -47,8 +50,15 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
                     file_name_);
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+MergeTreeMutationEntry::MergeTreeMutationEntry(
+    MutationCommands commands_,
+    DiskPtr disk_,
+    const String & path_prefix_,
+    UInt64 tmp_number,
+    PartitionIds && partition_ids_,
+    const TransactionID & tid_,
+    const WriteSettings & settings
+)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
@@ -59,6 +69,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
 {
     try
     {
+        if (!partition_ids_.empty())
+        {
+            partition_ids.emplace(std::move(partition_ids_));
+        }
+
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
@@ -153,6 +168,34 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         }
     }
 
+    PartitionIds affected_partition_ids;
+
+    for (const auto & command : commands)
+    {
+        if (!command.partition)
+        {
+            affected_partition_ids.clear();
+            break;
+        }
+
+        const auto & partition_ast = command.partition->as<ASTPartition &>();
+
+        if (!partition_ast.value)
+        {
+            /// Looks like we do not know format version
+            // MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
+            affected_partition_ids.push_back(partition_ast.id);
+        }
+
+    }
+
+    if (!affected_partition_ids.empty())
+    {
+        partition_ids = std::move(affected_partition_ids);
+        std::sort(partition_ids->begin(), partition_ids->end());
+        partition_ids->shrink_to_fit();
+    }
+
     assertEOF(*buf);
 }
 
@@ -169,6 +212,15 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+bool MergeTreeMutationEntry::affectsPartition(const String & partition_id) const
+{
+    bool affected = !partition_ids.has_value() ||
+        std::binary_search(partition_ids->begin(), partition_ids->end(), partition_id);
+    LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
+        partition_id, affected?"":"not ", block_number);
+    return affected;
 }
 
 std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
