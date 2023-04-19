@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/string-functions
-sidebar_position: 40
+sidebar_position: 170
 sidebar_label: Strings
 ---
 

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/uuid-functions
-sidebar_position: 53
+sidebar_position: 205
 sidebar_label: UUID
 ---
 

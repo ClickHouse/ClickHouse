@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/date-time-functions
-sidebar_position: 39
+sidebar_position: 45
 sidebar_label: Dates and Times
 ---
 
