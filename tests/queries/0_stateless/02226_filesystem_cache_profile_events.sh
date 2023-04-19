@@ -77,8 +77,6 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     AND current_database = currentDatabase()
     ORDER BY query_start_time DESC
     LIMIT 1;
-
-    DROP TABLE test_02226;
     """
 
     clickhouse client --multiquery --multiline  --query """
@@ -93,4 +91,6 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
 
     INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
     """
+
+    clickhouse client --query "DROP TABLE test_02226"
 done

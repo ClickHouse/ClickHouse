@@ -1,3 +1,5 @@
+SET min_bytes_to_use_direct_io='1Gi'; -- It does not work (fixme)
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (a Int32, b String)
