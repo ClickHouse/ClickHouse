@@ -24,13 +24,13 @@ You can use the [short_circuit_function_evaluation](../../operations/settings/se
 
 **Arguments**
 
--   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `0`, if there is at least one zero value argument.
--   `NULL`, if there are no zero values arguments and there is at least one `NULL` argument.
--   `1`, otherwise.
+- `0`, if there is at least one zero value argument.
+- `NULL`, if there are no zero values arguments and there is at least one `NULL` argument.
+- `1`, otherwise.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
@@ -78,13 +78,13 @@ You can use the [short_circuit_function_evaluation](../../operations/settings/se
 
 **Arguments**
 
--   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `1`, if there is at least one non-zero value.
--   `0`, if there are only zero values.
--   `NULL`, if there are only zero values and `NULL`.
+- `1`, if there is at least one non-zero value.
+- `0`, if there are only zero values.
+- `NULL`, if there are only zero values and `NULL`.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
@@ -130,13 +130,13 @@ not(val);
 
 **Arguments**
 
--   `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `1`, if the `val` is `0`.
--   `0`, if the `val` is a non-zero value.
--   `NULL`, if the `val` is a `NULL` value.
+- `1`, if the `val` is `0`.
+- `0`, if the `val` is a non-zero value.
+- `NULL`, if the `val` is a `NULL` value.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 
@@ -168,13 +168,13 @@ xor(val1, val2...)
 
 **Arguments**
 
--   `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
--   `1`, for two values: if one of the values is zero and other is not.
--   `0`, for two values: if both values are zero or non-zero at the same time.
--   `NULL`, if there is at least one `NULL` value.
+- `1`, for two values: if one of the values is zero and other is not.
+- `0`, for two values: if both values are zero or non-zero at the same time.
+- `NULL`, if there is at least one `NULL` value.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md) or [Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md)).
 

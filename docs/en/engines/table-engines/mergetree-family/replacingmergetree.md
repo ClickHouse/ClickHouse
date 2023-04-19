@@ -123,6 +123,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
--   `ver` - column with the version. Optional parameter. For a description, see the text above.
+- `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>

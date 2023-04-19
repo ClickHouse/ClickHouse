@@ -24,7 +24,7 @@ bitmapBuild(array)
 
 **Arguments**
 
--   `array` – Unsigned integer array.
+- `array` – Unsigned integer array.
 
 **Example**
 
@@ -48,7 +48,7 @@ bitmapToArray(bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -72,9 +72,9 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Arguments**
 
--   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
--   `range_start` – Range start point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `range_end` – Range end point (excluded). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `range_start` – Range start point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `range_end` – Range end point (excluded). Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -100,9 +100,9 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Arguments**
 
--   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
--   `range_start` – The subset starting point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `range_start` – The subset starting point. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -138,9 +138,9 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Arguments**
 
--   `bitmap` – The bitmap. Type: [Bitmap object](#bitmap_functions-bitmapbuild).
--   `offset` – The position of the first element of the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `cardinality_limit` – The maximum number of elements in the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `bitmap` – The bitmap. Type: [Bitmap object](#bitmap_functions-bitmapbuild).
+- `offset` – The position of the first element of the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `cardinality_limit` – The maximum number of elements in the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -174,13 +174,13 @@ bitmapContains(haystack, needle)
 
 **Arguments**
 
--   `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
--   `needle` – Value that the function searches. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
+- `needle` – Value that the function searches. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   0 — If `haystack` does not contain `needle`.
--   1 — If `haystack` contains `needle`.
+- 0 — If `haystack` does not contain `needle`.
+- 1 — If `haystack` contains `needle`.
 
 Type: `UInt8`.
 
@@ -208,12 +208,12 @@ If you are sure that `bitmap2` contains strictly one element, consider using the
 
 **Arguments**
 
--   `bitmap*` – Bitmap object.
+- `bitmap*` – Bitmap object.
 
 **Return values**
 
--   `1`, if `bitmap1` and `bitmap2` have one similar element at least.
--   `0`, otherwise.
+- `1`, if `bitmap1` and `bitmap2` have one similar element at least.
+- `0`, otherwise.
 
 **Example**
 
@@ -238,7 +238,7 @@ bitmapHasAll(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -262,7 +262,7 @@ bitmapCardinality(bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -284,7 +284,7 @@ Retrun the smallest value of type UInt64 in the set, UINT32_MAX if the set is em
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -306,7 +306,7 @@ Retrun the greatest value of type UInt64 in the set, 0 if the set is empty.
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -328,9 +328,9 @@ Transform an array of values in a bitmap to another array of values, the result 
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
--   `from_array` – UInt32 array. For idx in range \[0, from_array.size()), if bitmap contains from_array\[idx\], then replace it with to_array\[idx\]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
--   `to_array` – UInt32 array, its size shall be the same to from_array.
+- `bitmap` – Bitmap object.
+- `from_array` – UInt32 array. For idx in range \[0, from_array.size()), if bitmap contains from_array\[idx\], then replace it with to_array\[idx\]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
+- `to_array` – UInt32 array, its size shall be the same to from_array.
 
 **Example**
 
@@ -354,7 +354,7 @@ bitmapAnd(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -378,7 +378,7 @@ bitmapOr(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -402,7 +402,7 @@ bitmapXor(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -426,7 +426,7 @@ bitmapAndnot(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -450,7 +450,7 @@ bitmapAndCardinality(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -474,7 +474,7 @@ bitmapOrCardinality(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -498,7 +498,7 @@ bitmapXorCardinality(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
@@ -522,7 +522,7 @@ bitmapAndnotCardinality(bitmap,bitmap)
 
 **Arguments**
 
--   `bitmap` – Bitmap object.
+- `bitmap` – Bitmap object.
 
 **Example**
 
