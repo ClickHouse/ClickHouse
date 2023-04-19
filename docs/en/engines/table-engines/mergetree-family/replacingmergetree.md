@@ -20,12 +20,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = ReplacingMergeTree([ver])
+) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
 [PARTITION BY expr]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[SETTINGS name=value, ...]
+[SETTINGS name=value, clean_deleted_rows=value, ...]
 ```
 
 For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
@@ -87,6 +87,18 @@ SELECT * FROM mySecondReplacingMT FINAL;
 │   1 │ first   │ 2020-01-01 01:01:01 │
 └─────┴─────────┴─────────────────────┘
 ```
+
+### is_deleted
+
+`is_deleted` —  Name of the column with the type of row: `1` is a “deleted“ row, `0` is a “state“ row.
+
+    Column data type — `Int8`.
+
+    Can only be enabled when `ver` is used.
+    The row is deleted when use the `OPTIMIZE ... FINAL CLEANUP`, or `OPTIMIZE ... FINAL` if the engine settings `clean_deleted_rows` has been set to `Always`.
+    No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted one is the one kept.
+
+
 
 ## Query clauses
 
