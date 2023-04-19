@@ -73,7 +73,9 @@ randUniform(min, max)
 
 **Returned value**
 
-- Random number. Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -110,7 +112,9 @@ randNormal(mean, variance)
 
 **Returned value**
 
-- Random number. Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -147,7 +151,9 @@ randLogNormal(mean, variance)
 
 **Returned value**
 
-- Random number. Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -184,7 +190,9 @@ randBinomial(experiments, probability)
 
 **Returned value**
 
-- Random number. Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -221,7 +229,9 @@ randNegativeBinomial(experiments, probability)
 
 **Returned value**
 
-- Random number. Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -257,7 +267,9 @@ randPoisson(n)
 
 **Returned value**
 
-- Random number. Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -293,7 +305,9 @@ randBernoulli(probability)
 
 **Returned value**
 
-- Random number. Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -329,7 +343,9 @@ randExponential(lambda)
 
 **Returned value**
 
-- Random number. Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -365,7 +381,9 @@ randChiSquared(degree_of_freedom)
 
 **Returned value**
 
-- Random number. Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -401,7 +419,9 @@ randStudentT(degree_of_freedom)
 
 **Returned value**
 
-- Random number. Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -438,7 +458,9 @@ randFisherF(d1, d2)
 
 **Returned value**
 
-- Random number. Type: [Float64](/docs/en/sql-reference/data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
