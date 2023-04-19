@@ -6018,24 +6018,25 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     return partition_ids;
 }
 
-std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
+PartitionIds /* std::set<String> */ MergeTreeData::getPartitionIdsAffectedByCommands(
     const MutationCommands & commands, ContextPtr query_context) const
 {
-    std::set<String> affected_partition_ids;
+    PartitionIds affected_partition_ids;
 
     for (const auto & command : commands)
     {
         if (!command.partition)
         {
-            affected_partition_ids.clear();
-            break;
+            return {};
         }
 
-        affected_partition_ids.insert(
+        affected_partition_ids.push_back(
             getPartitionIDFromQuery(command.partition, query_context)
         );
     }
 
+    std::sort(affected_partition_ids.begin(), affected_partition_ids.end());
+    affected_partition_ids.shrink_to_fit();
     return affected_partition_ids;
 }
 

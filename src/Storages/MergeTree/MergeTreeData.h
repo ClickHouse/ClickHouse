@@ -835,7 +835,7 @@ public:
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
+    PartitionIds getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
     /// Returns set of partition_ids of all Active parts
     std::unordered_set<String> getAllPartitionIds() const;

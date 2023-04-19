@@ -6038,7 +6038,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAffectedPartitions(
     const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const
 {
-    const std::set<String> mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+    const PartitionIds mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
 
     if (mutation_affected_partition_ids.size() == 1)
     {
@@ -6058,7 +6058,8 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
         PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
         for (const auto & lock : lock_holder.getLocks())
         {
-            if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.contains(lock.partition_id))
+          if (mutation_affected_partition_ids.empty() ||
+            std::binary_search(mutation_affected_partition_ids.cbegin(), mutation_affected_partition_ids.cend(), lock.partition_id))
                 block_numbers[lock.partition_id] = lock.number;
         }
 

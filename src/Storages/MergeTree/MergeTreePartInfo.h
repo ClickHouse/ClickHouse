@@ -195,4 +195,6 @@ private:
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
 
+using PartitionIds = std::vector<String>;
+
 }
