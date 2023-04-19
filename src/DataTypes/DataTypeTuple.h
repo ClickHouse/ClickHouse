@@ -35,7 +35,7 @@ public:
     const char * getFamilyName() const override { return "Tuple"; }
     String getSQLCompatibleName() const override { return "JSON"; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
     bool canBeInsideSparseColumns() const override { return false; }
 
