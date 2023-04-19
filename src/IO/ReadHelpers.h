@@ -964,9 +964,15 @@ template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     time_t whole;
-    if (!readDateTimeTextImpl<bool>(whole, buf, date_lut))
+    if constexpr (std::is_same_v<ReturnType, void>)
     {
-        return ReturnType(false);
+        readDateTimeTextImpl<void>(whole, buf, date_lut);
+    }
+    else{
+        if (!readDateTimeTextImpl<bool>(whole, buf, date_lut))
+        {
+            return ReturnType(false);
+        }
     }
 
     int negative_multiplier = 1;
