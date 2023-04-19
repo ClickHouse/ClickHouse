@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/splitting-merging-functions
-sidebar_position: 47
+sidebar_position: 165
 sidebar_label: Splitting and Merging Strings and Arrays
 ---
 

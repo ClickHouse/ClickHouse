@@ -1,8 +1,7 @@
 ---
 slug: /en/sql-reference/functions/nlp-functions
-sidebar_position: 67
-sidebar_label: NLP
-title: "[experimental] Natural Language Processing functions"
+sidebar_position: 130
+sidebar_label: NLP (experimental)
 ---
 
 :::note

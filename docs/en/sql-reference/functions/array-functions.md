@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/array-functions
-sidebar_position: 35
+sidebar_position: 10
 sidebar_label: Arrays
 ---
 
