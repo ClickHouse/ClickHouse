@@ -32,7 +32,7 @@ public:
     const char * getFamilyName() const override { return "Map"; }
     String getSQLCompatibleName() const override { return "JSON"; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
 
     MutableColumnPtr createColumn() const override;
 
