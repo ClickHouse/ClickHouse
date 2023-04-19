@@ -4034,7 +4034,7 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 
 Possible values:
 
--    Any valid timezone in `Region/Place` notation, e.g. `Europe/Berlin`
+-    Any timezone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
 
 Default value: `''`.
 
