@@ -78,11 +78,6 @@ namespace fs = std::filesystem;
 using namespace std::literals;
 
 
-namespace
-{
-using namespace DB;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric MemoryTracking;

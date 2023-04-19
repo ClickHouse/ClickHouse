@@ -4011,6 +4011,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 ## session_timezone {#session_timezone}
 
 If specified, sets an implicit timezone (instead of server-default). All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
+Setting this to `''` (empty string) effectively resets implicit timezone to server timezone.
 Examples:
 
 ```clickhouse
