@@ -1,6 +1,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <boost/algorithm/string.hpp>
 
@@ -15,20 +16,38 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void checkFinalInferredType(DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read)
+void checkFinalInferredType(
+    DataTypePtr & type,
+    const String & name,
+    const FormatSettings & settings,
+    const DataTypePtr & default_type,
+    size_t rows_read,
+    const String & hints_parsing_error)
 {
     if (!checkIfTypeIsComplete(type))
     {
         if (!default_type)
-            throw Exception(
-                            ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                            "Cannot determine type for column '{}' by first {} rows "
-                            "of data, most likely this column contains only Nulls or empty "
-                            "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints. "
-                            "If your data contains complex JSON objects, try enabling one "
-                            "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
-                            name,
-                            rows_read);
+        {
+            if (hints_parsing_error.empty())
+                throw Exception(
+                    ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                    "Cannot determine type for column '{}' by first {} rows "
+                    "of data, most likely this column contains only Nulls or empty "
+                    "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints. "
+                    "If your data contains complex JSON objects, try enabling one "
+                    "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
+                    name,
+                    rows_read);
+            else
+                throw Exception(
+                    ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                    "Cannot determine type for column '{}' by first {} rows "
+                    "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
+                    "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+                    name,
+                    rows_read,
+                    hints_parsing_error);
+        }
 
         type = default_type;
     }
@@ -46,10 +65,14 @@ IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & fo
 void IIRowSchemaReader::setContext(ContextPtr & context)
 {
     ColumnsDescription columns;
-    if (tryParseColumnsListFromString(hints_str, columns, context))
+    if (tryParseColumnsListFromString(hints_str, columns, context, hints_parsing_error))
     {
         for (const auto & [name, type] : columns.getAll())
             hints[name] = type;
+    }
+    else
+    {
+        LOG_WARNING(&Poco::Logger::get("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
     }
 }
 
@@ -137,7 +160,14 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             if (!new_data_types[field_index] || hints.contains(column_names[field_index]))
                 continue;
 
-            chooseResultColumnType(*this, data_types[field_index], new_data_types[field_index], getDefaultType(field_index), std::to_string(field_index + 1), rows_read);
+            chooseResultColumnType(
+                *this,
+                data_types[field_index],
+                new_data_types[field_index],
+                getDefaultType(field_index),
+                std::to_string(field_index + 1),
+                rows_read,
+                hints_parsing_error);
         }
     }
 
@@ -149,7 +179,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         {
             transformFinalTypeIfNeeded(data_types[field_index]);
             /// Check that we could determine the type of this column.
-            checkFinalInferredType(data_types[field_index], column_names[field_index], format_settings, getDefaultType(field_index), rows_read);
+            checkFinalInferredType(data_types[field_index], column_names[field_index], format_settings, getDefaultType(field_index), rows_read, hints_parsing_error);
         }
         result.emplace_back(column_names[field_index], data_types[field_index]);
     }
@@ -246,7 +276,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
                 continue;
 
             auto & type = it->second;
-            chooseResultColumnType(*this, type, new_type, default_type, name, rows_read);
+            chooseResultColumnType(*this, type, new_type, default_type, name, rows_read, hints_parsing_error);
         }
     }
 
@@ -263,7 +293,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         {
             transformFinalTypeIfNeeded(type);
             /// Check that we could determine the type of this column.
-            checkFinalInferredType(type, name, format_settings, default_type, rows_read);
+            checkFinalInferredType(type, name, format_settings, default_type, rows_read, hints_parsing_error);
         }
         result.emplace_back(name, type);
     }

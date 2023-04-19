@@ -80,7 +80,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             continue;
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue; /// We don't want to show the internal database for temporary tables in system.databases
+            continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
 
         res_columns[0]->insert(database_name);
         res_columns[1]->insert(database->getEngineName());

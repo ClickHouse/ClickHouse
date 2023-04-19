@@ -2,6 +2,12 @@
 import time
 
 import pytest
+
+# FIXME This test is too flaky
+# https://github.com/ClickHouse/ClickHouse/issues/45887
+
+pytestmark = pytest.mark.skip
+
 from helpers.cluster import ClickHouseCluster
 
 

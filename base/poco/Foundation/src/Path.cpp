@@ -16,23 +16,11 @@
 #include "Poco/File.h"
 #include "Poco/Exception.h"
 #include "Poco/StringTokenizer.h"
-#if defined(_WIN32) && defined(POCO_WIN32_UTF8)
-#include "Poco/UnicodeConverter.h"
-#include "Poco/Buffer.h"
-#endif
 #include <algorithm>
 
 
 #if defined(POCO_OS_FAMILY_UNIX)
 #include "Path_UNIX.cpp"
-#elif defined(POCO_OS_FAMILY_WINDOWS) && defined(POCO_WIN32_UTF8)
-#if defined(_WIN32_WCE)
-#include "Path_WINCE.cpp"
-#else
-#include "Path_WIN32U.cpp"
-#endif
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#include "Path_WIN32.cpp"
 #endif
 
 
@@ -176,11 +164,7 @@ Path& Path::assign(const Path& path)
 
 Path& Path::assign(const std::string& path)
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-	parseWindows(path);
-#else
 	parseUnix(path);
-#endif
 	return *this;
 }
 
@@ -219,11 +203,7 @@ Path& Path::assign(const char* path)
 
 std::string Path::toString() const
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-	return buildWindows();
-#else
 	return buildUnix();
-#endif
 }
 
 
@@ -1043,20 +1023,6 @@ std::string Path::buildVMS() const
 
 std::string Path::transcode(const std::string& path)
 {
-#if defined(_WIN32) && defined(POCO_WIN32_UTF8)
-	std::wstring uniPath;
-	UnicodeConverter::toUTF16(path, uniPath);
-	DWORD len = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, uniPath.c_str(), static_cast<int>(uniPath.length()), NULL, 0, NULL, NULL);
-	if (len > 0)
-	{
-		Buffer<char> buffer(len);
-		DWORD rc = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, uniPath.c_str(), static_cast<int>(uniPath.length()), buffer.begin(), static_cast<int>(buffer.size()), NULL, NULL);
-		if (rc)
-		{
-			return std::string(buffer.begin(), buffer.size());
-		}
-	}
-#endif
 	return path;
 }
 

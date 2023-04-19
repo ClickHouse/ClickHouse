@@ -30,7 +30,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <base/StringRef.h>
 #include <Common/DateLUT.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -1244,10 +1243,10 @@ try
         || !options.count("output-format"))
     {
         std::cout << documentation << "\n"
-            << "\nUsage: " << argv[0] << " [options] < in > out\n"
+            << "\nUsage: clickhouse obfuscator [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
-            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            << "\nExample:\n    clickhouse obfuscator --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 

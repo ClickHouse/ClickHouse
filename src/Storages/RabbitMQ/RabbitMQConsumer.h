@@ -20,6 +20,7 @@ namespace DB
 
 class RabbitMQHandler;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
+static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
 
 class RabbitMQConsumer
 {
@@ -31,8 +32,7 @@ public:
             size_t channel_id_base_,
             const String & channel_base_,
             Poco::Logger * log_,
-            uint32_t queue_size_,
-            const std::atomic<bool> & stopped_);
+            uint32_t queue_size_);
 
     struct AckTracker
     {
@@ -59,22 +59,32 @@ public:
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();
     bool needChannelUpdate();
-    void closeChannel();
+    void shutdown();
 
     void updateQueues(std::vector<String> & queues_) { queues = queues_; }
     size_t queuesCount() { return queues.size(); }
 
-    bool isConsumerStopped() { return stopped; }
+    bool isConsumerStopped() const { return stopped.load(); }
     bool ackMessages();
     void updateAckTracker(AckTracker record = AckTracker());
 
-    bool hasPendingMessages() { return received.empty(); }
+    bool hasPendingMessages() { return !received.empty(); }
 
     auto getChannelID() const { return current.track.channel_id; }
     auto getDeliveryTag() const { return current.track.delivery_tag; }
     auto getRedelivered() const { return current.redelivered; }
     auto getMessageID() const { return current.message_id; }
     auto getTimestamp() const { return current.timestamp; }
+
+    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt)
+    {
+        std::unique_lock lock(mutex);
+        if (!timeout_ms)
+            timeout_ms = SANITY_TIMEOUT;
+        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty() || isConsumerStopped(); });
+    }
+
+    void closeConnections();
 
 private:
     void subscribe();
@@ -86,7 +96,7 @@ private:
     const String channel_base;
     const size_t channel_id_base;
     Poco::Logger * log;
-    const std::atomic<bool> & stopped;
+    std::atomic<bool> stopped;
 
     String channel_id;
     std::atomic<bool> channel_error = true, wait_subscription = false;
@@ -96,6 +106,9 @@ private:
 
     AckTracker last_inserted_record_info;
     UInt64 prev_tag = 0, channel_id_counter = 0;
+
+    std::condition_variable cv;
+    std::mutex mutex;
 };
 
 }

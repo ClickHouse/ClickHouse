@@ -16,7 +16,7 @@
 // MD5 (RFC 1321) algorithm:
 // Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
 // rights reserved.
-// 
+//
 // License to copy and use this software is granted provided that it
 // is identified as the "RSA Data Security, Inc. MD5 Message-Digest
 // Algorithm" in all material mentioning or referencing this software
@@ -41,51 +41,52 @@
 #define Foundation_MD5Engine_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/DigestEngine.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API MD5Engine: public DigestEngine
-	/// This class implements the MD5 message digest algorithm,
-	/// described in RFC 1321.
+class Foundation_API MD5Engine : public DigestEngine
+/// This class implements the MD5 message digest algorithm,
+/// described in RFC 1321.
 {
 public:
-	enum
-	{
-		BLOCK_SIZE  = 64,
-		DIGEST_SIZE = 16
-	};
+    enum
+    {
+        BLOCK_SIZE = 64,
+        DIGEST_SIZE = 16
+    };
 
-	MD5Engine();
-	~MD5Engine();
-		
-	std::size_t digestLength() const;
-	void reset();
-	const DigestEngine::Digest& digest();
+    MD5Engine();
+    ~MD5Engine();
+
+    std::size_t digestLength() const;
+    void reset();
+    const DigestEngine::Digest & digest();
 
 protected:
-	void updateImpl(const void* data, std::size_t length);
+    void updateImpl(const void * data, std::size_t length);
 
 private:
-	static void transform(UInt32 state[4], const unsigned char block[64]);
-	static void encode(unsigned char* output, const UInt32* input, std::size_t len);
-	static void decode(UInt32* output, const unsigned char* input, std::size_t len);
+    static void transform(UInt32 state[4], const unsigned char block[64]);
+    static void encode(unsigned char * output, const UInt32 * input, std::size_t len);
+    static void decode(UInt32 * output, const unsigned char * input, std::size_t len);
 
-	struct Context
-	{
-		UInt32 state[4];          // state (ABCD)
-		UInt32 count[2];          // number of bits, modulo 2^64 (lsb first)
-		unsigned char buffer[64]; // input buffer
-	};
+    struct Context
+    {
+        UInt32 state[4]; // state (ABCD)
+        UInt32 count[2]; // number of bits, modulo 2^64 (lsb first)
+        unsigned char buffer[64]; // input buffer
+    };
 
-	Context _context;
-	DigestEngine::Digest _digest;
+    Context _context;
+    DigestEngine::Digest _digest;
 
-	MD5Engine(const MD5Engine&);
-	MD5Engine& operator = (const MD5Engine&);
+    MD5Engine(const MD5Engine &);
+    MD5Engine & operator=(const MD5Engine &);
 };
 
 

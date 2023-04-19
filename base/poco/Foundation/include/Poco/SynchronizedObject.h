@@ -18,65 +18,66 @@
 #define Foundation_SynchronizedObject_INCLUDED
 
 
+#include "Poco/Event.h"
 #include "Poco/Foundation.h"
 #include "Poco/Mutex.h"
-#include "Poco/Event.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API SynchronizedObject
-	/// This class aggregates a Mutex and an Event
-	/// and can act as a base class for all objects
-	/// requiring synchronization in a multithreaded
-	/// scenario.
+/// This class aggregates a Mutex and an Event
+/// and can act as a base class for all objects
+/// requiring synchronization in a multithreaded
+/// scenario.
 {
 public:
-	typedef Poco::ScopedLock<SynchronizedObject> ScopedLock;
-	
-	SynchronizedObject();
-		/// Creates the object.
-		
-	virtual ~SynchronizedObject();
-		/// Destroys the object.
+    typedef Poco::ScopedLock<SynchronizedObject> ScopedLock;
 
-	void lock() const;
-		/// Locks the object. Blocks if the object
-		/// is locked by another thread.
+    SynchronizedObject();
+    /// Creates the object.
 
-	bool tryLock() const;
-		/// Tries to lock the object. Returns false immediately
-		/// if the object is already locked by another thread
-		/// Returns true if the object was successfully locked.
-	
-	void unlock() const;
-		/// Unlocks the object so that it can be locked by
-		/// other threads.
-		
-	void notify() const;
-		/// Signals the object. 
-		/// Exactly only one thread waiting for the object 
-		/// can resume execution.
+    virtual ~SynchronizedObject();
+    /// Destroys the object.
 
-	void wait() const;
-		/// Waits for the object to become signalled.
+    void lock() const;
+    /// Locks the object. Blocks if the object
+    /// is locked by another thread.
 
-	void wait(long milliseconds) const;
-		/// Waits for the object to become signalled.
-		/// Throws a TimeoutException if the object
-		/// does not become signalled within the specified
-		/// time interval.
+    bool tryLock() const;
+    /// Tries to lock the object. Returns false immediately
+    /// if the object is already locked by another thread
+    /// Returns true if the object was successfully locked.
 
-	bool tryWait(long milliseconds) const;
-		/// Waits for the object to become signalled.
-		/// Returns true if the object
-		/// became signalled within the specified
-		/// time interval, false otherwise.
+    void unlock() const;
+    /// Unlocks the object so that it can be locked by
+    /// other threads.
+
+    void notify() const;
+    /// Signals the object.
+    /// Exactly only one thread waiting for the object
+    /// can resume execution.
+
+    void wait() const;
+    /// Waits for the object to become signalled.
+
+    void wait(long milliseconds) const;
+    /// Waits for the object to become signalled.
+    /// Throws a TimeoutException if the object
+    /// does not become signalled within the specified
+    /// time interval.
+
+    bool tryWait(long milliseconds) const;
+    /// Waits for the object to become signalled.
+    /// Returns true if the object
+    /// became signalled within the specified
+    /// time interval, false otherwise.
 
 private:
-	mutable Mutex _mutex;
-	mutable Event _event;
+    mutable Mutex _mutex;
+    mutable Event _event;
 };
 
 
@@ -85,43 +86,43 @@ private:
 //
 inline void SynchronizedObject::lock() const
 {
-	_mutex.lock();
+    _mutex.lock();
 }
 
 
 inline bool SynchronizedObject::tryLock() const
 {
-	return _mutex.tryLock();
+    return _mutex.tryLock();
 }
 
 
 inline void SynchronizedObject::unlock() const
 {
-	_mutex.unlock();
+    _mutex.unlock();
 }
 
 
 inline void SynchronizedObject::notify() const
 {
-	_event.set();
+    _event.set();
 }
 
 
 inline void SynchronizedObject::wait() const
 {
-	_event.wait();
+    _event.wait();
 }
 
 
 inline void SynchronizedObject::wait(long milliseconds) const
 {
-	_event.wait(milliseconds);
+    _event.wait(milliseconds);
 }
 
 
 inline bool SynchronizedObject::tryWait(long milliseconds) const
 {
-	return _event.tryWait(milliseconds);
+    return _event.tryWait(milliseconds);
 }
 
 

@@ -31,32 +31,20 @@
 // JSON_API functions as being imported from a DLL, whereas this DLL sees symbols
 // defined with this macro as being exported.
 //
-#if defined(_WIN32) && defined(POCO_DLL)
-	#if defined(JSON_EXPORTS)
-		#define JSON_API __declspec(dllexport)
-	#else
-		#define JSON_API __declspec(dllimport)
-	#endif
-#endif
 
 
 #if !defined(JSON_API)
-	#if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined (__GNUC__) && (__GNUC__ >= 4)
-		#define JSON_API __attribute__ ((visibility ("default")))
-	#else
-		#define JSON_API
-	#endif
+#    if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined(__GNUC__) && (__GNUC__ >= 4)
+#        define JSON_API __attribute__((visibility("default")))
+#    else
+#        define JSON_API
+#    endif
 #endif
 
 
 //
 // Automatically link JSON library.
 //
-#if defined(_MSC_VER)
-	#if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(JSON_EXPORTS)
-		#pragma comment(lib, "PocoJSON" POCO_LIB_SUFFIX)
-	#endif
-#endif
 
 
 #endif // JSON_JSON_INCLUDED

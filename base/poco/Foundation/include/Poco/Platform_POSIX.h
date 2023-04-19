@@ -23,22 +23,17 @@
 // PA-RISC based HP-UX platforms have some issues...
 //
 #if defined(hpux) || defined(_hpux)
-	#if defined(__hppa) || defined(__hppa__)
-		#define POCO_NO_SYS_SELECT_H 1
-		#if defined(__HP_aCC)
-			#define POCO_NO_TEMPLATE_ICOMPARE 1
-		#endif
-	#endif
+#    if defined(__hppa) || defined(__hppa__)
+#        define POCO_NO_SYS_SELECT_H 1
+#    endif
 #endif
 
 
 //
 // Thread-safety of local static initialization
 //
-#if __cplusplus >= 201103L || __GNUC__ >= 4 || defined(__clang__)
-	#ifndef POCO_LOCAL_STATIC_INIT_IS_THREADSAFE
-		#define POCO_LOCAL_STATIC_INIT_IS_THREADSAFE 1
-	#endif
+#ifndef POCO_LOCAL_STATIC_INIT_IS_THREADSAFE
+#    define POCO_LOCAL_STATIC_INIT_IS_THREADSAFE 1
 #endif
 
 
@@ -46,7 +41,7 @@
 // No syslog.h on QNX/BB10
 //
 #if defined(__QNXNTO__)
-	#define POCO_NO_SYSLOGCHANNEL
+#    define POCO_NO_SYSLOGCHANNEL
 #endif
 
 

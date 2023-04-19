@@ -13,7 +13,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -129,7 +129,7 @@ public:
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
             if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
         for (size_t i = begin; i < end; ++i)

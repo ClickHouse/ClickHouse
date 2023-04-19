@@ -7,6 +7,7 @@
 
 #include <base/argsToConfig.h>
 #include <base/safeExit.h>
+#include <base/scope_guard.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
@@ -34,6 +35,7 @@
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -117,6 +119,11 @@ namespace ProfileEvents
     extern const Event SystemTimeMicroseconds;
 }
 
+namespace
+{
+constexpr UInt64 THREAD_GROUP_ID = 0;
+}
+
 namespace DB
 {
 
@@ -195,23 +202,24 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     };
     std::map<Id, UInt64> rows_by_name;
+
     for (size_t src_row = 0; src_row < src.rows(); ++src_row)
     {
+        /// Filter out threads stats, use stats from thread group
+        /// Exactly stats from thread group is stored to the table system.query_log
+        /// The stats from threads are less useful.
+        /// They take more records, they need to be combined,
+        /// there even could be several records from one thread.
+        /// Server doesn't send it any more to the clients, so this code left for compatible
+        auto thread_id = src_array_thread_id[src_row];
+        if (thread_id != THREAD_GROUP_ID)
+            continue;
+
         Id id{
             src_column_name.getDataAt(src_row),
             src_column_host_name.getDataAt(src_row),
         };
         rows_by_name[id] = src_row;
-    }
-
-    /// Filter out snapshots
-    std::set<size_t> thread_id_filter_mask;
-    for (size_t i = 0; i < src_array_thread_id.size(); ++i)
-    {
-        if (src_array_thread_id[i] != 0)
-        {
-            thread_id_filter_mask.emplace(i);
-        }
     }
 
     /// Merge src into dst.
@@ -225,10 +233,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         if (auto it = rows_by_name.find(id); it != rows_by_name.end())
         {
             size_t src_row = it->second;
-            if (thread_id_filter_mask.contains(src_row))
-            {
-                continue;
-            }
 
             dst_array_current_time[dst_row] = src_array_current_time[src_row];
 
@@ -249,11 +253,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
     /// Copy rows from src that dst does not contains.
     for (const auto & [id, pos] : rows_by_name)
     {
-        if (thread_id_filter_mask.contains(pos))
-        {
-            continue;
-        }
-
         for (size_t col = 0; col < src.columns(); ++col)
         {
             mutable_columns[col]->insert((*src.getByPosition(col).column)[pos]);
@@ -264,21 +263,31 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 }
 
 
-std::atomic_flag exit_on_signal;
+std::atomic<Int32> exit_after_signals = 0;
 
 class QueryInterruptHandler : private boost::noncopyable
 {
 public:
-    static void start() { exit_on_signal.clear(); }
+    /// Store how much interrupt signals can be before stopping the query
+    /// by default stop after the first interrupt signal.
+    static void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
+
+    /// Set value not greater then 0 to mark the query as stopped.
+    static void stop() { return exit_after_signals.store(0); }
+
     /// Return true if the query was stopped.
-    static bool stop() { return exit_on_signal.test_and_set(); }
-    static bool cancelled() { return exit_on_signal.test(); }
+    /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
+    static bool try_stop() { return exit_after_signals.fetch_sub(1) <= 0; }
+    static bool cancelled() { return exit_after_signals.load() <= 0; }
+
+    /// Return how much interrupt signals remain before stop.
+    static Int32 cancelled_status() { return exit_after_signals.load(); }
 };
 
 /// This signal handler is set only for SIGINT.
 void interruptSignalHandler(int signum)
 {
-    if (QueryInterruptHandler::stop())
+    if (QueryInterruptHandler::try_stop())
         safeExit(128 + signum);
 }
 
@@ -481,14 +490,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(block);
+    output_format->setTotals(materializeBlock(block));
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(block);
+    output_format->setExtremes(materializeBlock(block));
 }
 
 
@@ -853,12 +862,15 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         }
     }
 
+    const auto & settings = global_context->getSettingsRef();
+    const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
+
     int retries_left = 10;
     while (retries_left)
     {
         try
         {
-            QueryInterruptHandler::start();
+            QueryInterruptHandler::start(signals_before_stop);
             SCOPE_EXIT({ QueryInterruptHandler::stop(); });
 
             connection->sendQuery(
@@ -875,7 +887,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             if (send_external_tables)
                 sendExternalTables(parsed_query);
 
-            receiveResult(parsed_query);
+            receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
         }
@@ -900,7 +912,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
 /// Receives and processes packets coming from server.
 /// Also checks if query execution should be cancelled.
-void ClientBase::receiveResult(ASTPtr parsed_query)
+void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel)
 {
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -924,7 +936,13 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
             /// to avoid losing sync.
             if (!cancelled)
             {
-                if (QueryInterruptHandler::cancelled())
+                if (partial_result_on_first_cancel && QueryInterruptHandler::cancelled_status() == signals_before_stop - 1)
+                {
+                    connection->sendCancel();
+                    /// First cancel reading request was sent. Next requests will only be with a full cancel
+                    partial_result_on_first_cancel = false;
+                }
+                else if (QueryInterruptHandler::cancelled())
                 {
                     cancelQuery();
                 }
@@ -1080,13 +1098,18 @@ void ClientBase::onProfileEvents(Block & block)
         const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
-        HostToThreadTimesMap thread_times;
+        HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
         {
             auto thread_id = array_thread_id[i];
             auto host_name = host_names.getDataAt(i).toString();
-            if (thread_id != 0)
-                progress_indication.addThreadIdToList(host_name, thread_id);
+
+            /// In ProfileEvents packets thread id 0 specifies common profiling information
+            /// for all threads executing current query on specific host. So instead of summing per thread
+            /// consumption it's enough to look for data with thread id 0.
+            if (thread_id != THREAD_GROUP_ID)
+                continue;
+
             auto event_name = names.getDataAt(i);
             auto value = array_values[i];
 
@@ -1095,11 +1118,11 @@ void ClientBase::onProfileEvents(Block & block)
                 continue;
 
             if (event_name == user_time_name)
-                thread_times[host_name][thread_id].user_ms = value;
+                thread_times[host_name].user_ms = value;
             else if (event_name == system_time_name)
-                thread_times[host_name][thread_id].system_ms = value;
+                thread_times[host_name].system_ms = value;
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-                thread_times[host_name][thread_id].memory_usage = value;
+                thread_times[host_name].memory_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
 
@@ -1110,6 +1133,8 @@ void ClientBase::onProfileEvents(Block & block)
         {
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
+                /// We need to restart the watch each time we flushed these events
+                profile_events.watch.restart();
                 initLogsOutputStream();
                 if (need_render_progress && tty_buf)
                     progress_indication.clearProgressOutput(*tty_buf);
@@ -1123,7 +1148,6 @@ void ClientBase::onProfileEvents(Block & block)
                 incrementProfileEventsBlock(profile_events.last_block, block);
             }
         }
-        profile_events.watch.restart();
     }
 }
 
@@ -1360,7 +1384,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             throw;
         }
 
-        if (have_data_in_stdin)
+        if (have_data_in_stdin && !cancelled)
             sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
@@ -1370,7 +1394,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         try
         {
             sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
-            if (have_data_in_stdin)
+            if (have_data_in_stdin && !cancelled)
                 sendDataFromStdin(sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
@@ -1834,7 +1858,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
-        if (test_hint.clientError() || test_hint.serverError())
+        if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
@@ -1876,17 +1900,17 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
                 TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.serverError())
+                if (hint.hasServerErrors())
                 {
                     // Syntax errors are considered as client errors
-                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
+                    current_exception->addMessage("\nExpected server error: {}.", hint.serverErrors());
                     current_exception->rethrow();
                 }
 
-                if (hint.clientError() != current_exception->code())
+                if (!hint.hasExpectedClientError(current_exception->code()))
                 {
-                    if (hint.clientError())
-                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
+                    if (hint.hasClientErrors())
+                        current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
 
                     current_exception->rethrow();
                 }
@@ -1935,37 +1959,37 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 bool error_matches_hint = true;
                 if (have_error)
                 {
-                    if (test_hint.serverError())
+                    if (test_hint.hasServerErrors())
                     {
                         if (!server_exception)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
-                                       test_hint.serverError(), full_query);
+                                       test_hint.serverErrors(), full_query);
                         }
-                        else if (server_exception->code() != test_hint.serverError())
+                        else if (!test_hint.hasExpectedServerError(server_exception->code()))
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                                       test_hint.serverError(), server_exception->code(), full_query);
+                                       test_hint.serverErrors(), server_exception->code(), full_query);
                         }
                     }
-                    if (test_hint.clientError())
+                    if (test_hint.hasClientErrors())
                     {
                         if (!client_exception)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
-                                       test_hint.clientError(), full_query);
+                                       test_hint.clientErrors(), full_query);
                         }
-                        else if (client_exception->code() != test_hint.clientError())
+                        else if (!test_hint.hasExpectedClientError(client_exception->code()))
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
-                                       test_hint.clientError(), client_exception->code(), full_query);
+                                       test_hint.clientErrors(), client_exception->code(), full_query);
                         }
                     }
-                    if (!test_hint.clientError() && !test_hint.serverError())
+                    if (!test_hint.hasClientErrors() && !test_hint.hasServerErrors())
                     {
                         // No error was expected but it still occurred. This is the
                         // default case without test hint, doesn't need additional
@@ -1975,19 +1999,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 }
                 else
                 {
-                    if (test_hint.clientError())
+                    if (test_hint.hasClientErrors())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,
                                    "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                                   test_hint.clientError(), full_query);
+                                   test_hint.clientErrors(), full_query);
                     }
-                    if (test_hint.serverError())
+                    if (test_hint.hasServerErrors())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,
                                    "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                                   test_hint.serverError(), full_query);
+                                   test_hint.serverErrors(), full_query);
                     }
                 }
 
@@ -2197,9 +2221,6 @@ void ClientBase::runInteractive()
     LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
 
-    /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
-    lr.enableBracketedPaste();
-
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
         {
             { "\\l", "SHOW DATABASES" },
@@ -2217,7 +2238,18 @@ void ClientBase::runInteractive()
 
     do
     {
-        auto input = lr.readLine(prompt(), ":-] ");
+        String input;
+        {
+            /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+            /// But keep it disabled outside of query input, because it breaks password input
+            /// (e.g. if we need to reconnect and show a password prompt).
+            /// (Alternatively, we could make the password input ignore the control sequences.)
+            lr.enableBracketedPaste();
+            SCOPE_EXIT({ lr.disableBracketedPaste(); });
+
+            input = lr.readLine(prompt(), ":-] ");
+        }
+
         if (input.empty())
             break;
 
