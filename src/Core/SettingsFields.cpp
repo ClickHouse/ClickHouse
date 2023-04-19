@@ -475,7 +475,7 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
 
 void SettingFieldTimezone::validateTimezone(std::string_view str)
 {
-    if (str != "" && !checkIsExitingTimeZone(str))
+    if (!str.empty() && !checkIsExitingTimeZone(str))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", str);
 }
 
