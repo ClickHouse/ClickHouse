@@ -10,6 +10,10 @@ if (USE_BINARY_HASH)
     add_subdirectory (hash-binary)
 endif ()
 
+if (ENABLE_EXTERN_LOCAL_ENGINE)
+    add_subdirectory (extern-local-engine)
+endif ()
+    
 # Not used in packages
 if (ENABLE_UTILS)
     add_subdirectory (corrector_utf8)
