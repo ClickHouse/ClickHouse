@@ -24,11 +24,12 @@ namespace DB
             .source_access_type = AccessType::S3,       \
         });
 
-
+#if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory)
 {
     REGISTER_DATA_LAKE_STORAGE(StorageDeltaLakeS3, StorageDeltaLakeName::name)
 }
+#endif
 
 void registerStorageIceberg(StorageFactory & factory)
 {
