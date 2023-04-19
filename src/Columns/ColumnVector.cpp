@@ -648,6 +648,18 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 )
 
 template <typename T>
+void ColumnVector<T>::insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length)
+{
+size_t old_size = data.size();
+data.resize(old_size + length);
+const auto & src_data = (static_cast<const Self &>(src)).getData();
+for (size_t i = 0; i < length; ++i)
+{
+    data[old_size + i] = src_data[selector[selector_start + i]];
+}
+}
+
+template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();

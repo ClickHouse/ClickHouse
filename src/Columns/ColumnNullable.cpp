@@ -12,6 +12,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -243,6 +244,21 @@ void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t l
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
+}
+
+void ColumnNullable::insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length)
+{
+    const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(src);
+    getNestedColumn().insertRangeSelective(*nullable_col.nested_column, selector, selector_start, length);
+
+    if (!memoryIsZero(nullable_col.getNullMapData().data(), 0, nullable_col.size()))
+    {
+        getNullMapColumn().insertRangeSelective(*nullable_col.null_map, selector, selector_start, length);
+    }
+    else
+    {
+        getNullMapColumn().insertManyDefaults(length);
+    }
 }
 
 void ColumnNullable::insert(const Field & x)

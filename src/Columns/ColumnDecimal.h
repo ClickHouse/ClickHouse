@@ -62,6 +62,7 @@ public:
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
     void insert(const Field & x) override { data.push_back(x.get<T>()); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length) override;
 
     void popBack(size_t n) override
     {

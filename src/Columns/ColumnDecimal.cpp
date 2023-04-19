@@ -279,6 +279,18 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length)
+{
+    size_t old_size = data.size();
+    data.resize(old_size + length);
+    const auto & src_data = (static_cast<const Self &>(src)).getData();
+    for (size_t i = 0; i < length; ++i)
+    {
+        data[old_size + i] = src_data[selector[selector_start + i]];
+    }
+}
+
+template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();

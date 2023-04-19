@@ -67,6 +67,7 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length) override;
     void insert(const Field & x) override;
     void insertFrom(const IColumn & src, size_t n) override;
 
@@ -128,6 +129,8 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    bool canBeInsideNullable() const override { return true; }
 
     ColumnPtr compress() const override;
 

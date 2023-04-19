@@ -233,6 +233,18 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
             start, length);
 }
 
+void ColumnTuple::insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length)
+{
+    const ColumnTuple & src_concrete = static_cast<const ColumnTuple &>(src);
+
+    const size_t tuple_size = columns.size();
+    if (src_concrete.columns.size() != tuple_size)
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->insertRangeSelective(*src_concrete.columns[i], selector, selector_start, length);
+}
+
 ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     const size_t tuple_size = columns.size();

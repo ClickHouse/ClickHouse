@@ -589,5 +589,41 @@ void ColumnString::validate() const
                         "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
                         last_offset, chars.size());
 }
+void ColumnString::insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length)
+{
+    const ColumnString & src_concrete = static_cast<const ColumnString &>(src);
+    const Offsets & src_offsets = src_concrete.getOffsets();
+    auto * src_data_start = src_concrete.chars.data();
+
+    Offsets & cur_offsets = getOffsets();
+
+    if (length == 0)
+        return;
+
+    size_t old_offset_size = cur_offsets.size();
+    cur_offsets.resize(old_offset_size + length);
+
+    size_t old_chars_size = chars.size();
+    size_t new_chars_size = old_chars_size;
+    for (size_t i = 0; i < length; ++i)
+    {
+        new_chars_size += src_concrete.sizeAt(selector[selector_start + i]);
+    }
+    chars.resize(new_chars_size);
+
+    size_t cur_offset = cur_offsets[old_offset_size - 1];
+
+    auto * cur_chars_start = chars.data(); // realloc memory is not allowed in the following
+    for (size_t i = 0; i < length; ++i)
+    {
+        size_t src_pos = selector[selector_start + i];
+        size_t offset = src_offsets[src_pos - 1];
+        const size_t size_to_append = src_offsets[src_pos] - offset; /// -1th index is Ok, see PaddedPODArray.
+
+        memcpySmallAllowReadWriteOverflow15(cur_chars_start + cur_offset, src_data_start + offset, size_to_append);
+        cur_offset += size_to_append;
+        cur_offsets[old_offset_size + i] = cur_offset;
+    }
+}
 
 }

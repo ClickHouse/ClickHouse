@@ -65,6 +65,7 @@ public:
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    void insertRangeSelective(const IColumn & src, const Selector & selector, size_t selector_start, size_t length) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
@@ -72,6 +73,7 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
+    bool canBeInsideNullable() const override { return true; }
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,

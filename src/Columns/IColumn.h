@@ -379,6 +379,18 @@ public:
     using Selector = PaddedPODArray<ColumnIndex>;
     [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 
+    /// This function will get row index from selector and append the data to this column.
+    /// This function will handle indexes start from input 'selector_start' and will append 'size' times
+    /// For example:
+    ///      input selector: [1, 2, 3, 4, 5, 6]
+    ///      selector_start: 2
+    ///      length: 3
+    /// This function will copy the [3, 4, 5] row of src to this column.
+    virtual void insertRangeSelective(const IColumn & /*src*/, const Selector & /*selector*/, size_t /*selector_start*/, size_t /*length*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertRangeSelective is not implemented for {}", getName());
+    }
+
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
     /// (descendants should call gatherer_stream.gather(*this) to implement this function.)

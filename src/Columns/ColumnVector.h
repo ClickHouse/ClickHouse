@@ -330,6 +330,8 @@ public:
         return this->template scatterImpl<Self>(num_columns, selector);
     }
 
+    void insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length) override;
+
     void gather(ColumnGathererStream & gatherer_stream) override;
 
     bool canBeInsideNullable() const override { return true; }

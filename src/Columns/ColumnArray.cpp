@@ -547,6 +547,29 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     }
 }
 
+void ColumnArray::insertRangeSelective(const IColumn & src, const Selector & selector, size_t selector_start, size_t length){
+
+    const ColumnArray & src_concrete = static_cast<const ColumnArray &>(src);
+    const Offsets & src_offsets = src_concrete.getOffsets();
+    const IColumn & src_data = src_concrete.getData();
+    IColumn & cur_data = getData();
+    Offsets & cur_offsets = getOffsets();
+
+    size_t old_size = cur_offsets.size();
+    size_t cur_size = old_size + length;
+    cur_data.reserve(cur_size);
+    cur_offsets.resize(cur_size);
+
+    for (size_t i = 0; i < length; ++i)
+    {
+        size_t src_pos = selector[selector_start + i];
+        size_t offset = src_offsets[src_pos - 1];
+        size_t size = src_offsets[src_pos] - offset;
+        cur_data.insertRangeFrom(src_data, offset, size);
+        cur_offsets[old_size + i] = cur_offsets[old_size + i - 1] + size; // PaddedPODArray allows to use -1th element that will have value 0
+    }
+}
+
 
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
