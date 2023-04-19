@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
@@ -20,7 +21,6 @@
 #include <Common/FieldVisitorDump.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -214,20 +214,23 @@ namespace
             if (!in)
                 return false;
             const auto & pod = in->getData();
+            UInt32 in_scale = 0;
+            if constexpr (std::is_same_v<ColumnDecimal<Decimal32>, T> || std::is_same_v<ColumnDecimal<Decimal64>, T>)
+                in_scale = in->getScale();
 
             if (!executeNumToString(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<UInt8>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<UInt16>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<UInt32>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<UInt64>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<Int8>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<Int16>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<Int32>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<Int64>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<Float32>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnVector<Float64>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnDecimal<Decimal32>>(pod, column_result, default_non_const)
-                && !executeNumToNum<ColumnDecimal<Decimal64>>(pod, column_result, default_non_const))
+                && !executeNumToNum<ColumnVector<UInt8>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<UInt16>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<UInt32>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<UInt64>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<Int8>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<Int16>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<Int32>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<Int64>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<Float32>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnVector<Float64>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnDecimal<Decimal32>>(pod, column_result, default_non_const, in_scale)
+                && !executeNumToNum<ColumnDecimal<Decimal64>>(pod, column_result, default_non_const, in_scale))
             {
                 const size_t size = pod.size();
                 const auto & table = *cache.table_num_to_idx;
@@ -327,7 +330,8 @@ namespace
         }
 
         template <typename T, typename U>
-        bool executeNumToNum(const PaddedPODArray<U> & pod, IColumn & column_result, const ColumnPtr default_non_const) const
+        bool executeNumToNum(
+            const PaddedPODArray<U> & pod, IColumn & column_result, const ColumnPtr default_non_const, const UInt32 in_scale) const
         {
             auto * out = typeid_cast<T *>(&column_result);
             if (!out)
@@ -335,21 +339,24 @@ namespace
             auto & out_pod = out->getData();
             const size_t size = pod.size();
             out_pod.resize(size);
+            UInt32 out_scale = 0;
+            if constexpr (std::is_same_v<ColumnDecimal<Decimal32>, T> || std::is_same_v<ColumnDecimal<Decimal64>, T>)
+                out_scale = out->getScale();
 
             const auto & to_pod = reinterpret_cast<const T *>(cache.to_columns.get())->getData();
             const auto & table = *cache.table_num_to_idx;
             if (cache.default_column)
             {
                 const auto const_def = reinterpret_cast<const T *>(cache.default_column.get())->getData()[0];
-                executeNumToNumHelper(table, pod, out_pod, to_pod, const_def, size);
+                executeNumToNumHelper(table, pod, out_pod, to_pod, const_def, size, out_scale, out_scale);
             }
             else if (default_non_const)
             {
                 const auto & nconst_def = reinterpret_cast<const T *>(default_non_const.get())->getData();
-                executeNumToNumHelper(table, pod, out_pod, to_pod, nconst_def, size);
+                executeNumToNumHelper(table, pod, out_pod, to_pod, nconst_def, size, out_scale, out_scale);
             }
             else
-                executeNumToNumHelper(table, pod, out_pod, to_pod, pod, size);
+                executeNumToNumHelper(table, pod, out_pod, to_pod, pod, size, out_scale, in_scale);
             return true;
         }
 
@@ -360,7 +367,9 @@ namespace
             PaddedPODArray<Out> & out_pod,
             const PaddedPODArray<Out> & to_pod,
             const Def & def,
-            const size_t size) const
+            const size_t size,
+            const UInt32 out_scale,
+            const UInt32 def_scale) const
         {
             for (size_t i = 0; i < size; ++i)
             {
@@ -372,8 +381,19 @@ namespace
                 }
                 else if constexpr (std::is_same_v<Def, Out>)
                     out_pod[i] = def;
+                else if constexpr (is_decimal<Out> && !is_decimal<typename Def::value_type>)
+                    out_pod[i] = DecimalUtils::decimalFromComponents<Out>(static_cast<typename Out::NativeType>(def[i]), 0, out_scale);
                 else if constexpr (is_decimal<Out>)
-                    out_pod[i] = static_cast<typename Out::NativeType>(def[i]);
+                {
+                    if (def_scale == out_scale)
+                        out_pod[i] = static_cast<typename Out::NativeType>(def[i]);
+                    else
+                    {
+                        const auto whole = static_cast<typename Out::NativeType>(DecimalUtils::getWholePart(def[i], def_scale));
+                        const auto fract = static_cast<typename Out::NativeType>(DecimalUtils::getFractionalPart(def[i], def_scale));
+                        out_pod[i] = DecimalUtils::decimalFromComponents<Out>(whole, fract, out_scale);
+                    }
+                }
                 else
                     out_pod[i] = static_cast<Out>(def[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
             }
