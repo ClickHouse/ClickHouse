@@ -787,189 +787,185 @@
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.com/docs/en/operations/table_engines/distributed/
       -->
-<!--    <remote_servers>-->
-<!--        &lt;!&ndash; Test only shard config for testing distributed storage &ndash;&gt;-->
-<!--        <test_shard_localhost>-->
-<!--            &lt;!&ndash; Inter-server per-cluster secret for Distributed queries-->
-<!--                 default: no secret (no authentication will be performed)-->
+    <remote_servers>
+        <!-- Test only shard config for testing distributed storage -->
+        <test_shard_localhost>
+            <!-- Inter-server per-cluster secret for Distributed queries
+                 default: no secret (no authentication will be performed)
+                 If set, then Distributed queries will be validated on shards, so at least:
+                 - such cluster should exist on the shard,
+                 - such cluster should have the same secret.
+                 And also (and which is more important), the initial_user will
+                 be used as current user for the query.
+                 Right now the protocol is pretty simple and it only takes into account:
+                 - cluster name
+                 - query
+                 Also it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depends from DNS,
+                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 - target hostname / ip address (same notes as for source hostname)
+                 - time-based security tokens
+            -->
+            <!-- <secret></secret> -->
 
-<!--                 If set, then Distributed queries will be validated on shards, so at least:-->
-<!--                 - such cluster should exist on the shard,-->
-<!--                 - such cluster should have the same secret.-->
-
-<!--                 And also (and which is more important), the initial_user will-->
-<!--                 be used as current user for the query.-->
-
-<!--                 Right now the protocol is pretty simple and it only takes into account:-->
-<!--                 - cluster name-->
-<!--                 - query-->
-
-<!--                 Also it will be nice if the following will be implemented:-->
-<!--                 - source hostname (see interserver_http_host), but then it will depends from DNS,-->
-<!--                   it can use IP address instead, but then the you need to get correct on the initiator node.-->
-<!--                 - target hostname / ip address (same notes as for source hostname)-->
-<!--                 - time-based security tokens-->
-<!--            &ndash;&gt;-->
-<!--            &lt;!&ndash; <secret></secret> &ndash;&gt;-->
-
-<!--            <shard>-->
-<!--                &lt;!&ndash; Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). &ndash;&gt;-->
-<!--                &lt;!&ndash; <internal_replication>false</internal_replication> &ndash;&gt;-->
-<!--                &lt;!&ndash; Optional. Shard weight when writing data. Default: 1. &ndash;&gt;-->
-<!--                &lt;!&ndash; <weight>1</weight> &ndash;&gt;-->
-<!--                <replica>-->
-<!--                    <host>localhost</host>-->
-<!--                    <port>9000</port>-->
-<!--                    &lt;!&ndash; Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). &ndash;&gt;-->
-<!--                    &lt;!&ndash; <priority>1</priority> &ndash;&gt;-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--        </test_shard_localhost>-->
-<!--        <test_cluster_one_shard_three_replicas_localhost>-->
-<!--            <shard>-->
-<!--                <internal_replication>false</internal_replication>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.1</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.2</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.3</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--            &lt;!&ndash;shard>-->
-<!--                <internal_replication>false</internal_replication>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.1</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.2</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.3</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--            </shard&ndash;&gt;-->
-<!--        </test_cluster_one_shard_three_replicas_localhost>-->
-<!--	<parallel_replicas>-->
-<!--		<shard>-->
-<!--            <internal_replication>false</internal_replication>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.1</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.2</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.3</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.4</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.5</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.6</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.7</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.8</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.9</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--            <replica>-->
-<!--                <host>127.0.0.10</host>-->
-<!--                <port>9000</port>-->
-<!--            </replica>-->
-<!--        </shard>-->
-<!--	</parallel_replicas>-->
-<!--        <test_cluster_two_shards_localhost>-->
-<!--             <shard>-->
-<!--                 <replica>-->
-<!--                     <host>localhost</host>-->
-<!--                     <port>9000</port>-->
-<!--                 </replica>-->
-<!--             </shard>-->
-<!--             <shard>-->
-<!--                 <replica>-->
-<!--                     <host>localhost</host>-->
-<!--                     <port>9000</port>-->
-<!--                 </replica>-->
-<!--             </shard>-->
-<!--        </test_cluster_two_shards_localhost>-->
-<!--        <test_cluster_two_shards>-->
-<!--            <shard>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.1</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--            <shard>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.2</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--        </test_cluster_two_shards>-->
-<!--        <test_cluster_two_shards_internal_replication>-->
-<!--            <shard>-->
-<!--                <internal_replication>true</internal_replication>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.1</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--            <shard>-->
-<!--                <internal_replication>true</internal_replication>-->
-<!--                <replica>-->
-<!--                    <host>127.0.0.2</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--        </test_cluster_two_shards_internal_replication>-->
-<!--        <test_shard_localhost_secure>-->
-<!--            <shard>-->
-<!--                <replica>-->
-<!--                    <host>localhost</host>-->
-<!--                    <port>9440</port>-->
-<!--                    <secure>1</secure>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--        </test_shard_localhost_secure>-->
-<!--        <test_unavailable_shard>-->
-<!--            <shard>-->
-<!--                <replica>-->
-<!--                    <host>localhost</host>-->
-<!--                    <port>9000</port>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--            <shard>-->
-<!--                <replica>-->
-<!--                    <host>localhost</host>-->
-<!--                    <port>1</port>-->
-<!--                </replica>-->
-<!--            </shard>-->
-<!--        </test_unavailable_shard>-->
-<!--    </remote_servers>-->
+            <shard>
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+                <!-- <internal_replication>false</internal_replication> -->
+                <!-- Optional. Shard weight when writing data. Default: 1. -->
+                <!-- <weight>1</weight> -->
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <!-- Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). -->
+                    <!-- <priority>1</priority> -->
+                </replica>
+            </shard>
+        </test_shard_localhost>
+        <test_cluster_one_shard_three_replicas_localhost>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <!--shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard-->
+        </test_cluster_one_shard_three_replicas_localhost>
+	<parallel_replicas>
+		<shard>
+            <internal_replication>false</internal_replication>
+            <replica>
+                <host>127.0.0.1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.2</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.3</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.4</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.5</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.6</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.7</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.8</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.9</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.10</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+	</parallel_replicas>
+        <test_cluster_two_shards_localhost>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+        </test_cluster_two_shards_localhost>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
+        <test_cluster_two_shards_internal_replication>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_internal_replication>
+        <test_shard_localhost_secure>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9440</port>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </test_shard_localhost_secure>
+        <test_unavailable_shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </test_unavailable_shard>
+    </remote_servers>
 
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
         If this section is not present in configuration, all hosts are allowed.
