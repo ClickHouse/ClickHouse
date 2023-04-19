@@ -127,7 +127,7 @@ private:
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder connection_task;
+    BackgroundSchedulePool::TaskHolder init_task;
 
     uint64_t milliseconds_to_wait;
 
