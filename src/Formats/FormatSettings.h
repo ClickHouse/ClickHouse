@@ -32,6 +32,7 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
+    bool use_lowercase_column_name = false;
     bool try_infer_variant = false;
 
     bool seekable_read = true;
