@@ -292,7 +292,7 @@ namespace detail
 
                     return istr;
                     #else
-                    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Enet protocol was not enabled during build time");
+                    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ENet protocol was not enabled during build time");
                     #endif
                 }
                 else
