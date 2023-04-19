@@ -73,7 +73,7 @@ template <typename T>
 bool check(const T x) { return x == T{}; }
 
 template <typename T>
-void set(T & x) { x = {}; }
+void set(T & x) { x = T{}; }
 
 }
 
