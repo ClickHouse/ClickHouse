@@ -280,16 +280,22 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() != 3)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires 3 arguments: zookeeper path, shard name and replica name");
+        if (!engine->arguments || engine->arguments->children.empty() || engine->arguments->children.size() > 3)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires at least 1 argument: zookeeper path, and optionally shard name and replica name");
 
         auto & arguments = engine->arguments->children;
         for (auto & engine_arg : arguments)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
-        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
-        String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
+        String shard_name = "{shard}";
+        String replica_name = "{replica}";
+
+        if (engine->arguments->children.size() > 1)
+            shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
+
+        if (engine->arguments->children.size() > 2)
+            replica_name = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
         zookeeper_path = context->getMacros()->expand(zookeeper_path);
         shard_name = context->getMacros()->expand(shard_name);
