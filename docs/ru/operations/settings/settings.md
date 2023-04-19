@@ -4101,6 +4101,6 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 
 Возможные значения:
 
--    Строка вида `Регион/Город`, например `Europe/Zurich`
+-    Любая зона из `system.time_zones`, например `Europe/Berlin`, `UTC` или `Zulu`
 
 Значение по умолчанию: `''`.
