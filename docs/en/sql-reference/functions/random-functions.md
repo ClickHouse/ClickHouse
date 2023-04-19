@@ -1,31 +1,31 @@
 ---
 slug: /en/sql-reference/functions/random-functions
-sidebar_position: 51
-sidebar_label: Pseudo-Random Numbers
+sidebar_position: 145
+sidebar_label: Random Numbers
 ---
 
-# Functions for Generating Pseudo-Random Numbers
+# Functions for Generating Random Numbers
 
 All the functions accept zero arguments or one argument. If an argument is passed, it can be any type, and its value is not used for anything. The only purpose of this argument is to prevent common subexpression elimination, so that two different instances of the same function return different columns with different random numbers.
 
 :::note    
-Non-cryptographic generators of pseudo-random numbers are used.
+Non-cryptographic generators of random numbers are used.
 :::
 
 ## rand, rand32
 
-Returns a pseudo-random UInt32 number, evenly distributed among all UInt32-type numbers.
+Returns a random UInt32 number, evenly distributed among all UInt32-type numbers.
 
 Uses a linear congruential generator.
 
 ## rand64
 
-Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
+Returns a random UInt64 number, evenly distributed among all UInt64-type numbers.
 
 Uses a linear congruential generator.
 
 ## randCanonical
-The function generates pseudo random results with independent and identically distributed uniformly distributed values in [0, 1).
+The function generates results with independent and identically distributed uniformly distributed values in [0, 1).
 
 Non-deterministic. Return type is Float64.
 
@@ -45,7 +45,7 @@ randConstant([x])
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
@@ -93,7 +93,7 @@ randUniform(min, max)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
@@ -136,7 +136,7 @@ randNormal(meam, variance)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
@@ -179,7 +179,7 @@ randLogNormal(meam, variance)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
@@ -222,7 +222,7 @@ randBinomial(experiments, probability)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
@@ -265,7 +265,7 @@ randNegativeBinomial(experiments, probability)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
@@ -307,7 +307,7 @@ randPoisson(n)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
@@ -349,7 +349,7 @@ randBernoulli(probability)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
@@ -391,7 +391,7 @@ randExponential(lambda)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
@@ -433,7 +433,7 @@ randChiSquared(degree_of_freedom)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
@@ -475,7 +475,7 @@ randStudentT(degree_of_freedom)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
@@ -518,7 +518,7 @@ randFisherF(d1, d2)
 
 **Returned value**
 
-- Pseudo-random number.
+- Random number.
 
 Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
