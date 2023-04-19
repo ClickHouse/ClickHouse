@@ -34,8 +34,6 @@ FileCache::FileCache(const FileCacheSettings & settings)
 
     if (settings.enable_filesystem_query_cache_limit)
         query_limit = std::make_unique<FileCacheQueryLimit>();
-
-    cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
 }
 
 FileCache::Key FileCache::createKeyForPath(const String & path)
@@ -99,6 +97,8 @@ void FileCache::initialize()
     }
 
     is_initialized = true;
+
+    cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
     cleanup_task->activate();
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
 }
