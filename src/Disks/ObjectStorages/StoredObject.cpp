@@ -12,20 +12,17 @@ StoredObject::StoredObject(
     const std::string & absolute_path_,
     uint64_t bytes_size_,
     const std::string & mapped_path_,
-    PathKeyForCacheCreator && path_key_for_cache_creator_)
+    const std::string & cache_path_)
     : absolute_path(absolute_path_)
     , mapped_path(mapped_path_)
+    , cache_path(cache_path_)
     , bytes_size(bytes_size_)
-    , path_key_for_cache_creator(std::move(path_key_for_cache_creator_))
 {
 }
 
 std::string StoredObject::getPathKeyForCache() const
 {
-    if (!path_key_for_cache_creator)
-        return ""; /// This empty result need to be used with care.
-
-    return path_key_for_cache_creator(absolute_path);
+    return cache_path;
 }
 
 const std::string & StoredObject::getMappedPath() const
@@ -37,36 +34,10 @@ StoredObject StoredObject::create(
     const IObjectStorage & object_storage,
     const std::string & object_path,
     size_t object_size,
-    const std::string & mapped_path,
-    bool exists,
-    bool object_bypasses_cache)
+    const std::string & mapped_path)
 {
-    if (object_bypasses_cache)
-        return StoredObject(object_path, object_size, mapped_path, {});
-
-    PathKeyForCacheCreator path_key_for_cache_creator = [&object_storage](const std::string & path) -> std::string
-    {
-        try
-        {
-            return object_storage.getUniqueId(path);
-        }
-        catch (...)
-        {
-            LOG_DEBUG(
-               &Poco::Logger::get("StoredObject"),
-                "Object does not exist while getting cache path hint (object path: {})",
-                path);
-
-            return "";
-        }
-    };
-
-    if (exists)
-    {
-        path_key_for_cache_creator = [path = path_key_for_cache_creator(object_path)](const std::string &) { return path; };
-    }
-
-    return StoredObject(object_path, object_size, mapped_path, std::move(path_key_for_cache_creator));
+    const auto cache_path = object_storage.getUniqueId(object_path);
+    return StoredObject(object_path, object_size, mapped_path, cache_path);
 }
 
 }
