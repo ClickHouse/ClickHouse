@@ -11,10 +11,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
 struct Settings;
 
 /// min, max, any, anyLast, anyHeavy, etc...
@@ -51,29 +47,23 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
     return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<>>>(argument_type);
 }
 
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, bool RespectNulls = false, bool NullIsGreater = false>
+template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, bool RespectNulls = false>
 static IAggregateFunction * createAggregateFunctionSingleNullableValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
-    if (parameters.size() > 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "name's parameter size must not be larger  then 2");
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);
-    // if the resule value could be null(excluding the case that no row is matched),
+    // If the result value could be null (excluding the case that no row is matched),
     // use SingleValueDataGeneric.
     if constexpr (!RespectNulls)
     {
         return createAggregateFunctionSingleValue<AggregateFunctionTemplate, Data>(name, argument_types, Array(), settings);
     }
-    else if constexpr (NullIsGreater)
-    {
-        return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true, true>>>(argument_type);
-    }
     else
     {
-        return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true, false>>>(argument_type);
+        return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true>>>(argument_type);
     }
     UNREACHABLE();
 }
