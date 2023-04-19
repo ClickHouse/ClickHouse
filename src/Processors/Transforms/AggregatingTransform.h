@@ -7,6 +7,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 
 namespace CurrentMetrics
 {

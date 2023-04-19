@@ -1245,7 +1245,6 @@ Returns DateTime values parsed from input string according to a MySQL style form
 **Supported format specifiers**
 
 All format specifiers listed in [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) except:
-- %f: fractional second
 - %Q: Quarter (1-4) 
 
 **Example**

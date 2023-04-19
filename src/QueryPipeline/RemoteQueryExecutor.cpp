@@ -216,7 +216,15 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
 
     const auto & settings = context->getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == connections->size())
+    {
+        /// To avoid sending the query again in the read(), we need to update the following flags:
+        std::lock_guard guard(was_cancelled_mutex);
+        was_cancelled = true;
+        finished = true;
+        sent_query = true;
+
         return;
+    }
 
     /// Query cannot be canceled in the middle of the send query,
     /// since there are multiple packets:
@@ -236,11 +244,8 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
-    {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
-        if (!duplicated_part_uuids.empty())
-            connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
-    }
+    if (!duplicated_part_uuids.empty())
+        connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
@@ -471,7 +476,6 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 
     if (!duplicates.empty())
     {
-        std::lock_guard lock(duplicated_part_uuids_mutex);
         duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
         return false;
     }

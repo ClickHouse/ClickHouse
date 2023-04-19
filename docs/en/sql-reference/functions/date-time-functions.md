@@ -645,7 +645,7 @@ For an alternative to `date\_diff`, see function `age`.
 date_diff('unit', startdate, enddate, [timezone])
 ```
 
-Aliases: `dateDiff`, `DATE_DIFF`.
+Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_DIFF`.
 
 **Arguments**
 
@@ -1264,7 +1264,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
 | %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
-| %f       | fractional second from the fractional part of DateTime64 | 1234560   |
+| %f       | fractional second, see 'Note 1' below                   | 1234560    |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
@@ -1276,16 +1276,16 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %k       | hour in 24h format (00-23)                              | 22         |
 | %l       | hour in 12h format (01-12)                              | 09         |
 | %m       | month as an integer number (01-12)                      | 01         |
-| %M       | minute (00-59)                                          | 33         |
+| %M       | full month name (January-December), see 'Note 2' below  | January    |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%M %p        | 10:30 PM   |
-| %R       | 24-hour HH:MM time, equivalent to %H:%M                 | 22:33      |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%i %p        | 10:30 PM   |
+| %R       | 24-hour HH:MM time, equivalent to %H:%i                 | 22:33      |
 | %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
 | %t       | horizontal-tab character (’)                            |            |
-| %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
+| %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
 | %w       | weekday as a integer number with Sunday as 0 (0-6)      | 2          |
@@ -1294,6 +1294,10 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %Y       | Year                                                    | 2018       |
 | %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
+
+Note 1: In ClickHouse versions earlier than v23.4, `%f` prints a single zero (0) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0. The previous behavior can be restored using setting `formatdatetime_f_prints_single_zero = 1`.
+
+Note 2: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
 
 **Example**
 

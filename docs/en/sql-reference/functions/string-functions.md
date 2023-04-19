@@ -6,7 +6,7 @@ sidebar_label: Strings
 
 # Functions for Working with Strings
 
-:::note    
+:::note
 Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
 :::
 
@@ -1193,6 +1193,42 @@ Result:
 ```
 
 ## concatWithSeparatorAssumeInjective
+
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+
+## soundex
+
+Returns the [Soundex code](https://en.wikipedia.org/wiki/Soundex) of a string.
+
+**Syntax**
+
+``` sql
+soundex(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- The Soundex code of the input value. [String](../data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+select soundex('aksel');
+```
+
+Result:
+
+``` text
+┌─soundex('aksel')─┐
+│ A240             │
+└──────────────────┘
+```
+

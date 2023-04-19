@@ -186,3 +186,7 @@ ARRAY JOIN
 When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
+
+## Related Content
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
