@@ -49,6 +49,7 @@ public:
     getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
     bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }
     bool canBeInsideSparseColumns() const override { return nested_data_type->canBeInsideSparseColumns(); }
+    bool canBeInsideNullable() const override { return true; }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
