@@ -259,9 +259,9 @@ namespace
             out_offs.resize(size);
             auto & out_chars = out->getChars();
 
-            const auto * from_col = reinterpret_cast<const ColumnString *>(cache.to_columns.get());
-            const auto & from_chars = from_col->getChars();
-            const auto & from_offs = from_col->getOffsets();
+            const auto * to_col = reinterpret_cast<const ColumnString *>(cache.to_columns.get());
+            const auto & to_chars = to_col->getChars();
+            const auto & to_offs = to_col->getOffsets();
             const auto & table = *cache.table_num_to_idx;
 
             if (cache.default_column)
@@ -271,14 +271,14 @@ namespace
                 const auto & def_offs = def->getOffsets();
                 const auto * def_data = def_chars.data();
                 auto def_size = def_offs[0];
-                executeNumToStringHelper(table, pod, out_chars, out_offs, from_chars, from_offs, def_data, def_size, size);
+                executeNumToStringHelper(table, pod, out_chars, out_offs, to_chars, to_offs, def_data, def_size, size);
             }
             else
             {
                 const auto * def = reinterpret_cast<const ColumnString *>(default_non_const.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
-                executeNumToStringHelper(table, pod, out_chars, out_offs, from_chars, from_offs, def_chars, def_offs, size);
+                executeNumToStringHelper(table, pod, out_chars, out_offs, to_chars, to_offs, def_chars, def_offs, size);
             }
             return true;
         }
@@ -436,9 +436,9 @@ namespace
             out_offs.resize(size);
             auto & out_chars = out->getChars();
 
-            const auto * from_col = reinterpret_cast<const ColumnString *>(cache.to_columns.get());
-            const auto & from_chars = from_col->getChars();
-            const auto & from_offs = from_col->getOffsets();
+            const auto * to_col = reinterpret_cast<const ColumnString *>(cache.to_columns.get());
+            const auto & to_chars = to_col->getChars();
+            const auto & to_offs = to_col->getOffsets();
 
             const auto & table = *cache.table_string_to_idx;
             if (cache.default_column)
@@ -448,18 +448,18 @@ namespace
                 const auto & def_offs = def->getOffsets();
                 const auto * def_data = def_chars.data();
                 auto def_size = def_offs[0];
-                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, from_chars, from_offs, def_data, def_size, size);
+                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, to_chars, to_offs, def_data, def_size, size);
             }
             else if (default_non_const)
             {
                 const auto * def = reinterpret_cast<const ColumnString *>(default_non_const.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
-                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, from_chars, from_offs, def_chars, def_offs, size);
+                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, to_chars, to_offs, def_chars, def_offs, size);
             }
             else
             {
-                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, from_chars, from_offs, data, offsets, size);
+                executeStringToStringHelper(table, data, offsets, out_chars, out_offs, to_chars, to_offs, data, offsets, size);
             }
             return true;
         }
