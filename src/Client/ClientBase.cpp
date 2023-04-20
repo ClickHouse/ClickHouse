@@ -68,6 +68,7 @@
 #include <iostream>
 #include <filesystem>
 #include <map>
+#include <regex>
 #include <unordered_map>
 
 #include "config_version.h"
@@ -120,6 +121,7 @@ namespace ProfileEvents
 namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
+const std::string UNICODE_DASH = "—";
 }
 
 namespace DB
@@ -2395,6 +2397,54 @@ struct TransparentStringHash
     }
 };
 
+/*
+ * This functor is used to parse command line arguments and replace dashes with underscores,
+ * allowing options to be specified using either dashes or underscores.
+ */
+class OptionsAliasParser
+{
+public:
+    explicit OptionsAliasParser(const boost::program_options::options_description& options)
+    {
+        options_names.reserve(options.options().size());
+        for (const auto& option : options.options())
+            options_names.insert(option->long_name());
+    }
+
+    /*
+     * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
+     * Implements boost::program_options::ext_parser logic
+     */
+    std::pair<std::string, std::string> operator()(const std::string& token) const
+    {
+        if (token.find("--") != 0)
+            return {};
+        std::string arg = token.substr(2);
+
+        // divide token by '=' to separate key and value if options style=long_allow_adjacent
+        auto pos_eq = arg.find('=');
+        std::string key = arg.substr(0, pos_eq);
+
+        if (options_names.contains(key))
+            // option does not require any changes, because it is already correct
+            return {};
+
+        std::replace(key.begin(), key.end(), '-', '_');
+        if (!options_names.contains(key))
+            // after replacing '-' with '_' argument is still unknown
+            return {};
+
+        std::string value;
+        if (pos_eq != std::string::npos && pos_eq < arg.size())
+            value = arg.substr(pos_eq + 1);
+
+        return {key, value};
+    }
+
+private:
+    std::unordered_set<std::string> options_names;
+};
+
 }
 
 
@@ -2445,7 +2495,10 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     }
 
     /// Parse main commandline options.
-    auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
+    auto parser = po::command_line_parser(arguments)
+                      .options(options_description.main_description.value())
+                      .extra_parser(OptionsAliasParser(options_description.main_description.value()))
+                      .allow_unregistered();
     po::parsed_options parsed = parser.run();
 
     /// Check unrecognized options without positional options.
@@ -2486,6 +2539,11 @@ void ClientBase::init(int argc, char ** argv)
     std::vector<Arguments> hosts_and_ports_arguments;
 
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
+
+    /// Support for Unicode dashes
+    /// Interpret Unicode dash as default double-dash
+    for (auto & arg : common_arguments)
+        arg = std::regex_replace(arg, std::regex(UNICODE_DASH), "--");
 
     po::variables_map options;
     OptionsDescription options_description;
@@ -2660,7 +2718,14 @@ void ClientBase::init(int argc, char ** argv)
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
-    argsToConfig(common_arguments, config(), 100);
+    {
+        std::unordered_set<std::string> alias_names;
+        alias_names.reserve(options_description.main_description->options().size());
+        for (const auto& option : options_description.main_description->options())
+            alias_names.insert(option->long_name());
+        argsToConfig(common_arguments, config(), 100, &alias_names);
+    }
+
     clearPasswordFromCommandLine(argc, argv);
 
     /// Limit on total memory usage
