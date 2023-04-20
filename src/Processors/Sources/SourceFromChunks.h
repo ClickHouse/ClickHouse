@@ -7,24 +7,33 @@
 namespace DB
 {
 
+/// The big brother of SourceFromSingleChunk. Supports multiple chunks and totals/extremes.
 class SourceFromChunks : public ISource
 {
 public:
-    SourceFromChunks(Block header, Chunks chunks_);
-    SourceFromChunks(Block header, std::shared_ptr<Chunks> chunks_);
+    SourceFromChunks(Block header, Chunks && chunks_, std::optional<Chunk> && chunk_totals_, std::optional<Chunk> && chunk_extremes_);
 
     String getName() const override;
 
-protected:
+    Status prepare() override;
+    void work() override;
+
+    OutputPort * getTotalsPort() const { return output_totals; }
+    OutputPort * getExtremesPort() const { return output_extremes; }
+
     Chunk generate() override;
 
 private:
-    SourceFromChunks(Block header, std::shared_ptr<Chunks> chunks_, bool move_from_chunks_);
-
-    const std::shared_ptr<Chunks> chunks;
+    Chunks chunks;
     Chunks::iterator it;
-    /// Optimization: if the chunks are exclusively owned by SourceFromChunks, then generate() can move from them
-    const bool move_from_chunks;
+
+    std::optional<Chunk> chunk_totals = std::nullopt;
+    std::optional<Chunk> chunk_extremes = std::nullopt;
+
+    OutputPort * output_totals = nullptr;
+    OutputPort * output_extremes = nullptr;
+
+    bool finished_chunks = false;
 };
 
 }
