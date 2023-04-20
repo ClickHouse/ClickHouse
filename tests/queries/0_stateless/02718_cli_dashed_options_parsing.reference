@@ -1,0 +1,12 @@
+Test 1: Check that you can specify options with a dashes, not an underscores
+Test 1.1: Check option from config - server_logs_file
+1
+0
+1
+0
+1
+0
+Test 1.1: Check some option from Settings.h - allow_deprecated_syntax_for_merge_tree
+0
+Test 2: check that unicode dash processed correctly
+1
