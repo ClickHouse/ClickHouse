@@ -16,8 +16,8 @@ If the ORDER BY clause is omitted, the order of the rows is also undefined, and 
 
 There are two approaches to `NaN` and `NULL` sorting order:
 
--   By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
--   With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
+- By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
+- With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
 
 ### Example
 

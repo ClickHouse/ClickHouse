@@ -177,7 +177,7 @@ BlockIO InterpreterShowTablesQuery::execute()
 
         Block sample_block{ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "Caches")};
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
-        auto caches = FileCacheFactory::instance().getAllByName();
+        auto caches = FileCacheFactory::instance().getAll();
         for (const auto & [name, _] : caches)
             res_columns[0]->insert(name);
         BlockIO res;

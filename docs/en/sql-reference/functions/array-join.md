@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/array-join
-sidebar_position: 61
+sidebar_position: 15
 sidebar_label: arrayJoin
 ---
 
