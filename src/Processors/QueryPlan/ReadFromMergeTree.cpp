@@ -1365,9 +1365,10 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
-bool ReadFromMergeTree::requestReadingInOrderNoIntersection(size_t)
+bool ReadFromMergeTree::requestReadingInOrderNoIntersection(size_t prefix_size, size_t)
 {
-    read_in_order_no_intersection = true;
+    read_in_order_no_intersect_prefix_size = prefix_size;
+    read_in_order_no_intersect = true;
     return true;
 }
 
@@ -1563,8 +1564,12 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection);
     }
-    else if (read_in_order_no_intersection)
+    else if (read_in_order_no_intersect)
     {
+        WriteBufferFromOwnString wb;
+        wb << "Columns to read: " << column_names_to_read;
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "{}", wb.str());
+
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, false);
     }
     else if (input_order_info)

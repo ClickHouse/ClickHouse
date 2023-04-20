@@ -148,11 +148,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, bool parallel)
     if (output_data_stream.sort_scope != DataStream::SortScope::Chunk && number_of_sorted_distinct_columns <= output_sort_desc.size())
         return 0;
 
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Handle PRELIMITARY DISTINCT");
-    /// update input order info in read_from_merge_tree step
-    if (parallel)
+    /// TODO: parallel distinct in order works only if DISTINCT columns match sorting key (actually primary key)
+    // LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Sorting DISTINCT columns {}, sorting key columns {}", number_of_sorted_distinct_columns, sorting_key_columns.size());
+    if (parallel && number_of_sorted_distinct_columns == sorting_key_columns.size())
     {
-        if (!read_from_merge_tree->requestReadingInOrderNoIntersection(distinct->getLimitHint()))
+        if (!read_from_merge_tree->requestReadingInOrderNoIntersection(number_of_sorted_distinct_columns,distinct->getLimitHint()))
             return 0;
 
         /// delete final distinct
@@ -161,6 +161,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, bool parallel)
         return 1;
     }
     else
+    /// update input order info in read_from_merge_tree step
     {
         const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
         bool can_read

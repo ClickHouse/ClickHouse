@@ -156,8 +156,8 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
-    bool requestReadingInOrderNoIntersection(size_t limit);
-    bool getReadingInOrderNoIntersection() const { return read_in_order_no_intersection; }
+    bool requestReadingInOrderNoIntersection(size_t prefix_size, size_t limit);
+    bool getReadingInOrderNoIntersection() const { return read_in_order_no_intersect; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
@@ -267,7 +267,8 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
 
-    bool read_in_order_no_intersection = false;
+    bool read_in_order_no_intersect = false;
+    size_t read_in_order_no_intersect_prefix_size = 0;
 };
 
 struct MergeTreeDataSelectAnalysisResult
