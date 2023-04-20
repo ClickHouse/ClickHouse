@@ -4,6 +4,7 @@
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
+#include <base/scope_guard.h>
 
 
 namespace DB

@@ -462,6 +462,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         context->setSetting("parallel_replicas_custom_key", String{""});
     }
 
+    /// Try to execute query without parallel replicas if we find that there is a FINAL modifier there.
+    bool is_query_with_final = false;
+    if (query_info.table_expression_modifiers)
+        is_query_with_final = query_info.table_expression_modifiers->hasFinal();
+    else if (query_info.query)
+        is_query_with_final = query_info.query->as<ASTSelectQuery &>().final();
+
+    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    {
+        LOG_WARNING(log, "FINAL modifier is supported with parallel replicas. Will try to execute the query without using them.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+        context->setSetting("parallel_replicas_custom_key", String{""});
+    }
+
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
