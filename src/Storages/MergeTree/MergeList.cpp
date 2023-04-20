@@ -27,6 +27,7 @@ MergeListElement::MergeListElement(
 {
     WriteBufferFromOwnString out;
     FormatSettings format_settings;
+    bool partition_initialized = false;
     for (const auto & source_part : future_part->parts)
     {
         source_part_names.emplace_back(source_part->name);
@@ -36,7 +37,8 @@ MergeListElement::MergeListElement(
         total_size_bytes_uncompressed += source_part->getTotalColumnsSize().data_uncompressed;
         total_size_marks += source_part->getMarksCount();
         total_rows_count += source_part->index_granularity.getTotalRows();
-        if (partition.empty()) {
+        if (partition_initialized) {
+            partition_initialized = true;
             future_part->getPartition().serializeText(source_part->storage, out, format_settings);
             partition = out.str();
         }
@@ -59,6 +61,7 @@ MergeInfo MergeListElement::getInfo() const
     res.result_part_name = result_part_name;
     res.result_part_path = result_part_path;
     res.partition_id = partition_id;
+    res.partition = partition;
     res.is_mutation = is_mutation;
     res.elapsed = watch.elapsedSeconds();
     res.progress = progress.load(std::memory_order_relaxed);
