@@ -141,7 +141,7 @@ def check_if_query_sending_was_not_suspended():
         "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
     )
 
-    assert result == ''
+    assert result == ""
 
 
 def update_configs(
