@@ -1,4 +1,5 @@
 SET min_bytes_to_use_direct_io='1Gi'; -- It does not work (fixme)
+SET local_filesystem_read_method='pread'; -- ui_uring local_fs_method does not work here (fixme)
 
 DROP TABLE IF EXISTS test;
 
