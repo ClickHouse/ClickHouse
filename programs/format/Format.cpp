@@ -74,7 +74,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: clickhouse format [options] < query" << std::endl;
+            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
             std::cout << desc << std::endl;
             return 1;
         }
