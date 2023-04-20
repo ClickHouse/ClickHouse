@@ -20,6 +20,7 @@ RETRY = 5
 CommitStatuses = List[CommitStatus]
 MERGEABLE_NAME = "Mergeable Check"
 GH_REPO = None  # type: Optional[Repository]
+CI_STATUS_NAME = "CI running"
 
 
 class RerunHelper:

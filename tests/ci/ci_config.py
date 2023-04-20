@@ -424,6 +424,12 @@ CHECK_DESCRIPTIONS = [
         lambda x: x == "Bugfix validate check",
     ),
     CheckDescription(
+        "CI running",
+        "A meta-check that indicates the running CI. Normally, it's in `success` or "
+        "`pending` state. The failed status indicates some problems with the PR",
+        lambda x: x == "CI running",
+    ),
+    CheckDescription(
         "ClickHouse build check",
         "Builds ClickHouse in various configurations for use in further steps. "
         "You have to fix the builds that fail. Build logs often has enough "
@@ -492,12 +498,6 @@ CHECK_DESCRIPTIONS = [
         "Push to Dockerhub",
         "The check for building and pushing the CI related docker images to docker hub",
         lambda x: x.startswith("Push") and "to Dockerhub" in x,
-    ),
-    CheckDescription(
-        "Run Check",
-        "A meta-check that indicates the running CI. Normally, it's in `success` or "
-        "`pending` state. The failed status indicates some problems with the PR",
-        lambda x: x == "Run Check",
     ),
     CheckDescription(
         "Sqllogic",
