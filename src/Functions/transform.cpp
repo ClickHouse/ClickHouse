@@ -144,6 +144,7 @@ namespace
                         "transform(T, Array(T), Array(U), U) -> U; "
                         "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                         getName());
+                checkAllowedType(ret);
                 return ret;
             }
             else
@@ -156,6 +157,7 @@ namespace
                         "transform(T, Array(T), Array(U), U) -> U; "
                         "or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                         getName());
+                checkAllowedType(ret);
                 return ret;
             }
         }
@@ -631,6 +633,24 @@ namespace
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type in function 'transform'");
             }
+        }
+
+        static void checkAllowedType(const DataTypePtr & dt)
+        {
+            if (dt->isNullable())
+                checkAllowedTypeHelper(static_cast<const DataTypeNullable *>(dt.get())->getNestedType());
+            else
+                checkAllowedTypeHelper(dt);
+        }
+
+        static void checkAllowedTypeHelper(const DataTypePtr & dt)
+        {
+            if (isStringOrFixedString(dt))
+                return;
+            auto dtsize = dt->getMaximumSizeOfValueInMemory();
+            if (dtsize <= sizeof(UInt64))
+                return;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} in function 'transform'", dt->getName());
         }
 
         /// Can be called from different threads. It works only on the first call.
