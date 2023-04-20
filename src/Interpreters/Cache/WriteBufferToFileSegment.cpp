@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <IO/SwapHelper.h>
+#include <IO/ReadBufferFromFile.h>
 
 #include <base/scope_guard.h>
 
@@ -11,11 +12,23 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileDecorator(file_segment_->detachWriter()), file_segment(file_segment_)
+    : WriteBufferFromFileDecorator(file_segment_->detachWriter())
+    , file_segment(file_segment_)
+{
+}
+
+WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolder && segment_holder_)
+    : WriteBufferFromFileDecorator(
+        segment_holder_.file_segments.size() == 1
+        ? segment_holder_.file_segments.front()->detachWriter()
+        : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
+    , file_segment(segment_holder_.file_segments.front().get())
+    , segment_holder(std::move(segment_holder_))
 {
 }
 
@@ -52,6 +65,11 @@ void WriteBufferToFileSegment::nextImpl()
     file_segment->setDownloadedSize(bytes_to_write);
 }
 
+std::shared_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
+{
+    finalize();
+    return std::make_shared<ReadBufferFromFile>(file_segment->getPathInLocalCache());
+}
 
 WriteBufferToFileSegment::~WriteBufferToFileSegment()
 {

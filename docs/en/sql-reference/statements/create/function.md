@@ -17,9 +17,9 @@ A function can have an arbitrary number of parameters.
 
 There are a few restrictions:
 
--   The name of a function must be unique among user defined and system functions.
--   Recursive functions are not allowed.
--   All variables used by a function must be specified in its parameter list.
+- The name of a function must be unique among user defined and system functions.
+- Recursive functions are not allowed.
+- All variables used by a function must be specified in its parameter list.
 
 If any restriction is violated then an exception is raised.
 
