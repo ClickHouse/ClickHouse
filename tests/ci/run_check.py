@@ -7,6 +7,7 @@ from typing import Tuple
 from github import Github
 
 from commit_status_helper import (
+    CI_STATUS_NAME,
     format_description,
     get_commit,
     post_commit_status,
@@ -19,8 +20,6 @@ from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
-
-NAME = "Run Check"
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -90,7 +89,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # Returns whether we should look into individual checks for this PR. If not, it
 # can be skipped entirely.
 # Returns can_run, description, labels_state
-def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
+def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
     if FORCE_TESTS_LABEL in pr_info.labels:
@@ -214,7 +213,7 @@ def main():
         print("::notice ::Cannot run, no PR exists for the commit")
         sys.exit(1)
 
-    can_run, description, labels_state = should_run_checks_for_pr(pr_info)
+    can_run, description, labels_state = should_run_ci_for_pr(pr_info)
     if can_run and OK_SKIP_LABELS.intersection(pr_info.labels):
         print("::notice :: Early finish the check, running in a special PR")
         sys.exit(0)
@@ -270,7 +269,7 @@ def main():
             f"{description_error}"
         )
         logging.info(
-            "PR body doesn't match the template: (start)\n%s\n(end)\n" "Reason: %s",
+            "PR body doesn't match the template: (start)\n%s\n(end)\nReason: %s",
             pr_info.body,
             description_error,
         )
@@ -279,18 +278,25 @@ def main():
             "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
         )
         post_commit_status(
-            commit, "failure", url, format_description(description_error), NAME, pr_info
+            commit,
+            "failure",
+            url,
+            format_description(description_error),
+            CI_STATUS_NAME,
+            pr_info,
         )
         sys.exit(1)
 
     url = GITHUB_RUN_URL
     if not can_run:
         print("::notice ::Cannot run")
-        post_commit_status(commit, labels_state, url, description, NAME, pr_info)
+        post_commit_status(
+            commit, labels_state, url, description, CI_STATUS_NAME, pr_info
+        )
         sys.exit(1)
     else:
         print("::notice ::Can run")
-        post_commit_status(commit, "pending", url, description, NAME, pr_info)
+        post_commit_status(commit, "pending", url, description, CI_STATUS_NAME, pr_info)
 
 
 if __name__ == "__main__":

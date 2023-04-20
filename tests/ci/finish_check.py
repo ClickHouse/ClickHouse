@@ -2,31 +2,42 @@
 import logging
 from github import Github
 
-from env_helper import GITHUB_RUN_URL
-from pr_info import PRInfo
-from get_robot_token import get_best_robot_token
 from commit_status_helper import (
+    CI_STATUS_NAME,
     get_commit,
     get_commit_filtered_statuses,
     post_commit_status,
 )
+from env_helper import GITHUB_RUN_URL
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
 
-NAME = "Run Check"
 
-
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
-    url = GITHUB_RUN_URL
-    statuses = get_commit_filtered_statuses(commit)
-    pending_status = any(  # find NAME status in pending state
-        True
-        for status in statuses
-        if status.context == NAME and status.state == "pending"
-    )
-    if pending_status:
-        post_commit_status(commit, "success", url, "All checks finished", NAME, pr_info)
+    statuses = [
+        status
+        for status in get_commit_filtered_statuses(commit)
+        if status.context == CI_STATUS_NAME
+    ]
+    if not statuses:
+        return
+    status = statuses[0]
+    if status.state == "pending":
+        post_commit_status(
+            commit,
+            "success",
+            status.target_url or "",
+            "All checks finished",
+            CI_STATUS_NAME,
+            pr_info,
+        )
+
+
+if __name__ == "__main__":
+    main()
