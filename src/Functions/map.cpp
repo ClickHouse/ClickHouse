@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnMap.h>
 #include <Interpreters/castColumn.h>
