@@ -1245,10 +1245,17 @@ void TCPHandler::receiveHello()
         Poco::Net::SecureStreamSocket secure_socket(socket());
         if (secure_socket.havePeerCertificate())
         {
-            session->authenticate(
-                SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
-                getClientAddress(client_info));
-            return;
+            try
+            {
+                session->authenticate(
+                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                    getClientAddress(client_info));
+                return;
+            }
+            catch(...)
+            {
+                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
+            }
         }
     }
 #endif
