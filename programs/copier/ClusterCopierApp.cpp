@@ -72,10 +72,10 @@ void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
     Poco::Util::HelpFormatter help_formatter(options());
     if (terminal_width)
         help_formatter.setWidth(terminal_width);
-    help_formatter.setCommand(commandName());
+    help_formatter.setCommand(commandName() == "clickhouse-copier" ? "clickhouse-copier" : commandName() + " copier");
     help_formatter.setHeader("Copies tables from one cluster to another");
     help_formatter.setUsage("--config-file <config-file> --task-path <task-path>");
-    help_formatter.format(std::cerr);
+    help_formatter.format(std::cout);
 
     stopOptionsProcessing();
 }

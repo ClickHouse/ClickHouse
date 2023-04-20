@@ -19,23 +19,23 @@ Alias: `medianApprox`.
 
 **Arguments**
 
--   `accuracy` — Accuracy of quantile. Constant positive integer. Larger accuracy value means less error. For example, if the accuracy argument is set to 100, the computed quantile will have an error no greater than 1% with high probability. There is a trade-off between the accuracy of the computed quantiles and the computational complexity of the algorithm. A larger accuracy requires more memory and computational resources to compute the quantile accurately, while a smaller accuracy argument allows for a faster and more memory-efficient computation but with a slightly lower accuracy.
+- `accuracy` — Accuracy of quantile. Constant positive integer. Larger accuracy value means less error. For example, if the accuracy argument is set to 100, the computed quantile will have an error no greater than 1% with high probability. There is a trade-off between the accuracy of the computed quantiles and the computational complexity of the algorithm. A larger accuracy requires more memory and computational resources to compute the quantile accurately, while a smaller accuracy argument allows for a faster and more memory-efficient computation but with a slightly lower accuracy.
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 
 **Returned value**
 
--   Quantile of the specified level and accuracy.
+- Quantile of the specified level and accuracy.
 
 
 Type:
 
--   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
--   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
--   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+- [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+- [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 
 **Example**
 
@@ -72,5 +72,5 @@ FROM numbers(1000)
 
 **See Also**
 
--   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
--   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
