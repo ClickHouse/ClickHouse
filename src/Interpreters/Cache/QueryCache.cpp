@@ -157,11 +157,13 @@ size_t QueryCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
-size_t QueryCache::QueryResultWeight::operator()(const Chunks & chunks) const
+size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
 {
     size_t res = 0;
-    for (const auto & chunk : chunks)
+    for (const auto & chunk : entry.chunks)
         res += chunk.allocatedBytes();
+    res += entry.totals.has_value() ? entry.totals->allocatedBytes() : 0;
+    res += entry.extremes.has_value() ? entry.extremes->allocatedBytes() : 0;
     return res;
 }
 
@@ -191,25 +193,48 @@ QueryCache::Writer::Writer(
     }
 }
 
-void QueryCache::Writer::buffer(Chunk && partial_query_result)
+QueryCache::Writer::Writer(const Writer & other)
+    : cache(other.cache)
+    , key(other.key)
+    , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
+    , max_entry_size_in_rows(other.max_entry_size_in_rows)
+    , min_query_runtime(other.min_query_runtime)
+    , squash_partial_results(other.squash_partial_results)
+    , max_block_size(other.max_block_size)
+{
+}
+
+void QueryCache::Writer::buffer(Chunk && chunk, Type type)
 {
     if (skip_insert)
         return;
 
     std::lock_guard lock(mutex);
 
-    auto & chunks = *query_result;
-
-    chunks.emplace_back(std::move(partial_query_result));
-
-    new_entry_size_in_bytes += chunks.back().allocatedBytes();
-    new_entry_size_in_rows += chunks.back().getNumRows();
-
-    if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
+    switch (type)
     {
-        chunks.clear(); /// eagerly free some space
-        skip_insert = true;
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
+        case Type::Result:
+        {
+            /// Normal query result chunks are simply buffered. They are squashed and compressed later in finalizeWrite().
+            query_result->chunks.emplace_back(std::move(chunk));
+            break;
+        }
+        case Type::Totals:
+        case Type::Extremes:
+        {
+            /// For simplicity, totals and extremes chunks are immediately squashed (totals/extremes are obscure and even if enabled, few
+            /// such chunks are expected).
+            auto & buffered_chunk = (type == Type::Totals) ? query_result->totals : query_result->extremes;
+
+            convertToFullIfSparse(chunk);
+
+            if (!buffered_chunk.has_value())
+                buffered_chunk = std::move(chunk);
+            else
+                buffered_chunk->append(chunk);
+
+            break;
+        }
     }
 }
 
@@ -221,6 +246,8 @@ void QueryCache::Writer::finalizeWrite()
     std::lock_guard lock(mutex);
 
     chassert(!was_finalized);
+
+    /// Check some reasons why the entry must not be cached:
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
     {
@@ -244,7 +271,7 @@ void QueryCache::Writer::finalizeWrite()
         Chunks squashed_chunks;
         size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
 
-        for (auto & chunk : *query_result)
+        for (auto & chunk : query_result->chunks)
         {
             convertToFullIfSparse(chunk);
 
@@ -272,31 +299,69 @@ void QueryCache::Writer::finalizeWrite()
             }
         }
 
-        *query_result = std::move(squashed_chunks);
+        query_result->chunks = std::move(squashed_chunks);
     }
 
     if (key.is_compressed)
     {
+        /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
+
         Chunks compressed_chunks;
-        const Chunks & decompressed_chunks = *query_result;
-        for (const auto & decompressed_chunk : decompressed_chunks)
+
+        for (const auto & chunk : query_result->chunks)
         {
-            const Columns & decompressed_columns = decompressed_chunk.getColumns();
+            const Columns & columns = chunk.getColumns();
             Columns compressed_columns;
-            for (const auto & decompressed_column : decompressed_columns)
+            for (const auto & column : columns)
             {
-                auto compressed_column = decompressed_column->compress();
+                auto compressed_column = column->compress();
                 compressed_columns.push_back(compressed_column);
             }
-            Chunk compressed_chunk(compressed_columns, decompressed_chunk.getNumRows());
+            Chunk compressed_chunk(compressed_columns, chunk.getNumRows());
             compressed_chunks.push_back(std::move(compressed_chunk));
         }
-        *query_result = std::move(compressed_chunks);
+        query_result->chunks = std::move(compressed_chunks);
+    }
+
+    /// Check more reasons why the entry must not be cached.
+
+    auto count_rows_in_chunks = [](const Entry & entry)
+    {
+        size_t res = 0;
+        for (const auto & chunk : entry.chunks)
+            res += chunk.getNumRows();
+        res += entry.totals.has_value() ? entry.totals->getNumRows() : 0;
+        res += entry.extremes.has_value() ? entry.extremes->getNumRows() : 0;
+        return res;
+    };
+
+    size_t new_entry_size_in_bytes = QueryCacheEntryWeight()(*query_result);
+    size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
+
+    if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
+    {
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
+        return;
     }
 
     cache.set(key, query_result);
 
     was_finalized = true;
+}
+
+/// Constructs a pipe with just one processor: SourceFromChunks which serves data from the query cache
+void QueryCache::Reader::buildPipe(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
+{
+    auto source_from_chunks = std::make_shared<SourceFromChunks>(
+            header, std::move(chunks),
+            totals.has_value() ? std::optional(totals->clone()) : std::nullopt,
+            extremes.has_value() ? std::optional(extremes->clone()) : std::nullopt);
+
+    OutputPort * out = &source_from_chunks->getPort();
+    OutputPort * out_totals = source_from_chunks->getTotalsPort();
+    OutputPort * out_extremes = source_from_chunks->getExtremesPort();
+
+    pipe = Pipe(source_from_chunks, out, out_totals, out_extremes);
 }
 
 QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &)
@@ -322,25 +387,37 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
     }
 
     if (!entry->key.is_compressed)
-        pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, entry->mapped));
+    {
+        // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
+        // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
+        // shared_ptr. This is not done 1. to keep things simple 2. this case (uncompressed chunks) is the exceptional case, in the other
+        // case (the default case aka. compressed chunks) we need to decompress the entry anyways and couldn't apply the potential
+        // optimization.
+
+        Chunks cloned_chunks;
+        for (const auto & chunk : entry->mapped->chunks)
+            cloned_chunks.push_back(chunk.clone());
+
+        buildPipe(entry->key.header, std::move(cloned_chunks), entry->mapped->totals, entry->mapped->extremes);
+    }
     else
     {
-        auto decompressed_chunks = std::make_shared<Chunks>();
-        const Chunks & compressed_chunks = *entry->mapped;
-        for (const auto & compressed_chunk : compressed_chunks)
+        Chunks decompressed_chunks;
+        const Chunks & chunks = entry->mapped->chunks;
+        for (const auto & chunk : chunks)
         {
-            const Columns & compressed_chunk_columns = compressed_chunk.getColumns();
+            const Columns & columns = chunk.getColumns();
             Columns decompressed_columns;
-            for (const auto & compressed_column : compressed_chunk_columns)
+            for (const auto & column : columns)
             {
-                auto column = compressed_column->decompress();
-                decompressed_columns.push_back(column);
+                auto decompressed_column = column->decompress();
+                decompressed_columns.push_back(decompressed_column);
             }
-            Chunk decompressed_chunk(decompressed_columns, compressed_chunk.getNumRows());
-            decompressed_chunks->push_back(std::move(decompressed_chunk));
+            Chunk decompressed_chunk(decompressed_columns, chunk.getNumRows());
+            decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, decompressed_chunks));
+        buildPipe(entry->key.header, std::move(decompressed_chunks), entry->mapped->totals, entry->mapped->extremes);
     }
 
     LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
@@ -406,7 +483,7 @@ std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
 }
 
 QueryCache::QueryCache()
-    : cache(std::make_unique<TTLCachePolicy<Key, Chunks, KeyHasher, QueryResultWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
 }
 
