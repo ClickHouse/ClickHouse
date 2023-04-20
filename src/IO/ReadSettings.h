@@ -126,9 +126,9 @@ struct ReadSettings
     ReadSettings adjustBufferSize(size_t file_size) const
     {
         ReadSettings res = *this;
-        res.local_fs_buffer_size = std::min(file_size, local_fs_buffer_size);
-        res.remote_fs_buffer_size = std::min(file_size, remote_fs_buffer_size);
-        res.prefetch_buffer_size = std::min(file_size, prefetch_buffer_size);
+        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
+        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
+        res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
         return res;
     }
 };
