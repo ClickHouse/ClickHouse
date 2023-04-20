@@ -169,51 +169,46 @@ namespace detail
             if (uri_.getPath().empty())
                 uri_.setPath("/");
 
-            Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-            request.setHost(uri_.getHost()); // use original, not resolved host name in header
-
-            if (out_stream_callback)
-                request.setChunkedTransferEncoding(true);
-            else if (method == Poco::Net::HTTPRequest::HTTP_POST)
-                request.setContentLength(0);    /// No callback - no body
-
-            for (auto & [header, value] : http_header_entries)
-                request.set(header, value);
-
-            std::optional<Range> range;
-            if constexpr (for_object_info)
-            {
-                if (withPartialContent(initial_read_range))
-                    range = initial_read_range;
-            }
-            else
-            {
-                if (withPartialContent(read_range))
-                    range = Range{getOffset(), read_range.end};
-            }
-
-            if (range)
-            {
-                String range_header_value;
-                if (range->end)
-                    range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
-                else
-                    range_header_value = fmt::format("bytes={}-", *range->begin);
-                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
-                request.set("Range", range_header_value);
-            }
-
-            if (!credentials.getUsername().empty())
-                credentials.authenticate(request);
-
-            LOG_TRACE(log, "Sending request to {}", uri_.toString());
-
             auto sess = current_session->getSession();
+
             try
             {
                 if (protocol == "enet")
                 {
                     #if USE_ENET
+                    ENetPack request;
+
+                    for (auto & [header, value] : http_header_entries)
+                        request.set(header, value);
+
+                    std::optional<Range> range;
+                    if constexpr (for_object_info)
+                    {
+                        if (withPartialContent(initial_read_range))
+                            range = initial_read_range;
+                    }
+                    else
+                    {
+                        if (withPartialContent(read_range))
+                            range = Range{getOffset(), read_range.end};
+                    }
+
+                    if (range)
+                    {
+                        String range_header_value;
+                        if (range->end)
+                            range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
+                        else
+                            range_header_value = fmt::format("bytes={}-", *range->begin);
+                        LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                        request.set("Range", range_header_value);
+                    }
+
+                    /*if (!credentials.getUsername().empty())
+                        credentials.authenticate(request);*/
+
+                    LOG_TRACE(log, "Sending request to {}", uri_.toString());
+
                     if (enet_initialize() != 0)
                     {
                         LOG_ERROR(log, "Cannot initialize enet.");
@@ -230,17 +225,8 @@ namespace detail
                         LOG_ERROR(log, "An error occurred while trying to create an ENet client host.");
                     }
 
-                    std::ostream stream(nullptr);
-
-                    request.write(stream);
-
-                    std::string request_string =
-                    {
-                        std::istreambuf_iterator<char>(stream.rdbuf()),
-                        std::istreambuf_iterator<char>()
-                    };
-
-                    const char* request_cstr = request_string.c_str();
+                    auto request_str = request.serialize();
+                    auto request_cstr = request_str.c_str();
 
                     ENetPacket * packet = enet_packet_create (request_cstr,
                                             sizeof(request_cstr) + 1,
@@ -261,11 +247,6 @@ namespace detail
 
                     enet_host_flush(client);
 
-                    auto & stream_out = sess->sendRequest(request);
-
-                    if (out_stream_callback)
-                        out_stream_callback(stream_out);
-
                     uint8_t* data = nullptr;
 
                     while (enet_host_service(client, &event, 3000) > 0)
@@ -275,6 +256,8 @@ namespace detail
                             case ENET_EVENT_TYPE_RECEIVE:
                                 // Receive packet from Service
                                 {
+                                    ENetPack pck;
+                                    pck.deserialize(reinterpret_cast<char *>(event.packet->data));
                                     data = event.packet->data;
                                     enet_packet_destroy(event.packet);
                                 }
@@ -297,6 +280,47 @@ namespace detail
                 }
                 else
                 {
+                    Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                    request.setHost(uri_.getHost()); // use original, not resolved host name in header
+
+                    if (out_stream_callback)
+                        request.setChunkedTransferEncoding(true);
+                    else if (method == Poco::Net::HTTPRequest::HTTP_POST)
+                        request.setContentLength(0);    /// No callback - no body
+
+                    for (auto & [header, value] : http_header_entries)
+                        request.set(header, value);
+
+                    std::optional<Range> range;
+                    if constexpr (for_object_info)
+                    {
+                        if (withPartialContent(initial_read_range))
+                            range = initial_read_range;
+                    }
+                    else
+                    {
+                        if (withPartialContent(read_range))
+                            range = Range{getOffset(), read_range.end};
+                    }
+
+                    if (range)
+                    {
+                        String range_header_value;
+                        if (range->end)
+                            range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
+                        else
+                            range_header_value = fmt::format("bytes={}-", *range->begin);
+                        LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                        request.set("Range", range_header_value);
+                    }
+
+                    if (!credentials.getUsername().empty())
+                        credentials.authenticate(request);
+
+                    LOG_TRACE(log, "Sending request to {}", uri_.toString());
+
+                    //auto sess = current_session->getSession();
+
                     auto & stream_out = sess->sendRequest(request);
 
                     if (out_stream_callback)

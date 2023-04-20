@@ -24,7 +24,7 @@ class IServer;
 class ENetServer : public Poco::Runnable
 {
 public:
-    explicit ENetServer(IServer & iserver_);
+    explicit ENetServer(IServer & iserver_, std::string listen_host, UInt16 port);
 
     void run() override;
 
@@ -43,12 +43,13 @@ public:
     UInt16 portNumber() const { return port_number; }
 
 private:
+    IServer & ch_server;
     Poco::Thread * thread;
     std::atomic<bool> _stopped;
+    std::string host;
     UInt16 port_number;
     ENetAddress address;
     ENetHost * server;
-    IServer & ch_server;
 };
 
 }

@@ -169,6 +169,8 @@
       -->
     <interserver_http_port>9009</interserver_http_port>
 
+    <interserver_enet_port>9008</interserver_enet_port>
+
     <!-- Port for communication between replicas with TLS.
          You have to configure certificate to enable this interface.
          See the openSSL section below.

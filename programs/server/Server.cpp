@@ -1388,25 +1388,6 @@ try
                                 false), server_pool, socket));
                 });
 
-            #if USE_ENET
-            const char * enet_port_name = "keeper_server.tcp_port";
-            createServer(
-                config(), listen_host, port_name, listen_try, /* start_server: */ false,
-                servers_to_start_before_tables,
-                [&](UInt16 port) -> ProtocolServerAdapter
-                {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(config(), socket, listen_host, port);
-                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
-                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        enet_port_name,
-                        "Keeper (tcp): " + address.toString(),
-                        std::make_unique<ENetServer>(*this));
-                });
-            #endif
-
             const char * secure_port_name = "keeper_server.tcp_port_secure";
             createServer(
                 config(), listen_host, secure_port_name, listen_try, /* start_server: */ false,
@@ -2251,6 +2232,27 @@ void Server::createServers(
                     socket,
                     http_params));
         });
+
+
+        port_name = "interserver_enet_port";
+        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+#if USE_ENET
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, interserver_listen_host, port);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                interserver_listen_host,
+                port_name,
+                "ENet communication (interserver): " + address.toString(),
+                std::make_unique<ENetServer>(*this, interserver_listen_host, port));
+#else
+            UNUSED(port);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ENet support is disabled.");
+#endif
+        });
+
 
         port_name = "interserver_https_port";
         createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
