@@ -46,10 +46,9 @@ ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable
-RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-RUN add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
-
-RUN apt-get update \
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
+    && add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}" \
+    && apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
         docker-ce \
     && rm -rf \
@@ -60,7 +59,7 @@ RUN apt-get update \
 
 RUN dockerd --version; docker --version
 
-RUN python3 -m pip install \
+RUN python3 -m pip install --no-cache-dir \
     PyMySQL \
     aerospike==4.0.0 \
     avro==1.10.2 \
