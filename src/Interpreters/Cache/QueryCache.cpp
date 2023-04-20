@@ -245,12 +245,12 @@ void QueryCache::Writer::finalizeWrite()
         for (auto & chunk : *query_result)
         {
             convertToFullIfSparse(chunk);
-            const size_t rows_chunk = chunk.getNumRows();
-            size_t rows_chunk_processed = 0;
 
+            const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)
                 continue;
 
+            size_t rows_chunk_processed = 0;
             while (true)
             {
                 if (rows_remaining_in_squashed == 0)
@@ -263,7 +263,7 @@ void QueryCache::Writer::finalizeWrite()
                 const size_t rows_to_append = std::min(rows_chunk - rows_chunk_processed, rows_remaining_in_squashed);
                 squashed_chunks.back().append(chunk, rows_chunk_processed, rows_to_append);
                 rows_chunk_processed += rows_to_append;
-                rows_remaining_in_squashed += rows_to_append;
+                rows_remaining_in_squashed -= rows_to_append;
 
                 if (rows_chunk_processed == rows_chunk)
                     break;
