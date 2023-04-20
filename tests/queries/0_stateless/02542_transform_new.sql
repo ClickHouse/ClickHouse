@@ -29,3 +29,7 @@ select 'sep4';
 SELECT transform(8000, [1], [toDecimal32(2, 1)]);
 select 'sep5';
 SELECT transform(toDecimal32(8000,0), [1], [toDecimal32(2, 1)]);
+select 'sep6';
+SELECT transform(-9223372036854775807, [-1], [toDecimal32(1024, 3)]) FROM system.numbers LIMIT 7; -- { serverError BAD_ARGUMENTS }
+SELECT [NULL, NULL, NULL, NULL], transform(number, [2147483648], [toDecimal32(1, 2)]) AS x FROM numbers(257) WHERE materialize(10); -- { serverError BAD_ARGUMENTS }
+SELECT transform(-2147483649, [1], [toDecimal32(1, 2)]) GROUP BY [1] WITH TOTALS; -- { serverError BAD_ARGUMENTS }
