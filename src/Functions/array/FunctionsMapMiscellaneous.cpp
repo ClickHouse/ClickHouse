@@ -38,7 +38,7 @@ namespace ErrorCodes
   * Impl - the implementation of function that is applied
   * to internal column of Map arguments (e.g. 'arrayConcat').
   *
-  * Adapter - a struct that determines the way how  to extract the internal array columns
+  * Adapter - a struct that determines the way how to extract the internal array columns
   * from Map arguments and possibly modify other columns.
 */
 template <typename Impl, typename Adapter, typename Name>
