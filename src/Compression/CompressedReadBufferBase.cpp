@@ -1,4 +1,5 @@
 #include "CompressedReadBufferBase.h"
+#include "Utilities.h"
 
 #include <bit>
 #include <cstring>
@@ -40,7 +41,7 @@ using Checksum = CityHash_v1_0_2::uint128;
 /// Validate checksum of data, and if it mismatches, find out possible reason and throw exception.
 static void validateChecksum(char * data, size_t size, const Checksum expected_checksum)
 {
-    auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
+    const auto calculated_checksum = CalculateCityHash128InLittleEndian({data, size});
     if (expected_checksum == calculated_checksum)
         return;
 
@@ -81,7 +82,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
         {
             flip_bit(tmp_data, bit_pos);
 
-            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(tmp_data, size);
+            const auto checksum_of_data_with_flipped_bit = CalculateCityHash128InLittleEndian({tmp_data, size});
             if (expected_checksum == checksum_of_data_with_flipped_bit)
             {
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "

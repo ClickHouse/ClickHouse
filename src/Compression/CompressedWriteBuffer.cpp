@@ -1,4 +1,3 @@
-#include <city.h>
 #include <cstring>
 
 #include <base/types.h>
@@ -7,7 +6,7 @@
 
 #include <Compression/CompressionFactory.h>
 #include "CompressedWriteBuffer.h"
-
+#include "Utilities.h"
 
 namespace DB
 {
@@ -41,7 +40,7 @@ void CompressedWriteBuffer::nextImpl()
         char * out_compressed_ptr = out.position() + CHECKSUM_SIZE;
         UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
 
-        CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
+        const auto checksum = CalculateCityHash128InLittleEndian({out_compressed_ptr, compressed_size});
         memcpy(out_checksum_ptr, reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
         out.position() += CHECKSUM_SIZE + compressed_size;
     }
@@ -50,7 +49,7 @@ void CompressedWriteBuffer::nextImpl()
         compressed_buffer.resize(compressed_reserve_size);
         UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
 
-        CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
+        const auto checksum = CalculateCityHash128InLittleEndian({compressed_buffer.data(), compressed_size});
         out.write(reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
         out.write(compressed_buffer.data(), compressed_size);
     }
