@@ -15,7 +15,7 @@ using namespace DB;
 
 void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
 {
-    auto & storage = machine->getStorage();
+    auto & storage = machine->getStorageForUnitTests();
     std::queue<std::string> keys;
     keys.push("/");
 

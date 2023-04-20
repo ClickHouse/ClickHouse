@@ -1,16 +1,16 @@
 #pragma once
-
-#include <Poco/Util/AbstractConfiguration.h>
-
 #include <Coordination/KeeperFeatureFlags.h>
-#include <IO/WriteBufferFromString.h>
 #include <Disks/DiskSelector.h>
+#include <IO/WriteBufferFromString.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <cstdint>
 #include <memory>
 
 namespace DB
 {
+
+class KeeperDispatcher;
 
 class KeeperContext
 {
@@ -51,6 +51,7 @@ public:
     const KeeperFeatureFlags & getFeatureFlags() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -85,6 +86,7 @@ private:
     std::unordered_map<std::string, std::string> system_nodes_with_data;
 
     KeeperFeatureFlags feature_flags;
+    KeeperDispatcher * dispatcher{nullptr};
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

@@ -494,7 +494,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
         if (code != Coordination::Error::ZOK)
             LOG_ERROR(log, "Couldn't set value of nodes for insert times "
                            "({}/min_unprocessed_insert_time, max_processed_insert_time): {}. "
-                           "This shouldn't happen often.", replica_path, Coordination::errorMessage(code));
+                           "This shouldn't happen often.", replica_path, code);
     }
 }
 
@@ -551,7 +551,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
 
     auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / entry->znode_name);
     if (code != Coordination::Error::ZOK)
-        LOG_ERROR(log, "Couldn't remove {}/queue/{}: {}. This shouldn't happen often.", replica_path, entry->znode_name, Coordination::errorMessage(code));
+        LOG_ERROR(log, "Couldn't remove {}/queue/{}: {}. This shouldn't happen often.", replica_path, entry->znode_name, code);
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 }
@@ -1144,7 +1144,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
 
             auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / znode_name);
             if (code != Coordination::Error::ZOK)
-                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / znode_name).string(), Coordination::errorMessage(code));
+                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / znode_name).string(), code);
 
             updateStateOnQueueEntryRemoval(
                 *it, /* is_successful = */ false,

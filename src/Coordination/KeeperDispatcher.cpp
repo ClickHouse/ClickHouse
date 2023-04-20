@@ -38,6 +38,8 @@ namespace ProfileEvents
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
 
+using namespace std::chrono_literals;
+
 namespace DB
 {
 
@@ -336,6 +338,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     keeper_context->initialize(config);
+    keeper_context->dispatcher = this;
 
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
@@ -392,7 +395,10 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
-    update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
+
+    update_configuration_thread = reconfigEnabled()
+        ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })
+        : ThreadFromGlobalPool([this] { clusterUpdateWithReconfigDisabledThread(); });
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -429,7 +435,7 @@ void KeeperDispatcher::shutdown()
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
 
-            update_configuration_queue.finish();
+            cluster_update_queue.finish();
             if (update_configuration_thread.joinable())
                 update_configuration_thread.join();
         }
@@ -608,7 +614,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,
                 response->zxid,
-                errorMessage(error));
+                error);
     }
 }
 
@@ -653,7 +659,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         {
             if (response->getOpNum() != Coordination::OpNum::SessionID)
                 promise->set_exception(std::make_exception_ptr(Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Incorrect response of type {} instead of SessionID response", Coordination::toString(response->getOpNum()))));
+                            "Incorrect response of type {} instead of SessionID response", response->getOpNum())));
 
             auto session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
             if (session_id_response.internal_id != internal_id)
@@ -685,17 +691,12 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     return future.get();
 }
 
-
-void KeeperDispatcher::updateConfigurationThread()
+void KeeperDispatcher::clusterUpdateWithReconfigDisabledThread()
 {
-    while (true)
+    while (!shutdown_called)
     {
-        if (shutdown_called)
-            return;
-
         try
         {
-            using namespace std::chrono_literals;
             if (!server->checkInit())
             {
                 LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
@@ -710,10 +711,9 @@ void KeeperDispatcher::updateConfigurationThread()
                 continue;
             }
 
-            ConfigUpdateAction action;
-            if (!update_configuration_queue.pop(action))
+            ClusterUpdateAction action;
+            if (!cluster_update_queue.pop(action))
                 break;
-
 
             /// We must wait this update from leader or apply it ourself (if we are leader)
             bool done = false;
@@ -727,15 +727,13 @@ void KeeperDispatcher::updateConfigurationThread()
 
                 if (isLeader())
                 {
-                    server->applyConfigurationUpdate(action);
+                    server->applyConfigUpdateWithReconfigDisabled(action);
                     done = true;
                 }
-                else
-                {
-                    done = server->waitConfigurationUpdate(action);
-                    if (!done)
-                        LOG_INFO(log, "Cannot wait for configuration update, maybe we become leader, or maybe update is invalid, will try to wait one more time");
-                }
+                else if (done = server->waitForConfigUpdateWithReconfigDisabled(action); !done)
+                    LOG_INFO(log,
+                        "Cannot wait for configuration update, maybe we became leader "
+                        "or maybe update is invalid, will try to wait one more time");
             }
         }
         catch (...)
@@ -745,6 +743,46 @@ void KeeperDispatcher::updateConfigurationThread()
     }
 }
 
+void KeeperDispatcher::clusterUpdateThread()
+{
+    while (!shutdown_called)
+    {
+        ClusterUpdateAction action;
+        if (!cluster_update_queue.pop(action))
+            return;
+
+        if (server->applyConfigUpdate(action))
+            LOG_DEBUG(log, "Processing config update {}: accepted", action);
+        else // TODO (myrrc) sleep a random amount? sleep less?
+        {
+            (void)cluster_update_queue.pushFront(action);
+            LOG_DEBUG(log, "Processing config update {}: declined, backoff", action);
+            std::this_thread::sleep_for(50ms);
+        }
+    }
+}
+
+void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions&& actions)
+{
+    if (shutdown_called) return;
+    for (auto && action : actions)
+    {
+        if (!cluster_update_queue.push(std::move(action)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push configuration update");
+        LOG_DEBUG(log, "Processing config update {}: pushed", action);
+    }
+}
+
+bool KeeperDispatcher::clusterUpdateQueueEmpty() const
+{
+    return cluster_update_queue.empty();
+}
+
+bool KeeperDispatcher::reconfigEnabled() const
+{
+    return server->reconfigEnabled();
+}
+
 bool KeeperDispatcher::isServerActive() const
 {
     return checkInit() && hasLeader() && !server->isRecovering();
@@ -752,20 +790,25 @@ bool KeeperDispatcher::isServerActive() const
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
 {
-    auto diff = server->getConfigurationDiff(config);
+    auto diff = server->getRaftConfigurationDiff(config);
+
     if (diff.empty())
-        LOG_TRACE(log, "Configuration update triggered, but nothing changed for RAFT");
+        LOG_TRACE(log, "Configuration update triggered, but nothing changed for Raft");
+    else if (reconfigEnabled())
+        LOG_WARNING(log,
+            "Raft configuration changed, but keeper_server.enable_reconfiguration is on. "
+            "This update will be ignored. Use \"reconfig\" instead");
     else if (diff.size() > 1)
-        LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
+        LOG_WARNING(log,
+            "Configuration changed for more than one server ({}) from cluster, "
+            "it's strictly not recommended", diff.size());
     else
         LOG_DEBUG(log, "Configuration change size ({})", diff.size());
 
-    for (auto & change : diff)
-    {
-        bool push_result = update_configuration_queue.push(change);
-        if (!push_result)
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
-    }
+    if (!reconfigEnabled())
+        for (auto & change : diff)
+            if (!cluster_update_queue.push(change))
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
 
     snapshot_s3.updateS3Configuration(config, macros);
 }

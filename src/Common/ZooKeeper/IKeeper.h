@@ -82,6 +82,7 @@ enum class Error : int32_t
     ZOPERATIONTIMEOUT = -7,     /// Operation timeout
     ZBADARGUMENTS = -8,         /// Invalid arguments
     ZINVALIDSTATE = -9,         /// Invalid zhandle state
+    ZRECONFIGINPROGRESS = -14,  /// Another reconfig is running
 
     /** API errors.
         * This is never thrown by the server, it shouldn't be used other than
@@ -350,6 +351,29 @@ struct SyncResponse : virtual Response
     size_t bytesSize() const override { return path.size(); }
 };
 
+struct ReconfigRequest : virtual Request
+{
+    String joining;
+    String leaving;
+    String new_members;
+    int32_t version;
+
+    String getPath() const final { return keeper_config_path; }
+
+    size_t bytesSize() const final
+    {
+        return joining.size() + leaving.size() + new_members.size() + sizeof(version);
+    }
+};
+
+struct ReconfigResponse : virtual Response
+{
+    String value;
+    Stat stat;
+
+    size_t bytesSize() const override { return value.size() + sizeof(stat); }
+};
+
 struct MultiRequest : virtual Request
 {
     Requests requests;
@@ -395,8 +419,8 @@ using SetCallback = std::function<void(const SetResponse &)>;
 using ListCallback = std::function<void(const ListResponse &)>;
 using CheckCallback = std::function<void(const CheckResponse &)>;
 using SyncCallback = std::function<void(const SyncResponse &)>;
+using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
-
 
 /// For watches.
 enum State
@@ -526,6 +550,13 @@ public:
         const String & path,
         SyncCallback callback) = 0;
 
+    virtual void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) = 0;
+
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
@@ -539,3 +570,11 @@ public:
 };
 
 }
+
+template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
+{
+    constexpr auto format(Coordination::Error code, auto& ctx)
+    {
+        return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
+    }
+};
