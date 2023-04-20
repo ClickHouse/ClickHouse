@@ -917,6 +917,15 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
         std::vector<KeeperStorage::Delta> new_deltas;
 
+        if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists) {
+            auto & container = storage.container;
+            auto node_it = container.find(request.path);
+            if (node_it != container.end())
+            {
+                return new_deltas;
+            }
+        }
+
         auto parent_path = parentPath(request.path);
         auto parent_node = storage.uncommitted_state.getNode(parent_path);
         if (parent_node == nullptr)
@@ -1003,16 +1012,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
 
-        if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists) {
-            Coordination::ZooKeeperCreateRequest & request = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*zk_request);
-
-            auto & container = storage.container;
-            auto node_it = container.find(request.path);
-            if (node_it != container.end())
-            {
-                response.error = Coordination::Error::ZOK;
-                return response_ptr;
-            }
+        if (storage.uncommitted_state.deltas.begin()->zxid != zxid) {
+            return response_ptr;
         }
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)

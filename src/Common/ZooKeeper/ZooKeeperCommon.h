@@ -199,10 +199,13 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     /// used only during restore from zookeeper log
     int32_t parent_cversion = -1;
 
+    /// should it fail if node already exists
+    bool not_exists = false;
+
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
-    OpNum getOpNum() const override { return OpNum::Create; }
+    OpNum getOpNum() const override { return not_exists ? OpNum::CreateIfNotExists : OpNum::Create; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     std::string toStringImpl() const override;
