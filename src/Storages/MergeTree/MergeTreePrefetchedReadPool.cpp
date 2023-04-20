@@ -519,7 +519,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
             bool allow_prefetch = !settings.filesystem_prefetches_limit || current_prefetches_count + 1 <= settings.filesystem_prefetches_limit;
             if (allow_prefetch && settings.filesystem_prefetch_max_memory_usage)
             {
-                size_t num_readers = 1;
+                size_t num_readers = part.task_columns.columns.size();
                 if (reader_settings.apply_deleted_mask && part.data_part->hasLightweightDelete())
                     ++num_readers;
                 if (prewhere_info)
