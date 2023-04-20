@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 namespace
 {
-    bool checkIsExitingTimeZone(const std::string_view timezone)
+    bool checkIsExistingTimeZone(const std::string_view timezone)
     {
         for (auto * it = auto_time_zones; *it; ++it)
             if (timezone == *it)
@@ -475,7 +475,7 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
 
 void SettingFieldTimezone::validateTimezone(std::string_view str)
 {
-    if (!str.empty() && !checkIsExitingTimeZone(str))
+    if (!str.empty() && !checkIsExistingTimeZone(str))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", str);
 }
 
