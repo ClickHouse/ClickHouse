@@ -547,12 +547,24 @@ class SettingsRandomizer:
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
-        "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(0, 1),
-        "filesystem_prefetch_max_memory_usage": lambda: random.choice(["10Mi", "100Mi", "500Mi"]),
-        "filesystem_prefetches_limit": lambda: random.choice([0, 10]), # 0 means unlimited (but anyway limited by prefetch_max_memory_usage)
-        "filesystem_prefetch_min_bytes_for_single_read_task": lambda: random.choice(["1Mi", "8Mi", "16Mi"]),
-        "filesystem_prefetch_step_marks": lambda: random.choice([0, 50]), # 0 means 'auto'
-        "filesystem_prefetch_step_bytes": lambda: random.choice([0, "100Mi"]), # 0 means 'auto'
+        "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
+            0, 1
+        ),
+        "filesystem_prefetch_max_memory_usage": lambda: random.choice(
+            ["10Mi", "100Mi", "500Mi"]
+        ),
+        "filesystem_prefetches_limit": lambda: random.choice(
+            [0, 10]
+        ),  # 0 means unlimited (but anyway limited by prefetch_max_memory_usage)
+        "filesystem_prefetch_min_bytes_for_single_read_task": lambda: random.choice(
+            ["1Mi", "8Mi", "16Mi"]
+        ),
+        "filesystem_prefetch_step_marks": lambda: random.choice(
+            [0, 50]
+        ),  # 0 means 'auto'
+        "filesystem_prefetch_step_bytes": lambda: random.choice(
+            [0, "100Mi"]
+        ),  # 0 means 'auto'
         "compile_expressions": lambda: random.randint(0, 1),
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
