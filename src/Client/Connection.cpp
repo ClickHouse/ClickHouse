@@ -22,7 +22,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Block.h"
+#include <Common/logger_useful.h>
+#include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>

@@ -56,6 +56,7 @@ Homebrew
 Homebrew's
 HorizontalDivide
 Hostname
+INSERTed
 IPv
 IntN
 Integrations
@@ -92,6 +93,7 @@ LineAsString
 LinksDeployment
 LowCardinality
 MEMTABLE
+MVCC
 MSan
 MacOS
 Memcheck
@@ -108,6 +110,7 @@ NULLIF
 NVME
 NYPD
 NuRaft
+Observability
 OLAP
 OLTP
 ObjectId
@@ -131,6 +134,7 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyJSONEachRow
 Protobuf
 ProtobufSingle
 QEMU
@@ -146,6 +150,7 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
+SELECTs
 SERIALIZABLE
 SIMD
 SMALLINT
@@ -172,6 +177,7 @@ Testflows
 Tgz
 Toolset
 Tradeoff
+Transactional
 TwoColumnList
 UBSan
 UInt
@@ -203,6 +209,7 @@ analytics
 anonymized
 ansi
 async
+atomicity
 autogeneration
 autostart
 avro
@@ -295,6 +302,7 @@ flatbuffers
 fmtlib
 formatschema
 formatter
+fsync
 fuzzer
 fuzzers
 gRPC
@@ -427,6 +435,7 @@ prettyspace
 prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
+prettyjsoneachrow
 prlimit
 prometheus
 proto
@@ -513,6 +522,7 @@ tokenization
 toml
 toolchain
 toolset
+transactional
 transactionally
 tskv
 tsv

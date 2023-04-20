@@ -41,6 +41,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/Concepts.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>

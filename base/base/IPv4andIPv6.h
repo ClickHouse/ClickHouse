@@ -51,3 +51,15 @@ namespace DB
     };
 
 }
+
+namespace std
+{
+    template <>
+    struct hash<DB::IPv6>
+    {
+        size_t operator()(const DB::IPv6 & x) const
+        {
+            return std::hash<DB::IPv6::UnderlyingType>()(x.toUnderType());
+        }
+    };
+}
