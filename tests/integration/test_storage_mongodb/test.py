@@ -71,6 +71,81 @@ def test_simple_select(started_cluster):
 
 
 @pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_arrays(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    simple_mongo_table = db["simple_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({
+            "key": i,
+            "arr_int64":    [- (i + 1), - (i + 2), - (i + 3)],
+            "arr_int32":    [- (i + 1), - (i + 2), - (i + 3)],
+            "arr_int16":    [- (i + 1), - (i + 2), - (i + 3)],
+            "arr_int8":     [- (i + 1), - (i + 2), - (i + 3)],
+            "arr_uint64":   [i + 1, i + 2, i + 3],
+            "arr_uint32":   [i + 1, i + 2, i + 3],
+            "arr_uint16":   [i + 1, i + 2, i + 3],
+            "arr_uint8":    [i + 1, i + 2, i + 3],
+            "arr_float32":  [i + 1.125, i + 2.5, i + 3.750],
+            "arr_float64":  [i + 1.125, i + 2.5, i + 3.750],
+            "arr_date":     ['2023-11-01', '2023-06-19'],
+            "arr_datetime": ['2023-03-31 06:03:12', '2023-02-01 12:46:34'],
+            "arr_string":   [str(i + 1), str(i + 2), str(i + 3)],
+            "arr_uuid":     ['f0e77736-91d1-48ce-8f01-15123ca1c7ed', '93376a07-c044-4281-a76e-ad27cf6973c5'],
+            "arr_arr_bool": [[True, False, True]]
+            })
+
+    simple_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        "CREATE TABLE simple_mongo_table("
+            "key UInt64,"
+            "arr_int64 Array(Int64),"
+            "arr_int32 Array(Int32),"
+            "arr_int16 Array(Int16),"
+            "arr_int8 Array(Int8),"
+            "arr_uint64 Array(UInt64),"
+            "arr_uint32 Array(UInt32),"
+            "arr_uint16 Array(UInt16),"
+            "arr_uint8 Array(UInt8),"
+            "arr_float32 Array(Float32),"
+            "arr_float64 Array(Float64),"
+            "arr_date Array(Date),"
+            "arr_datetime Array(DateTime),"
+            "arr_string Array(String),"
+            "arr_uuid Array(UUID),"
+            "arr_arr_bool Array(Array(Bool))"
+            ") ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
+    )
+
+    assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
+
+    for column_name in ["arr_int64", "arr_int32", "arr_int16", "arr_int8"]:
+        assert (
+            node.query(f"SELECT {column_name} from simple_mongo_table where key = 42")
+            == "[-43,-44,-45]\n"
+        )
+
+    for column_name in ["arr_uint64", "arr_uint32", "arr_uint16", "arr_uint8"]:
+        assert (
+            node.query(f"SELECT {column_name} from simple_mongo_table where key = 42")
+            == "[43,44,45]\n"
+        )
+
+    for column_name in ["arr_float32", "arr_float64"]:
+        assert (
+            node.query(f"SELECT {column_name} from simple_mongo_table where key = 42")
+            == "[43,44,45]\n"
+        )
+
+    node.query("DROP TABLE simple_mongo_table")
+    simple_mongo_table.drop()
+
+
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_complex_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
