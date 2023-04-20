@@ -132,6 +132,7 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyJSONEachRow
 Protobuf
 ProtobufSingle
 QEMU
@@ -428,6 +429,7 @@ prettyspace
 prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
+prettyjsoneachrow
 prlimit
 prometheus
 proto
