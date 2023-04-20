@@ -1397,7 +1397,7 @@ Data for the query cache is allocated in DRAM. If memory is scarce, make sure to
 
 ```xml
 <query_cache>
-    <size>1073741824</size>
+    <max_size>1073741824</max_size>
     <max_entries>1024</max_entries>
     <max_entry_size>1048576</max_entry_size>
     <max_entry_rows>30000000</max_entry_rows>

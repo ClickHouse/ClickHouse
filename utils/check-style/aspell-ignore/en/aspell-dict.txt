@@ -56,6 +56,7 @@ Homebrew
 Homebrew's
 HorizontalDivide
 Hostname
+INSERTed
 IPv
 IntN
 Integrations
@@ -92,6 +93,7 @@ LineAsString
 LinksDeployment
 LowCardinality
 MEMTABLE
+MVCC
 MSan
 MacOS
 Memcheck
@@ -148,6 +150,7 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
+SELECTs
 SERIALIZABLE
 SIMD
 SMALLINT
@@ -174,6 +177,7 @@ Testflows
 Tgz
 Toolset
 Tradeoff
+Transactional
 TwoColumnList
 UBSan
 UInt
@@ -205,6 +209,7 @@ analytics
 anonymized
 ansi
 async
+atomicity
 autogeneration
 autostart
 avro
@@ -297,6 +302,7 @@ flatbuffers
 fmtlib
 formatschema
 formatter
+fsync
 fuzzer
 fuzzers
 gRPC
@@ -516,6 +522,7 @@ tokenization
 toml
 toolchain
 toolset
+transactional
 transactionally
 tskv
 tsv
