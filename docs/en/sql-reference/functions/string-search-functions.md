@@ -16,8 +16,7 @@ variants. Likewise, if a UTF-8 function variant is used and the input strings ar
 results are undefined. Note that no automatic Unicode normalization is performed, you can use the
 [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
 
-
-[General strings functions](../../sql-reference/functions/string-functions.md) and [functions for replacing in strings](../../sql-reference/functions/string-replace-functions.md) are described separately.
+[General strings functions](string-functions.md) and [functions for replacing in strings](string-replace-functions.md) are described separately.
 
 ## position
 
