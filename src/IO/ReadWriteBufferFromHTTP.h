@@ -191,12 +191,7 @@ namespace detail
                         request.set(header, value);
 
                     std::optional<Range> range;
-                    if constexpr (for_object_info)
-                    {
-                        if (withPartialContent(initial_read_range))
-                            range = initial_read_range;
-                    }
-                    else
+                    if constexpr (!for_object_info)
                     {
                         if (withPartialContent(read_range))
                             range = Range{getOffset(), read_range.end};
@@ -301,12 +296,7 @@ namespace detail
                         request.set(header, value);
 
                     std::optional<Range> range;
-                    if constexpr (for_object_info)
-                    {
-                        if (withPartialContent(initial_read_range))
-                            range = initial_read_range;
-                    }
-                    else
+                    if constexpr (!for_object_info)
                     {
                         if (withPartialContent(read_range))
                             range = Range{getOffset(), read_range.end};

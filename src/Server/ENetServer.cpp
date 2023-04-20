@@ -64,7 +64,7 @@ void ENetServer::run()
     ENetEvent event;
     ENetPacket* resp;
 
-    while (true) 
+    while (true)
     {
         while (enet_host_service(server, &event, 1000) > 0)
         {
