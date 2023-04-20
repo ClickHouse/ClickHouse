@@ -11,7 +11,6 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Cluster.h>
@@ -26,6 +25,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event SuspendSendingQueryToShard;
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
 }
@@ -243,7 +243,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (needToSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
-        std::lock_guard guard(was_cancelled_mutex);
         was_cancelled = true;
         finished = true;
         sent_query = true;
@@ -287,7 +286,11 @@ int RemoteQueryExecutor::sendQueryAsync()
 
     read_context->resume();
 
-    return read_context->isQuerySent() ? -1 : read_context->getFileDescriptor();
+    if (read_context->isQuerySent())
+        return -1;
+
+    ProfileEvents::increment(ProfileEvents::SuspendSendingQueryToShard); /// Mostly for testing purposes.
+    return read_context->getFileDescriptor();
 #else
     sendQuery();
     return -1;
