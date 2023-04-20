@@ -1,0 +1,11 @@
+<clickhouse>
+    <string_similarity_models>
+        <!--
+        <string_similarity_model>
+            <model_name>offensive</model_name>
+            <path_to_positive>/var/offensive.txt</path_to_positive>
+            <path_to_negative>/var/non-offensive.txt</path_to_negative>
+        </string_similarity_model>
+        -->
+    </string_similarity_models>
+</clickhouse>
