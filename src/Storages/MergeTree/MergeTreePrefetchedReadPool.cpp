@@ -365,7 +365,6 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
         min_prefetch_step_marks = static_cast<size_t>(std::round(static_cast<double>(sum_marks) / settings.filesystem_prefetches_limit));
     }
 
-    size_t total_prefetches_approx = 0;
     for (const auto & part : parts_infos)
     {
         if (settings.filesystem_prefetch_step_marks)
@@ -425,7 +424,6 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
         sum_marks, threads, min_marks_per_thread, settings.filesystem_prefetch_step_bytes, settings.filesystem_prefetches_limit, total_size_approx);
 
     size_t current_prefetches_count = 0;
-    prefetch_queue.reserve(total_prefetches_approx);
 
     ThreadsTasks result_threads_tasks;
     size_t memory_usage_approx = 0;

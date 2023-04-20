@@ -1724,6 +1724,8 @@ bool MutateTask::prepare()
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
+    /// Skip using large sets in KeyCondition
+    context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
 
     for (const auto & command : *ctx->commands)
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))

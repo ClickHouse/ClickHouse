@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/date-time-functions
-sidebar_position: 39
+sidebar_position: 45
 sidebar_label: Dates and Times
 ---
 
@@ -39,7 +39,7 @@ Alias: `timezone`.
 
 **Returned value**
 
--   Timezone.
+- Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -57,12 +57,12 @@ Alias: `toTimezone`.
 
 **Arguments**
 
--   `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md). This argument is a constant, because `toTimezone` changes the timezone of a column (timezone is an attribute of `DateTime*` types).
+- `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md). This argument is a constant, because `toTimezone` changes the timezone of a column (timezone is an attribute of `DateTime*` types).
 
 **Returned value**
 
--   Date and time.
+- Date and time.
 
 Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -115,11 +115,11 @@ Alias: `timezoneOf`.
 
 **Arguments**
 
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
--   Timezone name.
+- Timezone name.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -152,11 +152,11 @@ Alias: `timezoneOffset`.
 
 **Arguments**
 
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
--   Offset from UTC in seconds.
+- Offset from UTC in seconds.
 
 Type: [Int32](../../sql-reference/data-types/int-uint.md).
 
@@ -262,7 +262,7 @@ toUnixTimestamp(str, [timezone])
 
 **Returned value**
 
--   Returns the unix timestamp.
+- Returns the unix timestamp.
 
 Type: `UInt32`.
 
@@ -367,12 +367,12 @@ toStartOfSecond(value, [timezone])
 
 **Arguments**
 
--   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+- `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Input value without sub-seconds.
+- Input value without sub-seconds.
 
 Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -410,7 +410,7 @@ Result:
 
 **See also**
 
--   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
+- [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
 
 ## toStartOfFiveMinutes
 
@@ -499,9 +499,9 @@ The following table describes how the mode argument works.
 
 For mode values with a meaning of “with 4 or more days this year,” weeks are numbered according to ISO 8601:1988:
 
--   If the week containing January 1 has 4 or more days in the new year, it is week 1.
+- If the week containing January 1 has 4 or more days in the new year, it is week 1.
 
--   Otherwise, it is the last week of the previous year, and the next week is week 1.
+- Otherwise, it is the last week of the previous year, and the next week is week 1.
 
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
 
@@ -513,9 +513,9 @@ toWeek(t[, mode[, time_zone]])
 
 **Arguments**
 
--   `t` – Date or DateTime.
--   `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
--   `Timezone` – Optional parameter, it behaves like any other conversion function.
+- `t` – Date or DateTime.
+- `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
+- `Timezone` – Optional parameter, it behaves like any other conversion function.
 
 **Example**
 
@@ -570,7 +570,7 @@ age('unit', startdate, enddate, [timezone])
 
 **Arguments**
 
--   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
+- `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second` (possible abbreviations: `ss`, `s`)
@@ -582,11 +582,11 @@ age('unit', startdate, enddate, [timezone])
     - `quarter` (possible abbreviations: `qq`, `q`)
     - `year` (possible abbreviations: `yyyy`, `yy`)
 
--   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
--   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -649,7 +649,7 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 
 **Arguments**
 
--   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
+- `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second` (possible abbreviations: `ss`, `s`)
@@ -661,11 +661,11 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
     - `quarter` (possible abbreviations: `qq`, `q`)
     - `year` (possible abbreviations: `yyyy`, `yy`)
 
--   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
--   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -722,7 +722,7 @@ Alias: `dateTrunc`.
 
 **Arguments**
 
--   `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
+- `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
     Possible values:
 
     - `second`
@@ -734,12 +734,12 @@ Alias: `dateTrunc`.
     - `quarter`
     - `year`
 
--   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
+- `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Value, truncated to the specified part of date.
+- Value, truncated to the specified part of date.
 
 Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -775,7 +775,7 @@ Result:
 
 **See Also**
 
--   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
+- [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
 ## date\_add
 
@@ -791,7 +791,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
 
 **Arguments**
 
--   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+- `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second`
@@ -803,8 +803,8 @@ Aliases: `dateAdd`, `DATE_ADD`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
--   `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
+- `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -842,7 +842,7 @@ Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
--   `unit` — The type of interval to subtract. Note: The unit should be unquoted.
+- `unit` — The type of interval to subtract. Note: The unit should be unquoted.
 
     Possible values:
 
@@ -855,8 +855,8 @@ Aliases: `dateSub`, `DATE_SUB`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
--   `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
+- `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -894,9 +894,9 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 
 **Arguments**
 
--   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
--   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
--   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
+- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
+- `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second`
@@ -944,7 +944,7 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
 **Arguments**
 
--   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
+- `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second`
@@ -956,8 +956,8 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
     - `quarter`
     - `year`
 
--   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
--   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
+- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -993,11 +993,11 @@ now([timezone])
 
 **Arguments**
 
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Current date and time.
+- Current date and time.
 
 Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -1043,12 +1043,12 @@ now64([scale], [timezone])
 
 **Arguments**
 
--   `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Current date and time with sub-second precision.
+- Current date and time with sub-second precision.
 
 Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1080,11 +1080,11 @@ nowInBlock([timezone])
 
 **Arguments**
 
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Current date and time at the moment of processing of each block of data.
+- Current date and time at the moment of processing of each block of data.
 
 Type: [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -1331,7 +1331,7 @@ Result:
 
 **See Also**
 
--   [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
+- [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
 
 
 ## formatDateTimeInJodaSyntax {#date_time_functions-formatDateTimeInJodaSyntax}
@@ -1400,13 +1400,13 @@ dateName(date_part, date)
 
 **Arguments**
 
--   `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
--   `date` — Date. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
+- `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
+- `date` — Date. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   The specified part of date.
+- The specified part of date.
 
 Type: [String](../../sql-reference/data-types/string.md#string)
 
@@ -1442,11 +1442,11 @@ monthName(date)
 
 **Arguments**
 
--   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
--   The name of the month.
+- The name of the month.
 
 Type: [String](../../sql-reference/data-types/string.md#string)
 
@@ -1507,7 +1507,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 
 **See Also**
 
--   [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
+- [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
 
 ## fromUnixTimestampInJodaSyntax
 
@@ -1539,11 +1539,11 @@ toModifiedJulianDay(date)
 
 **Arguments**
 
--   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 **Returned value**
 
--   Modified Julian Day number.
+- Modified Julian Day number.
 
 Type: [Int32](../../sql-reference/data-types/int-uint.md).
 
@@ -1575,11 +1575,11 @@ toModifiedJulianDayOrNull(date)
 
 **Arguments**
 
--   `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- `date` — Date in text form. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 **Returned value**
 
--   Modified Julian Day number.
+- Modified Julian Day number.
 
 Type: [Nullable(Int32)](../../sql-reference/data-types/int-uint.md).
 
@@ -1611,11 +1611,11 @@ fromModifiedJulianDay(day)
 
 **Arguments**
 
--   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+- `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Date in text form.
+- Date in text form.
 
 Type: [String](../../sql-reference/data-types/string.md)
 
@@ -1647,11 +1647,11 @@ fromModifiedJulianDayOrNull(day)
 
 **Arguments**
 
--   `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
+- `day` — Modified Julian Day number. [Any integral types](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Date in text form.
+- Date in text form.
 
 Type: [Nullable(String)](../../sql-reference/data-types/string.md)
 
