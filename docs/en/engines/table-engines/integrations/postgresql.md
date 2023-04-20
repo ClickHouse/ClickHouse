@@ -23,19 +23,19 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 
 The table structure can differ from the original PostgreSQL table structure:
 
--   Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
--   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
+- Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `table` — Remote table name.
--   `user` — PostgreSQL user.
--   `password` — User password.
--   `schema` — Non-default table schema. Optional.
--   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — Non-default table schema. Optional.
+- `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
 or via config (since version 21.11):
 
@@ -204,8 +204,8 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **See Also**
 
--   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
--   [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+- [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
+- [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
 
 ## Related content
 
