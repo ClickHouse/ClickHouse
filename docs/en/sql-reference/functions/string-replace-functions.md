@@ -6,9 +6,7 @@ sidebar_label: Replacing in Strings
 
 # Functions for Searching and Replacing in Strings
 
-:::note
 Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
-:::
 
 ## replaceOne(haystack, pattern, replacement)
 
