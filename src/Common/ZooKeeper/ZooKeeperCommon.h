@@ -408,13 +408,19 @@ struct ZooKeeperCheckRequest : CheckRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperCheckResponse final : CheckResponse, ZooKeeperResponse
+struct ZooKeeperCheckResponse : CheckResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
     void writeImpl(WriteBuffer &) const override {}
     OpNum getOpNum() const override { return OpNum::Check; }
 
     size_t bytesSize() const override { return CheckResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperCheckNotExistsResponse : public ZooKeeperCheckResponse
+{
+    OpNum getOpNum() const override { return OpNum::CheckNotExists; }
+    using ZooKeeperCheckResponse::ZooKeeperCheckResponse;
 };
 
 /// This response may be received only as an element of responses in MultiResponse.

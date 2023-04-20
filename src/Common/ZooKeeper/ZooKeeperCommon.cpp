@@ -666,7 +666,15 @@ ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return setTime(
 ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSetResponse>()); }
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperListResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSimpleListResponse>()); }
-ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCheckResponse>()); }
+
+ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const
+{
+    if (not_exists)
+        return setTime(std::make_shared<ZooKeeperCheckNotExistsResponse>());
+
+    return setTime(std::make_shared<ZooKeeperCheckResponse>());
+}
+
 ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const
 {
     std::shared_ptr<ZooKeeperMultiResponse> response;
