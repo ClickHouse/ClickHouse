@@ -59,7 +59,7 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr cont
         res_columns[i++]->insert(merge.source_part_paths);
         res_columns[i++]->insert(merge.result_part_path);
         res_columns[i++]->insert(merge.partition_id);
-        // res_columns[i++]->insert(context->getMergeList().get().;
+        res_columns[i++]->insert(merge.partition);
         res_columns[i++]->insert(merge.is_mutation);
         res_columns[i++]->insert(merge.total_size_bytes_compressed);
         res_columns[i++]->insert(merge.total_size_bytes_uncompressed);

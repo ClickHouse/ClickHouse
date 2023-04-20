@@ -35,6 +35,7 @@ struct MergeInfo
     Array source_part_names;
     Array source_part_paths;
     std::string partition_id;
+    std::string partition;
     bool is_mutation;
     Float64 elapsed;
     Float64 progress;
