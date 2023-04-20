@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/string-search-functions
-sidebar_position: 41
+sidebar_position: 160
 sidebar_label: Searching in Strings
 ---
 
@@ -38,14 +38,14 @@ Syntax of `position(needle IN haystack)` provides SQL-compatibility, the functio
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+- `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
 
 **Returned values**
 
--   Starting position in bytes (counting from 1), if substring was found.
--   0, if the substring was not found.
+- Starting position in bytes (counting from 1), if substring was found.
+- 0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -165,14 +165,14 @@ positionCaseInsensitive(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
+- `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   Starting position in bytes (counting from 1), if substring was found.
--   0, if the substring was not found.
+- Starting position in bytes (counting from 1), if substring was found.
+- 0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -208,14 +208,14 @@ positionUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+- `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
--   Starting position in Unicode points (counting from 1), if substring was found.
--   0, if the substring was not found.
+- Starting position in Unicode points (counting from 1), if substring was found.
+- 0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -281,14 +281,14 @@ positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+- `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
--   Starting position in Unicode points (counting from 1), if substring was found.
--   0, if the substring was not found.
+- Starting position in Unicode points (counting from 1), if substring was found.
+- 0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -314,9 +314,9 @@ The same as [position](../../sql-reference/functions/string-search-functions.md#
 
 The search is performed on sequences of bytes without respect to string encoding and collation.
 
--   For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
--   For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
--   For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
+- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
 
 **Syntax**
 
@@ -326,12 +326,12 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
--   Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
+- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
 
 **Example**
 
@@ -457,12 +457,12 @@ extractAllGroupsHorizontal(haystack, pattern)
 
 **Arguments**
 
--   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
--   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
+- `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Type: [Array](../../sql-reference/data-types/array.md).
+- Type: [Array](../../sql-reference/data-types/array.md).
 
 If `haystack` does not match the `pattern` regex, an array of empty arrays is returned.
 
@@ -484,7 +484,7 @@ Result:
 
 **See Also**
 
--   [extractAllGroupsVertical](#extractallgroups-vertical)
+- [extractAllGroupsVertical](#extractallgroups-vertical)
 
 ## extractAllGroupsVertical
 
@@ -498,12 +498,12 @@ extractAllGroupsVertical(haystack, pattern)
 
 **Arguments**
 
--   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
--   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
+- `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   Type: [Array](../../sql-reference/data-types/array.md).
+- Type: [Array](../../sql-reference/data-types/array.md).
 
 If `haystack` does not match the `pattern` regex, an empty array is returned.
 
@@ -525,18 +525,18 @@ Result:
 
 **See Also**
 
--   [extractAllGroupsHorizontal](#extractallgroups-horizontal)
+- [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), haystack LIKE pattern operator
 
 Checks whether a string matches a LIKE expression.
 A LIKE expression contains a mix of normal characters and the following metasymbols:
 
--   `%` indicates an arbitrary number of arbitrary characters (including zero characters).
+- `%` indicates an arbitrary number of arbitrary characters (including zero characters).
 
--   `_` indicates a single arbitrary character.
+- `_` indicates a single arbitrary character.
 
--   `\` is for escaping literals `%`, `_` and `\`.
+- `\` is for escaping literals `%`, `_` and `\`.
 
 Matching is based on UTF-8, e.g. `_` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes.
 If the haystack or the pattern are not valid UTF-8, then the behavior is undefined.
@@ -567,8 +567,8 @@ ilike(haystack, pattern)
 
 **Arguments**
 
--   `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — If `pattern` does not contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
+- `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — If `pattern` does not contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
 
 Some `pattern` examples:
 
@@ -581,8 +581,8 @@ Some `pattern` examples:
 
 **Returned values**
 
--   True, if the string matches `pattern`.
--   False, if the string does not match `pattern`.
+- True, if the string matches `pattern`.
+- False, if the string does not match `pattern`.
 
 **Example**
 
@@ -645,13 +645,13 @@ countSubstrings(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   Number of occurrences.
+- Number of occurrences.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -711,13 +711,13 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   Number of occurrences.
+- Number of occurrences.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -777,13 +777,13 @@ SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
--   Number of occurrences.
+- Number of occurrences.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -829,12 +829,12 @@ countMatches(haystack, pattern)
 
 **Arguments**
 
--   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   The number of matches.
+- The number of matches.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -882,9 +882,9 @@ Alias: `REGEXP_EXTRACT(haystack, pattern[, index])`.
 
 **Arguments**
 
--   `haystack` — String, in which regexp pattern will to be matched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — String, regexp expression, must be constant. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `index` – An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../../sql-reference/data-types/int-uint.md). Optional.
+- `haystack` — String, in which regexp pattern will to be matched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — String, regexp expression, must be constant. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `index` – An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../../sql-reference/data-types/int-uint.md). Optional.
 
 **Returned values**
 

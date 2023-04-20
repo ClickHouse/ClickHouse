@@ -128,7 +128,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const QueryTreeNodePtr & set
 
 void PlannerContext::registerSet(const SetKey & key, PlannerSet planner_set)
 {
-    if (!planner_set.getSet())
+    if (!planner_set.getSet().isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Set must be initialized");
 
     const auto & subquery_node = planner_set.getSubqueryNode();
@@ -162,7 +162,7 @@ const PlannerSet & PlannerContext::getSetOrThrow(const SetKey & key) const
     return it->second;
 }
 
-const PlannerSet * PlannerContext::getSetOrNull(const SetKey & key) const
+PlannerSet * PlannerContext::getSetOrNull(const SetKey & key)
 {
     auto it = set_key_to_set.find(key);
     if (it == set_key_to_set.end())
