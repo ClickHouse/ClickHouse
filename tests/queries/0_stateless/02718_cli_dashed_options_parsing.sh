@@ -19,16 +19,13 @@ echo "Test 1: Check that you can specify options with a dashes, not an underscor
 echo "Test 1.1: Check option from config - server_logs_file"
 
 $CLICKHOUSE_LOCAL --log-level=debug --server-logs-file=$file_name_1 -q "SELECT 1;" 2> /dev/null
-ls | grep -q $file_name_1
-echo $?
+[[ -e $file_name_1 ]] && echo OK
 $CLICKHOUSE_LOCAL --log-level=debug --server-logs-file $file_name_2 -q "SELECT 1;" 2> /dev/null
-ls | grep -q $file_name_2
-echo $?
+[[ -e $file_name_2 ]] && echo OK
 $CLICKHOUSE_LOCAL --log-level=debug --server_logs_file $file_name_3 -q "SELECT 1;" 2> /dev/null
-ls | grep -q $file_name_3
-echo $?
+[[ -e $file_name_3 ]] && echo OK
 
-echo "Test 1.1: Check some option from Settings.h - allow_deprecated_syntax_for_merge_tree"
+echo "Test 1.2: Check some option from Settings.h - allow_deprecated_syntax_for_merge_tree"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test";
 $CLICKHOUSE_CLIENT --allow-deprecated-syntax-for-merge-tree=1 --query="CREATE TABLE test (d Date, s String) ENGINE = MergeTree(d, s, 8192)";
