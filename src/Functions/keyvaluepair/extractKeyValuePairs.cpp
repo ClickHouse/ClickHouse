@@ -188,14 +188,14 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             **Escape sequences without escape sequences support**
             ``` sql
-            arthur :) select extractKeyValuePairs('age:\\x0A\\n\\0') as kv
+            arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairs('age:\\x0A\\n\\0') AS kv
+            SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
             Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
             ┌─kv────────────────────┐
-            │ {'age':'\\x0A\\n\\0'} │
+            │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
             ```)")
     );
@@ -206,18 +206,18 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
             Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).\
+            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
 
             **Escape sequences with escape sequence support turned on**
             ``` sql
-            arthur :) select extractKeyValuePairsWithEscaping('age:\\x0A\\n\\0') as kv
+            arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairsWithEscaping('age:\\x0A\\n\\0') AS kv
+            SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 
             Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
             ┌─kv───────────────┐
-            │ {'age':'\n\n\0'} │
+            │ {'age':'a\n\n\0'} │
             └──────────────────┘
             ```)")
     );
