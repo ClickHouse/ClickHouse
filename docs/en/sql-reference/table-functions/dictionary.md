@@ -15,7 +15,7 @@ dictionary('dict')
 
 **Arguments**
 
--   `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
+- `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -56,4 +56,4 @@ Result:
 
 **See Also**
 
--   [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)
+- [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)

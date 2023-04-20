@@ -149,5 +149,5 @@ Result:
 
 **See Also**
 
--   [UNION](union.md#union-clause)
--   [INTERSECT](intersect.md#intersect-clause)
+- [UNION](union.md#union-clause)
+- [INTERSECT](intersect.md#intersect-clause)

@@ -146,12 +146,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch(int64_t priority)
 
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
 {
-    /// Do not reinitialize internal state in case the new end of range is already included.
-    /// Actually it is likely that we will anyway reinitialize it as seek method is called after
-    /// changing end position, but seek avoiding feature might help to avoid reinitialization,
-    /// so this check is useful to save the prefetch for the time when we try to avoid seek by
-    /// reading and ignoring some data.
-    if (!read_until_position || position > *read_until_position)
+    if (!read_until_position || position != *read_until_position)
     {
         read_until_position = position;
 
