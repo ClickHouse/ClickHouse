@@ -1,4 +1,3 @@
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 #include <IO/ReadHelpers.h>

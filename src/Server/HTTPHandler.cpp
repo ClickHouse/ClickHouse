@@ -11,10 +11,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -46,9 +46,6 @@
 
 #include <chrono>
 #include <sstream>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -442,10 +439,10 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunreachable-code"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
@@ -623,12 +620,11 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(server.context()->getGlobalTemporaryVolume()->getDisk()->getPath());
-            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
+            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
 
-            auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
+            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return WriteBufferFromTemporaryFile::create(tmp_path_template);
+                return tmp_data->createRawStream();
             };
 
             cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
