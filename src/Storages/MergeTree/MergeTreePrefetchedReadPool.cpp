@@ -525,20 +525,24 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
             if (allowed_memory_usage
                 && (allowed_prefetches_num.has_value() == false || allowed_prefetches_num.value() > 0))
             {
+                /// adjustBufferSize(), which is done in MergeTreeReaderStream and MergeTreeReaderCompact,
+                /// lowers buffer size if file size (or required read range) is less. So we know that the
+                /// settings.prefetch_buffer_size will be lowered there, therefore we account it here as well.
+                /// But here we make a more approximate lowering, while in adjustBufferSize it will be presize.
                 size_t estimated_memory_usage = 0;
                 size_t estimated_prefetches_num = 0;
 
                 for (const auto & col : part.task_columns.columns)
                 {
                     const auto col_size = part.data_part->getColumnSize(col.name).data_uncompressed;
-                    estimated_memory_usage += std::min<size_t>(col_size, settings.max_read_buffer_size);
+                    estimated_memory_usage += std::min<size_t>(col_size, settings.prefetch_buffer_size);
                     ++estimated_prefetches_num;
                 }
                 if (reader_settings.apply_deleted_mask && part.data_part->hasLightweightDelete())
                 {
                     const auto col_size = part.data_part->getColumnSize(
                         LightweightDeleteDescription::FILTER_COLUMN.name).data_uncompressed;
-                    estimated_memory_usage += std::min<size_t>(col_size, settings.max_read_buffer_size);
+                    estimated_memory_usage += std::min<size_t>(col_size, settings.prefetch_buffer_size);
                     ++estimated_prefetches_num;
                 }
                 if (prewhere_info)
@@ -548,7 +552,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
                         for (const auto & col : columns)
                         {
                             const size_t col_size = part.data_part->getColumnSize(col.name).data_uncompressed;
-                            estimated_memory_usage += std::min<size_t>(col_size, settings.max_read_buffer_size);
+                            estimated_memory_usage += std::min<size_t>(col_size, settings.prefetch_buffer_size);
                             ++estimated_prefetches_num;
                         }
                     }
