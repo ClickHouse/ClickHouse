@@ -183,6 +183,37 @@ namespace
         });
     }
 
+    bool parseCurrentGrants(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
+    {
+        if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
+        {
+            if (!parseElementsWithoutOptions(pos, expected, elements))
+                return false;
+
+            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                return false;
+        }
+        else
+        {
+            AccessRightsElement default_element(AccessType::ALL);
+
+            if (!ParserKeyword{"ON"}.ignore(pos, expected))
+                return false;
+
+            String database_name, table_name;
+            bool any_database = false, any_table = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                return false;
+
+            default_element.any_database = any_database;
+            default_element.database = database_name;
+            default_element.any_table = any_table;
+            default_element.table = table_name;
+            elements.push_back(std::move(default_element));
+        }
+
+        return true;
+    }
 
     void throwIfNotGrantable(AccessRightsElements & elements)
     {
@@ -288,38 +319,8 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
     {
         current_grants = true;
-        if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
-        {
-            if (!parseElementsWithoutOptions(pos, expected, elements))
-                return false;
-
-            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-                return false;
-
-            /// If no elements were specified it will grant all available for user grants.
-            /// Using `.size() == 0` because `.empty()` is overridden and returns true for NONE elements.
-            /// Specifically, this should handle `GRANT CURRENT GRANTS() ...`
-            if (elements.size() == 0) // NOLINT
-                elements.emplace_back(AccessType::ALL);
-        }
-        else
-        {
-            AccessRightsElement default_element(AccessType::ALL);
-
-            if (!ParserKeyword{"ON"}.ignore(pos, expected))
-                return false;
-
-            String database_name, table_name;
-            bool any_database = false, any_table = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
-                return false;
-
-            default_element.any_database = any_database;
-            default_element.database = database_name;
-            default_element.any_table = any_table;
-            default_element.table = table_name;
-            elements.push_back(std::move(default_element));
-        }
+        if (!parseCurrentGrants(pos, expected, elements))
+            return false;
     }
     else
     {

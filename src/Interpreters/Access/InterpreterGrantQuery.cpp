@@ -363,15 +363,12 @@ namespace
     {
         AccessRightsElements current_user_grantable_elements;
         auto available_grant_elements = current_user_access->getAccessRights()->getElements();
-        std::copy_if(
-            available_grant_elements.begin(),
-            available_grant_elements.end(),
-            std::back_inserter(current_user_grantable_elements),
-            [](AccessRightsElement x) { return x.grant_option || x.is_partial_revoke; });
-
         AccessRights current_user_rights;
-        for (auto & element : current_user_grantable_elements)
+        for (auto & element : available_grant_elements)
         {
+            if (!element.grant_option && !element.is_partial_revoke)
+                continue;
+
             if (element.is_partial_revoke)
                 current_user_rights.revoke(element);
             else
