@@ -601,29 +601,10 @@ namespace
 
         void performCopy()
         {
-            if (size <= upload_settings.max_single_operation_copy_size)
-            {
+            if (!supports_multipart_copy || size <= upload_settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
-            }
-            else if (!supports_multipart_copy)
-            {
-                LOG_INFO(&Poco::Logger::get("copyS3File"), "Multipart upload using copy is not supported, will use regular upload");
-                copyDataToS3File(
-                    getSourceObjectReadBuffer(),
-                    offset,
-                    size,
-                    client_ptr,
-                    dest_bucket,
-                    dest_key,
-                    request_settings,
-                    object_metadata,
-                    schedule,
-                    for_disk_s3);
-            }
             else
-            {
                 performMultipartUploadCopy();
-            }
 
             if (request_settings.check_objects_after_upload)
                 checkObjectAfterUpload();
@@ -696,19 +677,12 @@ namespace
 
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest" || outcome.GetError().GetExceptionName() == "InvalidArgument")
                 {
-                    // Can't come here with MinIO, MinIO allows single part upload for large objects.
-                    LOG_INFO(
-                        log,
-                        "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart "
-                        "upload copy",
-                        outcome.GetError().GetExceptionName(),
-                        dest_bucket,
-                        dest_key,
-                        size);
-
                     if (!supports_multipart_copy)
                     {
-                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload");
+                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload for Bucket: {}, Key: {}, Object size: {}",
+                                dest_bucket,
+                                dest_key,
+                                size);
                         copyDataToS3File(
                             getSourceObjectReadBuffer(),
                             offset,
@@ -724,6 +698,16 @@ namespace
                     }
                     else
                     {
+                        // Can't come here with MinIO, MinIO allows single part upload for large objects.
+                        LOG_INFO(
+                            log,
+                            "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart "
+                            "upload copy",
+                            outcome.GetError().GetExceptionName(),
+                            dest_bucket,
+                            dest_key,
+                            size);
+
                         performMultipartUploadCopy();
                         break;
                     }

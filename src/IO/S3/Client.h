@@ -187,6 +187,9 @@ public:
     Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
 
+    using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
+    ComposeObjectOutcome ComposeObject(const ComposeObjectRequest & request) const;
+
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
 
