@@ -941,6 +941,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
         else if constexpr (num == OpNum::CheckNotExists)
             res->not_exists = true;
+        else if constexpr (num == OpNum::CreateIfNotExists)
+            res->not_exists = true;
 
         return res;
     });
