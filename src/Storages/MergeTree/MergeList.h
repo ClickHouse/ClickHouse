@@ -67,6 +67,8 @@ struct MergeListElement : boost::noncopyable
 {
     const StorageID table_id;
     std::string partition_id;
+    // TODO: here the merge list element and merge list. how to get()->partition.
+    std::string partition;
 
     const std::string result_part_name;
     const std::string result_part_path;
