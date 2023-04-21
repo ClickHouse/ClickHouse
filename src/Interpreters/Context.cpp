@@ -43,6 +43,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -326,8 +327,8 @@ struct ContextSharedPart : boost::noncopyable
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
-    mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
     std::unique_ptr<ClusterDiscovery> cluster_discovery;
+    mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
 
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
@@ -919,20 +920,15 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
 {
-    auto lock = getLock();
-
-    if (shared->root_temp_data_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
-
     auto disk_ptr = getDisk(cache_disk_name);
     if (!disk_ptr)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
 
-    const auto * disk_object_storage_ptr = dynamic_cast<const DiskObjectStorage *>(disk_ptr.get());
-    if (!disk_object_storage_ptr)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' does not use cache", cache_disk_name);
+    auto lock = getLock();
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
-    auto file_cache = disk_object_storage_ptr->getCache();
+    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
     if (!file_cache)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
 
@@ -1526,9 +1522,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
                     asterisk = true;
                 }
-                else if (auto * function = (*expression)->as<ASTFunction>())
+                else if (auto * func = (*expression)->as<ASTFunction>())
                 {
-                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(function))
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(func))
                     {
                         use_columns_from_insert_query = false;
                         break;
@@ -2075,9 +2071,9 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
     const auto & config = getConfigRef();
-    const auto & settings = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings.restore_threads);
+    const auto & settings_ = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings_.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings_.restore_threads);
 
     if (!shared->backups_worker)
         shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
@@ -2970,11 +2966,19 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters()->getCluster(cluster_name);
-    if (res)
-        return res;
-    if (!cluster_name.empty())
+    std::shared_ptr<Cluster> res = nullptr;
+
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        res = getClustersImpl(lock)->getCluster(cluster_name);
+
+        if (res == nullptr && shared->cluster_discovery)
+            res = shared->cluster_discovery->getCluster(cluster_name);
+    }
+
+    if (res == nullptr && !cluster_name.empty())
         res = tryGetReplicatedDatabaseCluster(cluster_name);
+
     return res;
 }
 
@@ -3005,10 +3009,23 @@ void Context::reloadClusterConfig() const
     }
 }
 
-
-std::shared_ptr<Clusters> Context::getClusters() const
+std::map<String, ClusterPtr> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
+
+    auto clusters = getClustersImpl(lock)->getContainer();
+
+    if (shared->cluster_discovery)
+    {
+        const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
+        for (const auto & [name, cluster] : cluster_discovery_map)
+            clusters.emplace(name, cluster);
+    }
+    return clusters;
+}
+
+std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> & /* lock */) const
+{
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
@@ -3020,6 +3037,7 @@ std::shared_ptr<Clusters> Context::getClusters() const
 
 void Context::startClusterDiscovery()
 {
+    std::lock_guard lock(shared->clusters_mutex);
     if (!shared->cluster_discovery)
         return;
     shared->cluster_discovery->start();
@@ -4286,10 +4304,10 @@ ReadSettings Context::getReadSettings() const
 
 ReadSettings Context::getBackupReadSettings() const
 {
-    ReadSettings settings = getReadSettings();
-    settings.remote_throttler = getBackupsThrottler();
-    settings.local_throttler = getBackupsThrottler();
-    return settings;
+    ReadSettings settings_ = getReadSettings();
+    settings_.remote_throttler = getBackupsThrottler();
+    settings_.local_throttler = getBackupsThrottler();
+    return settings_;
 }
 
 WriteSettings Context::getWriteSettings() const
@@ -4318,14 +4336,14 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 
 Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
 
     using enum Context::ParallelReplicasMode;
-    if (!settings.parallel_replicas_custom_key.value.empty())
+    if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings.allow_experimental_parallel_reading_from_replicas
-        && !settings.use_hedged_requests)
+    if (settings_.allow_experimental_parallel_reading_from_replicas
+        && !settings_.use_hedged_requests)
         return READ_TASKS;
 
     return SAMPLE_KEY;
@@ -4333,18 +4351,28 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings.max_parallel_replicas > 1
+        && settings_.max_parallel_replicas > 1
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings.max_parallel_replicas > 1
+        && settings_.max_parallel_replicas > 1
         && getClientInfo().collaborate_with_initiator;
+}
+
+void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
+{
+    prepared_sets_cache = cache;
+}
+
+PreparedSetsCachePtr Context::getPreparedSetsCache() const
+{
+    return prepared_sets_cache;
 }
 
 UInt64 Context::getClientProtocolVersion() const

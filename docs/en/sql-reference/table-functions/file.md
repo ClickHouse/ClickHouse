@@ -18,10 +18,10 @@ file(path [,format] [,structure] [,compression])
 
 **Parameters**
 
--   `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Path to file support following globs in read-only mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings.
--   `format` — The [format](/docs/en/interfaces/formats.md#formats) of the file.
--   `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
--   `compression` — The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query.  The supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
+- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Path to file support following globs in read-only mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings.
+- `format` — The [format](/docs/en/interfaces/formats.md#formats) of the file.
+- `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
+- `compression` — The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query.  The supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
 
 **Returned value**
 
@@ -78,11 +78,11 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 Multiple path components can have globs. For being processed file must exist and match to the whole path pattern (not only suffix or prefix).
 
--   `*` — Substitutes any number of any characters except `/` including empty string.
--   `?` — Substitutes any single character.
--   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
--   `{N..M}` — Substitutes any number in range from N to M including both borders.
--   `**` - Fetches all files inside the folder recursively.
+- `*` — Substitutes any number of any characters except `/` including empty string.
+- `?` — Substitutes any single character.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{N..M}` — Substitutes any number in range from N to M including both borders.
+- `**` - Fetches all files inside the folder recursively.
 
 Constructions with `{}` are similar to the [remote](remote.md) table function.
 
@@ -90,12 +90,12 @@ Constructions with `{}` are similar to the [remote](remote.md) table function.
 
 Suppose we have several files with the following relative paths:
 
--   'some_dir/some_file_1'
--   'some_dir/some_file_2'
--   'some_dir/some_file_3'
--   'another_dir/some_file_1'
--   'another_dir/some_file_2'
--   'another_dir/some_file_3'
+- 'some_dir/some_file_1'
+- 'some_dir/some_file_2'
+- 'some_dir/some_file_3'
+- 'another_dir/some_file_1'
+- 'another_dir/some_file_2'
+- 'another_dir/some_file_3'
 
 Query the number of rows in these files:
 
@@ -139,9 +139,9 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 
 ## Virtual Columns
 
--   `_path` — Path to the file.
--   `_file` — Name of the file.
+- `_path` — Path to the file.
+- `_file` — Name of the file.
 
 **See Also**
 
--   [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)

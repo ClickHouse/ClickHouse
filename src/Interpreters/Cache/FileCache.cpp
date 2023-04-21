@@ -23,22 +23,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(
-    const String & cache_base_path_,
-    const FileCacheSettings & cache_settings_)
-    : cache_base_path(cache_base_path_)
-    , max_size(cache_settings_.max_size)
-    , max_element_size(cache_settings_.max_elements)
-    , max_file_segment_size(cache_settings_.max_file_segment_size)
-    , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
-    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
-    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
-    , enable_bypass_cache_with_threashold(cache_settings_.enable_bypass_cache_with_threashold)
-    , bypass_cache_threashold(cache_settings_.bypass_cache_threashold)
+FileCache::FileCache(const FileCacheSettings & settings)
+    : cache_base_path(settings.base_path)
+    , max_size(settings.max_size)
+    , max_element_size(settings.max_elements)
+    , max_file_segment_size(settings.max_file_segment_size)
+    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
+    , enable_cache_hits_threshold(settings.enable_cache_hits_threshold)
+    , enable_filesystem_query_cache_limit(settings.enable_filesystem_query_cache_limit)
+    , enable_bypass_cache_with_threashold(settings.enable_bypass_cache_with_threashold)
+    , bypass_cache_threashold(settings.bypass_cache_threashold)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
-    , max_stash_element_size(cache_settings_.max_elements)
+    , max_stash_element_size(settings.max_elements)
 {
 }
 

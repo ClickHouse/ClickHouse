@@ -1871,8 +1871,7 @@ try
             if (outdated_unloaded_data_parts.empty())
                 break;
 
-            part = std::move(outdated_unloaded_data_parts.back());
-            outdated_unloaded_data_parts.pop_back();
+            part = outdated_unloaded_data_parts.back();
         }
 
         auto res = loadDataPartWithRetries(
@@ -1887,6 +1886,15 @@ try
             res.part->remove();
         else
             preparePartForRemoval(res.part);
+
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            chassert(part == outdated_unloaded_data_parts.back());
+            outdated_unloaded_data_parts.pop_back();
+
+            if (outdated_unloaded_data_parts.empty())
+                break;
+        }
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
@@ -4498,6 +4506,11 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTre
 
 static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 {
+    /// Remove metadata version file and take it from table.
+    /// Currently we cannot attach parts with different schema, so
+    /// we can assume that it's equal to table's current schema.
+    part->removeMetadataVersion();
+
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
@@ -7745,15 +7758,23 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getFirstAlterMutationCommandsForPart(part);
+    std::map<int64_t, MutationCommands> commands_map = getAlterMutationCommandsForPart(part);
 
     AlterConversions result{};
-    for (const auto & command : commands)
-        /// Currently we need explicit conversions only for RENAME alter
-        /// all other conversions can be deduced from diff between part columns
-        /// and columns in storage.
-        if (command.type == MutationCommand::Type::RENAME_COLUMN)
-            result.rename_map[command.rename_to] = command.column_name;
+    auto & rename_map = result.rename_map;
+    for (const auto & [version, commands] : commands_map)
+    {
+        for (const auto & command : commands)
+        {
+            /// Currently we need explicit conversions only for RENAME alter
+            /// all other conversions can be deduced from diff between part columns
+            /// and columns in storage.
+            if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            {
+                rename_map.emplace_back(AlterConversions::RenamePair{command.rename_to, command.column_name});
+            }
+        }
+    }
 
     return result;
 }
@@ -8160,7 +8181,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     if (settings->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns, {});
+    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
 
     new_data_part->partition = partition;
