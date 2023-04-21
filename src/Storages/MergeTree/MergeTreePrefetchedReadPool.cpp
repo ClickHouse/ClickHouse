@@ -350,7 +350,7 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         /// while in adjustBufferSize it will be presize.
         for (const auto & col : task_columns.columns)
         {
-            const auto col_size = part.data_part->getColumnSize(col.name).data_uncompressed;
+            const auto col_size = part.data_part->getColumnSize(col.name).data_compressed;
             part_info->estimated_memory_usage_for_single_prefetch += std::min<size_t>(col_size, settings.prefetch_buffer_size);
             ++part_info->required_readers_num;
         }
