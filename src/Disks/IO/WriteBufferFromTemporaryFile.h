@@ -8,23 +8,22 @@
 namespace DB
 {
 
+class TemporaryFileOnDisk;
+using TemporaryFileOnDiskHolder = std::unique_ptr<TemporaryFileOnDisk>;
+
 /// Rereadable WriteBuffer, could be used as disk buffer
 /// Creates unique temporary in directory (and directory itself)
 class WriteBufferFromTemporaryFile : public WriteBufferFromFile, public IReadableWriteBuffer
 {
 public:
-    using Ptr = std::shared_ptr<WriteBufferFromTemporaryFile>;
-
-    static Ptr create(const std::string & tmp_dir);
+    explicit WriteBufferFromTemporaryFile(TemporaryFileOnDiskHolder && tmp_file_);
 
     ~WriteBufferFromTemporaryFile() override;
 
 private:
-    explicit WriteBufferFromTemporaryFile(std::unique_ptr<PocoTemporaryFile> && tmp_file);
-
     std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
-    std::unique_ptr<PocoTemporaryFile> tmp_file;
+    TemporaryFileOnDiskHolder tmp_file;
 
     friend class ReadBufferFromTemporaryWriteBuffer;
 };
