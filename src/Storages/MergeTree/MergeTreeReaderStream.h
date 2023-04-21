@@ -19,7 +19,7 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        DataPartStoragePtr data_part_storage_,
+        DataPartPtr data_part_,
         const String & path_prefix_,
         const String & data_file_extension_,
         size_t marks_count_,

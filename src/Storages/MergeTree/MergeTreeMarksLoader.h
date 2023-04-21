@@ -18,7 +18,7 @@ public:
     using MarksPtr = MarkCache::MappedPtr;
 
     MergeTreeMarksLoader(
-        DataPartStoragePtr data_part_storage_,
+        DataPartPtr data_part_,
         MarkCache * mark_cache_,
         const String & mrk_path,
         size_t marks_count_,
@@ -33,7 +33,7 @@ public:
     MarkInCompressedFile getMark(size_t row_index, size_t column_index = 0);
 
 private:
-    DataPartStoragePtr data_part_storage;
+    DataPartPtr data_part;
     MarkCache * mark_cache = nullptr;
     String mrk_path;
     size_t marks_count;
