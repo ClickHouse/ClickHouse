@@ -1,10 +1,11 @@
 #include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/RestoreCoordinationRemote.h>
+#include <Backups/BackupCoordinationStageSync.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
-#include "Backups/BackupCoordinationStageSync.h"
+
 
 namespace DB
 {
