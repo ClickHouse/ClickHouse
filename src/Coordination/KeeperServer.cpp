@@ -621,21 +621,21 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf);
-                request_for_session.zxid = next_zxid;
-                if (!state_machine->preprocess(request_for_session))
+                request_for_session->zxid = next_zxid;
+                if (!state_machine->preprocess(*request_for_session))
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
-                request_for_session.digest = state_machine->getNodesDigest();
+                request_for_session->digest = state_machine->getNodesDigest();
 
                 static constexpr size_t write_buffer_size
-                    = sizeof(request_for_session.zxid) + sizeof(request_for_session.digest->version) + sizeof(request_for_session.digest->value);
+                    = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
                 auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf.data_begin() + entry_buf.size() - write_buffer_size);
 
                 WriteBuffer write_buf(buffer_start, write_buffer_size);
-                writeIntBinary(request_for_session.zxid, write_buf);
-                writeIntBinary(request_for_session.digest->version, write_buf);
-                if (request_for_session.digest->version != KeeperStorage::NO_DIGEST)
-                    writeIntBinary(request_for_session.digest->value, write_buf);
+                writeIntBinary(request_for_session->zxid, write_buf);
+                writeIntBinary(request_for_session->digest->version, write_buf);
+                if (request_for_session->digest->version != KeeperStorage::NO_DIGEST)
+                    writeIntBinary(request_for_session->digest->value, write_buf);
 
                 break;
             }
@@ -648,8 +648,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 assert(entry->get_val_type() == nuraft::app_log);
 
                 auto & entry_buf = entry->get_buf();
-                auto request_for_session = state_machine->parseRequest(entry_buf);
-                state_machine->rollbackRequest(request_for_session, true);
+                auto request_for_session = state_machine->parseRequest(entry_buf, true);
+                state_machine->rollbackRequest(*request_for_session, true);
                 break;
             }
             default:

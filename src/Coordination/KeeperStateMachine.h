@@ -36,7 +36,7 @@ public:
     /// Read state from the latest snapshot
     void init();
 
-    static KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
+    std::shared_ptr<KeeperStorage::RequestForSession> parseRequest(nuraft::buffer & data, bool final = false);
 
     bool preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
@@ -137,6 +137,13 @@ private:
     /// watch and after that receive watch response and only receive response
     /// for request.
     mutable std::mutex storage_and_responses_lock;
+
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, std::shared_ptr<KeeperStorage::RequestForSession>>> parsed_request_cache;
+    uint64_t min_request_size_to_cache{0};
+    /// we only need to protect the access to the map itself
+    /// requests can be modified from anywhere without lock because a single request
+    /// can be processed only in 1 thread at any point
+    std::mutex request_cache_mutex;
 
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;
