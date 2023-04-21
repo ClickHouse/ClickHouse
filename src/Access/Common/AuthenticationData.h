@@ -39,6 +39,7 @@ struct AuthenticationTypeInfo
 {
     const char * const raw_name;
     const String name; /// Lowercased with underscores, e.g. "sha256_password".
+    bool is_password;
     static const AuthenticationTypeInfo & get(AuthenticationType type_);
 };
 

@@ -43,7 +43,7 @@ namespace
         for (size_t i = 0; i < args_size; ++i)
             args[i] = evaluateConstantExpressionAsLiteral(query.children[i], context);
 
-        if (query.expect_password)
+        if (query.is_password)
         {
             if (!query.type && !context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get default password type without context");
@@ -101,23 +101,23 @@ namespace
 
         AuthenticationData auth_data(*query.type);
 
-        if (query.expect_hash)
+        if (query.is_hash)
         {
             String value = checkAndGetLiteralArgument<String>(args[0], "hash");
             auth_data.setPasswordHashHex(value);
 
-            if (*query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
+            if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
             {
                 String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
                 auth_data.setSalt(parsed_salt);
             }
         }
-        else if (query.expect_ldap_server_name)
+        else if (query.type == AuthenticationType::LDAP)
         {
             String value = checkAndGetLiteralArgument<String>(args[0], "ldap_server_name");
             auth_data.setLDAPServerName(value);
         }
-        else if (query.expect_kerberos_realm)
+        else if (query.type == AuthenticationType::KERBEROS)
         {
             if (!args.empty())
             {
@@ -125,7 +125,7 @@ namespace
                 auth_data.setKerberosRealm(value);
             }
         }
-        else if (query.expect_common_names)
+        else if (query.type == AuthenticationType::SSL_CERTIFICATE)
         {
             boost::container::flat_set<String> common_names;
             for (const auto & arg : args)
@@ -133,6 +133,11 @@ namespace
 
             auth_data.setSSLCertificateCommonNames(std::move(common_names));
         }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected ASTAuthenticationData structure");
+        }
+
 
         return auth_data;
     }

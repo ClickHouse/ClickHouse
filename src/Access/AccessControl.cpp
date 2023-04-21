@@ -271,7 +271,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
-    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256"));
+    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
     setPasswordComplexityRulesFromConfig(config_);
 
     /// Optional improvements in access control system.
@@ -656,14 +656,18 @@ bool AccessControl::isPlaintextPasswordAllowed() const
 
 void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)
 {
-    if (type_ == "plaintext")
-        default_password_type = AuthenticationType::PLAINTEXT_PASSWORD;
-    else if (type_ == "double_sha1")
-        default_password_type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
-    else if (type_ == "sha256")
-        default_password_type = AuthenticationType::SHA256_PASSWORD;
-    else
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown password type in 'default_password_type' in config");
+    for (auto check_type : collections::range(AuthenticationType::MAX))
+    {
+        const auto & info = AuthenticationTypeInfo::get(check_type);
+
+        if (type_ == info.name && info.is_password)
+        {
+            default_password_type = check_type;
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown password type in 'default_password_type' in config");
 }
 
 AuthenticationType AccessControl::getDefaultPasswordType() const
