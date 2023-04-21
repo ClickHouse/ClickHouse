@@ -33,18 +33,15 @@ MergeListElement::MergeListElement(
         total_size_bytes_uncompressed += source_part->getTotalColumnsSize().data_uncompressed;
         total_size_marks += source_part->getMarksCount();
         total_rows_count += source_part->index_granularity.getTotalRows();
-        
-        if (partition.empty())
-        {
-            WriteBufferFromString out(partition);
-            future_part->getPartition().serializeText(source_part->storage, out, {});
-        }
     }
 
     if (!future_part->parts.empty())
     {
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
+        
+        WriteBufferFromString out(partition);
+        future_part->getPartition().serializeText(future_part->parts[0]->storage, out, {});
     }
 
     thread_group = ThreadGroup::createForBackgroundProcess(context);
