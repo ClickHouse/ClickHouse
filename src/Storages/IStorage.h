@@ -368,6 +368,13 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Should we process blocks of data returned by the storage in parallel
+    /// even when the storage returned only one stream of data for reading?
+    /// It is beneficial, for example, when you read from a file quickly,
+    /// but then do heavy computations on returned blocks.
+    /// This is enabled by default, but in some cases shouldn't be done.
+    /// For example, when you read from system.numbers instead of system.numbers_mt,
+    /// you still expect the data to be processed sequentially.
     virtual bool parallelizeOutputAfterReading() const { return true; }
 
 public:
