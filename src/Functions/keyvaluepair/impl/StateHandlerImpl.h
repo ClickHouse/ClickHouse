@@ -232,7 +232,8 @@ public:
 
                     if (!parsed_successfully)
                     {
-                        return {next_pos, State::WAITING_KEY};
+                        // Perform best-effort parsing and ignore invalid escape sequences at the end
+                        return {next_pos, State::FLUSH_PAIR};
                     }
                 }
             }
@@ -311,9 +312,10 @@ private:
         std::string escaped_sequence;
         DB::ReadBufferFromMemory buf(file.begin() + character_pos, file.size() - character_pos);
 
+        output.append(file.begin() + start_pos, file.begin() + character_pos);
+
         if (DB::parseComplexEscapeSequence(escaped_sequence, buf))
         {
-            output.append(file.begin() + start_pos, file.begin() + character_pos);
             output.append(escaped_sequence);
 
             return {true, buf.getPosition()};
