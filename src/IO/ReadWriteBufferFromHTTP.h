@@ -277,6 +277,8 @@ namespace detail
 
                     istr->get(reinterpret_cast<char*>(data), str_data.size());
 
+                    enet_deinitialize();
+
                     return istr;
                     #else
                     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ENet protocol was not enabled during build time");

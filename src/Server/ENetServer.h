@@ -10,7 +10,7 @@
 
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Runnable.h>
-#include <Poco/Thread.h>
+#include <Poco/ThreadPool.h>
 
 #if USE_ENET
 
@@ -44,7 +44,7 @@ public:
 
 private:
     IServer & ch_server;
-    Poco::Thread * thread;
+    Poco::ThreadPool * pool;
     std::atomic<bool> _stopped;
     std::string host;
     UInt16 port_number;
