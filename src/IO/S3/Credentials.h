@@ -9,7 +9,6 @@
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
 
-#    include <Common/logger_useful.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 

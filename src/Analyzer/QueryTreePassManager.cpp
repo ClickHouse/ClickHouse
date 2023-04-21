@@ -115,12 +115,22 @@ private:
 
         for (size_t i = 0; i < expected_argument_types_size; ++i)
         {
-            // Skip lambdas
-            if (WhichDataType(expected_argument_types[i]).isFunction())
-                continue;
-
             const auto & expected_argument_type = expected_argument_types[i];
             const auto & actual_argument_type = actual_argument_columns[i].type;
+
+            if (!expected_argument_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function {} expected argument {} type is not set after running {} pass",
+                    function->toAST()->formatForErrorMessage(),
+                    i + 1,
+                    pass_name);
+
+            if (!actual_argument_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function {} actual argument {} type is not set after running {} pass",
+                    function->toAST()->formatForErrorMessage(),
+                    i + 1,
+                    pass_name);
 
             if (!expected_argument_type->equals(*actual_argument_type))
             {
