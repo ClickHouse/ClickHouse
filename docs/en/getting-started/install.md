@@ -1,87 +1,100 @@
 ---
 sidebar_label: Install
 keywords: [clickhouse, install, getting started, quick start]
+description: Install ClickHouse
 slug: /en/install
 ---
 
-# Installing ClickHouse
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+
+# Install ClickHouse
 
 You have three options for getting up and running with ClickHouse:
 
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
-- **[Self-managed ClickHouse](#self-managed-install):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture
-- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** Read the guide with the official image in Docker Hub
+- **[Quick Install](#quick-install):** an easy-to-download binary for testing and developing with ClickHouse
+- **[Production Deployments](#available-installation-options):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture
+- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** use the official Docker image in Docker Hub
 
 ## ClickHouse Cloud
 
-The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/):
+The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/).
 
-<div class="eighty-percent">
+## Quick Install
 
-![Create a ClickHouse Cloud service](@site/docs/en/_snippets/images/createservice1.png)
-</div>
+:::tip
+For production installs of a specific release version see the [installation options](#available-installation-options) down below.
+:::
 
-Once your Cloud service is provisioned, you will be able to [connect to it](/docs/en/integrations/connect-a-client.md) and start [inserting data](/docs/en/integrations/data-ingestion.md).
+On Linux and macOS:
 
+1. If you are just getting started and want to see what ClickHouse can do, the simplest way to download ClickHouse locally is to run the following command. It downloads a single binary for your operating system that can be used to run the ClickHouse server, clickhouse-client, clickhouse-local,
+ClickHouse Keeper, and other tools:
 
-## Self-Managed Install
-
-1. The simplest way to download ClickHouse locally is to run the following command. If your operating system is supported, an appropriate ClickHouse binary will be downloaded and made runnable:
   ```bash
   curl https://clickhouse.com/ | sh
   ```
 
-1. Run the `install` command, which defines a collection of useful symlinks along with the files and folders used by ClickHouse - all of which you can see in the output of the install script:
-  ```bash
-  sudo ./clickhouse install
-  ```
-
-1. At the end of the install script, you are prompted for a password for the `default` user. Feel free to enter a password, or you can optionally leave it blank:
-  ```response
-  Creating log directory /var/log/clickhouse-server.
-  Creating data directory /var/lib/clickhouse.
-  Creating pid directory /var/run/clickhouse-server.
-   chown -R clickhouse:clickhouse '/var/log/clickhouse-server'
-   chown -R clickhouse:clickhouse '/var/run/clickhouse-server'
-   chown  clickhouse:clickhouse '/var/lib/clickhouse'
-  Enter password for default user:
-  ```
-  You should see the following output:
-  ```response
-   ClickHouse has been successfully installed.
-
-   Start clickhouse-server with:
-    sudo clickhouse start
-
-   Start clickhouse-client with:
-    clickhouse-client
-  ```
-
 1. Run the following command to start the ClickHouse server:
+    ```bash
+    ./clickhouse server
+    ```
+
+    The first time you run this script, the necessary files and folders are created in the current directory, then the server starts.
+
+1. Open a new terminal and use the **clickhouse-client** to connect to your service:
+
   ```bash
-  sudo clickhouse start
+  ./clickhouse client
   ```
+
+  ```response
+  ./clickhouse client
+  ClickHouse client version 23.2.1.1501 (official build).
+  Connecting to localhost:9000 as user default.
+  Connected to ClickHouse server version 23.2.1 revision 54461.
+
+  local-host :)
+  ```
+
+  You are ready to start sending DDL and SQL commands to ClickHouse!
+
 
 :::tip
-The [Quick Start](/docs/en/quick-start.mdx/#step-1-get-clickhouse) walks through the steps to download and run ClickHouse, connect to it, and insert data.
+The [Quick Start](/docs/en/quick-start.mdx) walks through the steps for creating tables and inserting data.
 :::
 
-## Available Installation Options {#available-installation-options}
+## Production Deployments {#available-installation-options}
+
+For production deployments of ClickHouse, choose from one of the following install options.
 
 ### From DEB Packages {#install-from-deb-packages}
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
+#### Setup the Debian repository
 ``` bash
 sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+GNUPGHOME=$(mktemp -d)
+sudo GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring --keyring /usr/share/keyrings/clickhouse-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754
+sudo rm -r "$GNUPGHOME"
+sudo chmod +r /usr/share/keyrings/clickhouse-keyring.gpg
 
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
+```
 
+#### Install ClickHouse server and client
+```bash
 sudo apt-get install -y clickhouse-server clickhouse-client
+```
 
+#### Start ClickHouse server
+
+```bash
 sudo service clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you've set up a password.
 ```
@@ -123,16 +136,36 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](/knowledgebase/production) based on your needs.
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
+#### Install standalone ClickHouse Keeper
+
+:::tip
+If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
+do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+:::
+
+```bash
+sudo apt-get install -y clickhouse-keeper
+```
+
+#### Enable and start ClickHouse Keeper
+
+```bash
+sudo systemctl enable clickhouse-keeper
+sudo systemctl start clickhouse-keeper
+sudo systemctl status clickhouse-keeper
+```
+
 #### Packages {#packages}
 
--   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
--   `clickhouse-server` — Creates a symbolic link for `clickhouse-server` and installs the default server configuration.
--   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
--   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
+- `clickhouse-common-static` — Installs ClickHouse compiled binary files.
+- `clickhouse-server` — Creates a symbolic link for `clickhouse-server` and installs the default server configuration.
+- `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
+- `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
+- `clickhouse-keeper` - Used to install ClickHouse Keeper on dedicated ClickHouse Keeper nodes.  If you are running ClickHouse Keeper on the same server as ClickHouse server, then you do not need to install this package. Installs ClickHouse Keeper and the default ClickHouse Keeper configuration files.
 
 :::info
 If you need to install specific version of ClickHouse you have to install all packages with the same version:
@@ -143,15 +176,46 @@ If you need to install specific version of ClickHouse you have to install all pa
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat, and all other rpm-based Linux distributions.
 
+#### Setup the RPM repository
 First, you need to add the official repository:
 
 ``` bash
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
-sudo yum install -y clickhouse-server clickhouse-client
+```
 
-sudo /etc/init.d/clickhouse-server start
+#### Install ClickHouse server and client
+
+```bash
+sudo yum install -y clickhouse-server clickhouse-client
+```
+
+#### Start ClickHouse server
+
+```bash
+sudo systemctl enable clickhouse-server
+sudo systemctl start clickhouse-server
+sudo systemctl status clickhouse-server
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
+```
+
+#### Install standalone ClickHouse Keeper
+
+:::tip
+If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
+do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+:::
+
+```bash
+sudo yum install -y clickhouse-keeper
+```
+
+#### Enable and start ClickHouse Keeper
+
+```bash
+sudo systemctl enable clickhouse-keeper
+sudo systemctl start clickhouse-keeper
+sudo systemctl status clickhouse-keeper
 ```
 
 <details markdown="1">
@@ -170,7 +234,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](/knowledgebase/production) based on your needs.
 
 Then run these commands to install packages:
 
@@ -198,7 +262,7 @@ case $(uname -m) in
   *) echo "Unknown architecture $(uname -m)"; exit 1 ;;
 esac
 
-for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client
+for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
 do
   curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
     || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
@@ -365,8 +429,8 @@ We recommend using a minimum of 4GB of RAM to perform non-trivial queries. The C
 
 The required volume of RAM generally depends on:
 
--   The complexity of queries.
--   The amount of data that is processed in queries.
+- The complexity of queries.
+- The amount of data that is processed in queries.
 
 To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
 
@@ -378,11 +442,11 @@ The ClickHouse binary requires at least 2.5 GB of disk space for installation.
 
 The volume of storage required for your data may be calculated separately based on
 
--   an estimation of the data volume.
+- an estimation of the data volume.
 
     You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
 
--   The data compression coefficient.
+- The data compression coefficient.
 
     To estimate the data compression coefficient, load a sample of your data into ClickHouse, and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
 

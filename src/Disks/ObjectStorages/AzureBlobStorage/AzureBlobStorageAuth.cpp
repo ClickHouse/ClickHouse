@@ -2,6 +2,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/Exception.h>
 #include <optional>
 #include <re2/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
@@ -125,21 +126,22 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
 
     auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
 
-    if (!endpoint.container_already_exists.has_value())
+    try
     {
-        ListBlobContainersOptions blob_containers_list_options;
-        blob_containers_list_options.Prefix = container_name;
-        blob_containers_list_options.PageSizeHint = 1;
-        auto blob_containers = blob_service_client->ListBlobContainers().BlobContainers;
-        for (const auto & blob_container : blob_containers)
-        {
-            if (blob_container.Name == endpoint.container_name)
-                return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
-        }
+        return std::make_unique<BlobContainerClient>(
+            blob_service_client->CreateBlobContainer(container_name).Value);
     }
-
-    return std::make_unique<BlobContainerClient>(
-        blob_service_client->CreateBlobContainer(container_name).Value);
+    catch (const Azure::Storage::StorageException & e)
+    {
+        /// If container_already_exists is not set (in config), ignore already exists error.
+        /// (Conflict - The specified container already exists)
+        if (!endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+        {
+            tryLogCurrentException("Container already exists, returning the existing container");
+            return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
+        }
+        throw;
+    }
 }
 
 std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)

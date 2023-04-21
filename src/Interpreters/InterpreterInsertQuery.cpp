@@ -32,6 +32,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 
 
@@ -233,8 +234,14 @@ Chain InterpreterInsertQuery::buildChain(
     ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
+    ThreadGroupPtr running_group;
+    if (current_thread)
+        running_group = current_thread->getThreadGroup();
+    if (!running_group)
+        running_group = std::make_shared<ThreadGroup>(getContext());
+
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
-    return buildChainImpl(table, metadata_snapshot, sample, thread_status_holder, elapsed_counter_ms);
+    return buildChainImpl(table, metadata_snapshot, sample, thread_status_holder, running_group, elapsed_counter_ms);
 }
 
 Chain InterpreterInsertQuery::buildChainImpl(
@@ -242,6 +249,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & query_sample_block,
     ThreadStatusesHolderPtr thread_status_holder,
+    ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     ThreadStatus * thread_status = current_thread;
@@ -273,7 +281,9 @@ Chain InterpreterInsertQuery::buildChainImpl(
     }
     else
     {
-        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status_holder, elapsed_counter_ms);
+        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
+            query_ptr, no_destination,
+            thread_status_holder, running_group, elapsed_counter_ms);
     }
 
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
@@ -449,8 +459,8 @@ BlockIO InterpreterInsertQuery::execute()
                     {
                         /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
                         /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
-                        if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
-                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
+                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type) && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type) && output_columns.has(query_columns[col_idx].name))
+                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullableOrLowCardinalityNullable(query_columns[col_idx].column), makeNullableOrLowCardinalityNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                     }
                 }
             }
@@ -461,9 +471,17 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline = interpreter_watch.buildQueryPipeline();
         }
 
+        ThreadGroupPtr running_group;
+        if (current_thread)
+            running_group = current_thread->getThreadGroup();
+        if (!running_group)
+            running_group = std::make_shared<ThreadGroup>(getContext());
         for (size_t i = 0; i < out_streams_size; ++i)
         {
-            auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
+            auto out = buildChainImpl(table, metadata_snapshot, query_sample_block,
+                /* thread_status_holder= */ nullptr,
+                running_group,
+                /* elapsed_counter_ms= */ nullptr);
             out_chains.emplace_back(std::move(out));
         }
     }
@@ -540,7 +558,11 @@ BlockIO InterpreterInsertQuery::execute()
         if (query.hasInlinedData() && !async_insert)
         {
             /// can execute without additional data
-            auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+            auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+            for (auto && buffer : owned_buffers)
+                format->addBuffer(std::move(buffer));
+
+            auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
     }
@@ -560,10 +582,8 @@ StorageID InterpreterInsertQuery::getDatabaseTable() const
     return query_ptr->as<ASTInsertQuery &>().table_id;
 }
 
-
 void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_)
 {
-    elem.query_kind = "Insert";
     const auto & insert_table = context_->getInsertionTable();
     if (!insert_table.empty())
     {

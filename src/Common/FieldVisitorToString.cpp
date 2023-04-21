@@ -69,6 +69,7 @@ String FieldVisitorToString::operator() (const IPv4 & x) const { return formatQu
 String FieldVisitorToString::operator() (const IPv6 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
+String FieldVisitorToString::operator() (const CustomType & x) const { return x.toString(); }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -116,14 +117,14 @@ String FieldVisitorToString::operator() (const Map & x) const
 {
     WriteBufferFromOwnString wb;
 
-    wb << '(';
+    wb << '[';
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb << ", ";
         wb << applyVisitor(*this, *it);
     }
-    wb << ')';
+    wb << ']';
 
     return wb.str();
 }

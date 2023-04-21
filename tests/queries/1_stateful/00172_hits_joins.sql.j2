@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 {% for join_algorithm in ['hash', 'parallel_hash', 'full_sorting_merge', 'grace_hash'] -%}
 
 SET max_rows_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';

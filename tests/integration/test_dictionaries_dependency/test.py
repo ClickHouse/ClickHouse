@@ -154,3 +154,40 @@ def test_dependency_via_dictionary_database(node):
         node.query(f"DROP DICTIONARY IF EXISTS {d_name} SYNC")
     node.query("DROP DATABASE dict_db SYNC")
     node.restart_clickhouse()
+
+
+@pytest.mark.parametrize("node", nodes)
+def test_dependent_dict_table_distr(node):
+    query = node.query
+    query("CREATE DATABASE test_db;")
+    query(
+        "CREATE TABLE test_db.test(id UInt32,data UInt32,key1 UInt8,key2 UInt8) ENGINE=MergeTree  ORDER BY id;"
+    )
+    query(
+        "INSERT INTO test_db.test SELECT  abs(rand32())%100, rand32()%1000, abs(rand32())%1, abs(rand32())%1  FROM numbers(100);"
+    )
+    query(
+        "CREATE TABLE test_db.dictback (key1 UInt8,key2 UInt8, value UInt8) ENGINE=MergeTree  ORDER BY key1;"
+    )
+    query("INSERT INTO test_db.dictback VALUES (0,0,0);")
+
+    query(
+        "CREATE DICTIONARY test_db.mdict (key1 UInt8,key2 UInt8, value UInt8) PRIMARY KEY key1,key2"
+        " SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'test_db' TABLE 'dictback'))"
+        " LIFETIME(MIN 100 MAX 100)  LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000));"
+    )
+
+    query(
+        "CREATE TABLE test_db.distr (id UInt32, data UInt32, key1 UInt8, key2 UInt8)"
+        " ENGINE = Distributed('test_shard_localhost', test_db, test, dictGetOrDefault('test_db.mdict','value',(key1,key2),0));"
+    )
+
+    # Tables should load in the correct order.
+    node.restart_clickhouse()
+
+    query("DETACH TABLE test_db.distr;")
+    query("ATTACH TABLE test_db.distr;")
+
+    node.restart_clickhouse()
+
+    query("DROP DATABASE IF EXISTS test_db;")

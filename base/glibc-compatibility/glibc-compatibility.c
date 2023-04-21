@@ -195,7 +195,6 @@ long splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, un
 #include <sys/stat.h>
 #include <stdint.h>
 
-#if !defined(__aarch64__)
 struct statx {
 	uint32_t stx_mask;
 	uint32_t stx_blksize;
@@ -226,7 +225,6 @@ int statx(int fd, const char *restrict path, int flag,
 {
 	return syscall(SYS_statx, fd, path, flag, mask, statxbuf);
 }
-#endif
 
 
 #include <syscall.h>

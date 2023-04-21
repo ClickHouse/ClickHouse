@@ -29,10 +29,9 @@ struct MeanZTestData : public ZTestMoments<Float64>
 
         /// z = \frac{\bar{X_{1}} - \bar{X_{2}}}{\sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}}
         Float64 zstat = (mean_x - mean_y) / getStandardError(pop_var_x, pop_var_y);
-        if (!std::isfinite(zstat))
-        {
+
+        if (unlikely(!std::isfinite(zstat)))
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
-        }
 
         Float64 pvalue = 2.0 * boost::math::cdf(boost::math::normal(0.0, 1.0), -1.0 * std::abs(zstat));
 

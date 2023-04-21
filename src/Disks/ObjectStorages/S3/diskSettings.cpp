@@ -13,6 +13,7 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
+#include <IO/S3/Credentials.h>
 
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
@@ -107,7 +108,7 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 
-std::unique_ptr<Aws::S3::S3Client> getClient(
+std::unique_ptr<S3::Client> getClient(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,
@@ -151,8 +152,13 @@ std::unique_ptr<Aws::S3::S3Client> getClient(
         config.getString(config_prefix + ".secret_access_key", ""),
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
         {},
-        config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-        config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
+        S3::CredentialsConfiguration
+        {
+            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", true)),
+            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)),
+            config.getUInt64(config_prefix + ".expiration_window_seconds", config.getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
+            config.getBool(config_prefix + ".no_sign_request", config.getBool("s3.no_sign_request", false))
+        });
 }
 
 }

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Common/VariableContext.h>
-#include "base/types.h"
+#include <base/types.h>
+#include <base/strong_typedef.h>
 #include <atomic>
 #include <memory>
 #include <cstddef>
@@ -14,7 +15,7 @@
 namespace ProfileEvents
 {
     /// Event identifier (index in array).
-    using Event = size_t;
+    using Event = StrongTypedef<size_t, struct EventTag>;
     using Count = size_t;
     using Increment = Int64;
     using Counter = std::atomic<Count>;

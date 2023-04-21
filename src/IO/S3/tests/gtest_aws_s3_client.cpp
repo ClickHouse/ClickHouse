@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "IO/S3/Credentials.h"
 #include "config.h"
 
 
@@ -19,13 +20,13 @@
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
 #include <aws/core/http/URI.h>
-#include <aws/s3/S3Client.h>
 
 #include <Common/RemoteHostFilter.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/StorageS3Settings.h>
 
@@ -102,15 +103,18 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
-    std::shared_ptr<Aws::S3::S3Client> client = DB::S3::ClientFactory::instance().create(
+    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
         client_configuration,
         uri.is_virtual_hosted_style,
         access_key_id,
         secret_access_key,
         server_side_encryption_customer_key_base64,
         headers,
-        use_environment_credentials,
-        use_insecure_imds_request
+        DB::S3::CredentialsConfiguration
+        {
+            .use_environment_credentials = use_environment_credentials,
+            .use_insecure_imds_request = use_insecure_imds_request
+        }
     );
 
     ASSERT_TRUE(client);

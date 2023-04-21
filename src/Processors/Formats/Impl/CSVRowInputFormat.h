@@ -27,6 +27,7 @@ public:
     String getName() const override { return "CSVRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetParser() override;
 
 protected:
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,

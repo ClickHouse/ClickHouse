@@ -5,7 +5,7 @@ sidebar_label: DICTIONARY
 title: "CREATE DICTIONARY"
 ---
 
-Creates a new [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) with given [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) and [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) and [lifetime](../../../sql-reference/dictionaries/index.md#dictionary-updates).
 
 ## Syntax
 
@@ -29,7 +29,7 @@ The dictionary structure consists of attributes. Dictionary attributes are speci
 
 `ON CLUSTER` clause allows creating dictionary on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-Depending on dictionary [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) one or more attributes can be specified as dictionary keys.
+Depending on dictionary [layout](../../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) one or more attributes can be specified as dictionary keys.
 
 ## SOURCE
 
@@ -125,9 +125,9 @@ LAYOUT(HASHED())
 
 ### Create a dictionary from another database
 
-Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md/#dbms).
+Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
 
 **See Also**
 
-- For more information, see the [Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) section.
-- [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [Dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+- For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
+- [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [Dictionaries](../../../sql-reference/dictionaries/index.md).

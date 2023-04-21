@@ -28,12 +28,6 @@
 #include <cstring>
 
 /// For the expansion of gtest macros.
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wdeprecated"
-#elif defined (__GNUC__) && __GNUC__ >= 9
-    #pragma GCC diagnostic ignored "-Wdeprecated-copy"
-#endif
-
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -1130,7 +1124,7 @@ template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
-    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable //-V788
+    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
         const auto curr = dd + prev + prev_delta;
         prev = curr;

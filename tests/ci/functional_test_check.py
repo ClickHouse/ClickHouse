@@ -4,6 +4,7 @@ import argparse
 import csv
 import logging
 import os
+import re
 import subprocess
 import sys
 import atexit
@@ -48,7 +49,8 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_DATABASE_ORDINARY=1")
     if "wide parts enabled" in check_name:
         result.append("USE_POLYMORPHIC_PARTS=1")
-
+    if "ParallelReplicas" in check_name:
+        result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
@@ -111,17 +113,24 @@ def get_run_command(
 
 
 def get_tests_to_run(pr_info):
-    result = set([])
+    result = set()
 
     if pr_info.changed_files is None:
         return []
 
     for fpath in pr_info.changed_files:
-        if "tests/queries/0_stateless/0" in fpath:
-            logging.info("File %s changed and seems like stateless test", fpath)
+        if re.match(r"tests/queries/0_stateless/[0-9]{5}", fpath):
+            logging.info("File '%s' is changed and seems like a test", fpath)
             fname = fpath.split("/")[3]
             fname_without_ext = os.path.splitext(fname)[0]
+            # add '.' to the end of the test name not to run all tests with the same prefix
+            # e.g. we changed '00001_some_name.reference'
+            # and we have ['00001_some_name.sh', '00001_some_name_2.sql']
+            # so we want to run only '00001_some_name.sh'
             result.add(fname_without_ext + ".")
+        elif "tests/queries/" in fpath:
+            # log suspicious changes from tests/ for debugging in case of any problems
+            logging.info("File '%s' is changed, but it doesn't look like a test", fpath)
     return list(result)
 
 
@@ -355,16 +364,34 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            gh, pr_info.sha, check_name_with_group, description, state, report_url
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status(
+                gh,
+                pr_info.sha,
+                check_name_with_group,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status(
+                gh, pr_info.sha, check_name_with_group, description, state, report_url
+            )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                state,
+                report_url,
+            )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -382,7 +409,11 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

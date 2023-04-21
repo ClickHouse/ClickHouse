@@ -38,6 +38,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
+#include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -114,6 +115,7 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -148,7 +150,8 @@ FilterDAGInfoPtr generateFilterActions(
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
-        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
+        /// We should add back quotes around column name as it can contain dots.
+        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -229,10 +232,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
+namespace
+{
+
 /** There are no limits on the maximum size of the result for the subquery.
   *  Since the result of the query is not the result of the entire query.
   */
-static ContextPtr getSubqueryContext(const ContextPtr & context)
+ContextPtr getSubqueryContext(const ContextPtr & context)
 {
     auto subquery_context = Context::createCopy(context);
     Settings subquery_settings = context->getSettings();
@@ -244,7 +250,7 @@ static ContextPtr getSubqueryContext(const ContextPtr & context)
     return subquery_context;
 }
 
-static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
+void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
 
@@ -264,7 +270,7 @@ static void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & table
 }
 
 /// Checks that the current user has the SELECT privilege.
-static void checkAccessRightsForSelect(
+void checkAccessRightsForSelect(
     const ContextPtr & context,
     const StorageID & table_id,
     const StorageMetadataPtr & table_metadata,
@@ -294,7 +300,7 @@ static void checkAccessRightsForSelect(
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
 }
 
-static ASTPtr parseAdditionalFilterConditionForTable(
+ASTPtr parseAdditionalFilterConditionForTable(
     const Map & setting,
     const DatabaseAndTableWithAlias & target,
     const Context & context)
@@ -322,7 +328,7 @@ static ASTPtr parseAdditionalFilterConditionForTable(
 }
 
 /// Returns true if we should ignore quotas and limits for a specified table in the system database.
-static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
 {
     if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
@@ -331,6 +337,8 @@ static bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
             return true;
     }
     return false;
+}
+
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -408,7 +416,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
     }
 
-    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols);
+    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
     if (!has_input && !storage)
@@ -436,7 +444,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
     {
         if (storage)
-            checkStorageSupportsTransactionsIfNeeded(storage, context);
+            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
         for (const auto & table : joined_tables.tablesWithColumns())
         {
             if (table.table.table.empty())
@@ -444,8 +452,29 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
             if (!maybe_storage)
                 continue;
-            checkStorageSupportsTransactionsIfNeeded(storage, context);
+            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
         }
+    }
+
+    if (joined_tables.tablesCount() > 1 && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    {
+        LOG_WARNING(log, "Joins are not supported with parallel replicas. Query will be executed without using them.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+        context->setSetting("parallel_replicas_custom_key", String{""});
+    }
+
+    /// Try to execute query without parallel replicas if we find that there is a FINAL modifier there.
+    bool is_query_with_final = false;
+    if (query_info.table_expression_modifiers)
+        is_query_with_final = query_info.table_expression_modifiers->hasFinal();
+    else if (query_info.query)
+        is_query_with_final = query_info.query->as<ASTSelectQuery &>().final();
+
+    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    {
+        LOG_WARNING(log, "FINAL modifier is supported with parallel replicas. Will try to execute the query without using them.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+        context->setSetting("parallel_replicas_custom_key", String{""});
     }
 
     /// Rewrite JOINs
@@ -503,11 +532,49 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
+    ASTPtr parallel_replicas_custom_filter_ast = nullptr;
+    if (storage && context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY && !joined_tables.tablesWithColumns().empty())
+    {
+        if (settings.parallel_replicas_count > 1)
+        {
+            if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *context))
+            {
+                LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
+
+                parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
+                    settings.parallel_replicas_count,
+                    settings.parallel_replica_offset,
+                    std::move(custom_key_ast),
+                    settings.parallel_replicas_custom_key_filter_type,
+                    *storage,
+                    context);
+            }
+            else if (settings.parallel_replica_offset > 0)
+            {
+                throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Parallel replicas processing with custom_key has been requested "
+                        "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
+                        "or it's invalid (settings `parallel_replicas_custom_key`)");
+            }
+        }
+        else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
+                 distributed && canUseCustomKey(settings, *distributed->getCluster(), *context))
+        {
+            query_info.use_custom_key = true;
+            context->setSetting("distributed_group_by_no_merge", 2);
+        }
+    }
+
+    if (autoFinalOnQuery(query))
+    {
+        query.setFinal();
+    }
+
     auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
-        NameToNameMap parameter_values;
         NameToNameMap parameter_types;
         if (view)
         {
@@ -520,14 +587,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// and after query is replaced, we use these parameters to substitute in the parameterized view query
             if (query_info.is_parameterized_view)
             {
-                parameter_values = analyzeFunctionParamValues(query_ptr);
-                view->setParameterValues(parameter_values);
-                parameter_types = view->getParameterValues();
+                query_info.parameterized_view_values = analyzeFunctionParamValues(query_ptr);
+                parameter_types = view->getParameterTypes();
             }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
             if (query_info.is_parameterized_view)
             {
-                view->replaceQueryParametersIfParametrizedView(query_ptr);
+                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameterized_view_values);
             }
 
         }
@@ -540,8 +606,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             required_result_column_names,
             table_join,
             query_info.is_parameterized_view,
-            parameter_values,
+            query_info.parameterized_view_values,
             parameter_types);
+
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
@@ -579,13 +646,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
-                MergeTreeWhereOptimizer{
-                    current_info,
-                    context,
+                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
+                const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+
+                MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
-                    syntax_analyzer_result->requiredSourceColumns(),
+                    queried_columns,
+                    supported_prewhere_columns,
                     log};
+
+                where_optimizer.optimize(current_info, context);
             }
         }
 
@@ -677,7 +748,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(query_info.additional_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, parameter_values);
+            if (parallel_replicas_custom_filter_ast)
+            {
+                parallel_replicas_custom_filter_info = generateFilterActions(
+                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                        prepared_sets);
+
+                parallel_replicas_custom_filter_info->do_remove_column = true;
+                query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
+            }
+
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, query_info.parameterized_view_values);
         }
 
         /// Calculate structure of the result.
@@ -1419,17 +1500,23 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 query_plan.addStep(std::move(row_level_security_step));
             }
 
-            if (additional_filter_info)
+            const auto add_filter_step = [&](const auto & new_filter_info, const std::string & description)
             {
-                auto additional_filter_step = std::make_unique<FilterStep>(
+                auto filter_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentDataStream(),
-                    additional_filter_info->actions,
-                    additional_filter_info->column_name,
-                    additional_filter_info->do_remove_column);
+                    new_filter_info->actions,
+                    new_filter_info->column_name,
+                    new_filter_info->do_remove_column);
 
-                additional_filter_step->setStepDescription("Additional filter");
-                query_plan.addStep(std::move(additional_filter_step));
-            }
+                filter_step->setStepDescription(description);
+                query_plan.addStep(std::move(filter_step));
+            };
+
+            if (additional_filter_info)
+                add_filter_step(additional_filter_info, "Additional filter");
+
+            if (parallel_replicas_custom_filter_info)
+                add_filter_step(parallel_replicas_custom_filter_info, "Parallel replica custom key filter");
 
             if (expressions.before_array_join)
             {
@@ -1523,7 +1610,25 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         auto join_kind = table_join.kind();
                         bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
+
+                        auto has_non_const = [](const Block & block, const auto & keys)
+                        {
+                            for (const auto & key : keys)
+                            {
+                                const auto & column = block.getByName(key).column;
+                                if (column && !isColumnConst(*column))
+                                    return true;
+                            }
+                            return false;
+                        };
+                        /// This optimization relies on the sorting that should buffer the whole stream before emitting any rows.
+                        /// It doesn't hold such a guarantee for streams with const keys.
+                        /// Note: it's also doesn't work with the read-in-order optimization.
+                        /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+                        bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream().header, join_clause.key_names_left)
+                            && has_non_const(joined_plan->getCurrentDataStream().header, join_clause.key_names_right);
+
+                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
                         {
                             auto * left_set = add_create_set(query_plan, join_clause.key_names_left, JoinTableSide::Left);
                             auto * right_set = add_create_set(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
@@ -1902,22 +2007,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
-void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
-{
-    context->getClientInfo().collaborate_with_initiator = true;
-    context->setMergeTreeReadTaskCallback(std::move(callback));
-}
-
-void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t replica_count)
-{
-    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    context->getClientInfo().count_participating_replicas = replica_count;
-    context->getClientInfo().number_of_current_replica = replica_num;
-    context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
-    context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
-    context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-}
-
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 {
     return row_policy_filter;
@@ -1925,8 +2014,6 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
-    elem.query_kind = "Select";
-
     for (const auto & row_policy : row_policy_filter->policies)
     {
         auto name = row_policy->getFullName().toString();
@@ -1987,6 +2074,27 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
     }
 
+    /// Set of all (including ALIAS) required columns for PREWHERE
+    auto get_prewhere_columns = [&]()
+    {
+        NameSet columns;
+
+        if (prewhere_info)
+        {
+            /// Get some columns directly from PREWHERE expression actions
+            auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
+            columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+
+            if (prewhere_info->row_level_filter)
+            {
+                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
+                columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
+            }
+        }
+
+        return columns;
+    };
+
     /// There are multiple sources of required columns:
     ///  - raw required columns,
     ///  - columns deduced from ALIAS columns,
@@ -1996,21 +2104,8 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     /// before any other executions.
     if (alias_columns_required)
     {
-        NameSet required_columns_from_prewhere; /// Set of all (including ALIAS) required columns for PREWHERE
+        NameSet required_columns_from_prewhere = get_prewhere_columns();
         NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
-
-        if (prewhere_info)
-        {
-            /// Get some columns directly from PREWHERE expression actions
-            auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
-            required_columns_from_prewhere.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
-
-            if (prewhere_info->row_level_filter)
-            {
-                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
-                required_columns_from_prewhere.insert(row_level_required_columns.begin(), row_level_required_columns.end());
-            }
-        }
 
         /// Expression, that contains all raw required columns
         ASTPtr required_columns_all_expr = std::make_shared<ASTExpressionList>();
@@ -2105,6 +2200,18 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (!required_aliases_from_prewhere.contains(column))
                     if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                         required_columns.push_back(column);
+        }
+    }
+
+    const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+    if (supported_prewhere_columns.has_value())
+    {
+        NameSet required_columns_from_prewhere = get_prewhere_columns();
+
+        for (const auto & column_name : required_columns_from_prewhere)
+        {
+            if (!supported_prewhere_columns->contains(column_name))
+                throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE for {}", storage->getName(), column_name);
         }
     }
 }
@@ -2509,24 +2616,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     if (!group_by_info && settings.force_aggregation_in_order)
     {
-        /// Not the most optimal implementation here, but this branch handles very marginal case.
-
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
-
-        auto sorting_step = std::make_unique<SortingStep>(
-            query_plan.getCurrentDataStream(),
-            group_by_sort_description,
-            0 /* LIMIT */,
-            SortingStep::Settings(*context),
-            settings.optimize_sorting_by_input_stream_properties);
-        sorting_step->setStepDescription("Enforced sorting for aggregation in order");
-
-        query_plan.addStep(std::move(sorting_step));
-
-        group_by_info = std::make_shared<InputOrderInfo>(
-            group_by_sort_description, group_by_sort_description.size(), 1 /* direction */, 0 /* limit */);
-
-        sort_description_for_merging = group_by_info->sort_description_for_merging;
+        sort_description_for_merging = group_by_sort_description;
     }
 
     auto merge_threads = max_streams;
@@ -2553,7 +2644,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
-        settings.enable_memory_bound_merging_of_aggregation_results);
+        settings.enable_memory_bound_merging_of_aggregation_results,
+        !group_by_info && settings.force_aggregation_in_order);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -2574,12 +2666,13 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
         && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
+    const bool parallel_replicas_from_merge_tree = storage->isMergeTree() && context->canUseParallelReplicasOnInitiator();
 
     executeMergeAggregatedImpl(
         query_plan,
         overflow_row,
         final,
-        storage && storage->isRemote(),
+        storage && (storage->isRemote() || parallel_replicas_from_merge_tree),
         has_grouping_sets,
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
@@ -2794,8 +2887,10 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
     SortDescription sort_description = getSortDescription(query, context);
     const UInt64 limit = getLimitForSorting(query, context);
     const auto max_block_size = context->getSettingsRef().max_block_size;
+    const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
 
-    auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), std::move(sort_description), max_block_size, limit);
+    auto merging_sorted = std::make_unique<SortingStep>(
+        query_plan.getCurrentDataStream(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
@@ -3002,6 +3097,15 @@ void InterpreterSelectQuery::ignoreWithTotals()
     getSelectQuery().group_by_with_totals = false;
 }
 
+bool InterpreterSelectQuery::autoFinalOnQuery(ASTSelectQuery & query)
+{
+    // query.tables() is required because not all queries have tables in it, it could be a function.
+    bool is_auto_final_setting_on = context->getSettingsRef().final;
+    bool is_final_supported = storage && storage->supportsFinal() && !storage->isRemote() && query.tables();
+    bool is_query_already_final = query.final();
+
+    return is_auto_final_setting_on && !is_query_already_final && is_final_supported;
+}
 
 void InterpreterSelectQuery::initSettings()
 {

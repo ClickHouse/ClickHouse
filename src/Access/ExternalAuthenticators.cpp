@@ -121,7 +121,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (enable_tls_lc_str == "starttls")
             params.enable_tls = LDAPClient::Params::TLSEnable::YES_STARTTLS;
         else if (config.getBool(ldap_server_config + ".enable_tls"))
-            params.enable_tls = LDAPClient::Params::TLSEnable::YES; //-V1048
+            params.enable_tls = LDAPClient::Params::TLSEnable::YES;
         else
             params.enable_tls = LDAPClient::Params::TLSEnable::NO;
     }
@@ -140,7 +140,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_minimum_protocol_version_lc_str == "tls1.1")
             params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_1;
         else if (tls_minimum_protocol_version_lc_str == "tls1.2")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2; //-V1048
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Bad value for 'tls_minimum_protocol_version' entry, allowed values are: "
@@ -159,7 +159,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_require_cert_lc_str == "try")
             params.tls_require_cert = LDAPClient::Params::TLSRequireCert::TRY;
         else if (tls_require_cert_lc_str == "demand")
-            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND; //-V1048
+            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Bad value for 'tls_require_cert' entry, allowed values are: "

@@ -29,6 +29,7 @@
 #include <base/getPageSize.h>
 
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -61,6 +62,12 @@
 extern const size_t MMAP_THRESHOLD;
 
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
+
+namespace CurrentMetrics
+{
+    extern const Metric MMappedAllocs;
+    extern const Metric MMappedAllocBytes;
+}
 
 namespace DB
 {
@@ -215,8 +222,10 @@ private:
                        mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno(fmt::format("Allocator: Cannot mmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
             /// No need for zero-fill, because mmap guarantees it.
+
+            CurrentMetrics::add(CurrentMetrics::MMappedAllocs);
+            CurrentMetrics::add(CurrentMetrics::MMappedAllocBytes, size);
         }
         else
         {
@@ -252,6 +261,9 @@ private:
         {
             if (0 != munmap(buf, size))
                 DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
+
+            CurrentMetrics::sub(CurrentMetrics::MMappedAllocs);
+            CurrentMetrics::sub(CurrentMetrics::MMappedAllocBytes, size);
         }
         else
         {

@@ -6,6 +6,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ParserExplainQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -15,6 +16,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ParserShowColumnsQuery.h>
 #include <Parsers/ParserShowEngineQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
@@ -25,7 +27,8 @@
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -34,6 +37,7 @@ namespace DB
 bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserShowTablesQuery show_tables_p;
+    ParserShowColumnsQuery show_columns_p;
     ParserShowEnginesQuery show_engine_p;
     ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
@@ -44,6 +48,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserAlterQuery alter_p;
     ParserRenameQuery rename_p;
     ParserDropQuery drop_p;
+    ParserUndropQuery undrop_p;
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
@@ -62,6 +67,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)
+        || show_columns_p.parse(pos, query, expected)
         || show_engine_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
         || describe_cache_p.parse(pos, query, expected)
@@ -71,6 +77,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || alter_p.parse(pos, query, expected)
         || rename_p.parse(pos, query, expected)
         || drop_p.parse(pos, query, expected)
+        || undrop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)

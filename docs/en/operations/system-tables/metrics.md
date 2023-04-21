@@ -7,9 +7,9 @@ Contains metrics which can be calculated instantly, or have a current value. For
 
 Columns:
 
--   `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
--   `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
--   `description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
+- `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
+- `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
+- `description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
 
 The list of supported metrics you can find in the [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp) source file of ClickHouse.
 
@@ -36,7 +36,7 @@ SELECT * FROM system.metrics LIMIT 10
 
 **See Also**
 
--   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
--   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
--   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+- [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
+- [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

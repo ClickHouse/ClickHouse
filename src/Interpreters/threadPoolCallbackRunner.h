@@ -22,11 +22,19 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, callback = std::move(callback)]() mutable -> Result
         {
             if (thread_group)
-                CurrentThread::attachTo(thread_group);
+                CurrentThread::attachToGroup(thread_group);
 
             SCOPE_EXIT_SAFE({
+                {
+                    /// Release all captutred resources before detaching thread group
+                    /// Releasing has to use proper memory tracker which has been set here before callback
+
+                    [[maybe_unused]] auto tmp = std::move(callback);
+                }
+
                 if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
+                    CurrentThread::detachFromGroupIfNotDetached();
+
             });
 
             setThreadName(thread_name.data());

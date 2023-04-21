@@ -79,7 +79,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ParserExpression expr_parser;
 
-    while (Block current = executor.read())
+    while (Block current = executor.readBlock())
     {
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
@@ -187,7 +187,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
         executor.setMainTable(remote_table_id);
 
         ColumnsDescription res;
-        while (auto block = executor.read())
+        while (auto block = executor.readBlock())
         {
             const auto & name_col = *block.getByName("name").column;
             const auto & type_col = *block.getByName("type").column;

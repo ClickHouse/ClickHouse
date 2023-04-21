@@ -5,6 +5,7 @@
 #include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <IO/ResourceLink.h>
 
 namespace DB
 {
@@ -80,13 +81,15 @@ struct ReadSettings
     size_t mmap_threshold = 0;
     MMappedFileCache * mmap_cache = nullptr;
 
-    /// For 'pread_threadpool' method. Lower is more priority.
+    /// For 'pread_threadpool'/'io_uring' method. Lower is more priority.
     size_t priority = 0;
 
     bool load_marks_asynchronously = true;
 
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
+
+    bool enable_filesystem_read_prefetches_log = false;
 
     bool enable_filesystem_cache = true;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
@@ -106,6 +109,10 @@ struct ReadSettings
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
+    ThrottlerPtr local_throttler;
+
+    // Resource to be used during reading
+    ResourceLink resource_link;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;
@@ -118,8 +125,8 @@ struct ReadSettings
     ReadSettings adjustBufferSize(size_t file_size) const
     {
         ReadSettings res = *this;
-        res.local_fs_buffer_size = std::min(file_size, local_fs_buffer_size);
-        res.remote_fs_buffer_size = std::min(file_size, remote_fs_buffer_size);
+        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
+        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
         return res;
     }
 };

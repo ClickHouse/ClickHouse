@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage
+# Tags: no-s3-storage, no-random-merge-tree-settings
 # Tag no-s3-storage: s3 does not have fsync
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -44,8 +44,8 @@ for i in {1..100}; do
     ")"
 
     # Non retriable errors
-    if [[ $FileSync -ne 7 ]]; then
-        echo "FileSync: $FileSync != 11" >&2
+    if [[ $FileSync -ne 8 ]]; then
+        echo "FileSync: $FileSync != 8" >&2
         exit 2
     fi
     # Check that all files was synced
