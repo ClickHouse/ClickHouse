@@ -6,9 +6,7 @@ sidebar_label: Strings
 
 # Functions for Working with Strings
 
-:::note
-Functions for [searching](../../sql-reference/functions/string-search-functions.md) in strings and for [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
-:::
+Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
 
 ## empty
 
