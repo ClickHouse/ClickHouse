@@ -15,14 +15,32 @@ namespace DB
 class IStorageCluster : public IStorage
 {
 public:
+    IStorageCluster(
+        String cluster_name_,
+        const StorageID & table_id_,
+        Poco::Logger * log_,
+        size_t max_function_arguments_,
+        bool structure_argument_was_provided_);
 
-    explicit IStorageCluster(const StorageID & table_id_) : IStorage(table_id_) {}
+    Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
+              ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
 
-    virtual ClusterPtr getCluster(ContextPtr context) const = 0;
+    ClusterPtr getCluster(ContextPtr context) const;
     /// Query is needed for pruning by virtual columns (_file, _path)
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const = 0;
 
+    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
     bool isRemote() const override { return true; }
+
+protected:
+    virtual void updateBeforeRead(const ContextPtr &) {}
+
+private:
+    Poco::Logger * log;
+    String cluster_name;
+    size_t max_function_arguments;
+    bool structure_argument_was_provided;
 };
 
 

@@ -18,33 +18,30 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public IStorageCluster
+class StorageClusterBase : public IStorageCluster
 {
 public:
-    StorageS3Cluster(
-        const String & cluster_name_,
-        const StorageS3::Configuration & configuration_,
+    StorageClusterBase(
+        String cluster_name,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
         bool structure_argument_was_provided_);
 
-    std::string getName() const override { return "S3Cluster"; }
+    Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
+              ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
 
-    NamesAndTypesList getVirtuals() const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
-
-protected:
-    void updateConfigurationIfChanged(ContextPtr local_context);
+    ClusterPtr getCluster(ContextPtr context) const override;
 
 private:
-    void updateBeforeRead(const ContextPtr & context) override { updateConfigurationIfChanged(context); }
-
-    StorageS3::Configuration s3_configuration;
-    NamesAndTypesList virtual_columns;
-    Block virtual_block;
+    Poco::Logger * log;
+    String cluster_name;
+    bool structure_argument_was_provided;
 };
 
 

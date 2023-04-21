@@ -32,23 +32,14 @@ public:
 
     std::string getName() const override { return "URLCluster"; }
 
-    Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
-
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
-
     NamesAndTypesList getVirtuals() const override;
 
-    ClusterPtr getCluster(ContextPtr context) const override;
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
 
 private:
-    String cluster_name;
     String uri;
     String format_name;
     String compression_method;
-    bool structure_argument_was_provided;
 
 };
 
