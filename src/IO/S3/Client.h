@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 
-#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 

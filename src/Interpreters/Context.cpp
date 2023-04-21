@@ -19,6 +19,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -42,7 +43,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
-#include <Core/ServerSettings.h>
+#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -172,6 +173,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
@@ -219,7 +222,11 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    TemporaryDataOnDiskScopePtr temp_data_on_disk;          /// Temporary files that occur when processing the request accounted here.
+
+    /// All temporary files that occur when processing the requests accounted here.
+    /// Child scopes for more fine-grained accounting are created per user/query/etc.
+    /// Initialized once during server startup.
+    TemporaryDataOnDiskScopePtr root_temp_data_on_disk;
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -276,8 +283,14 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
+
     mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
     mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
+
+    mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
+    mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
+
+    mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -287,6 +300,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
+
+    ServerSettings server_settings;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings;   /// Settings of ReplicatedMergeTree* engines.
@@ -312,8 +327,8 @@ struct ContextSharedPart : boost::noncopyable
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
-    mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
     std::unique_ptr<ClusterDiscovery> cluster_discovery;
+    mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
 
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
@@ -744,25 +759,35 @@ Strings Context::getWarnings() const
 }
 
 /// TODO: remove, use `getTempDataOnDisk`
-VolumePtr Context::getTemporaryVolume() const
+VolumePtr Context::getGlobalTemporaryVolume() const
 {
     auto lock = getLock();
-    if (shared->temp_data_on_disk)
-        return shared->temp_data_on_disk->getVolume();
+    /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
+    /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
+    if (shared->root_temp_data_on_disk)
+        return shared->root_temp_data_on_disk->getVolume();
     return nullptr;
 }
 
 TemporaryDataOnDiskScopePtr Context::getTempDataOnDisk() const
 {
-    auto lock = getLock();
     if (this->temp_data_on_disk)
         return this->temp_data_on_disk;
-    return shared->temp_data_on_disk;
+
+    auto lock = getLock();
+    return shared->root_temp_data_on_disk;
+}
+
+TemporaryDataOnDiskScopePtr Context::getSharedTempDataOnDisk() const
+{
+    auto lock = getLock();
+    return shared->root_temp_data_on_disk;
 }
 
 void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
 {
-    auto lock = getLock();
+    /// It's set from `ProcessList::insert` in `executeQueryImpl` before query execution
+    /// so no races with `getTempDataOnDisk` which is called from query execution.
     this->temp_data_on_disk = std::move(temp_data_on_disk_);
 }
 
@@ -772,7 +797,7 @@ void Context::setPath(const String & path)
 
     shared->path = path;
 
-    if (shared->tmp_path.empty() && !shared->temp_data_on_disk)
+    if (shared->tmp_path.empty() && !shared->root_temp_data_on_disk)
         shared->tmp_path = shared->path + "tmp/";
 
     if (shared->flags_path.empty())
@@ -828,6 +853,11 @@ static VolumePtr createLocalSingleDiskVolume(const std::string & path)
 
 void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 {
+    auto lock = getLock();
+
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
+
     shared->tmp_path = path;
     if (!shared->tmp_path.ends_with('/'))
         shared->tmp_path += '/';
@@ -839,17 +869,23 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
         setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
 }
 
 void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
 {
-    std::lock_guard lock(shared->storage_policies_mutex);
+    StoragePolicyPtr tmp_policy;
+    {
+        /// lock in required only for accessing `shared->merge_tree_storage_policy_selector`
+        /// StoragePolicy itself is immutable.
+        std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
+        tmp_policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
+    }
 
-     StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
     if (tmp_policy->getVolumes().size() != 1)
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
+
     VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
@@ -874,9 +910,13 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
         setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
-}
+    auto lock = getLock();
 
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
+
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+}
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
 {
@@ -884,11 +924,11 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     if (!disk_ptr)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
 
-    const auto * disk_object_storage_ptr = dynamic_cast<const DiskObjectStorage *>(disk_ptr.get());
-    if (!disk_object_storage_ptr)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' does not use cache", cache_disk_name);
+    auto lock = getLock();
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
-    auto file_cache = disk_object_storage_ptr->getCache();
+    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
     if (!file_cache)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
 
@@ -896,7 +936,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     shared->tmp_path = file_cache->getBasePath();
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
 void Context::setFlagsPath(const String & path)
@@ -1353,6 +1393,22 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     }
 }
 
+static bool findIdentifier(const ASTFunction * function)
+{
+    if (!function || !function->arguments)
+        return false;
+    if (const auto * arguments = function->arguments->as<ASTExpressionList>())
+    {
+        for (const auto & argument : arguments->children)
+        {
+            if (argument->as<ASTIdentifier>())
+                return true;
+            if (const auto * f = argument->as<ASTFunction>(); f && findIdentifier(f))
+                return true;
+        }
+    }
+    return false;
+}
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
@@ -1399,62 +1455,125 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             }
             throw;
         }
-        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
+
+        uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
+        if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & structure_hint = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            const auto & insert_structure = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            DB::ColumnsDescription structure_hint;
+
             bool use_columns_from_insert_query = true;
 
-            /// use_structure_from_insertion_table_in_table_functions=2 means `auto`
-            if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
+            /// Insert table matches columns against SELECT expression by position, so we want to map
+            /// insert table columns to table function columns through names from SELECT expression.
+
+            auto insert_column = insert_structure.begin();
+            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
+            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+            bool asterisk = false;
+            const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
+            const auto * expression = expression_list.begin();
+
+            /// We want to go through SELECT expression list and correspond each expression to column in insert table
+            /// which type will be used as a hint for the file structure inference.
+            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
-                const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
-                std::unordered_set<String> virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-                Names columns_names;
-                bool have_asterisk = false;
-                /// First, check if we have only identifiers, asterisk and literals in select expression,
-                /// and if no, we cannot use the structure from insertion table.
-                for (const auto & expression : expression_list->children)
+                if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
-                    if (auto * identifier = expression->as<ASTIdentifier>())
+                    if (!virtual_column_names.contains(identifier->name()))
                     {
-                        columns_names.push_back(identifier->name());
-                    }
-                    else if (expression->as<ASTAsterisk>())
-                    {
-                        have_asterisk = true;
-                    }
-                    else if (!expression->as<ASTLiteral>())
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                }
+                        if (asterisk)
+                        {
+                            if (use_structure_from_insertion_table_in_table_functions == 1)
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
 
-                /// Check that all identifiers are column names from insertion table and not virtual column names from storage.
-                for (const auto & column_name : columns_names)
-                {
-                    if (!structure_hint.has(column_name) || virtual_column_names.contains(column_name))
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                }
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
 
-                /// If we don't have asterisk but only subset of columns, we should use
-                /// structure from insertion table only in case when table function
-                /// supports reading subset of columns from data.
-                if (use_columns_from_insert_query && !have_asterisk && !columns_names.empty())
-                {
-                    /// For input function we should check if input format supports reading subset of columns.
-                    if (table_function_ptr->getName() == "input")
-                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                        structure_hint.add({ identifier->name(), insert_column->type });
+                    }
+
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
                     else
-                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                        ++insert_column;
+                }
+                else if ((*expression)->as<ASTAsterisk>())
+                {
+                    if (asterisk)
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                    if (!structure_hint.empty())
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+
+                    asterisk = true;
+                }
+                else if (auto * func = (*expression)->as<ASTFunction>())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(func))
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
+                else
+                {
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
                 }
             }
 
+            if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
+            {
+                /// For input function we should check if input format supports reading subset of columns.
+                if (table_function_ptr->getName() == "input")
+                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                else
+                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+            }
+
             if (use_columns_from_insert_query)
-                table_function_ptr->setStructureHint(structure_hint);
+            {
+                if (expression == expression_list.end())
+                {
+                    /// Append tail of insert structure to the hint
+                    if (asterisk)
+                    {
+                        for (; insert_column != insert_structure_end; ++insert_column)
+                            structure_hint.add({ insert_column->name, insert_column->type });
+                    }
+
+                    if (!structure_hint.empty())
+                        table_function_ptr->setStructureHint(structure_hint);
+
+                } else if (use_structure_from_insertion_table_in_table_functions == 1)
+                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+            }
         }
 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
@@ -1757,6 +1876,32 @@ ContextMutablePtr Context::getBufferContext() const
     return buffer_context;
 }
 
+void Context::makeQueryContext()
+{
+    query_context = shared_from_this();
+
+    /// Create throttlers, to inherit the ThrottlePtr in the context copies.
+    {
+        getRemoteReadThrottler();
+        getRemoteWriteThrottler();
+
+        getLocalReadThrottler();
+        getLocalWriteThrottler();
+
+        getBackupsThrottler();
+    }
+}
+
+void Context::makeSessionContext()
+{
+    session_context = shared_from_this();
+}
+
+void Context::makeGlobalContext()
+{
+    initGlobal();
+    global_context = shared_from_this();
+}
 
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
@@ -1926,9 +2071,9 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
     const auto & config = getConfigRef();
-    const auto & settings = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings.restore_threads);
+    const auto & settings_ = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings_.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings_.restore_threads);
 
     if (!shared->backups_worker)
         shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
@@ -2188,11 +2333,8 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_buffer_flush_schedule_pool_size,
+            shared->server_settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
@@ -2237,11 +2379,8 @@ BackgroundSchedulePool & Context::getSchedulePool() const
     auto lock = getLock();
     if (!shared->schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_schedule_pool_size,
+            shared->server_settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
@@ -2255,11 +2394,8 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_distributed_schedule_pool_size,
+            shared->server_settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
@@ -2273,11 +2409,8 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     auto lock = getLock();
     if (!shared->message_broker_schedule_pool)
     {
-        ServerSettings server_settings;
-        server_settings.loadSettingsFromConfig(getConfigRef());
-
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
-            server_settings.background_message_broker_schedule_pool_size,
+            shared->server_settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
@@ -2308,22 +2441,124 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->remote_read_throttler)
-        shared->remote_read_throttler = std::make_shared<Throttler>(
-            settings.max_remote_read_network_bandwidth_for_server);
+    ThrottlerPtr throttler;
 
-    return shared->remote_read_throttler;
+    const auto & query_settings = getSettingsRef();
+    UInt64 bandwidth_for_server = shared->server_settings.max_remote_read_network_bandwidth_for_server;
+    if (bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->remote_read_throttler)
+            shared->remote_read_throttler = std::make_shared<Throttler>(bandwidth_for_server);
+        throttler = shared->remote_read_throttler;
+    }
+
+    if (query_settings.max_remote_read_network_bandwidth)
+    {
+        auto lock = getLock();
+        if (!remote_read_query_throttler)
+            remote_read_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_read_network_bandwidth, throttler);
+        throttler = remote_read_query_throttler;
+    }
+
+    return throttler;
 }
 
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->remote_write_throttler)
-        shared->remote_write_throttler = std::make_shared<Throttler>(
-            settings.max_remote_write_network_bandwidth_for_server);
+    ThrottlerPtr throttler;
 
-    return shared->remote_write_throttler;
+    const auto & query_settings = getSettingsRef();
+    UInt64 bandwidth_for_server = shared->server_settings.max_remote_write_network_bandwidth_for_server;
+    if (bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->remote_write_throttler)
+            shared->remote_write_throttler = std::make_shared<Throttler>(bandwidth_for_server);
+        throttler = shared->remote_write_throttler;
+    }
+
+    if (query_settings.max_remote_write_network_bandwidth)
+    {
+        auto lock = getLock();
+        if (!remote_write_query_throttler)
+            remote_write_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_write_network_bandwidth, throttler);
+        throttler = remote_write_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getLocalReadThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_local_read_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->local_read_throttler)
+            shared->local_read_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_read_bandwidth_for_server);
+        throttler = shared->local_read_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_local_read_bandwidth)
+    {
+        auto lock = getLock();
+        if (!local_read_query_throttler)
+            local_read_query_throttler = std::make_shared<Throttler>(query_settings.max_local_read_bandwidth, throttler);
+        throttler = local_read_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getLocalWriteThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_local_write_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->local_write_throttler)
+            shared->local_write_throttler = std::make_shared<Throttler>(shared->server_settings.max_local_write_bandwidth_for_server);
+        throttler = shared->local_write_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_local_write_bandwidth)
+    {
+        auto lock = getLock();
+        if (!local_write_query_throttler)
+            local_write_query_throttler = std::make_shared<Throttler>(query_settings.max_local_write_bandwidth, throttler);
+        throttler = local_write_query_throttler;
+    }
+
+    return throttler;
+}
+
+ThrottlerPtr Context::getBackupsThrottler() const
+{
+    ThrottlerPtr throttler;
+
+    if (shared->server_settings.max_backup_bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->backups_server_throttler)
+            shared->backups_server_throttler = std::make_shared<Throttler>(shared->server_settings.max_backup_bandwidth_for_server);
+        throttler = shared->backups_server_throttler;
+    }
+
+    const auto & query_settings = getSettingsRef();
+    if (query_settings.max_backup_bandwidth)
+    {
+        auto lock = getLock();
+        if (!backups_query_throttler)
+            backups_query_throttler = std::make_shared<Throttler>(query_settings.max_backup_bandwidth, throttler);
+        throttler = backups_query_throttler;
+    }
+
+    return throttler;
 }
 
 bool Context::hasDistributedDDL() const
@@ -2362,7 +2597,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper", getZooKeeperLog());
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
     else if (shared->zookeeper->expired())
     {
         Stopwatch watch;
@@ -2401,8 +2636,9 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
 {
     try
     {
+        const auto config_name = zkutil::getZooKeeperConfigName(getConfigRef());
         /// If our server is part of main Keeper cluster
-        if (checkZooKeeperConfigIsLocal(getConfigRef(), "zookeeper"))
+        if (config_name == "keeper_server" || checkZooKeeperConfigIsLocal(getConfigRef(), config_name))
         {
             LOG_DEBUG(shared->log, "Keeper server is participant of the main zookeeper cluster, will try to connect to it");
             getZooKeeper();
@@ -2608,7 +2844,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
     bool server_started = isServerCompletelyStarted();
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper, getZooKeeperLog(), server_started);
+    reloadZooKeeperIfChangedImpl(config, zkutil::getZooKeeperConfigName(*config), shared->zookeeper, getZooKeeperLog(), server_started);
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -2633,7 +2869,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 
 bool Context::hasZooKeeper() const
 {
-    return getConfigRef().has("zookeeper");
+    return zkutil::hasZooKeeperConfig(getConfigRef());
 }
 
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
@@ -2730,11 +2966,19 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters()->getCluster(cluster_name);
-    if (res)
-        return res;
-    if (!cluster_name.empty())
+    std::shared_ptr<Cluster> res = nullptr;
+
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        res = getClustersImpl(lock)->getCluster(cluster_name);
+
+        if (res == nullptr && shared->cluster_discovery)
+            res = shared->cluster_discovery->getCluster(cluster_name);
+    }
+
+    if (res == nullptr && !cluster_name.empty())
         res = tryGetReplicatedDatabaseCluster(cluster_name);
+
     return res;
 }
 
@@ -2765,10 +3009,23 @@ void Context::reloadClusterConfig() const
     }
 }
 
-
-std::shared_ptr<Clusters> Context::getClusters() const
+std::map<String, ClusterPtr> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
+
+    auto clusters = getClustersImpl(lock)->getContainer();
+
+    if (shared->cluster_discovery)
+    {
+        const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
+        for (const auto & [name, cluster] : cluster_discovery_map)
+            clusters.emplace(name, cluster);
+    }
+    return clusters;
+}
+
+std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> & /* lock */) const
+{
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
@@ -2780,6 +3037,7 @@ std::shared_ptr<Clusters> Context::getClusters() const
 
 void Context::startClusterDiscovery()
 {
+    std::lock_guard lock(shared->clusters_mutex);
     if (!shared->cluster_discovery)
         return;
     shared->cluster_discovery->start();
@@ -3335,7 +3593,7 @@ void Context::shutdown()
     }
 
     /// Special volumes might also use disks that require shutdown.
-    auto & tmp_data = shared->temp_data_on_disk;
+    auto & tmp_data = shared->root_temp_data_on_disk;
     if (tmp_data && tmp_data->getVolume())
     {
         auto & disks = tmp_data->getVolume()->getDisks();
@@ -3356,6 +3614,9 @@ void Context::setApplicationType(ApplicationType type)
 {
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
+
+    if (type == ApplicationType::SERVER)
+        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
@@ -3812,11 +4073,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     if (shared->are_background_executors_initialized)
         return;
 
-    const auto & config = getConfigRef();
-
-    ServerSettings server_settings;
-    server_settings.loadSettingsFromConfig(config);
-
+    const ServerSettings & server_settings = shared->server_settings;
     size_t background_pool_size = server_settings.background_pool_size;
     auto background_merges_mutations_concurrency_ratio = server_settings.background_merges_mutations_concurrency_ratio;
     size_t background_pool_max_tasks_count = static_cast<size_t>(background_pool_size * background_merges_mutations_concurrency_ratio);
@@ -4033,6 +4290,7 @@ ReadSettings Context::getReadSettings() const
     res.priority = settings.read_priority;
 
     res.remote_throttler = getRemoteReadThrottler();
+    res.local_throttler = getLocalReadThrottler();
 
     res.http_max_tries = settings.http_max_tries;
     res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
@@ -4042,6 +4300,14 @@ ReadSettings Context::getReadSettings() const
     res.mmap_cache = getMMappedFileCache().get();
 
     return res;
+}
+
+ReadSettings Context::getBackupReadSettings() const
+{
+    ReadSettings settings_ = getReadSettings();
+    settings_.remote_throttler = getBackupsThrottler();
+    settings_.local_throttler = getBackupsThrottler();
+    return settings_;
 }
 
 WriteSettings Context::getWriteSettings() const
@@ -4055,6 +4321,7 @@ WriteSettings Context::getWriteSettings() const
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
+    res.local_throttler = getLocalWriteThrottler();
 
     return res;
 }
@@ -4069,14 +4336,14 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 
 Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
 
     using enum Context::ParallelReplicasMode;
-    if (!settings.parallel_replicas_custom_key.value.empty())
+    if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings.allow_experimental_parallel_reading_from_replicas
-        && !settings.use_hedged_requests)
+    if (settings_.allow_experimental_parallel_reading_from_replicas
+        && !settings_.use_hedged_requests)
         return READ_TASKS;
 
     return SAMPLE_KEY;
@@ -4084,18 +4351,28 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings.max_parallel_replicas > 1
+        && settings_.max_parallel_replicas > 1
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings.max_parallel_replicas > 1
+        && settings_.max_parallel_replicas > 1
         && getClientInfo().collaborate_with_initiator;
+}
+
+void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
+{
+    prepared_sets_cache = cache;
+}
+
+PreparedSetsCachePtr Context::getPreparedSetsCache() const
+{
+    return prepared_sets_cache;
 }
 
 UInt64 Context::getClientProtocolVersion() const
