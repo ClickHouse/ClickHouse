@@ -1252,7 +1252,7 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch(...)
+            catch (...)
             {
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
