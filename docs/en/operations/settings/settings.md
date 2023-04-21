@@ -1123,7 +1123,7 @@ Could be used for throttling speed when replicating the data to add or replace n
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.
 
-Default value: 50.
+Default value: 1000.
 
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
@@ -4102,7 +4102,7 @@ Enabled by default.
 If we can't establish connection with replica after this timeout in hedged requests, we start working with the next replica without cancelling connection to the previous.
 Timeout value is in milliseconds.
 
-Default value: `100`.
+Default value: `50`.
 
 ## receive_data_timeout {#receive_data_timeout}
 
