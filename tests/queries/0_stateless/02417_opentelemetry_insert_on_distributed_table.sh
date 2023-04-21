@@ -20,6 +20,7 @@ function insert()
             -H "tracestate: $4" \
             "${CLICKHOUSE_URL}" \
             --data @-
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH DISTRIBUTED ${CLICKHOUSE_DATABASE}.dist_opentelemetry"
 }
 
 function check_span()

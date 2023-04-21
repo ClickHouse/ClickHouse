@@ -203,10 +203,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
+        CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            std::lock_guard lock_thread_group(thread_group->mutex);
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
@@ -214,8 +214,6 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
-            thread_group->query = query_;
-            thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
@@ -342,7 +340,7 @@ QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
-    ThreadGroupStatusPtr && thread_group_,
+    ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
@@ -364,7 +362,7 @@ QueryStatus::~QueryStatus()
 {
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
-    for (const auto & e : executors)
+    for (const auto & [_, e] : executors)
         assert(!e->executor);
 #endif
 
@@ -402,7 +400,9 @@ CancellationCode QueryStatus::cancelQuery(bool)
     {
         /// Create a snapshot of executors under a mutex.
         std::lock_guard lock(executors_mutex);
-        executors_snapshot = executors;
+        executors_snapshot.reserve(executors.size());
+        for (const auto & [_, e] : executors)
+            executors_snapshot.push_back(e);
     }
 
     /// We should call cancel() for each executor with unlocked executors_mutex, because
@@ -430,17 +430,24 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
-    assert(std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; }) == executors.end());
-    executors.push_back(std::make_shared<ExecutorHolder>(e));
+    assert(!executors.contains(e));
+    executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 {
-    std::lock_guard lock(executors_mutex);
-    auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
-    assert(it != executors.end());
-    /// Invalidate executor pointer inside holder, but don't remove holder from the executors (to avoid race with cancelQuery)
-    (*it)->remove();
+    ExecutorHolderPtr executor_holder;
+
+    {
+        std::lock_guard lock(executors_mutex);
+        assert(executors.contains(e));
+        executor_holder = executors[e];
+        executors.erase(e);
+    }
+
+    /// Invalidate executor pointer inside holder.
+    /// We should do it with released executors_mutex to avoid possible lock order inversion.
+    executor_holder->remove();
 }
 
 bool QueryStatus::checkTimeLimit()
@@ -576,10 +583,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
         if (get_thread_list)
-        {
-            std::lock_guard lock(thread_group->mutex);
-            res.thread_ids.assign(thread_group->thread_ids.begin(), thread_group->thread_ids.end());
-        }
+            res.thread_ids = thread_group->getInvolvedThreadIds();
 
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
@@ -621,7 +625,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
     if (global_context)
     {
         size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getTempDataOnDisk(), size_limit);
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
     }
 }
 

@@ -131,14 +131,16 @@ TEST_F(FileCacheTest, get)
     auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
+    settings.base_path = cache_base_path;
     settings.max_size = 30;
     settings.max_elements = 5;
 
     {
-        auto cache = DB::FileCache(cache_base_path, settings);
+        auto cache = DB::FileCache(settings);
         cache.initialize();
         auto key = cache.hash("key1");
 
@@ -398,8 +400,8 @@ TEST_F(FileCacheTest, get)
                 auto query_context_1 = DB::Context::createCopy(getContext().context);
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
+                chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
 
                 auto holder_2 = cache.getOrSet(key, 25, 5, {}); /// Get [25, 29] once again.
                 auto segments_2 = fromHolder(holder_2);
@@ -467,8 +469,8 @@ TEST_F(FileCacheTest, get)
                 auto query_context_1 = DB::Context::createCopy(getContext().context);
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
+                chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
 
                 auto holder_2 = cache.getOrSet(key, 3, 23, {}); /// Get [3, 25] once again
                 auto segments_2 = fromHolder(*holder);
@@ -515,7 +517,7 @@ TEST_F(FileCacheTest, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::FileCache(cache_base_path, settings);
+        auto cache2 = DB::FileCache(settings);
         cache2.initialize();
         auto key = cache2.hash("key1");
 
@@ -536,7 +538,8 @@ TEST_F(FileCacheTest, get)
 
         auto settings2 = settings;
         settings2.max_file_segment_size = 10;
-        auto cache2 = DB::FileCache(caches_dir / "cache2", settings2);
+        settings2.base_path = caches_dir / "cache2";
+        auto cache2 = DB::FileCache(settings2);
         cache2.initialize();
         auto key = cache2.hash("key1");
 
@@ -557,11 +560,12 @@ TEST_F(FileCacheTest, writeBuffer)
     settings.max_size = 100;
     settings.max_elements = 5;
     settings.max_file_segment_size = 5;
+    settings.base_path = cache_base_path;
 
-    DB::FileCache cache(cache_base_path, settings);
+    DB::FileCache cache(settings);
     cache.initialize();
 
-    auto write_to_cache = [&cache](const String & key, const Strings & data)
+    auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
     {
         CreateFileSegmentSettings segment_settings;
         segment_settings.kind = FileSegmentKind::Temporary;
@@ -571,14 +575,31 @@ TEST_F(FileCacheTest, writeBuffer)
         EXPECT_EQ(holder.file_segments.size(), 1);
         auto & segment = holder.file_segments.front();
         WriteBufferToFileSegment out(segment.get());
+        std::list<std::thread> threads;
+        std::mutex mu;
         for (const auto & s : data)
-            out.write(s.data(), s.size());
+        {
+            /// Write from diffetent threads to check
+            /// that no assertions inside cache related to downloaderId are triggered
+            threads.emplace_back([&]
+            {
+                std::unique_lock lock(mu);
+                out.write(s.data(), s.size());
+                /// test different buffering scenarios
+                if (flush)
+                {
+                    out.next();
+                }
+            });
+        }
+        for (auto & t : threads)
+            t.join();
         return holder;
     };
 
     std::vector<fs::path> file_segment_paths;
     {
-        auto holder = write_to_cache("key1", {"abc", "defg"});
+        auto holder = write_to_cache("key1", {"abc", "defg"}, false);
         file_segment_paths.emplace_back(holder.file_segments.front()->getPathInLocalCache());
 
         ASSERT_EQ(fs::file_size(file_segment_paths.back()), 7);
@@ -586,7 +607,7 @@ TEST_F(FileCacheTest, writeBuffer)
         ASSERT_EQ(cache.getUsedCacheSize(), 7);
 
         {
-            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"});
+            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"}, true);
             file_segment_paths.emplace_back(holder2.file_segments.front()->getPathInLocalCache());
 
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
@@ -640,8 +661,9 @@ TEST_F(FileCacheTest, temporaryData)
     DB::FileCacheSettings settings;
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
+    settings.base_path = cache_base_path;
 
-    DB::FileCache file_cache(cache_base_path, settings);
+    DB::FileCache file_cache(settings);
     file_cache.initialize();
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
@@ -686,6 +708,27 @@ TEST_F(FileCacheTest, temporaryData)
 
         ASSERT_EQ(file_cache.getUsedCacheSize(), used_size_before_attempt);
     }
+
+    {
+        size_t before_used_size = file_cache.getUsedCacheSize();
+        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+
+        auto write_buf_stream = tmp_data->createRawStream();
+
+        write_buf_stream->write("1234567890", 10);
+        write_buf_stream->write("abcde", 5);
+        auto read_buf = dynamic_cast<IReadableWriteBuffer *>(write_buf_stream.get())->tryGetReadBuffer();
+
+        ASSERT_GT(file_cache.getUsedCacheSize(), before_used_size + 10);
+
+        char buf[15];
+        size_t read_size = read_buf->read(buf, 15);
+        ASSERT_EQ(read_size, 15);
+        ASSERT_EQ(std::string(buf, 15), "1234567890abcde");
+        read_size = read_buf->read(buf, 15);
+        ASSERT_EQ(read_size, 0);
+    }
+
     {
         auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
         auto & stream = tmp_data->createStream(generateBlock());

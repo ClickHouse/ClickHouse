@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/other-functions
-sidebar_position: 67
+sidebar_position: 140
 sidebar_label: Other
 ---
 
@@ -23,11 +23,11 @@ getMacro(name);
 
 **Arguments**
 
--   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
+- `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
--   Value of the specified macro.
+- Value of the specified macro.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -82,7 +82,7 @@ This function is case-insensitive.
 
 **Returned value**
 
--   String with the fully qualified domain name.
+- String with the fully qualified domain name.
 
 Type: `String`.
 
@@ -112,17 +112,17 @@ basename( expr )
 
 **Arguments**
 
--   `expr` — Expression resulting in a [String](../../sql-reference/data-types/string.md) type value. All the backslashes must be escaped in the resulting value.
+- `expr` — Expression resulting in a [String](../../sql-reference/data-types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
 **Returned Value**
 
 A string that contains:
 
--   The trailing part of a string after the last slash or backslash.
+- The trailing part of a string after the last slash or backslash.
 
         If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
--   The original string if there are no slashes or backslashes.
+- The original string if there are no slashes or backslashes.
 
 **Example**
 
@@ -196,11 +196,11 @@ byteSize(argument [, ...])
 
 **Arguments**
 
--   `argument` — Value.
+- `argument` — Value.
 
 **Returned value**
 
--   Estimation of byte size of the arguments in memory.
+- Estimation of byte size of the arguments in memory.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -316,8 +316,8 @@ Alias: `user()`, `USER()`.
 
 **Returned values**
 
--   Login of current user.
--   Login of user that initiated query in case of disributed query.
+- Login of current user.
+- Login of user that initiated query in case of disributed query.
 
 Type: `String`.
 
@@ -353,12 +353,12 @@ isConstant(x)
 
 **Arguments**
 
--   `x` — Expression to check.
+- `x` — Expression to check.
 
 **Returned values**
 
--   `1` — `x` is constant.
--   `0` — `x` is non-constant.
+- `1` — `x` is constant.
+- `0` — `x` is non-constant.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -424,13 +424,13 @@ Checks whether floating point value is finite.
 
 **Arguments**
 
--   `x` — Value to be checked for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
--   `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
+- `x` — Value to be checked for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
+- `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
--   `x` if `x` is finite.
--   `y` if `x` is not finite.
+- `x` if `x` is finite.
+- `y` if `x` is not finite.
 
 **Example**
 
@@ -464,9 +464,9 @@ Allows building a unicode-art diagram.
 
 **Arguments**
 
--   `x` — Size to display.
--   `min, max` — Integer constants. The value must fit in `Int64`.
--   `width` — Constant, positive integer, can be fractional.
+- `x` — Size to display.
+- `min, max` — Integer constants. The value must fit in `Int64`.
+- `width` — Constant, positive integer, can be fractional.
 
 The band is drawn with accuracy to one eighth of a symbol.
 
@@ -670,8 +670,8 @@ formatReadableTimeDelta(column[, maximum_unit])
 
 **Arguments**
 
--   `column` — A column with numeric time delta.
--   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
+- `column` — A column with numeric time delta.
+- `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
 
 Example:
 
@@ -715,12 +715,12 @@ parseTimeDelta(timestr)
 
 **Arguments**
 
--   `timestr` — A sequence of numbers followed by something resembling a time unit.
+- `timestr` — A sequence of numbers followed by something resembling a time unit.
 
 
 **Returned value**
 
--   A floating-point number with the number of seconds.
+- A floating-point number with the number of seconds.
 
 **Example**
 
@@ -792,7 +792,7 @@ neighbor(column, offset[, default_value])
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
-:::warning    
+:::tip
 It can reach the neighbor rows only inside the currently processed data block.
 :::
 
@@ -801,14 +801,14 @@ To prevent that you can make a subquery with [ORDER BY](../../sql-reference/stat
 
 **Arguments**
 
--   `column` — A column name or scalar expression.
--   `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../sql-reference/data-types/int-uint.md).
--   `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
+- `column` — A column name or scalar expression.
+- `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../sql-reference/data-types/int-uint.md).
+- `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
 
 **Returned values**
 
--   Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds.
--   Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
+- Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds.
+- Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
 
 Type: type of data blocks affected or default value type.
 
@@ -902,7 +902,7 @@ Result:
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-:::warning    
+:::tip
 It can reach the previous row only inside the currently processed data block.
 :::
 
@@ -986,7 +986,7 @@ Each event has a start time and an end time. The start time is included in the e
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
-:::warning    
+:::tip
 Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception. Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
 :::
 
@@ -998,12 +998,12 @@ runningConcurrency(start, end)
 
 **Arguments**
 
--   `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned values**
 
--   The number of concurrent events at each event start time.
+- The number of concurrent events at each event start time.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md)
 
@@ -1059,12 +1059,12 @@ getSizeOfEnumType(value)
 
 **Arguments:**
 
--   `value` — Value of type `Enum`.
+- `value` — Value of type `Enum`.
 
 **Returned values**
 
--   The number of fields with `Enum` input values.
--   An exception is thrown if the type is not `Enum`.
+- The number of fields with `Enum` input values.
+- An exception is thrown if the type is not `Enum`.
 
 **Example**
 
@@ -1088,11 +1088,11 @@ blockSerializedSize(value[, value[, ...]])
 
 **Arguments**
 
--   `value` — Any value.
+- `value` — Any value.
 
 **Returned values**
 
--   The number of bytes that will be written to disk for block of values (without compression).
+- The number of bytes that will be written to disk for block of values (without compression).
 
 **Example**
 
@@ -1120,11 +1120,11 @@ toColumnTypeName(value)
 
 **Arguments:**
 
--   `value` — Any type of value.
+- `value` — Any type of value.
 
 **Returned values**
 
--   A string with the name of the class that is used for representing the `value` data type in RAM.
+- A string with the name of the class that is used for representing the `value` data type in RAM.
 
 **Example of the difference between`toTypeName ' and ' toColumnTypeName`**
 
@@ -1160,11 +1160,11 @@ dumpColumnStructure(value)
 
 **Arguments:**
 
--   `value` — Any type of value.
+- `value` — Any type of value.
 
 **Returned values**
 
--   A string describing the structure that is used for representing the `value` data type in RAM.
+- A string describing the structure that is used for representing the `value` data type in RAM.
 
 **Example**
 
@@ -1190,13 +1190,13 @@ defaultValueOfArgumentType(expression)
 
 **Arguments:**
 
--   `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
+- `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
 **Returned values**
 
--   `0` for numbers.
--   Empty string for strings.
--   `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
+- `0` for numbers.
+- Empty string for strings.
+- `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Example**
 
@@ -1232,13 +1232,13 @@ defaultValueOfTypeName(type)
 
 **Arguments:**
 
--   `type` — A string representing a type name.
+- `type` — A string representing a type name.
 
 **Returned values**
 
--   `0` for numbers.
--   Empty string for strings.
--   `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
+- `0` for numbers.
+- Empty string for strings.
+- `ᴺᵁᴸᴸ` for [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Example**
 
@@ -1377,8 +1377,8 @@ SELECT replicate(x, arr);
 
 **Arguments:**
 
--   `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
--   `x` — The value that the resulting array will be filled with.
+- `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
+- `x` — The value that the resulting array will be filled with.
 
 **Returned value**
 
@@ -1414,7 +1414,7 @@ filesystemAvailable()
 
 **Returned value**
 
--   The amount of remaining space available in bytes.
+- The amount of remaining space available in bytes.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1446,7 +1446,7 @@ filesystemFree()
 
 **Returned value**
 
--   Amount of free space in bytes.
+- Amount of free space in bytes.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1478,7 +1478,7 @@ filesystemCapacity()
 
 **Returned value**
 
--   Capacity information of the filesystem in bytes.
+- Capacity information of the filesystem in bytes.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1510,8 +1510,8 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 **Arguments**
 
--   `aggregate_function` — Name of the aggregation function to initialize. [String](../../sql-reference/data-types/string.md).
--   `arg` — Arguments of aggregate function.
+- `aggregate_function` — Name of the aggregation function to initialize. [String](../../sql-reference/data-types/string.md).
+- `arg` — Arguments of aggregate function.
 
 **Returned value(s)**
 
@@ -1568,7 +1568,7 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 ```
 
 **See Also**
--   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
 
 ## finalizeAggregation
 
@@ -1582,11 +1582,11 @@ finalizeAggregation(state)
 
 **Arguments**
 
--   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+- `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 
 **Returned value(s)**
 
--   Value/values that was aggregated.
+- Value/values that was aggregated.
 
 Type: Value of any types that was aggregated.
 
@@ -1667,14 +1667,14 @@ Result:
 ```
 
 **See Also**
--   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](#initializeaggregation)
+- [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+- [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate
 
 Accumulates states of an aggregate function for each row of a data block.
 
-:::warning    
+:::tip
 The state is reset for each new data block.
 :::
 
@@ -1686,12 +1686,12 @@ runningAccumulate(agg_state[, grouping]);
 
 **Arguments**
 
--   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
--   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
+- `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+- `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
 
--   Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
+- Each resulting row contains a result of the aggregate function, accumulated for all the input rows from 0 to the current position. `runningAccumulate` resets states for each new data block or when the `grouping` value changes.
 
 Type depends on the aggregate function used.
 
@@ -1792,9 +1792,9 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
--   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
--   `value_column` — name of the column of the table that contains required data.
--   `join_keys` — list of keys.
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
 
 **Returned value**
 
@@ -1939,13 +1939,13 @@ randomPrintableASCII(length)
 
 **Arguments**
 
--   `length` — Resulting string length. Positive integer.
+- `length` — Resulting string length. Positive integer.
 
         If you pass `length < 0`, behavior of the function is undefined.
 
 **Returned value**
 
--   String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+- String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
 
 Type: [String](../../sql-reference/data-types/string.md)
 
@@ -1975,11 +1975,11 @@ randomString(length)
 
 **Arguments**
 
--   `length` — String length. Positive integer.
+- `length` — String length. Positive integer.
 
 **Returned value**
 
--   String filled with random bytes.
+- String filled with random bytes.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -2007,8 +2007,8 @@ len: 30
 
 **See Also**
 
--   [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
--   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
+- [generateRandom](../../sql-reference/table-functions/generate.md#generaterandom)
+- [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
 
 
 ## randomFixedString
@@ -2023,11 +2023,11 @@ randomFixedString(length);
 
 **Arguments**
 
--   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
+- `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value(s)**
 
--   String filled with random bytes.
+- String filled with random bytes.
 
 Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
 
@@ -2060,11 +2060,11 @@ randomStringUTF8(length);
 
 **Arguments**
 
--   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
+- `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value(s)**
 
--   UTF-8 random string.
+- UTF-8 random string.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -2097,11 +2097,11 @@ getSetting('custom_setting');
 
 **Parameter**
 
--   `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
+- `custom_setting` — The setting name. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   The setting current value.
+- The setting current value.
 
 **Example**
 
@@ -2118,7 +2118,7 @@ SELECT getSetting('custom_a');
 
 **See Also**
 
--   [Custom Settings](../../operations/settings/index.md#custom_settings)
+- [Custom Settings](../../operations/settings/index.md#custom_settings)
 
 ## isDecimalOverflow
 
@@ -2132,13 +2132,13 @@ isDecimalOverflow(d, [p])
 
 **Arguments**
 
--   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
--   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
+- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned values**
 
--   `1` — Decimal value has more digits then it's precision allow,
--   `0` — Decimal value satisfies the specified precision.
+- `1` — Decimal value has more digits then it's precision allow,
+- `0` — Decimal value satisfies the specified precision.
 
 **Example**
 
@@ -2169,7 +2169,7 @@ countDigits(x)
 
 **Arguments**
 
--   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
+- `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
 
 **Returned value**
 
@@ -2177,7 +2177,7 @@ Number of digits.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-:::note    
+:::note
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
 :::
 
@@ -2201,7 +2201,7 @@ Result:
 
 **Returned value**
 
--   Variable name for the error code.
+- Variable name for the error code.
 
 Type: [LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md).
 
@@ -2230,11 +2230,11 @@ tcpPort()
 
 **Arguments**
 
--   None.
+- None.
 
 **Returned value**
 
--   The TCP port number.
+- The TCP port number.
 
 Type: [UInt16](../../sql-reference/data-types/int-uint.md).
 
@@ -2256,11 +2256,11 @@ Result:
 
 **See Also**
 
--   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
+- [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 ## currentProfiles
 
-Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
+Returns a list of the current [settings profiles](../../guides/sre/user-management/index.md#settings-profiles-management) for the current user.
 
 The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
 
@@ -2272,7 +2272,7 @@ currentProfiles()
 
 **Returned value**
 
--   List of the current user settings profiles. 
+- List of the current user settings profiles.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2288,7 +2288,7 @@ enabledProfiles()
 
 **Returned value**
 
--   List of the enabled settings profiles. 
+- List of the enabled settings profiles.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2304,7 +2304,7 @@ defaultProfiles()
 
 **Returned value**
 
--   List of the default settings profiles. 
+- List of the default settings profiles.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2320,7 +2320,7 @@ currentRoles()
 
 **Returned value**
 
--   List of the current roles for the current user. 
+- List of the current roles for the current user.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2336,13 +2336,13 @@ enabledRoles()
 
 **Returned value**
 
--   List of the enabled roles for the current user. 
+- List of the enabled roles for the current user.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultRoles
 
-Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
+Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
 
 **Syntax**
 
@@ -2352,7 +2352,7 @@ defaultRoles()
 
 **Returned value**
 
--   List of the default roles for the current user. 
+- List of the default roles for the current user.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2368,22 +2368,22 @@ getServerPort(port_name)
 
 **Arguments**
 
--   `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string). Possible values:
+- `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string). Possible values:
 
-    -   'tcp_port'
-    -   'tcp_port_secure'
-    -   'http_port'
-    -   'https_port'
-    -   'interserver_http_port'
-    -   'interserver_https_port'
-    -   'mysql_port'
-    -   'postgresql_port'
-    -   'grpc_port'
-    -   'prometheus.port'
+    - 'tcp_port'
+    - 'tcp_port_secure'
+    - 'http_port'
+    - 'https_port'
+    - 'interserver_http_port'
+    - 'interserver_https_port'
+    - 'mysql_port'
+    - 'postgresql_port'
+    - 'grpc_port'
+    - 'prometheus.port'
 
 **Returned value**
 
--   The number of the server port.
+- The number of the server port.
 
 Type: [UInt16](../../sql-reference/data-types/int-uint.md).
 
@@ -2417,7 +2417,7 @@ queryID()
 
 **Returned value**
 
--   The ID of the current query.
+- The ID of the current query.
 
 Type: [String](../../sql-reference/data-types/string.md)
 
@@ -2453,7 +2453,7 @@ initialQueryID()
 
 **Returned value**
 
--   The ID of the initial current query.
+- The ID of the initial current query.
 
 Type: [String](../../sql-reference/data-types/string.md)
 
@@ -2488,7 +2488,7 @@ shardNum()
 
 **Returned value**
 
--   Shard index or constant `0`.
+- Shard index or constant `0`.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
@@ -2499,7 +2499,7 @@ In the following example a configuration with two shards is used. The query is e
 Query:
 
 ``` sql
-CREATE TABLE shard_num_example (dummy UInt8) 
+CREATE TABLE shard_num_example (dummy UInt8)
     ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 ```
@@ -2515,7 +2515,7 @@ Result:
 
 **See Also**
 
--   [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+- [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
 
 ## shardCount
 
@@ -2530,7 +2530,7 @@ shardCount()
 
 **Returned value**
 
--   Total number of shards or `0`.
+- Total number of shards or `0`.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
@@ -2550,11 +2550,11 @@ getOSKernelVersion()
 
 **Arguments**
 
--   None.
+- None.
 
 **Returned value**
 
--   The current OS kernel version.
+- The current OS kernel version.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -2586,11 +2586,11 @@ zookeeperSessionUptime()
 
 **Arguments**
 
--   None.
+- None.
 
 **Returned value**
 
--   Uptime of the current ZooKeeper session in seconds.
+- Uptime of the current ZooKeeper session in seconds.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 

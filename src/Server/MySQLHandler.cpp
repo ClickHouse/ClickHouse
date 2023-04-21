@@ -22,6 +22,7 @@
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include "config_version.h"
 

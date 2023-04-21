@@ -190,6 +190,7 @@ struct SelectQueryInfo
     PlannerContextPtr planner_context;
 
     /// Storage table expression
+    /// It's guaranteed to be present in JOIN TREE of `query_tree`
     QueryTreeNodePtr table_expression;
 
     /// Table expression modifiers for storage
