@@ -747,6 +747,10 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 :::
 
+## arrayPartialSort(\[func,\] limit, arr, …)
+
+Same as `arraySort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
+
 ## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
@@ -847,6 +851,10 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 │ [4,3,5] │
 └─────────┘
 ```
+
+## arrayPartialReverseSort(\[func,\] limit, arr, …)
+
+Same as `arrayReverseSort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in descending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
 ## arrayUniq(arr, …)
 
