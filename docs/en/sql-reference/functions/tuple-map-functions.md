@@ -71,8 +71,8 @@ Merges an [Array](../../sql-reference/data-types/array.md) of keys and an [Array
 
 
 The function is a more convenient alternative to `CAST((key_array, value_array_or_map), 'Map(key_type, value_type)')`. For example, instead of writing `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
-  
- 
+
+
 **Syntax**
 
 ```sql
@@ -85,11 +85,11 @@ Alias: `MAP_FROM_ARRAYS(keys, values)`
 
 - `keys` — Given key array to create a map from. The nested type of array must be: [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md)
 - `values`  - Given value array or map to create a map from.
-  
+
 **Returned value**
 
 - A map whose keys and values are constructed from the key array and value array/map.
-  
+
 **Example**
 
 Query:
@@ -406,13 +406,13 @@ mapContainsKeyLike(map, pattern)
 ```
 
 **Arguments**
-- `map` — Map. [Map](../../sql-reference/data-types/map.md).  
-- `pattern`  - String pattern to match.  
-  
+- `map` — Map. [Map](../../sql-reference/data-types/map.md).
+- `pattern`  - String pattern to match.
+
 **Returned value**
 
-- `1` if `map` contains `key` like specified pattern, `0` if not.  
-  
+- `1` if `map` contains `key` like specified pattern, `0` if not.
+
 **Example**
 
 Query:
@@ -443,10 +443,10 @@ mapExtractKeyLike(map, pattern)
 ```
 
 **Arguments**
-  
-- `map` — Map. [Map](../../sql-reference/data-types/map.md).  
-- `pattern`  - String pattern to match.  
-  
+
+- `map` — Map. [Map](../../sql-reference/data-types/map.md).
+- `pattern`  - String pattern to match.
+
 **Returned value**
 
 - A map contained elements the key of which matchs the specified pattern. If there are no elements matched the pattern, it will return an empty map.
@@ -481,7 +481,7 @@ mapApply(func, map)
 ```
 
 **Arguments**
-  
+
 - `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../../sql-reference/data-types/map.md).
 
@@ -523,7 +523,7 @@ mapFilter(func, map)
 **Arguments**
 
 - `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
-- `map` — [Map](../../sql-reference/data-types/map.md).  
+- `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
 
@@ -601,9 +601,9 @@ mapConcat(maps)
 
 **Returned value**
 
-- Returns a map with concatenated maps passed as arguments.
+- Returns a map with concatenated maps passed as arguments. If there are same keys in two or more maps, all of them are added to the result map, but only the first one is accessible via operator `[]`
 
-**Example**
+**Examples**
 
 Query:
 
@@ -617,6 +617,20 @@ Result:
 ┌─map──────────────────────────┐
 │ {'key1':1,'key3':3,'key2':2} │
 └──────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT mapConcat(map('key1', 1, 'key2', 2), map('key1', 3)) AS map, map['key1'];
+```
+
+Result:
+
+```text
+┌─map──────────────────────────┬─elem─┐
+│ {'key1':1,'key2':2,'key1':3} │    1 │
+└──────────────────────────────┴──────┘
 ```
 
 ## mapExists(\[func,\], map)
