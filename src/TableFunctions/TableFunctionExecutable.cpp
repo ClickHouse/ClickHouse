@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageExecutable.h>
@@ -64,7 +65,10 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto check_argument = [&](size_t i, const std::string & argument_name)
     {
-        if (!args[i]->as<ASTIdentifier>() && !args[i]->as<ASTLiteral>() && !args[i]->as<ASTQueryParameter>())
+        if (!args[i]->as<ASTIdentifier>() &&
+            !args[i]->as<ASTLiteral>() &&
+            !args[i]->as<ASTQueryParameter>() &&
+            !args[i]->as<ASTSubquery>())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal",
                 argument_name, getName());
