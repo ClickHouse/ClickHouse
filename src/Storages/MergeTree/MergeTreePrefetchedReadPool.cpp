@@ -140,14 +140,37 @@ void MergeTreePrefetchedReadPool::createPrefetchedReaderForTask(MergeTreeReadTas
 
 bool MergeTreePrefetchedReadPool::TaskHolder::operator <(const TaskHolder & other) const
 {
-    return task->priority < other.task->priority;
+    chassert(task->priority >= 0);
+    chassert(other.task->priority >= 0);
+    return -task->priority < -other.task->priority; /// Less is better.
+    /// With default std::priority_queue, top() returns largest element.
+    /// So closest to 0 will be on top with this comparator.
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches() const
 {
-    for (const auto & task : prefetch_queue)
+    if (prefetch_queue.empty())
+        return;
+
+    [[maybe_unused]] TaskHolder prev(nullptr, 0);
+    [[maybe_unused]] const int64_t highest_priority = reader_settings.read_settings.priority + 1;
+    assert(prefetch_queue.top().task->priority == highest_priority);
+    while (!prefetch_queue.empty())
     {
-        createPrefetchedReaderForTask(*task.task);
+        auto top = std::move(prefetch_queue.top());
+        createPrefetchedReaderForTask(*top.task);
+#ifndef NDEBUG
+        if (prev.task)
+        {
+            assert(top.task->priority >= highest_priority);
+            if (prev.thread_id == top.thread_id)
+            {
+                assert(prev.task->priority < top.task->priority);
+            }
+        }
+        prev = top;
+#endif
+        prefetch_queue.pop();
     }
 }
 
@@ -160,8 +183,8 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
 
     if (!started_prefetches)
     {
-        startPrefetches();
         started_prefetches = true;
+        startPrefetches();
     }
 
     auto it = threads_tasks.find(thread);
@@ -572,7 +595,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
 
             if (allow_prefetch)
             {
-                prefetch_queue.emplace(TaskHolder(read_task.get()));
+                prefetch_queue.emplace(TaskHolder(read_task.get(), i));
             }
             ++priority;
 
