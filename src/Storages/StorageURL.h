@@ -7,10 +7,9 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/IStorage.h>
-#include <Processors/ISource.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/StorageConfiguration.h>
 
 
 namespace DB
@@ -137,6 +136,7 @@ public:
         ContextPtr context,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
+        const HTTPHeaderEntries & headers = {},
         const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     std::string getName() const override { return "StorageURLSink"; }
@@ -182,16 +182,12 @@ public:
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
-    struct Configuration
+    struct Configuration : public StatelessTableEngineConfiguration
     {
         std::string url;
         std::string http_method;
-
-        std::string format = "auto";
-        std::string compression_method = "auto";
-        std::string structure = "auto";
-
         HTTPHeaderEntries headers;
+        std::string addresses_expr;
     };
 
     static Configuration getConfiguration(ASTs & args, ContextPtr context);
@@ -201,19 +197,20 @@ public:
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 };
 
+
 /// StorageURLWithFailover is allowed only for URL table function, not as a separate storage.
 class StorageURLWithFailover final : public StorageURL
 {
 public:
     StorageURLWithFailover(
-            const std::vector<String> & uri_options_,
-            const StorageID & table_id_,
-            const String & format_name_,
-            const std::optional<FormatSettings> & format_settings_,
-            const ColumnsDescription & columns_,
-            const ConstraintsDescription & constraints_,
-            ContextPtr context_,
-            const String & compression_method_);
+        const std::vector<String> & uri_options_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const std::optional<FormatSettings> & format_settings_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        ContextPtr context_,
+        const String & compression_method_);
 
     Pipe read(
         const Names & column_names,
@@ -224,103 +221,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    struct Configuration
-    {
-        String url;
-        String compression_method = "auto";
-        std::vector<std::pair<String, String>> headers;
-    };
-
 private:
     std::vector<String> uri_options;
 };
-
-class PullingPipelineExecutor;
-
-class StorageURLSource : public ISource
-{
-    using URIParams = std::vector<std::pair<String, String>>;
-
-public:
-
-    class DisclosedGlobIterator
-    {
-        public:
-            DisclosedGlobIterator(ContextPtr context_, const String & uri_);
-            String next();
-        private:
-            class Impl;
-            /// shared_ptr to have copy constructor
-            std::shared_ptr<Impl> pimpl;
-    };
-
-    struct URIInfo
-    {
-        using FailoverOptions = std::vector<String>;
-        std::vector<FailoverOptions> uri_list_to_read;
-        std::atomic<size_t> next_uri_to_read = 0;
-    };
-
-    using IteratorWrapper = std::function<String()>;
-    using URIInfoPtr = std::shared_ptr<URIInfo>;
-
-    void onCancel() override;
-
-    static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
-
-    StorageURLSource(
-        URIInfoPtr uri_info_,
-        const std::string & http_method,
-        std::function<void(std::ostream &)> callback,
-        const String & format,
-        const std::optional<FormatSettings> & format_settings,
-        String name_,
-        const Block & sample_block,
-        ContextPtr context,
-        const ColumnsDescription & columns,
-        UInt64 max_block_size,
-        const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method,
-        size_t download_threads,
-        const HTTPHeaderEntries & headers_ = {},
-        const URIParams & params = {},
-        bool glob_url = false);
-
-    String getName() const override { return name; }
-
-    Chunk generate() override;
-
-    static std::unique_ptr<ReadBuffer> getFirstAvailableURLReadBuffer(
-        std::vector<String>::const_iterator & option,
-        const std::vector<String>::const_iterator & end,
-        ContextPtr context,
-        const URIParams & params,
-        const String & http_method,
-        std::function<void(std::ostream &)> callback,
-        const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method,
-        Poco::Net::HTTPBasicCredentials & credentials,
-        const HTTPHeaderEntries & headers,
-        bool glob_url,
-        bool delay_initialization,
-        size_t download_threads);
-
-private:
-    using InitializeFunc = std::function<void(const URIInfo::FailoverOptions &)>;
-    InitializeFunc initialize;
-
-    String name;
-    URIInfoPtr uri_info;
-
-    std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<QueryPipeline> pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
-    /// onCancell and generate can be called concurrently and both of them
-    /// have R/W access to reader pointer.
-    std::mutex reader_mutex;
-
-    Poco::Net::HTTPBasicCredentials credentials;
-
-};
-
 }
