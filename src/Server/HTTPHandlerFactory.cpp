@@ -117,8 +117,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
     else if (name == "PrometheusHandler-factory")
         return createPrometheusMainHandlerFactory(server, config, async_metrics, name);
     else if (name == "WebSocketHandler-factory")
-        /// TODO replace to WSHandelrFactory while it will be ready
-        return createHTTPHandlerFactory(server, config, name, async_metrics);
+        return createWebSocketMainHandlerFactory(server, name);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
 }
@@ -128,7 +127,7 @@ static const auto root_response_expression = "config://http_server_default_respo
 
 void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
 {
-    // TODO: maybe move websocket creation here
+    /// TODO: maybe move websocket creation here
     auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
     root_handler->attachStrictPath("/");
     root_handler->allowGetAndHeadRequest();
@@ -144,7 +143,7 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     replicas_status_handler->allowGetAndHeadRequest();
     factory.addHandler(replicas_status_handler);
 
-    // TODO: add websocket handler here
+    /// TODO: add websocket handler here
     auto websocket_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebSocketRequestHandler>>(server);
     websocket_handler->attachNonStrictPath("/websocket");
     websocket_handler->allowGetAndHeadRequest();

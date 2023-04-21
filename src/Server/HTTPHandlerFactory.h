@@ -137,6 +137,10 @@ createPrometheusMainHandlerFactory(IServer & server,
     AsynchronousMetrics & async_metrics,
     const std::string & name);
 
+HTTPRequestHandlerFactoryPtr
+createWebSocketMainHandlerFactory(IServer & server,
+   const std::string & name);
+
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer
 /// @param async_metrics - used for prometheus (in case of prometheus.asynchronous_metrics=true)

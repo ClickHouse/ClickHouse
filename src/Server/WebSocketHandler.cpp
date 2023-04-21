@@ -5,6 +5,8 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/WebSocket.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Server/HTTPHandlerFactory.h>
+
 
 #include <IO/HTTPCommon.h>
 
@@ -31,5 +33,21 @@ void WebSocketRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     } catch (const IOException& e) {
         std::cerr << "EXCEP " << e.what() << std::endl;
     }
+}
+
+///probably here should be "createWebSocketHandlerFactory" similary to prometeus handler
+
+HTTPRequestHandlerFactoryPtr
+createWebSocketMainHandlerFactory(IServer & server, const std::string & name)
+{
+    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+
+
+    auto main_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebSocketRequestHandler>>(server);
+    main_handler->attachNonStrictPath("/");
+    main_handler->allowGetAndHeadRequest();
+    factory->addHandler(main_handler);
+
+    return factory;
 }
 }
