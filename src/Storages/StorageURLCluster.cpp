@@ -29,28 +29,24 @@ namespace DB
 StorageURLCluster::StorageURLCluster(
     ContextPtr context_,
     String cluster_name_,
-    const String & uri_,
     const StorageID & table_id_,
-    const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & compression_method_,
-    const StorageURL::Configuration &configuration_,
+    const StorageURL::Configuration & configuration_,
+    size_t table_function_max_arguments,
     bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageURLCluster (" + table_id_.table_name + ")"), 3, structure_argument_was_provided_)
-    , uri(uri_)
-    , format_name(format_name_)
-    , compression_method(compression_method_)
+    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageURLCluster (" + table_id_.table_name + ")"), table_function_max_arguments, structure_argument_was_provided_)
+    , uri(configuration_.url)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
 
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
     {
-        auto columns = StorageURL::getTableStructureFromData(format_name_,
-            uri_,
-            chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method),
+        auto columns = StorageURL::getTableStructureFromData(configuration_.format,
+            uri,
+            chooseCompressionMethod(Poco::URI(uri).getPath(), configuration_.compression_method),
             configuration_.headers,
             std::nullopt,
             context_);

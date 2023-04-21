@@ -106,9 +106,15 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
     {
         storage = std::make_shared<StorageHDFSCluster>(
             context,
-            cluster_name, filename, StorageID(getDatabaseName(), table_name),
-            format, columns, ConstraintsDescription{},
-            compression_method, structure != "auto");
+            cluster_name,
+            filename,
+            StorageID(getDatabaseName(), table_name),
+            format,
+            columns,
+            ConstraintsDescription{},
+            compression_method,
+            5,
+            structure != "auto");
     }
     return storage;
 }
@@ -117,7 +123,6 @@ void registerTableFunctionHDFSCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHDFSCluster>();
 }
-
 
 }
 

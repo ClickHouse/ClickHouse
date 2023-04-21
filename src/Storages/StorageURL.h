@@ -26,7 +26,7 @@ class PullingPipelineExecutor;
 /**
  * This class represents table engine for external urls.
  * It sends HTTP GET to server when select is called and
- * HTTP POST when insert is called. In POST raequest the data is send
+ * HTTP POST when insert is called. In POST request the data is send
  * using Chunked transfer encoding, so server have to support it.
  */
 class IStorageURLBase : public IStorage

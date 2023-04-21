@@ -30,8 +30,9 @@ StorageS3Cluster::StorageS3Cluster(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_,
+    size_t table_function_max_arguments,
     bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"), 5, structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"), table_function_max_arguments, structure_argument_was_provided_)
     , s3_configuration{configuration_}
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
