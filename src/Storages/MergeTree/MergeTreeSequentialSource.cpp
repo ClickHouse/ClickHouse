@@ -1,6 +1,14 @@
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/FilterStep.h>
-
 #include <Common/logger_useful.h>
 
 namespace DB
