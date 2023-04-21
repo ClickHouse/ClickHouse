@@ -62,10 +62,10 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
         throw Exception::createDeprecated(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// This arguments are always the first
-    configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
+    cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
 
-    if (!context->tryGetCluster(configuration.cluster_name))
-        throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", configuration.cluster_name);
+    if (!context->tryGetCluster(cluster_name))
+        throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
 
     /// Just cut the first arg (cluster_name) and try to parse s3 table function arguments as is
     ASTs clipped_args;
@@ -121,6 +121,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     else
     {
         storage = std::make_shared<StorageS3Cluster>(
+            cluster_name,
             configuration,
             StorageID(getDatabaseName(), table_name),
             columns,

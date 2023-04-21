@@ -50,7 +50,8 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
     void parseArguments(const ASTPtr &, ContextPtr) override;
 
-    mutable StorageS3Cluster::Configuration configuration;
+    String cluster_name;
+    mutable StorageS3::Configuration configuration;
     ColumnsDescription structure_hint;
 };
 
