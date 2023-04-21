@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -27,6 +29,9 @@ def test_memory_usage():
     for iter in range(10):
         values = list(range(iter * 5000000, (iter + 1) * 5000000))
         node.query(INSERT_QUERY.format(values))
+
+    # Wait until buffers are freed
+    time.sleep(5)
 
     response = node.get_query_request(
         "SELECT groupArray(number) FROM numbers(1000000) SETTINGS max_memory_usage_for_user={}".format(
