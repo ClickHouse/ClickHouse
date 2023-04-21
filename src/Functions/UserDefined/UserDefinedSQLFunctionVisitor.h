@@ -19,26 +19,14 @@ class ASTFunction;
   * After applying visitor:
   * SELECT number + 1 FROM system.numbers LIMIT 10;
   */
-class UserDefinedSQLFunctionMatcher
+class UserDefinedSQLFunctionVisitor
 {
 public:
-    using Visitor = InDepthNodeVisitor<UserDefinedSQLFunctionMatcher, true>;
-
-    struct Data
-    {
-    };
-
-    static void visit(ASTPtr & ast, Data & data);
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
-
+    static void visit(ASTPtr & ast);
 private:
-    static void visit(ASTFunction & func, const Data & data);
-
+    static void visit(IAST *);
     static ASTPtr tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process);
 
 };
-
-/// Visits AST nodes and collect their aliases in one map (with links to source nodes).
-using UserDefinedSQLFunctionVisitor = UserDefinedSQLFunctionMatcher::Visitor;
 
 }

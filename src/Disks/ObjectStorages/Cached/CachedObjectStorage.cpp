@@ -182,7 +182,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
         && fs::path(object.absolute_path).extension() != ".tmp";
 
     auto path_key_for_cache = object.getPathKeyForCache();
@@ -282,9 +282,9 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children) const
+void CachedObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
 {
-    object_storage->findAllFiles(path, children);
+    object_storage->findAllFiles(path, children, max_keys);
 }
 
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const

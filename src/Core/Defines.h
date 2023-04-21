@@ -52,6 +52,8 @@
 /// the number is unmotivated
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
+#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 10
+
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
 /// Actually, there may be multiple acquisitions of different locks for a given table within one query.
@@ -81,3 +83,4 @@
 #else
 #define QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS 0
 #endif
+

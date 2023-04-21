@@ -152,6 +152,11 @@ public:
         return popFirst(1);
     }
 
+    void pop_front() /// NOLINT
+    {
+        return popFirst();
+    }
+
     void popLast(size_t parts_to_remove_size)
     {
         assert(parts_to_remove_size <= parts.size());
@@ -177,23 +182,21 @@ public:
 
     void push_back(std::string && part) /// NOLINT
     {
-        parts.push_back(std::move(part));
-        full_name += '.';
-        full_name += parts.back();
+        emplace_back(std::move(part));
     }
 
     void push_back(const std::string & part) /// NOLINT
     {
-        parts.push_back(part);
-        full_name += '.';
-        full_name += parts.back();
+        emplace_back(part);
     }
 
     template <typename ...Args>
     void emplace_back(Args&&... args) /// NOLINT
     {
         parts.emplace_back(std::forward<Args>(args)...);
-        full_name += '.';
+        bool was_not_empty = parts.size() != 1;
+        if (was_not_empty)
+            full_name += '.';
         full_name += parts.back();
     }
 private:
@@ -365,6 +368,26 @@ inline std::ostream & operator<<(std::ostream & stream, const IdentifierView & i
 
 }
 
+template <>
+struct std::hash<DB::Identifier>
+{
+    size_t operator()(const DB::Identifier & identifier) const
+    {
+        std::hash<std::string> hash;
+        return hash(identifier.getFullName());
+    }
+};
+
+template <>
+struct std::hash<DB::IdentifierView>
+{
+    size_t operator()(const DB::IdentifierView & identifier) const
+    {
+        std::hash<std::string_view> hash;
+        return hash(identifier.getFullName());
+    }
+};
+
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
 
 template <>
@@ -377,7 +400,7 @@ struct fmt::formatter<DB::Identifier>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -385,7 +408,7 @@ struct fmt::formatter<DB::Identifier>
     template <typename FormatContext>
     auto format(const DB::Identifier & identifier, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", identifier.getFullName());
+        return fmt::format_to(ctx.out(), "{}", identifier.getFullName());
     }
 };
 
@@ -399,7 +422,7 @@ struct fmt::formatter<DB::IdentifierView>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -407,6 +430,6 @@ struct fmt::formatter<DB::IdentifierView>
     template <typename FormatContext>
     auto format(const DB::IdentifierView & identifier_view, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", identifier_view.getFullName());
+        return fmt::format_to(ctx.out(), "{}", identifier_view.getFullName());
     }
 };

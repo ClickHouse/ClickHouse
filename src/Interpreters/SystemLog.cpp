@@ -1,41 +1,41 @@
+#include <IO/WriteHelpers.h>
+#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/AsynchronousInsertLog.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/Context.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <Interpreters/ZooKeeperLog.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTRenameQuery.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Common/setThreadName.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <IO/WriteHelpers.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -75,7 +75,7 @@ namespace
         const char * getName() const override { return "storage definition with comment"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
-            ParserStorage storage_p;
+            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
             ASTPtr storage;
 
             if (!storage_p.parse(pos, storage, expected))
@@ -121,6 +121,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         return {};
     }
+    LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+              "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
@@ -137,13 +139,15 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (config.has(config_prefix + ".engine"))
     {
         if (config.has(config_prefix + ".partition_by"))
-            throw Exception("If 'engine' is specified for system table, "
-                "PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, PARTITION BY parameters should "
+                            "be specified directly inside 'engine' and 'partition_by' setting doesn't make sense");
         if (config.has(config_prefix + ".ttl"))
-            throw Exception("If 'engine' is specified for system table, "
-                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, "
+                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
+        if (config.has(config_prefix + ".storage_policy"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, SETTINGS storage_policy = '...' "
+                            "should be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
         engine = config.getString(config_prefix + ".engine");
     }
     else
@@ -158,6 +162,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         engine += " ORDER BY ";
         engine += TSystemLog::getDefaultOrderBy();
+        String storage_policy = config.getString(config_prefix + ".storage_policy", "");
+        if (!storage_policy.empty())
+            engine += " SETTINGS storage_policy = " + quoteString(storage_policy);
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
@@ -196,7 +203,9 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
-    cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
+    filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
+    filesystem_read_prefetches_log = createSystemLog<FilesystemReadPrefetchesLog>(
+        global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
         "asynchronous_metric_log");
@@ -242,8 +251,10 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(transactions_info_log.get());
     if (processors_profile_log)
         logs.emplace_back(processors_profile_log.get());
-    if (cache_log)
-        logs.emplace_back(cache_log.get());
+    if (filesystem_cache_log)
+        logs.emplace_back(filesystem_cache_log.get());
+    if (filesystem_read_prefetches_log)
+        logs.emplace_back(filesystem_read_prefetches_log.get());
     if (asynchronous_insert_log)
         logs.emplace_back(asynchronous_insert_log.get());
 
@@ -415,6 +426,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
+        /// We always want to deliver the data to the original table regardless of the MVs
+        insert_context->setSetting("materialized_views_ignore_errors", true);
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -465,30 +478,34 @@ void SystemLog<LogElement>::prepareTable()
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
-
-            ASTRenameQuery::Table from;
-            from.database = table_id.database_name;
-            from.table = table_id.table_name;
-
-            ASTRenameQuery::Table to;
-            to.database = table_id.database_name;
-            to.table = table_id.table_name + "_" + toString(suffix);
-
-            ASTRenameQuery::Element elem;
-            elem.from = from;
-            elem.to = to;
-
-            rename->elements.emplace_back(elem);
+            ASTRenameQuery::Element elem
+            {
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name)
+                },
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                }
+            };
 
             LOG_DEBUG(
                 log,
                 "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
                 description,
-                backQuoteIfNeed(to.table),
+                backQuoteIfNeed(elem.to.getTable()),
                 old_create_query,
                 create_query);
 
+            rename->elements.emplace_back(std::move(elem));
+
             auto query_context = Context::createCopy(context);
+            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+            query_context->setSetting("check_table_dependencies", Field{false});
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 
@@ -565,7 +582,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
-        storage_settings->loadFromQuery(*create->storage);
+        storage_settings->loadFromQuery(*create->storage, getContext());
     }
 
     return create;

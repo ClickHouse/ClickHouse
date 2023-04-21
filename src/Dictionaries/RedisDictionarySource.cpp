@@ -68,6 +68,16 @@ namespace DB
         factory.registerSource("redis", create_table_source);
     }
 
+    RedisDictionarySource::Connection::Connection(PoolPtr pool_, ClientPtr client_)
+        : pool(std::move(pool_)), client(std::move(client_))
+    {
+    }
+
+    RedisDictionarySource::Connection::~Connection()
+    {
+        pool->returnObject(std::move(client));
+    }
+
     static constexpr size_t REDIS_MAX_BLOCK_SIZE = DEFAULT_BLOCK_SIZE;
     static constexpr size_t REDIS_LOCK_ACQUIRE_TIMEOUT_MS = 5000;
 
@@ -83,7 +93,7 @@ namespace DB
         if (dict_struct.attributes.size() != 1)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "Invalid number of non key columns for Redis source: {}, expected 1",
-                DB::toString(dict_struct.attributes.size()));
+                dict_struct.attributes.size());
 
         if (configuration.storage_type == RedisStorageType::HASH_MAP)
         {

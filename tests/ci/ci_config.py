@@ -13,7 +13,6 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "deb",
             "static_binary_name": "amd64",
-            "libraries": "static",
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
@@ -23,7 +22,6 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "coverity",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
             "official": False,
@@ -34,7 +32,6 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "deb",
             "static_binary_name": "aarch64",
-            "libraries": "static",
             "additional_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
@@ -44,7 +41,6 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -53,7 +49,6 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -62,7 +57,6 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -71,7 +65,6 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -80,7 +73,6 @@ CI_CONFIG = {
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -89,7 +81,6 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -99,17 +90,7 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "debug-amd64",
-            "libraries": "static",
             "tidy": "enable",
-            "with_coverage": False,
-        },
-        "binary_shared": {
-            "compiler": "clang-15",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "binary",
-            "libraries": "shared",
-            "tidy": "disable",
             "with_coverage": False,
         },
         "binary_darwin": {
@@ -118,7 +99,6 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -127,7 +107,6 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -137,7 +116,6 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "aarch64v80compat",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -147,7 +125,6 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "freebsd",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -157,7 +134,6 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "macos-aarch64",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -167,17 +143,15 @@ CI_CONFIG = {
             "sanitizer": "",
             "package_type": "binary",
             "static_binary_name": "powerpc64le",
-            "libraries": "static",
             "tidy": "disable",
             "with_coverage": False,
         },
-        "binary_amd64sse2": {
-            "compiler": "clang-15-amd64sse2",
+        "binary_amd64_compat": {
+            "compiler": "clang-15-amd64-compat",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
-            "static_binary_name": "amd64sse2",
-            "libraries": "static",
+            "static_binary_name": "amd64compat",
             "tidy": "disable",
             "with_coverage": False,
         },
@@ -196,19 +170,24 @@ CI_CONFIG = {
         ],
         "ClickHouse special build check": [
             "binary_tidy",
-            "binary_shared",
             "binary_darwin",
             "binary_aarch64",
             "binary_aarch64_v80compat",
             "binary_freebsd",
             "binary_darwin_aarch64",
             "binary_ppc64le",
-            "binary_amd64sse2",
+            "binary_amd64_compat",
         ],
     },
     "tests_config": {
         # required_build - build name for artifacts
         # force_tests - force success status for tests
+        "Install packages (amd64)": {
+            "required_build": "package_release",
+        },
+        "Install packages (arm64)": {
+            "required_build": "package_aarch64",
+        },
         "Stateful tests (asan)": {
             "required_build": "package_asan",
         },
@@ -236,6 +215,26 @@ CI_CONFIG = {
         "Stateful tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
+        # Stateful tests for parallel replicas
+        "Stateful tests (release, ParallelReplicas)": {
+            "required_build": "package_release",
+        },
+        "Stateful tests (debug, ParallelReplicas)": {
+            "required_build": "package_debug",
+        },
+        "Stateful tests (asan, ParallelReplicas)": {
+            "required_build": "package_asan",
+        },
+        "Stateful tests (msan, ParallelReplicas)": {
+            "required_build": "package_msan",
+        },
+        "Stateful tests (ubsan, ParallelReplicas)": {
+            "required_build": "package_ubsan",
+        },
+        "Stateful tests (tsan, ParallelReplicas)": {
+            "required_build": "package_tsan",
+        },
+        # End stateful tests for parallel replicas
         "Stateless tests (asan)": {
             "required_build": "package_asan",
         },
@@ -290,6 +289,18 @@ CI_CONFIG = {
         "Stress test (debug)": {
             "required_build": "package_debug",
         },
+        "Upgrade check (asan)": {
+            "required_build": "package_asan",
+        },
+        "Upgrade check (tsan)": {
+            "required_build": "package_tsan",
+        },
+        "Upgrade check (msan)": {
+            "required_build": "package_msan",
+        },
+        "Upgrade check (debug)": {
+            "required_build": "package_debug",
+        },
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
@@ -305,11 +316,11 @@ CI_CONFIG = {
         "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
-        "Compatibility check": {
+        "Compatibility check (amd64)": {
             "required_build": "package_release",
         },
-        "Split build smoke test": {
-            "required_build": "binary_shared",
+        "Compatibility check (aarch64)": {
+            "required_build": "package_aarch64",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
@@ -347,6 +358,9 @@ CI_CONFIG = {
         "ClickHouse Keeper Jepsen": {
             "required_build": "binary_release",
         },
+        "ClickHouse Server Jepsen": {
+            "required_build": "binary_release",
+        },
         "Performance Comparison": {
             "required_build": "package_release",
             "test_grep_exclude_filter": "",
@@ -360,6 +374,9 @@ CI_CONFIG = {
         },
         "SQLancer (debug)": {
             "required_build": "package_debug",
+        },
+        "Sqllogic test (release)": {
+            "required_build": "package_release",
         },
     },
 }  # type: dict

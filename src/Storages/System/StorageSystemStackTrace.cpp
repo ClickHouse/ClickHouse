@@ -90,7 +90,7 @@ namespace
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace = StackTrace(signal_context);
 
-        std::string_view query_id = CurrentThread::getQueryId();
+        auto query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size(), max_query_id_size);
         if (!query_id.empty())
             memcpy(query_id_data, query_id.data(), query_id_size);
@@ -151,7 +151,7 @@ namespace
                     continue;   /// Drain delayed notifications.
             }
 
-            throw Exception("Logical error: read wrong number of bytes from pipe", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
         }
     }
 

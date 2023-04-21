@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/COW.h>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -303,17 +303,17 @@ public:
       */
 
     /// There is two variants for binary serde. First variant work with Field.
-    virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
+    virtual void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /// Other variants takes a column, to avoid creating temporary Field object.
     /// Column must be non-constant.
 
     /// Serialize one value of a column at specified row number.
-    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     /// Deserialize one value and insert into a column.
     /// If method will throw an exception, then column will be in same state as before call to method.
-    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization with escaping but without quoting.
       */
@@ -345,6 +345,11 @@ public:
       */
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
+    {
+        serializeTextJSON(column, row_num, ostr, settings);
+    }
+
 
     /** Text serialization for putting into the XML format.
       */

@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"strconv"
 	"testing"
 
 	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal"
@@ -25,7 +24,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func TestMain(m *testing.M) {
+// Execute a full default capture, with simple output, and check if a bundle is produced and it's not empty
+func TestCapture(t *testing.T) {
 	// create a ClickHouse container
 	ctx := context.Background()
 	cwd, err := os.Getwd()
@@ -39,9 +39,19 @@ func TestMain(m *testing.M) {
 		Image:        fmt.Sprintf("clickhouse/clickhouse-server:%s", test.GetClickHouseTestVersion()),
 		ExposedPorts: []string{"9000/tcp"},
 		WaitingFor:   wait.ForLog("Ready for connections"),
-		BindMounts: map[string]string{
-			"/etc/clickhouse-server/config.d/custom.xml": path.Join(cwd, "../testdata/docker/custom.xml"),
-			"/etc/clickhouse-server/users.d/admin.xml":   path.Join(cwd, "../testdata/docker/admin.xml"),
+		Mounts: testcontainers.ContainerMounts{
+			{
+				Source: testcontainers.GenericBindMountSource{
+					HostPath: path.Join(cwd, "../testdata/docker/custom.xml"),
+				},
+				Target: "/etc/clickhouse-server/config.d/custom.xml",
+			},
+			{
+				Source: testcontainers.GenericBindMountSource{
+					HostPath: path.Join(cwd, "../testdata/docker/admin.xml"),
+				},
+				Target: "/etc/clickhouse-server/users.d/admin.xml",
+			},
 		},
 	}
 	clickhouseContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -55,18 +65,12 @@ func TestMain(m *testing.M) {
 
 	p, _ := clickhouseContainer.MappedPort(ctx, "9000")
 
-	os.Setenv("CLICKHOUSE_DB_PORT", p.Port())
+	t.Setenv("CLICKHOUSE_DB_PORT", p.Port())
 	defer clickhouseContainer.Terminate(ctx) //nolint
-	os.Exit(m.Run())
-}
 
-// Execute a full default capture, with simple output, and check if a bundle is produced and it's not empty
-func TestCapture(t *testing.T) {
 	tmrDir := t.TempDir()
-	port, err := strconv.ParseUint(os.Getenv("CLICKHOUSE_DB_PORT"), 10, 16)
-	if err != nil {
-		t.Fatal("Unable to read port value from environment")
-	}
+	port := p.Int()
+
 	// test a simple output exists
 	_, err = outputs.GetOutputByName("simple")
 	require.Nil(t, err)

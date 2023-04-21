@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Interpreters/ActionsDAG.h>
+
 namespace DB
 {
 
@@ -12,14 +14,37 @@ namespace ErrorCodes
 }
 
 using ColumnIdentifier = std::string;
+using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+using ColumnIdentifierSet = std::unordered_set<ColumnIdentifier>;
 
 /** Table expression data is created for each table expression that take part in query.
   * Table expression data has information about columns that participate in query, their name to identifier mapping,
   * and additional table expression properties.
+  *
+  * Table expression can be table, table function, query, union, array join node.
+  *
+  * Examples:
+  * SELECT * FROM (SELECT 1);
+  * (SELECT 1) - table expression.
+  *
+  * SELECT * FROM test_table;
+  * test_table - table expression.
+  *
+  * SELECT * FROM view(SELECT 1);
+  * view(SELECT 1) - table expression.
+  *
+  * SELECT * FROM (SELECT 1) JOIN (SELECT 2);
+  * (SELECT 1) - table expression.
+  * (SELECT 2) - table expression.
+  *
+  * SELECT array, a FROM (SELECT [1] AS array) ARRAY JOIN array AS a;
+  * ARRAY JOIN array AS a - table expression.
   */
 class TableExpressionData
 {
 public:
+    using ColumnNameToColumn = std::unordered_map<std::string, NameAndTypePair>;
+
     using ColumnNameToColumnIdentifier = std::unordered_map<std::string, ColumnIdentifier>;
 
     using ColumnIdentifierToColumnName = std::unordered_map<ColumnIdentifier, std::string>;
@@ -27,7 +52,7 @@ public:
     /// Return true if column with name exists, false otherwise
     bool hasColumn(const std::string & column_name) const
     {
-        return alias_columns_names.contains(column_name) || columns_names.contains(column_name);
+        return alias_columns_names.contains(column_name) || column_name_to_column.contains(column_name);
     }
 
     /** Add column in table expression data.
@@ -40,10 +65,7 @@ public:
         if (hasColumn(column.name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists");
 
-        columns_names.insert(column.name);
-        columns.push_back(column);
-        column_name_to_column_identifier.emplace(column.name, column_identifier);
-        column_identifier_to_column_name.emplace(column_identifier, column.name);
+        addColumnImpl(column, column_identifier);
     }
 
     /** Add column if it does not exists in table expression data.
@@ -54,10 +76,7 @@ public:
         if (hasColumn(column.name))
             return;
 
-        columns_names.insert(column.name);
-        columns.push_back(column);
-        column_name_to_column_identifier.emplace(column.name, column_identifier);
-        column_identifier_to_column_name.emplace(column_identifier, column.name);
+        addColumnImpl(column, column_identifier);
     }
 
     /// Add alias column name
@@ -72,16 +91,38 @@ public:
         return alias_columns_names;
     }
 
-    /// Get columns names
-    const NameSet & getColumnsNames() const
+    /// Get column name to column map
+    const ColumnNameToColumn & getColumnNameToColumn() const
     {
-        return columns_names;
+        return column_name_to_column;
     }
 
-    /// Get columns
-    const NamesAndTypesList & getColumns() const
+    /// Get column names
+    const Names & getColumnNames() const
     {
-        return columns;
+        return column_names;
+    }
+
+    NamesAndTypes getColumns() const
+    {
+        NamesAndTypes result;
+        result.reserve(column_names.size());
+
+        for (const auto & column_name : column_names)
+            result.push_back(column_name_to_column.at(column_name));
+
+        return result;
+    }
+
+    ColumnIdentifiers getColumnIdentifiers() const
+    {
+        ColumnIdentifiers result;
+        result.reserve(column_identifier_to_column_name.size());
+
+        for (const auto & [column_identifier, _] : column_identifier_to_column_name)
+            result.push_back(column_identifier);
+
+        return result;
     }
 
     /// Get column name to column identifier map
@@ -96,6 +137,35 @@ public:
         return column_identifier_to_column_name;
     }
 
+    /** Get column for column name.
+      * Exception is thrown if there are no column for column name.
+      */
+    const NameAndTypePair & getColumnOrThrow(const std::string & column_name) const
+    {
+        auto it = column_name_to_column.find(column_name);
+        if (it == column_name_to_column.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column for column name {} does not exists. There are only column names: {}",
+                column_name,
+                fmt::join(column_names.begin(), column_names.end(), ", "));
+        }
+
+        return it->second;
+    }
+
+    /** Get column for column name.
+      * Null is returned if there are no column for column name.
+      */
+    const NameAndTypePair * getColumnOrNull(const std::string & column_name) const
+    {
+        auto it = column_name_to_column.find(column_name);
+        if (it == column_name_to_column.end())
+            return nullptr;
+
+        return &it->second;
+    }
+
     /** Get column identifier for column name.
       * Exception is thrown if there are no column identifier for column name.
       */
@@ -103,9 +173,12 @@ public:
     {
         auto it = column_name_to_column_identifier.find(column_name);
         if (it == column_name_to_column_identifier.end())
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column identifier for name {} does not exists",
-                column_name);
+                "Column identifier for column name {} does not exists. There are only column names: {}",
+                column_name,
+                fmt::join(column_names.begin(), column_names.end(), ", "));
+        }
 
         return it->second;
     }
@@ -129,9 +202,13 @@ public:
     {
         auto it = column_identifier_to_column_name.find(column_identifier);
         if (it == column_identifier_to_column_name.end())
+        {
+            auto column_identifiers = getColumnIdentifiers();
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column name for identifier {} does not exists",
-                column_identifier);
+                "Column name for column identifier {} does not exists. There are only column identifiers: {}",
+                column_identifier,
+                fmt::join(column_identifiers.begin(), column_identifiers.end(), ", "));
+        }
 
         return it->second;
     }
@@ -163,21 +240,55 @@ public:
         is_remote = is_remote_value;
     }
 
+    const ActionsDAGPtr & getPrewhereFilterActions() const
+    {
+        return prewhere_filter_actions;
+    }
+
+    void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
+    {
+        prewhere_filter_actions = std::move(prewhere_filter_actions_value);
+    }
+
+    const ActionsDAGPtr & getFilterActions() const
+    {
+        return filter_actions;
+    }
+
+    void setFilterActions(ActionsDAGPtr filter_actions_value)
+    {
+        filter_actions = std::move(filter_actions_value);
+    }
+
 private:
-    /// Valid for table, table function, query, union table expression nodes
-    NamesAndTypesList columns;
+    void addColumnImpl(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
+    {
+        column_names.push_back(column.name);
+        column_name_to_column.emplace(column.name, column);
+        column_name_to_column_identifier.emplace(column.name, column_identifier);
+        column_identifier_to_column_name.emplace(column_identifier, column.name);
+    }
 
-    /// Valid for table, table function, query, union table expression nodes
-    NameSet columns_names;
+    /// Valid for table, table function, array join, query, union nodes
+    Names column_names;
 
-    /// Valid only for table table expression node
+    /// Valid for table, table function, array join, query, union nodes
+    ColumnNameToColumn column_name_to_column;
+
+    /// Valid only for table node
     NameSet alias_columns_names;
 
-    /// Valid for table, table function, query, union table expression nodes
+    /// Valid for table, table function, array join, query, union nodes
     ColumnNameToColumnIdentifier column_name_to_column_identifier;
 
-    /// Valid for table, table function, query, union table expression nodes
+    /// Valid for table, table function, array join, query, union nodes
     ColumnIdentifierToColumnName column_identifier_to_column_name;
+
+    /// Valid for table, table function
+    ActionsDAGPtr filter_actions;
+
+    /// Valid for table, table function
+    ActionsDAGPtr prewhere_filter_actions;
 
     /// Is storage remote
     bool is_remote = false;

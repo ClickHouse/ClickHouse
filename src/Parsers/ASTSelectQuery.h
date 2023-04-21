@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Core/Names.h>
 
-
 namespace DB
 {
 
@@ -82,6 +81,7 @@ public:
     ASTPtr clone() const override;
 
     bool distinct = false;
+    bool group_by_all = false;
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
@@ -142,12 +142,18 @@ public:
     void setFinal();
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
+    bool hasQueryParameters() const;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
     std::unordered_map<Expression, size_t> positions;
+
+    /// This variable is optional as we want to set it on the first call to hasQueryParameters
+    /// and return the same variable on future calls to hasQueryParameters
+    /// its mutable as we set it in const function
+    mutable std::optional<bool> has_query_parameters;
 
     ASTPtr & getExpression(Expression expr);
 };

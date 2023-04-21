@@ -64,7 +64,7 @@ void Query::executeImpl()
         case CR_SERVER_LOST:
             throw ConnectionLost(errorMessage(mysql_driver), err_no);
         default:
-            throw BadQuery(errorMessage(mysql_driver), err_no);
+            throw BadQuery(errorMessage(mysql_driver, query), err_no);
         }
     }
 }

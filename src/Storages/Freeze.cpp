@@ -132,7 +132,9 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     static constexpr auto config_key = "enable_system_unfreeze";
     if (!config.getBool(config_key, false))
     {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting", config_key);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting",
+                        config_key);
     }
 
     auto disks_map = local_context->getDisksMap();

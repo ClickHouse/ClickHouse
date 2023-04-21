@@ -550,7 +550,7 @@ def test_function_current_profiles():
             user="robin",
             params={"session_id": session_id},
         )
-        == "['P1','P2']\t['P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
+        == "['P1','P2']\t['default','P3','P5','P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
     )
 
     instance.http_query(
@@ -661,4 +661,32 @@ def test_allow_introspection():
     )
     assert "it's necessary to have grant" in instance.query_and_get_error(
         "SELECT demangle('a')", user="robin"
+    )
+
+
+def test_settings_aliases():
+    instance.query(
+        "CREATE SETTINGS PROFILE P1 SETTINGS replication_alter_partitions_sync=2"
+    )
+    instance.query(
+        "CREATE SETTINGS PROFILE P2 SETTINGS replication_alter_partitions_sync=0"
+    )
+    instance.query("ALTER USER robin SETTINGS PROFILE P1")
+
+    assert (
+        instance.http_query(
+            "SELECT getSetting('alter_sync')",
+            user="robin",
+        )
+        == "2\n"
+    )
+
+    instance.query("ALTER USER robin SETTINGS PROFILE P2")
+
+    assert (
+        instance.http_query(
+            "SELECT getSetting('alter_sync')",
+            user="robin",
+        )
+        == "0\n"
     )

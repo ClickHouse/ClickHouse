@@ -1,8 +1,10 @@
 #if defined(OS_LINUX)
 #    include <sys/syscall.h>
 #endif
+#include <cstdlib>
 #include <unistd.h>
 #include <base/safeExit.h>
+#include <base/defines.h> /// for THREAD_SANITIZER
 
 [[noreturn]] void safeExit(int code)
 {

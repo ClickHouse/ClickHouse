@@ -10,9 +10,6 @@ else()
 endif()
 
 option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
-
-message(STATUS ${ENABLE_RUST})
-
 if(NOT ENABLE_RUST)
   message(STATUS "Not using rust")
   return()
@@ -42,5 +39,7 @@ endif()
 
 message(STATUS "Switched Rust target to ${Rust_CARGO_TARGET}")
 
+# FindRust.cmake
+list(APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
 # Define function corrosion_import_crate()
 include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")

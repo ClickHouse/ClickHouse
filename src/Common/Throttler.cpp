@@ -20,8 +20,6 @@ namespace ErrorCodes
 /// Just 10^9.
 static constexpr auto NS = 1000000000UL;
 
-static const size_t default_burst_seconds = 1;
-
 Throttler::Throttler(size_t max_speed_, const std::shared_ptr<Throttler> & parent_)
     : max_speed(max_speed_)
     , max_burst(max_speed_ * default_burst_seconds)
@@ -40,7 +38,7 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , parent(parent_)
 {}
 
-void Throttler::add(size_t amount)
+UInt64 Throttler::add(size_t amount)
 {
     // Values obtained under lock to be checked after release
     size_t count_value;
@@ -60,12 +58,13 @@ void Throttler::add(size_t amount)
     }
 
     if (limit && count_value > limit)
-        throw Exception(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
+        throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
+    Int64 sleep_time = 0;
     if (max_speed && tokens_value < 0)
     {
-        int64_t sleep_time = static_cast<int64_t>(-tokens_value / max_speed * NS);
+        sleep_time = static_cast<Int64>(-tokens_value / max_speed * NS);
         accumulated_sleep += sleep_time;
         sleepForNanoseconds(sleep_time);
         accumulated_sleep -= sleep_time;
@@ -73,7 +72,9 @@ void Throttler::add(size_t amount)
     }
 
     if (parent)
-        parent->add(amount);
+        sleep_time += parent->add(amount);
+
+    return static_cast<UInt64>(sleep_time);
 }
 
 void Throttler::reset()

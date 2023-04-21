@@ -10,26 +10,25 @@ match_max 100000
 set stty_init "rows 25 cols 120"
 
 expect_after {
-    eof { exp_continue }
-    timeout { exit 1 }
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
 }
 
 spawn bash
 send "source $basedir/../shell_config.sh\r"
 
-# Progress is displayed by default
-send "\$CLICKHOUSE_LOCAL --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null\r"
-expect "Progress: "
-expect "█"
-send "\3"
-
-# It is true even if we redirect both stdout and stderr to /dev/null
-send "\$CLICKHOUSE_LOCAL --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1\r"
-expect "Progress: "
-expect "█"
+# Progress is not displayed by default
+send "\$CLICKHOUSE_LOCAL --query 'SELECT sleep(1), \$\$Hello\$\$ FROM numbers(3) SETTINGS max_block_size = 1' 2>/dev/null\r"
+expect -exact "0\tHello\r\n"
 send "\3"
 
 # The option --progress has implicit value of true
+send "\$CLICKHOUSE_LOCAL --progress --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null\r"
+expect "Progress: "
+expect "█"
+send "\3"
+
+# It works even if we redirect both stdout and stderr to /dev/null
 send "\$CLICKHOUSE_LOCAL --progress --query 'SELECT sum(sleep(1) = 0) FROM numbers(3) SETTINGS max_block_size = 1' >/dev/null 2>&1\r"
 expect "Progress: "
 expect "█"

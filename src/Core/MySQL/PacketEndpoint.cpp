@@ -40,7 +40,7 @@ bool PacketEndpoint::tryReceivePacket(IMySQLReadPacket & packet, UInt64 millisec
         ReadBufferFromPocoSocket * socket_in = typeid_cast<ReadBufferFromPocoSocket *>(in);
 
         if (!socket_in)
-            throw Exception("LOGICAL ERROR: Attempt to pull the duration in a non socket stream", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Attempt to pull the duration in a non socket stream");
 
         if (!socket_in->poll(millisecond * 1000))
             return false;

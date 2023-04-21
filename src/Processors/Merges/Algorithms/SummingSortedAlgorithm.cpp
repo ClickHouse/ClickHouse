@@ -328,8 +328,11 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 || endsWith(name, "Key")
                 || endsWith(name, "Type"))
             {
-                if (!nested_type.isValueRepresentedByInteger() && !isStringOrFixedString(nested_type))
-                    break;
+                if (!nested_type.isValueRepresentedByInteger() &&
+                    !isStringOrFixedString(nested_type) &&
+                    !typeid_cast<const DataTypeIPv6 *>(&nested_type) &&
+                    !typeid_cast<const DataTypeUUID *>(&nested_type))
+                        break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);
             }
@@ -382,7 +385,7 @@ static MutableColumns getMergedDataColumns(
     for (const auto & desc : def.columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getReturnType()))
+        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
@@ -439,7 +442,7 @@ static void postprocessChunk(
         auto column = std::move(columns[next_column]);
         ++next_column;
 
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getReturnType()))
+        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
         {
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();
@@ -450,7 +453,7 @@ static void postprocessChunk(
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
-            res_columns[desc.column_numbers[0]] = recursiveTypeConversion(column, from_type, to_type);
+            res_columns[desc.column_numbers[0]] = recursiveLowCardinalityTypeConversion(column, from_type, to_type);
         }
         else
             res_columns[desc.column_numbers[0]] = std::move(column);
@@ -486,9 +489,8 @@ static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num,
             if (i < column_names.size())
                 column_name = column_names[i];
 
-            throw Exception("SummingSortedAlgorithm failed to read row " + toString(row_num)
-                            + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
-                            ErrorCodes::CORRUPTED_DATA);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "SummingSortedAlgorithm failed to read row {} of column {})",
+                            toString(row_num), toString(i) + (column_name.empty() ? "" : " (" + column_name));
         }
     }
 }
@@ -630,8 +632,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
     for (auto & desc : def.columns_to_aggregate)
     {
         if (!desc.created)
-            throw Exception("Logical error in SummingSortedAlgorithm, there are no description",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in SummingSortedAlgorithm, there are no description");
 
         if (desc.is_agg_func_type)
         {

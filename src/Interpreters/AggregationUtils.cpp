@@ -45,26 +45,27 @@ OutputBlockColumns prepareOutputBlockColumns(
         }
         else
         {
-            final_aggregate_columns[i] = aggregate_functions[i]->getReturnType()->createColumn();
+            final_aggregate_columns[i] = aggregate_functions[i]->getResultType()->createColumn();
             final_aggregate_columns[i]->reserve(rows);
 
             if (aggregate_functions[i]->isState())
             {
-                auto callback = [&](auto & subcolumn)
+                auto callback = [&](IColumn & subcolumn)
                 {
                     /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
-                    if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
+                    if (auto * column_aggregate_func = typeid_cast<ColumnAggregateFunction *>(&subcolumn))
                         for (auto & pool : aggregates_pools)
                             column_aggregate_func->addArena(pool);
                 };
-                callback(final_aggregate_columns[i]);
+
+                callback(*final_aggregate_columns[i]);
                 final_aggregate_columns[i]->forEachSubcolumnRecursively(callback);
             }
         }
     }
 
     if (key_columns.size() != params.keys_size)
-        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate. Unexpected key columns size.");
 
     std::vector<IColumn *> raw_key_columns;
     raw_key_columns.reserve(key_columns.size());

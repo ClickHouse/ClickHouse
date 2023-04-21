@@ -45,7 +45,7 @@ template <typename T>
 requires is_big_int_v<T>
 inline T roundDownToPowerOfTwo(T)
 {
-    throw Exception("roundToExp2() for big integers is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "roundToExp2() for big integers is not implemented");
 }
 
 /** For integer data types:

@@ -86,6 +86,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
     static_assert(static_cast<int>(AuthenticationType::MAX) == 7);

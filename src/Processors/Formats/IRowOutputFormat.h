@@ -9,14 +9,6 @@
 namespace DB
 {
 
-struct RowOutputFormatParams
-{
-    using WriteCallback = std::function<void(const Columns & columns,size_t row)>;
-
-    // Callback used to indicate that another row is written.
-    WriteCallback callback;
-};
-
 class WriteBuffer;
 
 /** Output format that writes data row by row.
@@ -24,10 +16,17 @@ class WriteBuffer;
 class IRowOutputFormat : public IOutputFormat
 {
 public:
-    using Params = RowOutputFormatParams;
+    /// Used to work with IRowOutputFormat explicitly.
+    void writeRow(const Columns & columns, size_t row_num)
+    {
+        first_row = false;
+        write(columns, row_num);
+    }
+
+    virtual void writeRowBetweenDelimiter() {}  /// delimiter between rows
 
 protected:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_);
+    IRowOutputFormat(const Block & header, WriteBuffer & out_);
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
@@ -51,7 +50,6 @@ protected:
     virtual void writeFieldDelimiter() {}       /// delimiter between values
     virtual void writeRowStartDelimiter() {}    /// delimiter before each row
     virtual void writeRowEndDelimiter() {}      /// delimiter after each row
-    virtual void writeRowBetweenDelimiter() {}  /// delimiter between rows
     virtual void writePrefix() override {}      /// delimiter before resultset
     virtual void writeSuffix() override {}      /// delimiter after resultset
     virtual void writeBeforeTotals() {}
@@ -60,10 +58,11 @@ protected:
     virtual void writeAfterExtremes() {}
     virtual void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
+    bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
+
     size_t num_columns;
     DataTypes types;
     Serializations serializations;
-    Params params;
 
     bool first_row = true;
 };

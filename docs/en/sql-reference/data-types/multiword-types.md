@@ -25,5 +25,3 @@ When creating tables, you can use data types with a name consisting of several w
 | NATIONAL CHAR                    | [String](../../sql-reference/data-types/string.md)           |
 | BINARY LARGE OBJECT              | [String](../../sql-reference/data-types/string.md)           |
 | BINARY VARYING                   | [String](../../sql-reference/data-types/string.md)           |
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/data-types/multiword-types/) <!--hide-->

@@ -51,7 +51,7 @@ class AggregateFunctionRankCorrelation :
 {
 public:
     explicit AggregateFunctionRankCorrelation(const DataTypes & arguments)
-        :IAggregateFunctionDataHelper<RankCorrelationData, AggregateFunctionRankCorrelation> ({arguments}, {})
+        :IAggregateFunctionDataHelper<RankCorrelationData, AggregateFunctionRankCorrelation> ({arguments}, {}, std::make_shared<DataTypeNumber<Float64>>())
     {}
 
     String getName() const override
@@ -60,11 +60,6 @@ public:
     }
 
     bool allocatesMemoryInArena() const override { return true; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeNumber<Float64>>();
-    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

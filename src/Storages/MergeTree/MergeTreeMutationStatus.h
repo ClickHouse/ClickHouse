@@ -27,6 +27,9 @@ struct MergeTreeMutationStatus
     String latest_failed_part;
     time_t latest_fail_time = 0;
     String latest_fail_reason;
+
+    /// FIXME: currently unused, but would be much better to report killed mutations with this flag.
+    bool is_killed = false;
 };
 
 /// Check mutation status and throw exception in case of error during mutation

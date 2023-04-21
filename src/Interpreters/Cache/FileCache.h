@@ -12,7 +12,6 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Types.h>
-#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
@@ -40,7 +39,7 @@ using QueryContextPtr = std::shared_ptr<QueryContext>;
 public:
     using Key = DB::FileCacheKey;
 
-    FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
+    explicit FileCache(const FileCacheSettings & settings);
 
     ~FileCache() = default;
 
@@ -56,10 +55,11 @@ public:
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
      *
-     * As long as pointers to returned file segments are hold
+     * As long as pointers to returned file segments are held
      * it is guaranteed that these file segments are not removed from cache.
      */
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolder set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -80,7 +80,7 @@ public:
 
     static Key hash(const String & path);
 
-    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const;
+    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
 
     String getPathInLocalCache(const Key & key) const;
 
@@ -221,6 +221,8 @@ private:
 
     FileSegmentCell * getCell(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
 
+    /// Returns non-owned pointer to the cell stored in the `files` map.
+    /// Doesn't reserve any space.
     FileSegmentCell * addCell(
         const Key & key,
         size_t offset,

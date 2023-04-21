@@ -19,7 +19,7 @@ LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, Re
     if (header_.columns() != 1
         || !typeid_cast<const ColumnString *>(header_.getByPosition(0).column.get()))
     {
-        throw Exception("This input format is only suitable for tables with a single column of type String.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "This input format is only suitable for tables with a single column of type String.");
     }
 }
 

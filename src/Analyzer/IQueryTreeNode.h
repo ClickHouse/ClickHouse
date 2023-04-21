@@ -11,7 +11,6 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Analyzer/Identifier.h>
-#include <Analyzer/ConstantValue.h>
 
 class SipHash;
 
@@ -21,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
 }
 
 class WriteBuffer;
@@ -91,36 +89,22 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
-    /// Returns true if node has constant value
-    bool hasConstantValue() const
+    virtual void convertToNullable()
     {
-        return getConstantValueOrNull() != nullptr;
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
     }
 
-    /** Returns constant value with type if node has constant value, and can be replaced with it.
-      * Examples: scalar subquery, function with constant arguments.
-      */
-    virtual const ConstantValue & getConstantValue() const
+    struct CompareOptions
     {
-        auto constant_value = getConstantValueOrNull();
-        if (!constant_value)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node does not have constant value");
-
-        return *constant_value;
-    }
-
-    /// Returns constant value with type if node has constant value or null otherwise
-    virtual ConstantValuePtr getConstantValueOrNull() const
-    {
-        return {};
-    }
+        bool compare_aliases = true;
+    };
 
     /** Is tree equal to other tree with node root.
       *
-      * Aliases of query tree nodes are compared during isEqual call.
+      * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
 
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;
@@ -134,6 +118,18 @@ public:
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
+
+    /** Get a deep copy of the query tree.
+      * If node to clone is key in replacement map, then instead of clone it
+      * use value node from replacement map.
+      */
+    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
+
+    /** Get a deep copy of the query tree.
+      * If node to clone is node to replace, then instead of clone it use replacement node.
+      */
+    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const
@@ -184,8 +180,17 @@ public:
       */
     String formatOriginalASTForErrorMessage() const;
 
+    struct ConvertToASTOptions
+    {
+        /// Add _CAST if constant litral type is different from column type
+        bool add_cast_for_constants = true;
+
+        /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
+        bool fully_qualified_identifiers = true;
+    };
+
     /// Convert query tree to AST
-    ASTPtr toAST() const;
+    ASTPtr toAST(const ConvertToASTOptions & options = { .add_cast_for_constants = true, .fully_qualified_identifiers = true }) const;
 
     /// Convert query tree to AST and then format it for error message.
     String formatConvertedASTForErrorMessage() const;
@@ -261,7 +266,7 @@ protected:
     virtual QueryTreeNodePtr cloneImpl() const = 0;
 
     /// Subclass must convert its internal state and its children to AST
-    virtual ASTPtr toASTImpl() const = 0;
+    virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
     QueryTreeWeakNodes weak_pointers;

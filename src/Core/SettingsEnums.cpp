@@ -38,7 +38,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
      {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
      {"direct",               JoinAlgorithm::DIRECT},
-     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE}})
+     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -108,6 +109,10 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS
      {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
      {"Memory", DefaultTableEngine::Memory}})
 
+IMPLEMENT_SETTING_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS,
+    {{"Never", CleanDeletedRows::Never},
+     {"Always", CleanDeletedRows::Always}})
+
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64},
@@ -153,7 +158,7 @@ IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
      {"XML", FormatSettings::EscapingRule::XML},
      {"Raw", FormatSettings::EscapingRule::Raw}})
 
-IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
                        {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
                         {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
                         {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
@@ -161,4 +166,40 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto}})
+
+IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
+     {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
+
+IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
+    {{"mmap", LocalFSReadMethod::mmap},
+     {"pread", LocalFSReadMethod::pread},
+     {"read", LocalFSReadMethod::read}})
+
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
+    {{"1.0",       FormatSettings::ParquetVersion::V1_0},
+     {"2.4", FormatSettings::ParquetVersion::V2_4},
+     {"2.6", FormatSettings::ParquetVersion::V2_6},
+     {"2.latest", FormatSettings::ParquetVersion::V2_LATEST}})
+
+IMPLEMENT_SETTING_ENUM(ParquetCompression, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", FormatSettings::ParquetCompression::NONE},
+     {"snappy", FormatSettings::ParquetCompression::SNAPPY},
+     {"zstd", FormatSettings::ParquetCompression::ZSTD},
+     {"gzip", FormatSettings::ParquetCompression::GZIP},
+     {"lz4", FormatSettings::ParquetCompression::LZ4},
+     {"brotli", FormatSettings::ParquetCompression::BROTLI}})
+
+IMPLEMENT_SETTING_ENUM(ArrowCompression, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", FormatSettings::ArrowCompression::NONE},
+     {"lz4_frame", FormatSettings::ArrowCompression::LZ4_FRAME},
+     {"zstd", FormatSettings::ArrowCompression::ZSTD}})
+
+IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", FormatSettings::ORCCompression::NONE},
+     {"snappy", FormatSettings::ORCCompression::SNAPPY},
+     {"zstd", FormatSettings::ORCCompression::ZSTD},
+     {"zlib", FormatSettings::ORCCompression::ZLIB},
+     {"lz4", FormatSettings::ORCCompression::LZ4}})
+
 }

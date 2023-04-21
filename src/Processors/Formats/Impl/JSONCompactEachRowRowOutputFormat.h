@@ -17,7 +17,6 @@ public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_,

@@ -44,9 +44,6 @@ public:
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
-
-private:
-    Processors processors;
 };
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context);

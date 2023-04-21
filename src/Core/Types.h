@@ -1,12 +1,15 @@
 #pragma once
 
+#include <Core/TypeId.h>
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <unordered_set>
 #include <base/strong_typedef.h>
 #include <base/Decimal.h>
 #include <base/defines.h>
 #include <base/UUID.h>
+#include <base/IPv4andIPv6.h>
 
 
 namespace DB
@@ -42,50 +45,6 @@ struct Null
     }
 };
 
-/// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
-enum class TypeIndex
-{
-    Nothing = 0,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    UInt256,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Int256,
-    Float32,
-    Float64,
-    Date,
-    Date32,
-    DateTime,
-    DateTime64,
-    String,
-    FixedString,
-    Enum8,
-    Enum16,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    Decimal256,
-    UUID,
-    Array,
-    Tuple,
-    Set,
-    Interval,
-    Nullable,
-    Function,
-    AggregateFunction,
-    LowCardinality,
-    Map,
-    Object,
-};
-
-
 using UInt128 = ::UInt128;
 using UInt256 = ::UInt256;
 using Int128 = ::Int128;
@@ -93,4 +52,5 @@ using Int256 = ::Int256;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
+using TypeIndexesSet = std::unordered_set<TypeIndex>;
 }

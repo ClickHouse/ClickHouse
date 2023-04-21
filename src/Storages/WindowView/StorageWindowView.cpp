@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
@@ -77,6 +78,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -119,8 +121,7 @@ namespace
                     else
                     {
                         if (data.check_duplicate_window && serializeAST(*temp_node) != data.serialized_window_function)
-                            throw Exception(
-                                "WINDOW VIEW only support ONE TIME WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "WINDOW VIEW only support ONE TIME WINDOW FUNCTION");
                         t->name = "windowID";
                     }
                 }
@@ -257,13 +258,13 @@ namespace
         const auto * arg = ast->as<ASTFunction>();
         if (!arg || !startsWith(arg->name, "toInterval")
         || !IntervalKind::tryParseString(Poco::toLower(arg->name.substr(10)), kind))
-            throw Exception(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception::createDeprecated(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto * interval_unit = arg->children.front()->children.front()->as<ASTLiteral>();
         if (!interval_unit
             || (interval_unit->value.getType() != Field::Types::String
                 && interval_unit->value.getType() != Field::Types::UInt64))
-            throw Exception("Interval argument must be integer", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interval argument must be integer");
 
         if (interval_unit->value.getType() == Field::Types::String)
             num_units = parse<Int64>(interval_unit->value.safeGet<String>());
@@ -271,7 +272,7 @@ namespace
             num_units = interval_unit->value.safeGet<UInt64>();
 
         if (num_units <= 0)
-            throw Exception("Value for Interval argument must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for Interval argument must be positive.");
     }
 
     UInt32 addTime(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
@@ -281,7 +282,7 @@ namespace
             case IntervalKind::Nanosecond:
             case IntervalKind::Microsecond:
             case IntervalKind::Millisecond:
-                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: { \
         return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
@@ -367,17 +368,16 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
     else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
     {
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for WINDOW VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW, "UNION is not supported for WINDOW VIEW");
 
         auto & inner_select_query = ast_select->list_of_selects->children.at(0);
 
         extractDependentTable(context, inner_select_query, select_database_name, select_table_name);
     }
     else
-        throw Exception(
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR,
             "Logical error while creating StorageWindowView."
-            " Could not retrieve table name from select query.",
-            DB::ErrorCodes::LOGICAL_ERROR);
+            " Could not retrieve table name from select query.");
 }
 
 UInt32 StorageWindowView::getCleanupBound()
@@ -430,11 +430,12 @@ bool StorageWindowView::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool cleanup,
     ContextPtr local_context)
 {
     auto storage_ptr = getInnerTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
+    return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
 void StorageWindowView::alter(
@@ -471,7 +472,7 @@ void StorageWindowView::alter(
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
-    DatabaseCatalog::instance().addDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -724,12 +725,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
 
     if (!is_time_column_func_now)
     {
-        auto query = select_query->clone();
+        auto query_ = select_query->clone();
         DropTableIdentifierMatcher::Data drop_table_identifier_data;
-        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query);
+        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query_);
 
         WindowFunctionMatcher::Data query_info_data;
-        WindowFunctionMatcher::Visitor(query_info_data).visit(query);
+        WindowFunctionMatcher::Visitor(query_info_data).visit(query_);
 
         auto order_by = std::make_shared<ASTExpressionList>();
         auto order_by_elem = std::make_shared<ASTOrderByElement>();
@@ -748,12 +749,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     return select_with_union_query;
 }
 
-ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id)
+ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id_)
 {
     /// We will create a query to create an internal table.
     auto inner_create_query = std::make_shared<ASTCreateQuery>();
-    inner_create_query->setDatabase(inner_table_id.getDatabaseName());
-    inner_create_query->setTable(inner_table_id.getTableName());
+    inner_create_query->setDatabase(inner_table_id_.getDatabaseName());
+    inner_create_query->setTable(inner_table_id_.getTableName());
 
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
@@ -872,7 +873,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         case IntervalKind::Nanosecond:
         case IntervalKind::Microsecond:
         case IntervalKind::Millisecond:
-            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
@@ -905,7 +906,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         case IntervalKind::Nanosecond:
         case IntervalKind::Microsecond:
         case IntervalKind::Millisecond:
-            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by window view yet");
 
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
@@ -1158,6 +1159,10 @@ StorageWindowView::StorageWindowView(
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
     , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
+    if (context_->getSettingsRef().allow_experimental_analyzer)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Experimental WINDOW VIEW feature is not supported with new infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
+
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
@@ -1168,9 +1173,9 @@ StorageWindowView::StorageWindowView(
     /// If the target table is not set, use inner target table
     has_inner_target_table = query.to_table_id.empty();
     if (has_inner_target_table && !query.storage)
-        throw Exception(
-            "You must specify where to save results of a WindowView query: either ENGINE or an existing table in a TO clause",
-            ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "You must specify where to save results of a WindowView query: "
+                        "either ENGINE or an existing table in a TO clause");
 
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception(
@@ -1203,7 +1208,7 @@ StorageWindowView::StorageWindowView(
         if (has_inner_target_table)
         {
             /// create inner target table
-            auto create_context = Context::createCopy(context_);
+            auto create_context_ = Context::createCopy(context_);
             auto target_create_query = std::make_shared<ASTCreateQuery>();
             target_create_query->setDatabase(table_id_.database_name);
             target_create_query->setTable(generateTargetTableName(table_id_));
@@ -1214,9 +1219,9 @@ StorageWindowView::StorageWindowView(
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, query.storage->ptr());
 
-            InterpreterCreateQuery create_interpreter(target_create_query, create_context);
-            create_interpreter.setInternal(true);
-            create_interpreter.execute();
+            InterpreterCreateQuery create_interpreter_(target_create_query, create_context_);
+            create_interpreter_.setInternal(true);
+            create_interpreter_.execute();
         }
     }
 
@@ -1254,7 +1259,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     ReplaceFunctionNowVisitor(func_now_data).visit(mergeable_query);
     is_time_column_func_now = func_now_data.is_time_column_func_now;
     if (!is_proctime && is_time_column_func_now)
-        throw Exception("now() is not supported for Event time processing.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "now() is not supported for Event time processing.");
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
@@ -1443,11 +1448,11 @@ void StorageWindowView::writeIntoWindowView(
         });
     }
 
-    std::shared_lock<std::shared_mutex> fire_signal_lock;
+    std::shared_lock<SharedMutex> fire_signal_lock;
     QueryPipelineBuilder builder;
     if (window_view.is_proctime)
     {
-        fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
+        fire_signal_lock = std::shared_lock(window_view.fire_signal_mutex);
 
         /// Fill ____timestamp column with current time in case of now() time column.
         if (window_view.is_time_column_func_now)
@@ -1566,7 +1571,7 @@ void StorageWindowView::writeIntoWindowView(
 
 void StorageWindowView::startup()
 {
-    DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+    DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();
@@ -1586,17 +1591,17 @@ void StorageWindowView::shutdown()
     fire_task->deactivate();
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (!dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (!view_ids.empty())
     {
-        StorageID dependent_table_id = dependencies.front();
-        throw Exception("Table has dependency " + dependent_table_id.getNameForLogs(), ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        StorageID view_id = *view_ids.begin();
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table has dependency {}", view_id);
     }
 }
 
@@ -1604,7 +1609,7 @@ void StorageWindowView::drop()
 {
     /// Must be guaranteed at this point for database engine Atomic that has_inner_table == false,
     /// because otherwise will be a deadlock.
-    dropInnerTableIfAny(true, getContext());
+    dropInnerTableIfAny(false, getContext());
 }
 
 void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
@@ -1618,7 +1623,7 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
             ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync, /* ignore_sync_setting */ true);
     }
     catch (...)
     {
@@ -1663,9 +1668,9 @@ void registerStorageWindowView(StorageFactory & factory)
     factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
     {
         if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
-            throw Exception(
-                "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')",
-                ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Experimental WINDOW VIEW feature "
+                            "is not enabled (the setting 'allow_experimental_window_view')");
 
         return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });

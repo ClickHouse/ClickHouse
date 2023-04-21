@@ -1,4 +1,6 @@
 #include <Functions/FunctionConstantBase.h>
+#include <base/getFQDNOrHostName.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -115,6 +117,13 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 
+    class FunctionDisplayName : public FunctionConstantBase<FunctionDisplayName, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "displayName";
+        explicit FunctionDisplayName(ContextPtr context) : FunctionConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
+    };
 }
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
@@ -170,6 +179,22 @@ REGISTER_FUNCTION(ZooKeeperSessionUptime)
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
     factory.registerFunction<FunctionGetOSKernelVersion>();
+}
+
+
+REGISTER_FUNCTION(DisplayName)
+{
+    factory.registerFunction<FunctionDisplayName>(
+        {
+            R"(
+Returns the value of `display_name` from config or server FQDN if not set.
+
+[example:displayName]
+)",
+            Documentation::Examples{{"displayName", "SELECT displayName();"}},
+            Documentation::Categories{"Constant", "Miscellaneous"}
+        },
+        FunctionFactory::CaseSensitive);
 }
 
 

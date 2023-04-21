@@ -118,7 +118,7 @@ class AggregateFunctionCrossTab : public IAggregateFunctionDataHelper<Data, Aggr
 {
 public:
     explicit AggregateFunctionCrossTab(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>({arguments}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>({arguments}, {}, createResultType())
     {
     }
 
@@ -132,7 +132,7 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }

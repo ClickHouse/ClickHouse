@@ -477,7 +477,7 @@ clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse has a lot of [settings to tune](../operations/settings/) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
+ClickHouse has a lot of [settings to tune](../operations/settings/index.md) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
 
 ``` sql
 SELECT name, value, changed, description
@@ -669,5 +669,3 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
 Replication operates in multi-master mode. Data can be loaded into any replica, and the system then syncs it with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. At least one replica should be up to allow data ingestion. Others will sync up data and repair consistency once they will become active again. Note that this approach allows for the low possibility of a loss of recently inserted data.
-
-[Original article](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->

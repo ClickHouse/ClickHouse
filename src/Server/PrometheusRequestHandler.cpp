@@ -53,4 +53,19 @@ createPrometheusHandlerFactory(IServer & server,
     return factory;
 }
 
+HTTPRequestHandlerFactoryPtr
+createPrometheusMainHandlerFactory(IServer & server,
+    const Poco::Util::AbstractConfiguration & config,
+    AsynchronousMetrics & async_metrics,
+    const std::string & name)
+{
+    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
+        server, PrometheusMetricsWriter(config, "prometheus", async_metrics));
+    handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
+    handler->allowGetAndHeadRequest();
+    factory->addHandler(handler);
+    return factory;
+}
+
 }

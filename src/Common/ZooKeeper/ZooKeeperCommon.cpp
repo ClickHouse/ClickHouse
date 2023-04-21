@@ -36,7 +36,7 @@ std::string ZooKeeperRequest::toString() const
         "OpNum = {}\n"
         "Additional info:\n{}",
         xid,
-        getOpNum(),
+        Coordination::toString(getOpNum()),
         toStringImpl());
 }
 
@@ -530,7 +530,6 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 {
-
     while (true)
     {
         OpNum op_num;
@@ -564,7 +563,7 @@ std::string ZooKeeperMultiRequest::toStringImpl() const
     for (const auto & request : requests)
     {
         const auto & zk_request = dynamic_cast<const ZooKeeperRequest &>(*request);
-        format_to(std::back_inserter(out), "SubRequest\n{}\n", zk_request.toString());
+        fmt::format_to(std::back_inserter(out), "SubRequest\n{}\n", zk_request.toString());
     }
     return {out.data(), out.size()};
 }

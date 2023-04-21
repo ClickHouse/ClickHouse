@@ -3,6 +3,8 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -56,6 +58,20 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
             return false;
     }
     return true;
+}
+
+SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
+{
+    size_t i = 0;
+    for (; i < std::min(lhs.size(), rhs.size()); ++i)
+    {
+        if (lhs[i] != rhs[i])
+            break;
+    }
+
+    auto res = lhs;
+    res.erase(res.begin() + i, res.end());
+    return res;
 }
 
 #if USE_EMBEDDED_COMPILER
