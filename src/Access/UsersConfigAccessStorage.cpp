@@ -248,7 +248,7 @@ namespace
         String default_database = config.getString(user_config + ".default_database", "");
         user->default_database = default_database;
 
-        user->allow_full_read_from_system_tables = config.getBool(user_config + ".allow_full_read_from_system_tables", false);
+        user->allow_full_read_from_system_databases = config.getBool(user_config + ".allow_full_read_from_system_databases", false);
 
         return user;
     }

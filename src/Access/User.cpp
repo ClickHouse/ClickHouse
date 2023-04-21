@@ -18,7 +18,7 @@ bool User::equal(const IAccessEntity & other) const
     return (auth_data == other_user.auth_data) && (allowed_client_hosts == other_user.allowed_client_hosts)
         && (access == other_user.access) && (granted_roles == other_user.granted_roles) && (default_roles == other_user.default_roles)
         && (settings == other_user.settings) && (grantees == other_user.grantees) && (default_database == other_user.default_database)
-        && (allow_full_read_from_system_tables == other_user.allow_full_read_from_system_tables);
+        && (allow_full_read_from_system_databases == other_user.allow_full_read_from_system_databases);
 }
 
 void User::setName(const String & name_)

@@ -10,7 +10,7 @@
             <allow_databases>
                 <database>system</database>
             </allow_databases>
-            <allow_full_read_from_system_tables>1</allow_full_read_from_system_tables>
+            <allow_full_read_from_system_databases>1</allow_full_read_from_system_databases>
         </another>
 
         <restricted>
@@ -23,7 +23,7 @@
             <allow_databases>
                 <database>system</database>
             </allow_databases>
-            <allow_full_read_from_system_tables>0</allow_full_read_from_system_tables>
+            <allow_full_read_from_system_databases>0</allow_full_read_from_system_databases>
         </restricted>
     </users>
 </clickhouse>

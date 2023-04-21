@@ -92,7 +92,7 @@ protected:
         size_t rows_count = 0;
 
         const auto user = access->getUser();
-        const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
+        const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_databases;
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {

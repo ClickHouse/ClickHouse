@@ -73,7 +73,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const auto user = access->getUser();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES) && !user->allow_full_read_from_system_tables;
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES) && !user->allow_full_read_from_system_databases;
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & [database_name, database] : databases)

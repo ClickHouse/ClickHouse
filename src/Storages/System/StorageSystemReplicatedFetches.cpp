@@ -35,7 +35,7 @@ void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, Cont
 {
     const auto access = context->getAccess();
     const auto user = access->getUser();
-    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_databases;
 
     for (const auto & fetch : context->getReplicatedFetchList().get())
     {

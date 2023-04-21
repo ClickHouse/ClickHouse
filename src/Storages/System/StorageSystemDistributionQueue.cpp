@@ -111,7 +111,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 {
     const auto access = context->getAccess();
     const auto user = access->getUser();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_databases;
 
     std::map<String, std::map<String, StoragePtr>> tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
