@@ -121,6 +121,7 @@ OpenStack
 OpenTelemetry
 PAAMAYIM
 Parsers
+ParquetMetadata
 Postgres
 Precompiled
 PrettyCompact
@@ -293,6 +294,7 @@ dragonbox
 durations
 endian
 enum
+encodings
 exFAT
 fastops
 fcoverage
