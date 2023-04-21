@@ -918,12 +918,14 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         std::vector<KeeperStorage::Delta> new_deltas;
 
         if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists) {
-            auto & container = storage.container;
-            auto node_it = container.find(request.path);
-            if (node_it != container.end())
-            {
+            // auto & container = storage.container;
+            // auto node_it = container.find(request.path);
+            // if (node_it != container.end())
+            // {
+            //     return new_deltas;
+            // }
+            if (storage.uncommitted_state.getNode(request.path) != nullptr)
                 return new_deltas;
-            }
         }
 
         auto parent_path = parentPath(request.path);
