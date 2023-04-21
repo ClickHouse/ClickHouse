@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -61,10 +62,17 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
             "Table function '{}' requires minimum 3 arguments: script_name, format, structure, [input_query...]",
             getName());
 
-    if (args[2]->as<ASTSetQuery>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' requires 3 mandatory arguments: script_name, format, structure",
-            getName());
+    auto check_argument = [&](size_t i, const std::string & argument_name)
+    {
+        if (!args[i]->as<ASTIdentifier>() && !args[i]->as<ASTLiteral>() && !args[i]->as<ASTQueryParameter>())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal",
+                argument_name, getName());
+    };
+
+    check_argument(0, "script_name");
+    check_argument(1, "format");
+    check_argument(2, "structure");
 
     for (size_t i = 0; i <= 2; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
