@@ -11,7 +11,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
@@ -29,9 +28,6 @@ RollupStep::RollupStep(const DataStream & input_stream_, Aggregator::Params para
     , final(final_)
     , use_nulls(use_nulls_)
 {
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
 }
 
 ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
@@ -53,11 +49,9 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 void RollupStep::updateOutputStream()
 {
     output_stream = createOutputStream(
-        input_streams.front(), appendGroupingSetColumn(params.getHeader(input_streams.front().header, final)), getDataStreamTraits());
-
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
+        input_streams.front(),
+        generateOutputHeader(params.getHeader(input_streams.front().header, final), params.keys, use_nulls),
+        getDataStreamTraits());
 }
 
 

@@ -1,7 +1,4 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Common/ProfileEvents.h>
-#include <Interpreters/Context.h>
-
 
 #if USE_AWS_S3
 
@@ -18,14 +15,12 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/DeleteObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-
 #include <Common/getRandomASCIIString.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
@@ -213,7 +208,7 @@ void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSi
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
 
-    Aws::S3::Model::ListObjectsV2Request request;
+    S3::ListObjectsV2Request request;
     request.SetBucket(bucket);
     request.SetPrefix(path);
     if (max_keys)
@@ -257,7 +252,7 @@ void S3ObjectStorage::getDirectoryContents(const std::string & path,
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
 
-    Aws::S3::Model::ListObjectsV2Request request;
+    S3::ListObjectsV2Request request;
     request.SetBucket(bucket);
     /// NOTE: if you do "ls /foo" instead of "ls /foo/" over S3 with this API
     /// it will return only "/foo" itself without any underlying nodes.
@@ -304,7 +299,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
     ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
-    Aws::S3::Model::DeleteObjectRequest request;
+    S3::DeleteObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(object.absolute_path);
     auto outcome = client_ptr->DeleteObject(request);
@@ -352,7 +347,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
             ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
             ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
-            Aws::S3::Model::DeleteObjectsRequest request;
+            S3::DeleteObjectsRequest request;
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
             auto outcome = client_ptr->DeleteObjects(request);
@@ -435,7 +430,7 @@ void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> &&
     s3_settings.set(std::move(s3_settings_));
 }
 
-void S3ObjectStorage::setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_)
+void S3ObjectStorage::setNewClient(std::unique_ptr<S3::Client> && client_)
 {
     client.set(std::move(client_));
 }
@@ -447,7 +442,7 @@ void S3ObjectStorage::shutdown()
     /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
     /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
     /// This should significantly speed up shutdown process if S3 is unhealthy.
-    const_cast<Aws::S3::S3Client &>(*client_ptr).DisableRequestProcessing();
+    const_cast<S3::Client &>(*client_ptr).DisableRequestProcessing();
 }
 
 void S3ObjectStorage::startup()
@@ -455,7 +450,7 @@ void S3ObjectStorage::startup()
     auto client_ptr = client.get();
 
     /// Need to be enabled if it was disabled during shutdown() call.
-    const_cast<Aws::S3::S3Client &>(*client_ptr).EnableRequestProcessing();
+    const_cast<S3::Client &>(*client_ptr).EnableRequestProcessing();
 }
 
 void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)

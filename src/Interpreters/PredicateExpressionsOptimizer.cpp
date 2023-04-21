@@ -35,7 +35,8 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!enable_optimize_predicate_expression)
         return false;
 
-    if (select_query.having() && (!select_query.group_by_with_cube && !select_query.group_by_with_rollup && !select_query.group_by_with_totals))
+    const bool has_incompatible_constructs = select_query.group_by_with_cube || select_query.group_by_with_rollup || select_query.group_by_with_totals || select_query.group_by_with_grouping_sets;
+    if (select_query.having() && !has_incompatible_constructs)
         tryMovePredicatesFromHavingToWhere(select_query);
 
     if (!select_query.tables() || select_query.tables()->children.empty())

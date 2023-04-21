@@ -20,6 +20,13 @@
                 </external>
             </volumes>
         </s3_and_default>
+        <s3>
+            <volumes>
+                <main>
+                    <disk>s3_disk</disk>
+                </main>
+            </volumes>
+        </s3>
     </policies>
   </storage_configuration>
 

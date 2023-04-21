@@ -1,19 +1,18 @@
 #include "config.h"
-#include "IO/S3Common.h"
+#include <IO/S3Common.h>
 
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ResourceGuard.h>
 #include <IO/S3/getObjectInfo.h>
-
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/HeadObjectRequest.h>
+#include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <base/sleep.h>
 
 #include <utility>
@@ -22,6 +21,7 @@
 namespace ProfileEvents
 {
     extern const Event ReadBufferFromS3Microseconds;
+    extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
@@ -44,7 +44,7 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const String & version_id_,
@@ -53,8 +53,9 @@ ReadBufferFromS3::ReadBufferFromS3(
     bool use_external_buffer_,
     size_t offset_,
     size_t read_until_position_,
-    bool restricted_seek_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0)
+    bool restricted_seek_,
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -177,6 +178,7 @@ bool ReadBufferFromS3::nextImpl()
             sleep_time_with_backoff_milliseconds *= 2;
 
             /// Try to reinitialize `impl`.
+            resetWorkingBuffer();
             impl.reset();
         }
     }
@@ -197,15 +199,15 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (offset_ == offset && whence == SEEK_SET)
-        return offset;
+    if (offset_ == getPosition() && whence == SEEK_SET)
+        return offset_;
 
     if (impl && restricted_seek)
         throw Exception(
                         ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
                         "Seek is allowed only before first read attempt from the buffer (current offset: "
                         "{}, new offset: {}, reading until position: {}, available: {})",
-                        offset, offset_, read_until_position, available());
+                        getPosition(), offset_, read_until_position, available());
 
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
@@ -221,13 +223,13 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         {
             pos = working_buffer.end() - (offset - offset_);
             assert(pos >= working_buffer.begin());
-            assert(pos <= working_buffer.end());
+            assert(pos < working_buffer.end());
 
             return getPosition();
         }
 
-        auto position = getPosition();
-        if (offset_ > position)
+        off_t position = getPosition();
+        if (impl && offset_ > position)
         {
             size_t diff = offset_ - position;
             if (diff < read_settings.remote_read_min_bytes_for_seek)
@@ -240,7 +242,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         resetWorkingBuffer();
         if (impl)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            if (!atEndOfRequestedRangeGuess())
+                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             impl.reset();
         }
     }
@@ -269,19 +272,48 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
 {
     if (position != static_cast<size_t>(read_until_position))
     {
+        if (impl)
+        {
+            if (!atEndOfRequestedRangeGuess())
+                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            offset = getPosition();
+            resetWorkingBuffer();
+            impl.reset();
+        }
         read_until_position = position;
-        impl.reset();
     }
 }
 
-SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
+void ReadBufferFromS3::setReadUntilEnd()
 {
-    return Range{ .left = static_cast<size_t>(offset), .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt };
+    if (read_until_position)
+    {
+        read_until_position = 0;
+        if (impl)
+        {
+            if (!atEndOfRequestedRangeGuess())
+                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            offset = getPosition();
+            resetWorkingBuffer();
+            impl.reset();
+        }
+    }
+}
+
+bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
+{
+    if (!impl)
+        return true;
+    if (read_until_position)
+        return getPosition() >= read_until_position;
+    if (file_size)
+        return getPosition() >= static_cast<off_t>(*file_size);
+    return false;
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    Aws::S3::Model::GetObjectRequest req;
+    S3::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
     if (!version_id.empty())
@@ -325,45 +357,39 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (read_settings.for_object_storage)
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
+
+    // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
+    constexpr ResourceCost estimated_cost = 1;
+    ResourceGuard rlock(read_settings.resource_link, estimated_cost);
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+    rlock.unlock();
 
     if (outcome.IsSuccess())
     {
-        read_result = outcome.GetResultWithOwnership();
+        ResourceCost bytes_read = outcome.GetResult().GetContentLength();
+        read_settings.resource_link.adjust(estimated_cost, bytes_read);
         size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
+        read_result = outcome.GetResultWithOwnership();
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
     else
     {
+        read_settings.resource_link.accumulate(estimated_cost);
         const auto & error = outcome.GetError();
         throw S3Exception(error.GetMessage(), error.GetErrorType());
     }
 }
 
-SeekableReadBufferPtr ReadBufferS3Factory::getReader()
+std::unique_ptr<SeekableReadBuffer> ReadBufferS3Factory::getReader()
 {
-    const auto next_range = range_generator.nextRange();
-    if (!next_range)
-        return nullptr;
-
-    auto reader = std::make_shared<ReadBufferFromS3>(
+    return std::make_unique<ReadBufferFromS3>(
         client_ptr,
         bucket,
         key,
         version_id,
         request_settings,
-        read_settings.adjustBufferSize(object_size),
-        false /*use_external_buffer*/,
-        next_range->first,
-        next_range->second);
-
-    return reader;
-}
-
-off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
-{
-    range_generator = RangeGenerator{object_size, range_step, static_cast<size_t>(off)};
-    return off;
+        read_settings.adjustBufferSize(object_size));
 }
 
 size_t ReadBufferS3Factory::getFileSize()

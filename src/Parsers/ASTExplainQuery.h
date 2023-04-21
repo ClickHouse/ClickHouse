@@ -80,6 +80,8 @@ public:
         return res;
     }
 
+    void setExplainKind(ExplainKind kind_) { kind = kind_; }
+
     void setExplainedQuery(ASTPtr query_)
     {
         children.emplace_back(query_);
@@ -108,6 +110,8 @@ public:
     const ASTPtr & getSettings() const { return ast_settings; }
     const ASTPtr & getTableFunction() const { return table_function; }
     const ASTPtr & getTableOverride() const { return table_override; }
+
+    QueryKind getQueryKind() const override { return QueryKind::Explain; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

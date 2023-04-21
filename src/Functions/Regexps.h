@@ -7,10 +7,10 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <Functions/likePatternToRegexp.h>
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/likePatternToRegexp.h>
 #include <base/defines.h>
 #include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>

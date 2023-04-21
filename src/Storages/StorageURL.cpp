@@ -228,15 +228,15 @@ namespace
 
                 // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
                 auto input_format = FormatFactory::instance().getInputRandomAccess(
-                    format,
-                    std::move(buf_factory),
-                    sample_block,
-                    context,
-                    max_block_size,
-                    /* is_remote_fs */ true,
-                    compression_method,
-                    format_settings,
-                    download_threads);
+                        format,
+                        std::move(buf_factory),
+                        sample_block,
+                        context,
+                        max_block_size,
+                        /* is_remote_fs */ true,
+                        compression_method,
+                        format_settings,
+                        download_threads);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));

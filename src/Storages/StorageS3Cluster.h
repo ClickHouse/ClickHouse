@@ -21,8 +21,13 @@ class Context;
 class StorageS3Cluster : public IStorageCluster
 {
 public:
+    struct Configuration : public StorageS3::Configuration
+    {
+        std::string cluster_name;
+    };
+
     StorageS3Cluster(
-        const StorageS3ClusterConfiguration & configuration_,
+        const Configuration & configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -42,9 +47,12 @@ public:
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
     ClusterPtr getCluster(ContextPtr context) const override;
 
+protected:
+    void updateConfigurationIfChanged(ContextPtr local_context);
+
 private:
-    StorageS3::S3Configuration s3_configuration;
-    String filename;
+    Poco::Logger * log;
+    StorageS3::Configuration s3_configuration;
     String cluster_name;
     String format_name;
     String compression_method;

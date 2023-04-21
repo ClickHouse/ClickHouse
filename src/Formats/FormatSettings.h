@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/Defines.h>
 #include <base/types.h>
+#include <base/unit.h>
 
 
 namespace DB
@@ -81,9 +82,18 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    UInt64 max_binary_string_size = 0;
+    UInt64 max_binary_string_size = 1_GiB;
+    UInt64 max_binary_array_size = 1_GiB;
+    UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+
+    enum class ArrowCompression
+    {
+        NONE,
+        LZ4_FRAME,
+        ZSTD
+    };
 
     struct
     {
@@ -94,6 +104,8 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
+        ArrowCompression output_compression_method = ArrowCompression::NONE;
     } arrow;
 
     struct
@@ -104,7 +116,6 @@ struct FormatSettings
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
-        bool null_as_default = false;
     } avro;
 
     String bool_true_representation = "true";
@@ -174,6 +185,24 @@ struct FormatSettings
         String column_for_object_name;
     } json_object_each_row;
 
+    enum class ParquetVersion
+    {
+        V1_0,
+        V2_4,
+        V2_6,
+        V2_LATEST,
+    };
+
+    enum class ParquetCompression
+    {
+        NONE,
+        SNAPPY,
+        ZSTD,
+        LZ4,
+        GZIP,
+        BROTLI,
+    };
+
     struct
     {
         UInt64 row_group_size = 1000000;
@@ -183,6 +212,13 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
+        // TODO: This should probably be shared among all formats and with
+        //       https://github.com/ClickHouse/ClickHouse/issues/38755
+        bool preserve_order = false;
+        UInt64 max_block_size = 8192;
+        ParquetVersion output_version;
+        ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
     } parquet;
 
     struct Pretty
@@ -264,6 +300,15 @@ struct FormatSettings
         bool accurate_types_of_literals = true;
     } values;
 
+    enum class ORCCompression
+    {
+        NONE,
+        LZ4,
+        SNAPPY,
+        ZSTD,
+        ZLIB,
+    };
+
     struct
     {
         bool import_nested = false;
@@ -273,6 +318,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
+        ORCCompression output_compression_method = ORCCompression::NONE;
     } orc;
 
     /// For capnProto format we should determine how to
@@ -323,6 +369,11 @@ struct FormatSettings
         bool output_string_as_string;
         bool skip_fields_with_unsupported_types_in_schema_inference;
     } bson;
+
+    struct
+    {
+        bool allow_types_conversion = true;
+    } native;
 };
 
 }

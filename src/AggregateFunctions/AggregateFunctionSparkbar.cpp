@@ -50,11 +50,13 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
     assertBinary(name, arguments);
 
     if (params.size() != 1 && params.size() != 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The number of params does not match for aggregate function {}", name);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "The number of params does not match for aggregate function '{}', expected 1 or 3, got {}", name, params.size());
 
     if (params.size() == 3)
     {
-        if (params.at(1).getType() != arguments[0]->getDefault().getType() || params.at(2).getType() != arguments[0]->getDefault().getType())
+        if (params.at(1).getType() != arguments[0]->getDefault().getType() ||
+            params.at(2).getType() != arguments[0]->getDefault().getType())
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "The second and third parameters are not the same type as the first arguments for aggregate function {}", name);
@@ -62,7 +64,6 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
     }
     return createAggregateFunctionSparkbarImpl(name, *arguments[0], *arguments[1], arguments, params);
 }
-
 
 }
 

@@ -706,8 +706,12 @@ Block KeyCondition::getBlockWithConstants(
 
     if (syntax_analyzer_result)
     {
-        const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-        expr_for_constant_folding->execute(result);
+        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
+        for (const auto & action_node : actions->getOutputs())
+        {
+            if (action_node->column)
+                result.insert(ColumnWithTypeAndName{action_node->column, action_node->result_type, action_node->result_name});
+        }
     }
 
     return result;
@@ -739,9 +743,16 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
+    size_t key_index = 0;
     for (const auto & name : key_column_names)
+    {
         if (!key_columns.contains(name))
+        {
             key_columns[name] = key_columns.size();
+            key_indices.push_back(key_index);
+        }
+        ++key_index;
+    }
 
     auto filter_node = buildFilterNode(query, additional_filter_asts);
 
@@ -804,9 +815,16 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
+    size_t key_index = 0;
     for (const auto & name : key_column_names)
+    {
         if (!key_columns.contains(name))
+        {
             key_columns[name] = key_columns.size();
+            key_indices.push_back(key_index);
+        }
+        ++key_index;
+    }
 
     if (!filter_dag)
     {
@@ -2555,25 +2573,6 @@ bool KeyCondition::alwaysFalse() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
 
     return rpn_stack[0] == 0;
-}
-
-size_t KeyCondition::getMaxKeyColumn() const
-{
-    size_t res = 0;
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IN_RANGE
-            || element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
-            || element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
-        {
-            if (element.key_column > res)
-                res = element.key_column;
-        }
-    }
-    return res;
 }
 
 bool KeyCondition::hasMonotonicFunctionsChain() const

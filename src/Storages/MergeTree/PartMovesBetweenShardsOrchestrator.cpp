@@ -211,7 +211,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    sync_source_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_source_log_entry_str, sync_source_log_entry_stat);
+                    sync_source_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_source_log_entry_str, sync_source_log_entry_stat,
+                                                                                storage.format_version);
                 }
                 else
                 {
@@ -267,7 +268,9 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    sync_destination_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_destination_log_entry_str, sync_destination_log_entry_stat);
+                    sync_destination_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_destination_log_entry_str,
+                                                                                     sync_destination_log_entry_stat,
+                                                                                     storage.format_version);
                 }
                 else
                 {
@@ -330,7 +333,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    fetch_log_entry = *ReplicatedMergeTreeLogEntry::parse(fetch_log_entry_str, fetch_log_entry_stat);
+                    fetch_log_entry = *ReplicatedMergeTreeLogEntry::parse(fetch_log_entry_str, fetch_log_entry_stat,
+                                                                          storage.format_version);
                 }
                 else
                 {
@@ -397,11 +401,14 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     {
                         LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                        attach_rollback_log_entry = *ReplicatedMergeTreeLogEntry::parse(attach_rollback_log_entry_str, attach_rollback_log_entry_stat);
+                        attach_rollback_log_entry = *ReplicatedMergeTreeLogEntry::parse(attach_rollback_log_entry_str,
+                                                                                        attach_rollback_log_entry_stat,
+                                                                                        storage.format_version);
                     }
                     else
                     {
-                        const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat);
+                        const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat,
+                                                                                         storage.format_version);
 
                         Coordination::Requests ops;
                         ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
@@ -495,7 +502,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     Coordination::Stat stat;
                     String log_entry_str = zk->get(attach_log_entry_barrier_path, &stat);
-                    log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat);
+                    log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat, storage.format_version);
                 }
 
                 Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, 1);
@@ -542,7 +549,8 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    source_drop_log_entry = *ReplicatedMergeTreeLogEntry::parse(source_drop_log_entry_str, source_drop_log_entry_stat);
+                    source_drop_log_entry = *ReplicatedMergeTreeLogEntry::parse(source_drop_log_entry_str, source_drop_log_entry_stat,
+                                                                                storage.format_version);
                 }
                 else
                 {

@@ -1,4 +1,4 @@
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <base/find_symbols.h>
@@ -14,27 +14,32 @@ namespace ErrorCodes
 static size_t encodeURL(const char * __restrict src, size_t src_size, char * __restrict dst, bool space_as_plus)
 {
     char * dst_pos = dst;
-    for (size_t i = 0; i < src_size; i++)
+    for (size_t i = 0; i < src_size; ++i)
     {
         if ((src[i] >= '0' && src[i] <= '9') || (src[i] >= 'a' && src[i] <= 'z') || (src[i] >= 'A' && src[i] <= 'Z')
             || src[i] == '-' || src[i] == '_' || src[i] == '.' || src[i] == '~')
         {
-            *dst_pos++ = src[i];
+            *dst_pos = src[i];
+            ++dst_pos;
         }
         else if (src[i] == ' ' && space_as_plus)
         {
-            *dst_pos++ = '+';
+            *dst_pos = '+';
+            ++dst_pos;
         }
         else
         {
-            *dst_pos++ = '%';
-            *dst_pos++ = hexDigitUppercase(src[i] >> 4);
-            *dst_pos++ = hexDigitUppercase(src[i] & 0xf);
+            dst_pos[0] = '%';
+            ++dst_pos;
+            writeHexByteUppercase(src[i], dst_pos);
+            dst_pos += 2;
         }
     }
-    *dst_pos++ = src[src_size];
+    *dst_pos = 0;
+    ++dst_pos;
     return dst_pos - dst;
 }
+
 
 /// We assume that size of the dst buf isn't less than src_size.
 static size_t decodeURL(const char * __restrict src, size_t src_size, char * __restrict dst, bool plus_as_space)
@@ -120,10 +125,14 @@ struct CodeURLComponentImpl
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         if (code_strategy == encode)
-            //the destination(res_data) string is at most three times the length of the source string
+        {
+            /// the destination(res_data) string is at most three times the length of the source string
             res_data.resize(data.size() * 3);
+        }
         else
+        {
             res_data.resize(data.size());
+        }
 
         size_t size = offsets.size();
         res_offsets.resize(size);

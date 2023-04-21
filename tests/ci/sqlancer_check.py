@@ -10,7 +10,7 @@ from github import Github
 
 from build_download_helper import get_build_name_for_check, read_build_urls
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import format_description, post_commit_status
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_REPOSITORY,
@@ -171,10 +171,12 @@ def main():
         with open(
             os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
         ) as desc_f:
-            description = desc_f.readline().rstrip("\n")[:140]
+            description = desc_f.readline().rstrip("\n")
     except:
         # status = "failure"
         description = "Task failed: $?=" + str(retcode)
+
+    description = format_description(description)
 
     report_url = upload_results(
         s3_helper,

@@ -77,31 +77,40 @@ def get_ccache_if_not_exists(
     for pr_number in prs_to_check:
         logging.info("Searching cache for pr %s", pr_number)
         s3_path_prefix = str(pr_number) + "/ccaches"
-        objects = s3_helper.list_prefix(s3_path_prefix)
-        logging.info("Found %s objects for pr", len(objects))
-        for obj in objects:
-            if ccache_name in obj:
-                logging.info("Found ccache on path %s", obj)
-                url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{obj}"
-                compressed_cache = os.path.join(temp_path, os.path.basename(obj))
-                dowload_file_with_progress(url, compressed_cache)
+        all_cache_objects = s3_helper.list_prefix(s3_path_prefix)
+        logging.info("Found %s objects for pr %s", len(all_cache_objects), pr_number)
+        objects = [obj for obj in all_cache_objects if ccache_name in obj]
+        if not objects:
+            continue
+        logging.info(
+            "Found ccache archives for pr %s: %s", pr_number, ", ".join(objects)
+        )
 
-                path_to_decompress = str(Path(path_to_ccache_dir).parent)
-                if not os.path.exists(path_to_decompress):
-                    os.makedirs(path_to_decompress)
+        obj = objects[0]
+        # There are multiple possible caches, the newest one ends with .tar.zst
+        zst_cache = [obj for obj in objects if obj.endswith(".tar.zst")]
+        if zst_cache:
+            obj = zst_cache[0]
 
-                if os.path.exists(path_to_ccache_dir):
-                    shutil.rmtree(path_to_ccache_dir)
-                    logging.info("Ccache already exists, removing it")
+        logging.info("Found ccache on path %s", obj)
+        url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{obj}"
+        compressed_cache = os.path.join(temp_path, os.path.basename(obj))
+        dowload_file_with_progress(url, compressed_cache)
 
-                logging.info("Decompressing cache to path %s", path_to_decompress)
-                decompress_fast(compressed_cache, path_to_decompress)
-                logging.info("Files on path %s", os.listdir(path_to_decompress))
-                cache_found = True
-                ccache_pr = pr_number
-                break
-        if cache_found:
-            break
+        path_to_decompress = str(Path(path_to_ccache_dir).parent)
+        if not os.path.exists(path_to_decompress):
+            os.makedirs(path_to_decompress)
+
+        if os.path.exists(path_to_ccache_dir):
+            shutil.rmtree(path_to_ccache_dir)
+            logging.info("Ccache already exists, removing it")
+
+        logging.info("Decompressing cache to path %s", path_to_decompress)
+        decompress_fast(compressed_cache, path_to_decompress)
+        logging.info("Files on path %s", os.listdir(path_to_decompress))
+        cache_found = True
+        ccache_pr = pr_number
+        break
 
     if not cache_found:
         logging.info("ccache not found anywhere, cannot download anything :(")
