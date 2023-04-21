@@ -180,6 +180,8 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
             entry = " ".join(entry_lines)
             # Don't accept changelog entries like '...'.
             entry = re.sub(r"[#>*_.\- ]", "", entry)
+            # Don't accept changelog entries like 'Close #...'.
+            entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
         else:
             i += 1
 
