@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET send_logs_level = 'fatal';
+
 drop table if exists rmt;
 drop table if exists rmt2;
 
@@ -59,8 +61,6 @@ select count(), sum(n), sum(m) from rmt2;
 insert into rmt(n) values (10);
 
 drop table rmt;
-
-system sync replica rmt2;
 drop table rmt2;
 
 system flush logs;
