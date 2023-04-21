@@ -1116,33 +1116,41 @@ inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
-template <typename T>
+template <std::endian endian, typename T>
 requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
     readPODBinary(x, buf);
-    if constexpr (std::endian::native == std::endian::little)
+    if constexpr (std::endian::native != endian)
+        std::byteswap(x);
+}
+
+template <std::endian endian, typename T>
+requires is_big_int_v<T>
+inline void readBinaryEndian(T & x, ReadBuffer & buf)
+{
+    if constexpr (std::endian::native == endian)
     {
-        if constexpr (sizeof(x) == 1)
-            return;
-        else if constexpr (sizeof(x) == 2)
-            x = __builtin_bswap16(x);
-        else if constexpr (sizeof(x) == 4)
-            x = __builtin_bswap32(x);
-        else if constexpr (sizeof(x) == 8)
-            x = __builtin_bswap64(x);
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            readBinaryEndian<endian>(x.items[i], buf);
+    }
+    else
+    {
+        for (ssize_t i = std::size(x.items) - 1; i >= 0; --i)
+            readBinaryEndian<endian>(x.items[i], buf);
     }
 }
 
 template <typename T>
-requires is_big_int_v<T>
-inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+inline void readBinaryLittleEndian(T & x, ReadBuffer & buf)
 {
-    for (size_t i = 0; i != std::size(x.items); ++i)
-    {
-        auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
-        readBinaryBigEndian(item, buf);
-    }
+    readBinaryEndian<std::endian::little>(x, buf);
+}
+
+template <typename T>
+inline void readBinaryBigEndian(T & x, ReadBuffer & buf)
+{
+    readBinaryEndian<std::endian::big>(x, buf);
 }
 
 
