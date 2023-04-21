@@ -10,6 +10,7 @@
 #include <Common/atomicRename.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/loadLocalDiskConfig.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -17,11 +18,13 @@
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
+#include <Disks/IO/WriteBufferFromTemporaryFile.h>
+
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
+
 
 namespace CurrentMetrics
 {
@@ -532,13 +535,14 @@ struct DiskWriteCheckData
     }
 };
 
-bool DiskLocal::canWrite() const noexcept
+bool DiskLocal::canWrite() noexcept
 try
 {
     static DiskWriteCheckData data;
-    String tmp_template = fs::path(disk_path) / "";
     {
-        auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
+        auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
+        auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
+        auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->sync();
     }
