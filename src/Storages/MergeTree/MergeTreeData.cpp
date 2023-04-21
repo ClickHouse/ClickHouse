@@ -1,4 +1,3 @@
-#include "Interpreters/Context_fwd.h"
 #include "Storages/MergeTree/MergeTreeDataPartBuilder.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -43,6 +42,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -459,8 +459,8 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
-    const StorageInMemoryMetadata & old_metadata, 
-    bool attach, 
+    const StorageInMemoryMetadata & old_metadata,
+    bool attach,
     ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast)
@@ -592,10 +592,10 @@ void MergeTreeData::checkProperties(
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, 
-        const StorageInMemoryMetadata & old_metadata, 
-        bool attach, 
-        const ContextPtr local_context)
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    bool attach,
+    const ContextPtr local_context)
 {
     checkProperties(new_metadata, old_metadata, attach, local_context);
     setInMemoryMetadata(new_metadata);
