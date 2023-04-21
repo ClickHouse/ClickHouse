@@ -25,14 +25,22 @@ def started_cluster():
 
 
 def test_full_read_from_system_tables():
-    assert node.query("SELECT name FROM system.tables WHERE database = 'mydb'") == TSV([
-        'table1',
-        'table2',
-    ])
+    assert node.query("SELECT name FROM system.tables WHERE database = 'mydb'") == TSV(
+        [
+            "table1",
+            "table2",
+        ]
+    )
 
-    assert node.query("SELECT name FROM system.tables WHERE database = 'mydb'", user="another") == TSV([
-        'table1',
-        'table2',
-    ])
+    assert node.query(
+        "SELECT name FROM system.tables WHERE database = 'mydb'", user="another"
+    ) == TSV(
+        [
+            "table1",
+            "table2",
+        ]
+    )
 
-    assert node.query("SELECT name FROM system.tables WHERE database = 'mydb'", user="restricted") == TSV([])
+    assert node.query(
+        "SELECT name FROM system.tables WHERE database = 'mydb'", user="restricted"
+    ) == TSV([])
