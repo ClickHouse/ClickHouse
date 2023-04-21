@@ -119,7 +119,7 @@ public:
     /// rudimentary. The more advanced choice would be using
     /// https://github.com/smartmontools/smartmontools. However, it's good enough for now.
     bool canRead() const noexcept;
-    bool canWrite() const noexcept;
+    bool canWrite() noexcept;
 
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
