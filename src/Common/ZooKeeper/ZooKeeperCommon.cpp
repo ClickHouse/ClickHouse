@@ -1,4 +1,5 @@
 #include "Common/ZooKeeper/IKeeper.h"
+#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
@@ -939,9 +940,7 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Read;
         else if constexpr (num == OpNum::Multi)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
-        else if constexpr (num == OpNum::CheckNotExists)
-            res->not_exists = true;
-        else if constexpr (num == OpNum::CreateIfNotExists)
+        else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
 
         return res;
