@@ -192,10 +192,10 @@ CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegment & file_segment
             if (!remote_fs_segment_reader)
             {
                 auto impl = implementation_buffer_creator();
-                if (!impl->supportsRightBoundedReads())
-                    remote_fs_segment_reader = std::make_unique<BoundedReadBuffer>(std::move(impl));
-                else
+                if (impl->supportsRightBoundedReads())
                     remote_fs_segment_reader = std::move(impl);
+                else
+                    remote_fs_segment_reader = std::make_unique<BoundedReadBuffer>(std::move(impl));
 
                 file_segment.setRemoteFileReader(remote_fs_segment_reader);
             }
