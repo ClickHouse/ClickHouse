@@ -124,7 +124,7 @@
     <http_port>8123</http_port>
 
     <!-- Port for WebSocket API. See also 'wss_port' for secure connections. -->
-    <ws_port>8123</ws_port>
+    <web_socket_port>1234</web_socket_port>
 
     <!-- Port for interaction by native protocol with:
          - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);

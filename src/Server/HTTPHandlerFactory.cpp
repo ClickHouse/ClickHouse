@@ -116,6 +116,9 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
         return createPrometheusMainHandlerFactory(server, config, async_metrics, name);
+    else if (name == "WebSocketHandler-factory")
+        /// TODO replace to WSHandelrFactory while it will be ready
+        return createHTTPHandlerFactory(server, config, name, async_metrics);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
 }
