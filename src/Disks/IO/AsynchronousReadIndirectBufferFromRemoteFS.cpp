@@ -139,7 +139,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch(int64_t priority)
     last_prefetch_info.priority = priority;
 
     /// Prefetch even in case hasPendingData() == true.
-    chassert(prefetch_buffer.size() == read_settings.prefetch_buffer_size);
+    chassert(prefetch_buffer.size() == read_settings.prefetch_buffer_size || prefetch_buffer.size() == read_settings.remote_fs_buffer_size);
     prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size(), priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -224,7 +224,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
 
-        chassert(memory.size() == read_settings.remote_fs_buffer_size);
+        chassert(memory.size() == read_settings.prefetch_buffer_size || memory.size() == read_settings.remote_fs_buffer_size);
         std::tie(size, offset) = impl->readInto(memory.data(), memory.size(), file_offset_of_buffer_end, bytes_to_ignore);
         bytes_to_ignore = 0;
 
