@@ -106,16 +106,16 @@ inline size_t getTrailingZeroBits(T x)
 template <typename T>
 inline T maskLowBits(unsigned char bits)
 {
-    using unsigedT = std::make_unsigned_t<T>;
+    using UnsignedT = std::make_unsigned_t<T>;
     if (bits == 0)
     {
         return 0;
     }
 
-    unsigedT result = static_cast<unsigedT>(~unsigedT{0});
+    UnsignedT result = static_cast<UnsignedT>(~UnsignedT{0});
     if (bits < sizeof(T) * 8)
     {
-        result = static_cast<unsigedT>(result >> (sizeof(unsigedT) * 8 - bits));
+        result = static_cast<UnsignedT>(result >> (sizeof(UnsignedT) * 8 - bits));
     }
 
     return static_cast<T>(result);
