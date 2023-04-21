@@ -1,11 +1,10 @@
 ---
 slug: /en/sql-reference/functions/nlp-functions
-sidebar_position: 67
-sidebar_label: NLP
-title: "[experimental] Natural Language Processing functions"
+sidebar_position: 130
+sidebar_label: NLP (experimental)
 ---
 
-:::warning
+:::note
 This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
 
@@ -21,8 +20,8 @@ stem('language', word)
 
 **Arguments**
 
--   `language` — Language which rules will be applied. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
--   `word` — word that needs to be stemmed. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
+- `language` — Language which rules will be applied. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
+- `word` — word that needs to be stemmed. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -52,8 +51,8 @@ lemmatize('language', word)
 
 **Arguments**
 
--   `language` — Language which rules will be applied. [String](../../sql-reference/data-types/string.md#string).
--   `word` — Word that needs to be lemmatized. Must be lowercase. [String](../../sql-reference/data-types/string.md#string).
+- `language` — Language which rules will be applied. [String](../../sql-reference/data-types/string.md#string).
+- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -97,8 +96,8 @@ synonyms('extension_name', word)
 
 **Arguments**
 
--   `extension_name` — Name of the extension in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
--   `word` — Word that will be searched in extension. [String](../../sql-reference/data-types/string.md#string).
+- `extension_name` — Name of the extension in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
+- `word` — Word that will be searched in extension. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -146,7 +145,7 @@ detectLanguage('text_to_be_analyzed')
 
 **Arguments**
 
--   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -184,7 +183,7 @@ detectLanguageMixed('text_to_be_analyzed')
 
 **Arguments**
 
--   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -220,7 +219,7 @@ detectLanguageUnknown('text_to_be_analyzed')
 
 **Arguments**
 
--   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -260,7 +259,7 @@ detectCharset('text_to_be_analyzed')
 
 **Arguments**
 
--   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 

@@ -22,7 +22,6 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 
 set (CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=bfd")
-set (CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=bfd")
 
 # Currently, lld does not work with the error:
 # ld.lld: error: section size decrease is too large

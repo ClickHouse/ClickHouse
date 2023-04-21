@@ -67,7 +67,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 #include <Poco/MongoDB/ObjectId.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Version.h>
 
 // only after poco
 // naming conflict:

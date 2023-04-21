@@ -19,6 +19,7 @@
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
 
 
 namespace DB

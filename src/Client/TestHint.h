@@ -106,7 +106,7 @@ struct fmt::formatter<DB::TestHint::ErrorVector>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("Invalid format");
+            throw fmt::format_error("Invalid format");
 
         return it;
     }
@@ -115,10 +115,10 @@ struct fmt::formatter<DB::TestHint::ErrorVector>
     auto format(const DB::TestHint::ErrorVector & ErrorVector, FormatContext & ctx)
     {
         if (ErrorVector.empty())
-            return format_to(ctx.out(), "{}", 0);
+            return fmt::format_to(ctx.out(), "{}", 0);
         else if (ErrorVector.size() == 1)
-            return format_to(ctx.out(), "{}", ErrorVector[0]);
+            return fmt::format_to(ctx.out(), "{}", ErrorVector[0]);
         else
-            return format_to(ctx.out(), "[{}]", fmt::join(ErrorVector, ", "));
+            return fmt::format_to(ctx.out(), "[{}]", fmt::join(ErrorVector, ", "));
     }
 };

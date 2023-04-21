@@ -22,7 +22,7 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, callback = std::move(callback)]() mutable -> Result
         {
             if (thread_group)
-                CurrentThread::attachTo(thread_group);
+                CurrentThread::attachToGroup(thread_group);
 
             SCOPE_EXIT_SAFE({
                 {
@@ -33,7 +33,7 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
                 }
 
                 if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
+                    CurrentThread::detachFromGroupIfNotDetached();
 
             });
 

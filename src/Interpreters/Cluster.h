@@ -256,6 +256,9 @@ public:
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
     bool maybeCrossReplication() const;
 
+    /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
+    bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -286,6 +289,8 @@ private:
 
     /// An array of shards. For each shard, an array of replica addresses (servers that are considered identical).
     AddressesWithFailover addresses_with_failover;
+
+    bool allow_distributed_ddl_queries = true;
 
     size_t remote_shard_count = 0;
     size_t local_shard_count = 0;

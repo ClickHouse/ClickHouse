@@ -328,8 +328,11 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 || endsWith(name, "Key")
                 || endsWith(name, "Type"))
             {
-                if (!nested_type.isValueRepresentedByInteger() && !isStringOrFixedString(nested_type))
-                    break;
+                if (!nested_type.isValueRepresentedByInteger() &&
+                    !isStringOrFixedString(nested_type) &&
+                    !typeid_cast<const DataTypeIPv6 *>(&nested_type) &&
+                    !typeid_cast<const DataTypeUUID *>(&nested_type))
+                        break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);
             }
