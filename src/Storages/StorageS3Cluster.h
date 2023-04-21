@@ -28,6 +28,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
+        size_t table_function_max_arguments,
         bool structure_argument_was_provided_);
 
     std::string getName() const override { return "S3Cluster"; }

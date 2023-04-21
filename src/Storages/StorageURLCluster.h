@@ -21,13 +21,11 @@ public:
     StorageURLCluster(
         ContextPtr context_,
         String cluster_name_,
-        const String & uri_,
         const StorageID & table_id_,
-        const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & compression_method_,
-        const StorageURL::Configuration &configuration_,
+        const StorageURL::Configuration & configuration_,
+        size_t table_function_max_arguments,
         bool structure_argument_was_provided_);
 
     std::string getName() const override { return "URLCluster"; }
@@ -38,8 +36,6 @@ public:
 
 private:
     String uri;
-    String format_name;
-    String compression_method;
 
 };
 
