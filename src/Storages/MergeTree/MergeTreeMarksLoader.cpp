@@ -30,7 +30,7 @@ namespace ErrorCodes
 }
 
 MergeTreeMarksLoader::MergeTreeMarksLoader(
-    DataPartStoragePtr data_part_storage_,
+    DataPartPtr data_part_,
     MarkCache * mark_cache_,
     const String & mrk_path_,
     size_t marks_count_,
@@ -39,7 +39,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     const ReadSettings & read_settings_,
     ThreadPool * load_marks_threadpool_,
     size_t columns_in_mark_)
-    : data_part_storage(std::move(data_part_storage_))
+    : data_part(data_part_)
     , mark_cache(mark_cache_)
     , mrk_path(mrk_path_)
     , marks_count(marks_count_)
@@ -68,11 +68,6 @@ MarkInCompressedFile MergeTreeMarksLoader::getMark(size_t row_index, size_t colu
 {
     if (!marks)
     {
-        if (this->data_part_storage->is_part_outdated)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempting to read from outdated part. path : {}", data_part_storage->getFullPath());
-        }
-
         Stopwatch watch(CLOCK_MONOTONIC);
 
         if (future.valid())
@@ -102,6 +97,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    auto data_part_storage = data_part->getDataPartStoragePtr();
 
     size_t file_size = data_part_storage->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
@@ -182,6 +179,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarks()
 {
     MarkCache::MappedPtr loaded_marks;
 
+    auto data_part_storage = data_part->getDataPartStoragePtr();
+
     if (mark_cache)
     {
         auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
@@ -215,16 +214,6 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
-            if (this->data_part_storage->is_part_outdated)
-            {
-                if (mark_cache)
-                {
-                    auto key = mark_cache->hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
-                    marks.reset();
-                    mark_cache->remove(key);
-                }
-                return nullptr;
-            }
             return loadMarks();
         },
         *load_marks_threadpool,
