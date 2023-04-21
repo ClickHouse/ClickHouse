@@ -159,10 +159,9 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(ContextPtr context, const String & uri)
+    Impl(const String & uri, size_t max_addresses)
     {
-        context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-        uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements);
+        uris = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
     }
 
     String next()
@@ -184,8 +183,8 @@ private:
     std::atomic_size_t index = 0;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(context_, uri)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -649,7 +648,7 @@ Pipe IStorageURLBase::read(
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(local_context, uri);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, max_addresses);
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([glob_iterator, max_addresses]()
         {
             String next_uri = glob_iterator->next();

@@ -138,7 +138,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(ContextPtr context_, const String & uri_);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses);
         String next();
         size_t size();
     private:
