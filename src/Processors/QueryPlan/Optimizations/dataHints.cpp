@@ -45,7 +45,8 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
         return std::nullopt;
 
     const auto & constant_type_name = maybe_constant_column->result_type->getName();
-    if (constant_type_name == "UInt128" || constant_type_name == "Int128" || constant_type_name == "UInt256" || constant_type_name == "Int256")
+    if (constant_type_name == "UInt128" || constant_type_name == "Int128" || constant_type_name == "UInt256" || constant_type_name == "Int256" ||
+            constant_type_name == "IPv4" || constant_type_name == "IPv6")
         return std::nullopt;
 
     const auto & input_type = maybe_input_column->result_type;
