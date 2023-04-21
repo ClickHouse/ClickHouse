@@ -231,10 +231,10 @@ bool PartLog::addNewParts(
             elem.table_name = table_id.table_name;
             elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
-            FormatSettings format_settings;
-            WriteBufferFromOwnString out;
-            part->partition.serializeText(part->storage, out, format_settings);
-            elem.partition = out.str();
+            {
+                WriteBufferFromString out(elem.partition);
+                part->partition.serializeText(part->storage, out, {});
+            }
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
