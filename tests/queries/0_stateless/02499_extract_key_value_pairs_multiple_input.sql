@@ -66,10 +66,10 @@ WITH
 SELECT
     x;
 
--- invalid escape sequence, should be discarded
--- expected output: {'valid_key':'valid_value'}
+-- invalid escape sequence at the end of file should be ignored
+-- expected output: {'key':'invalid_escape_sequence','valid_key':'valid_value'}
 WITH
-    extractKeyValuePairsWithEscaping('valid_key:valid_value key:invalid_val\\', ':', ' ', '"') AS s_map,
+    extractKeyValuePairsWithEscaping('valid_key:valid_value key:invalid_escape_sequence\\', ':', ' ', '"') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
