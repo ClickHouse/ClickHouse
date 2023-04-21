@@ -2,6 +2,8 @@
 
 #if USE_AWS_S3
 
+#include <string>
+
 namespace DB::S3
 {
 
