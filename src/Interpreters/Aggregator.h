@@ -300,7 +300,15 @@ struct AggregationMethodStringNoCache
     {
         if constexpr (nullable)
         {
-            static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+            if (key.size == 0)
+            {
+                /// when key is empty string，key.data is nullptr, need use const empty string
+                static_cast<ColumnNullable *>(key_columns[0])->insertData("", key.size);
+            }
+            else
+            {
+                static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+            }
         }
         else
         {
