@@ -1289,6 +1289,11 @@ Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`
 Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
 `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
 
+This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
+input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
+- Pre-escaping: Pre-escaping it will output: `a: "aaaa"bbb"` and `extractKeyValuePairs` will then output: `a: aaaa`
+- Post-escaping: `extractKeyValuePairs` will output `a: aaaa\` and post-escaping will keep it as it is.
+
 Leading escape sequences will be skipped in keys and will be considered invalid for values.
 
 **Escape sequences with escape sequence support turned on**
