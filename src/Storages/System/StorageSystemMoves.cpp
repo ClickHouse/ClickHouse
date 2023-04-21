@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MovesList.h>
 #include <Storages/System/StorageSystemMoves.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 
 
 namespace DB
@@ -25,7 +26,8 @@ NamesAndTypesList StorageSystemMoves::getNamesAndTypes()
 void StorageSystemMoves::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
+    const auto user = access->getUser();
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
 
     for (const auto & move : context->getMovesList().get())
     {

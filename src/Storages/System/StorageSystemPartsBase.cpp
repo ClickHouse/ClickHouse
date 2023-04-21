@@ -10,6 +10,7 @@
 #include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
@@ -94,7 +95,8 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
     const auto access = context->getAccess();
-    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
+    const auto user = access->getUser();
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
 
     {
         Databases databases = DatabaseCatalog::instance().getDatabases();

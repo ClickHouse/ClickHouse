@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 
@@ -38,7 +39,8 @@ NamesAndTypesList StorageSystemMutations::getNamesAndTypes()
 void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+    const auto user = access->getUser();
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
 
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;

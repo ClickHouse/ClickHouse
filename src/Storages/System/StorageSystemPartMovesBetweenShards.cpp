@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -45,7 +46,8 @@ NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
 void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+    const auto user = access->getUser();
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())

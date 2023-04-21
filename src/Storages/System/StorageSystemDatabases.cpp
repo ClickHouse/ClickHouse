@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/logger_useful.h>
@@ -71,7 +72,8 @@ static String getEngineFull(const DatabasePtr & database)
 void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+    const auto user = access->getUser();
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES) && !user->allow_full_read_from_system_tables;
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & [database_name, database] : databases)

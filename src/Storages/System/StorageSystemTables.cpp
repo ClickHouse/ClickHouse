@@ -8,6 +8,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -140,7 +141,8 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         const auto access = context->getAccess();
-        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+        const auto user = access->getUser();
+        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)

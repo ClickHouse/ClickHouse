@@ -1,0 +1,29 @@
+<clickhouse>
+    <users>
+        <another>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <allow_databases>
+                <database>system</database>
+            </allow_databases>
+            <allow_full_read_from_system_tables>1</allow_full_read_from_system_tables>
+        </another>
+
+        <restricted>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <allow_databases>
+                <database>system</database>
+            </allow_databases>
+            <allow_full_read_from_system_tables>0</allow_full_read_from_system_tables>
+        </restricted>
+    </users>
+</clickhouse>

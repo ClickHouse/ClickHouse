@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
+#include <Access/User.h>
 
 namespace DB
 {
@@ -33,7 +34,8 @@ NamesAndTypesList StorageSystemReplicatedFetches::getNamesAndTypes()
 void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
+    const auto user = access->getUser();
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES) && !user->allow_full_read_from_system_tables;
 
     for (const auto & fetch : context->getReplicatedFetchList().get())
     {

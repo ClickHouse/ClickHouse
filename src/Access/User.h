@@ -24,6 +24,8 @@ struct User : public IAccessEntity
     RolesOrUsersSet grantees = RolesOrUsersSet::AllTag{};
     String default_database;
 
+    bool allow_full_read_from_system_tables = false;
+
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
     static constexpr const auto TYPE = AccessEntityType::USER;
