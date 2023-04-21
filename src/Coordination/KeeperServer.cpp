@@ -471,17 +471,6 @@ void KeeperServer::shutdown()
 namespace
 {
 
-// Serialize the request with all the necessary information for the leader
-// we don't know ZXID and digest yet so we don't serialize it
-nuraft::ptr<nuraft::buffer> getZooKeeperRequestMessage(const KeeperStorage::RequestForSession & request_for_session)
-{
-    DB::WriteBufferFromNuraftBuffer write_buf;
-    DB::writeIntBinary(request_for_session.session_id, write_buf);
-    request_for_session.request->write(write_buf);
-    DB::writeIntBinary(request_for_session.time, write_buf);
-    return write_buf.getBuffer();
-}
-
 // Serialize the request for the log entry
 nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestForSession & request_for_session)
 {
@@ -489,12 +478,9 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestFor
     DB::writeIntBinary(request_for_session.session_id, write_buf);
     request_for_session.request->write(write_buf);
     DB::writeIntBinary(request_for_session.time, write_buf);
-    DB::writeIntBinary(request_for_session.zxid, write_buf);
-    assert(request_for_session.digest);
-    DB::writeIntBinary(request_for_session.digest->version, write_buf);
-    if (request_for_session.digest->version != KeeperStorage::DigestVersion::NO_DIGEST)
-        DB::writeIntBinary(request_for_session.digest->value, write_buf);
-
+    DB::writeIntBinary(static_cast<int64_t>(0), write_buf);
+    DB::writeIntBinary(KeeperStorage::DigestVersion::NO_DIGEST, write_buf);
+    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf);
     return write_buf.getBuffer();
 }
 
@@ -512,9 +498,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     for (const auto & request_for_session : requests_for_sessions)
-    {
-        entries.push_back(getZooKeeperRequestMessage(request_for_session));
-    }
+        entries.push_back(getZooKeeperLogEntry(request_for_session));
 
     std::lock_guard lock{server_write_mutex};
     if (is_recovering)
@@ -642,7 +626,17 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
                 request_for_session.digest = state_machine->getNodesDigest();
-                entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
+
+                static constexpr size_t write_buffer_size
+                    = sizeof(request_for_session.zxid) + sizeof(request_for_session.digest->version) + sizeof(request_for_session.digest->value);
+                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf.data_begin() + entry_buf.size() - write_buffer_size);
+
+                WriteBuffer write_buf(buffer_start, write_buffer_size);
+                writeIntBinary(request_for_session.zxid, write_buf);
+                writeIntBinary(request_for_session.digest->version, write_buf);
+                if (request_for_session.digest->version != KeeperStorage::NO_DIGEST)
+                    writeIntBinary(request_for_session.digest->value, write_buf);
+
                 break;
             }
             case nuraft::cb_func::AppendLogFailed:

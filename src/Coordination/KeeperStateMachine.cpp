@@ -190,7 +190,7 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     {
         request_for_session.digest.emplace();
         readIntBinary(request_for_session.digest->version, buffer);
-        if (request_for_session.digest->version != KeeperStorage::DigestVersion::NO_DIGEST)
+        if (request_for_session.digest->version != KeeperStorage::DigestVersion::NO_DIGEST || !buffer.eof())
             readIntBinary(request_for_session.digest->value, buffer);
     }
 
