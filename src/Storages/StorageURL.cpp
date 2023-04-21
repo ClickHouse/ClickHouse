@@ -152,7 +152,7 @@ namespace
 
     StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
     {
-        return parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses);
+        return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
     }
 }
 
