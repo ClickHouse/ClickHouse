@@ -82,7 +82,7 @@ def process_test_log(log_path, broken_tests):
                                 test_name,
                                 "FAIL",
                                 test_time,
-                                ["Test is expected to fail!\n"],
+                                ["Test is expected to fail! Please, update broken_tests.txt!\n"],
                             )
                         )
                     else:
