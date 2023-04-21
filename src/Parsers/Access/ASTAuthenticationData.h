@@ -8,6 +8,15 @@
 namespace DB
 {
 
+/** Represents authentication data in CREATE/ALTER USER query:
+  *  ... IDENTIFIED WITH sha256_password BY 'password'
+  *
+  * Can store password, hash and salt, LDAP server name, Kerberos Realm, or common names.
+  * They are stored in children vector as ASTLiteral or ASTQueryParameter.
+  * ASTAuthenticationData without a type represents authentication data with
+  *  the default password type that will be later inferred from the server parameters.
+  */
+
 class ASTAuthenticationData : public IAST
 {
 public:
@@ -29,12 +38,8 @@ public:
     /// AuthenticationType::NO_PASSWORD is specified explicitly.
     std::optional<AuthenticationType> type;
 
-    /// TODO: Only expect_password and expect_hash are actually needed
-    bool expect_password = false;
-    bool expect_hash = false;
-    bool expect_ldap_server_name = false;
-    bool expect_kerberos_realm = false;
-    bool expect_common_names = false;
+    bool is_password = false;
+    bool is_hash = false;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

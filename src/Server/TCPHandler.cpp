@@ -1308,7 +1308,6 @@ void TCPHandler::sendHello()
             writeStringBinary(exception_message, *out);
         }
     }
-
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
     {
         chassert(!nonce.has_value());
@@ -1321,7 +1320,6 @@ void TCPHandler::sendHello()
         LOG_WARNING(LogFrequencyLimiter(log, 10),
             "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
     }
-
     out->next();
 }
 

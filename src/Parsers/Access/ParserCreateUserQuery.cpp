@@ -162,11 +162,8 @@ namespace
             auth_data = std::make_shared<ASTAuthenticationData>();
 
             auth_data->type = type;
-            auth_data->expect_password = expect_password;
-            auth_data->expect_hash = expect_hash;
-            auth_data->expect_ldap_server_name = expect_ldap_server_name;
-            auth_data->expect_kerberos_realm = expect_kerberos_realm;
-            auth_data->expect_common_names = expect_common_names;
+            auth_data->is_password = expect_password;
+            auth_data->is_hash = expect_hash;
 
             if (value)
                 auth_data->children.push_back(std::move(value));

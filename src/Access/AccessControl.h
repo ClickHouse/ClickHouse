@@ -153,7 +153,6 @@ public:
     AuthenticationType getDefaultPasswordType() const;
 
     /// Check complexity requirements for passwords
-
     void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_);
     void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_);
     void checkPasswordComplexityRules(const String & password_) const;

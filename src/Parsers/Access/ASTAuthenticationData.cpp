@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 std::optional<String> ASTAuthenticationData::getPassword() const
 {
-    if (expect_password)
+    if (is_password)
     {
         if (const auto * password = children[0]->as<const ASTLiteral>())
         {
@@ -70,7 +70,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
-                if (expect_hash)
+                if (is_hash)
                     auth_type_name = "sha256_hash";
 
                 prefix = "BY";
@@ -81,7 +81,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
-                if (expect_hash)
+                if (is_hash)
                     auth_type_name = "double_sha1_hash";
 
                 prefix = "BY";

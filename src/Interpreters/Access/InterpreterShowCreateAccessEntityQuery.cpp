@@ -54,13 +54,13 @@ namespace
         {
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
-                node->expect_password = true;
+                node->is_password = true;
                 node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getPassword()));
                 break;
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
-                node->expect_hash = true;
+                node->is_hash = true;
                 node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getPasswordHashHex()));
 
                 if (!auth_data.getSalt().empty())
@@ -69,19 +69,17 @@ namespace
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
-                node->expect_hash = true;
+                node->is_hash = true;
                 node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getPasswordHashHex()));
                 break;
             }
             case AuthenticationType::LDAP:
             {
-                node->expect_ldap_server_name = true;
                 node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getLDAPServerName()));
                 break;
             }
             case AuthenticationType::KERBEROS:
             {
-                node->expect_kerberos_realm = true;
                 const auto & realm = auth_data.getKerberosRealm();
 
                 if (!realm.empty())
@@ -91,7 +89,6 @@ namespace
             }
             case AuthenticationType::SSL_CERTIFICATE:
             {
-                node->expect_common_names = true;
                 for (const auto & name : auth_data.getSSLCertificateCommonNames())
                     node->children.push_back(std::make_shared<ASTLiteral>(name));
 

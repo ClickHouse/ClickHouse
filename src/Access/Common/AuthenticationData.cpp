@@ -20,11 +20,11 @@ namespace ErrorCodes
 
 const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType type_)
 {
-    static constexpr auto make_info = [](const char * raw_name_)
+    static constexpr auto make_info = [](const char * raw_name_, bool is_password_ = false)
     {
         String init_name = raw_name_;
         boost::to_lower(init_name);
-        return AuthenticationTypeInfo{raw_name_, std::move(init_name)};
+        return AuthenticationTypeInfo{raw_name_, std::move(init_name), is_password_};
     };
 
     switch (type_)
@@ -36,17 +36,17 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
         }
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
-            static const auto info = make_info("PLAINTEXT_PASSWORD");
+            static const auto info = make_info("PLAINTEXT_PASSWORD", true);
             return info;
         }
         case AuthenticationType::SHA256_PASSWORD:
         {
-            static const auto info = make_info("SHA256_PASSWORD");
+            static const auto info = make_info("SHA256_PASSWORD", true);
             return info;
         }
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
-            static const auto info = make_info("DOUBLE_SHA1_PASSWORD");
+            static const auto info = make_info("DOUBLE_SHA1_PASSWORD", true);
             return info;
         }
         case AuthenticationType::LDAP:
