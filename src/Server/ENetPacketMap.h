@@ -71,7 +71,7 @@ class ENetPack
             }
         }
 
-    private:
+    public:
         std::map<std::string, std::string> data;
 };
 #endif

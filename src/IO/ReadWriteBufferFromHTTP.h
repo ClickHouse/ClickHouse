@@ -190,6 +190,10 @@ namespace detail
                     for (auto & [header, value] : http_header_entries)
                         request.set(header, value);
 
+                    for (auto it: uri_.getQueryParameters())
+                        request.set(it.first, it.second);
+
+
                     std::optional<Range> range;
                     if constexpr (!for_object_info)
                     {
@@ -201,17 +205,17 @@ namespace detail
                     {
                         String range_header_value;
                         if (range->end)
-                            range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
+                            range_header_value = fmt::format("{}-{}", *range->begin, *range->end);
                         else
-                            range_header_value = fmt::format("bytes={}-", *range->begin);
+                            range_header_value = fmt::format("{}-", *range->begin);
                         LOG_TEST(log, "Adding header: Range: {}", range_header_value);
-                        request.set("Range", range_header_value);
+                        request.set("bytes", range_header_value);
                     }
 
                     /*if (!credentials.getUsername().empty())
                         credentials.authenticate(request);*/
 
-                    LOG_TRACE(log, "Sending request to {}", uri_.toString());
+                    LOG_TRACE(log, "Sending ENet request to {}", uri_.toString());
 
                     if (enet_initialize() != 0)
                     {
@@ -232,20 +236,34 @@ namespace detail
                     auto request_str = request.serialize();
                     auto request_cstr = request_str.c_str();
 
+                    LOG_INFO(log, "ENET READY {}", request_cstr);
                     ENetPacket * packet = enet_packet_create (request_cstr,
-                                            sizeof(request_cstr) + 1,
+                                            request_str.size() + 1,
                                             ENET_PACKET_FLAG_RELIABLE);
 
                     ENetAddress address;
 
-                    enet_address_set_host (& address, uri_.getHost().c_str());
-                    address.port = uri_.getPort();
+                    //enet_address_set_host (& address, uri_.getHost().c_str());
+                    //address.port = uri_.getPort();
+                    enet_address_set_host (& address, "127.0.0.1");
+                    address.port = 9008;
 
                     ENetPeer * peer = enet_host_connect(client, &address, 2, 0);
 
                     ENetEvent event;
 
-                    enet_host_service(client, &event, 3000);
+                    if (enet_host_service(client, &event, 2000) > 0 &&
+                        event.type == ENET_EVENT_TYPE_CONNECT)
+                    {
+                        LOG_INFO(log, "Connected to ENet server");
+                    }
+                    else
+                    {
+                        enet_peer_reset(peer);
+                        response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
+                        enet_deinitialize();
+                        throw 1;
+                    }
 
                     enet_peer_send(peer, 0, packet);
 
@@ -253,7 +271,7 @@ namespace detail
 
                     uint8_t* data = nullptr;
 
-                    while (enet_host_service(client, &event, 3000) > 0)
+                    while (enet_host_service(client, &event, 5000) > 0)
                     {
                         switch (event.type)
                         {
@@ -262,6 +280,7 @@ namespace detail
                                 {
                                     ENetPack pck;
                                     pck.deserialize(reinterpret_cast<char *>(event.packet->data));
+                                    LOG_INFO(log, "ENET RECEIVED {}", pck.get("body", "a"));
                                     data = event.packet->data;
                                     enet_packet_destroy(event.packet);
                                 }
@@ -271,7 +290,18 @@ namespace detail
                         }
                     }
 
+                    enet_peer_disconnect(peer, 0);
+
+                    if (data == nullptr)
+                    {
+                        response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
+                        enet_deinitialize();
+                        throw 1;
+                    }
+
                     std::string str_data = reinterpret_cast<char*>(data);
+
+                    LOG_INFO(log, "ENET RECEIVED {}", str_data);
 
                     istr->clear();
 

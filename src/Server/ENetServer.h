@@ -12,6 +12,8 @@
 #include <Poco/Runnable.h>
 #include <Poco/ThreadPool.h>
 
+#include <Common/logger_useful.h>
+
 #if USE_ENET
 
 #include <enet.h>
@@ -45,6 +47,7 @@ public:
 private:
     IServer & ch_server;
     Poco::ThreadPool * pool;
+    Poco::Logger * logger;
     std::atomic<bool> _stopped;
     std::string host;
     UInt16 port_number;
