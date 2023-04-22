@@ -573,8 +573,8 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 void checkLifetime(const ASTCreateQuery & query)
 {
-    if (query.dictionary -> layout && query.dictionary->layout->layout_type == "direct") {
-        if (query.dictionary -> lifetime)
+    if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct") {
+        if (query.dictionary->lifetime)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
