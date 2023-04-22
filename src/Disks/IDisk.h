@@ -209,14 +209,18 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
 
-    /// Write a file using a custom function to write an object to the disk's object storage.
+    /// Returns the path to a blob representing a specified file.
+    /// The meaning of the returned path depends on disk's type.
+    /// For DiskLocal it the absolute path to the file and for DiskObjectStorage it's the name of a namespace
+    /// combined with StoredObject::absolute_path.
+    virtual std::optional<std::pair<String, String>> getBlobPath(const String & path) const = 0;
+
+    using WriteBlobFunction = std::function<size_t(const std::pair<String, String> & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
+
+    /// Write a file using a custom function to write a blob representing the file.
     /// This method is alternative to writeFile(), the difference is that writeFile() calls IObjectStorage::writeObject()
     /// to write an object to the object storage while this method allows to specify a callback for that.
-    virtual void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function);
+    virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
