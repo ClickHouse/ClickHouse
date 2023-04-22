@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <base/types.h>
-#include <base/unaligned.h>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
 
