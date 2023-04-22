@@ -133,7 +133,7 @@ public:
     ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr res;
-        if ( !((res = executeNumber<ResultType, UInt8>(arguments))
+        if (!((res = executeNumber<ResultType, UInt8>(arguments))
             || (res = executeNumber<ResultType, UInt16>(arguments))
             || (res = executeNumber<ResultType, UInt32>(arguments))
             || (res = executeNumber<ResultType, UInt64>(arguments))
