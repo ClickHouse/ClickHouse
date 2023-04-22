@@ -5,7 +5,6 @@
 
 #include <base/hex.h>
 #include <Common/Macros.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -3224,14 +3223,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         auto merges_and_mutations_queued = queue.countMergesAndPartMutations();
         size_t merges_and_mutations_sum = merges_and_mutations_queued.merges + merges_and_mutations_queued.mutations;
-        if (!canEnqueueBackgroundTask())
-        {
-            LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate."
-                "Current background tasks memory usage: {}.",
-                formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
-                formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
-        }
-        else if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
+        if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
         {
             LOG_TRACE(log, "Number of queued merges ({}) and part mutations ({})"
                 " is greater than max_replicated_merges_in_queue ({}), so won't select new parts to merge or mutate.",
@@ -4782,7 +4774,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
                 QueryProcessingStage::Complete,
                 extension);
 
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote));
+            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote, settings.async_query_sending_for_remote));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));

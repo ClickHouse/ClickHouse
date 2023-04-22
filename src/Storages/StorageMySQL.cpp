@@ -238,7 +238,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, MySQLSettings & storage_settings, bool require_table)
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table)
 {
     StorageMySQL::Configuration configuration;
 
@@ -255,9 +255,15 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
     {
-        configuration.host = named_collection.getOrDefault<String>("host", named_collection.getOrDefault<String>("hostname", ""));
+        configuration.host = named_collection.getAnyOrDefault<String>({"host", "hostname"}, "");
         configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+    }
+    else
+    {
+        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+            configuration.addresses_expr, max_addresses, 3306);
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -283,7 +289,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     StorageMySQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
     {
-        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings);
+        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
     else
     {

@@ -7,7 +7,6 @@
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
-#include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/typeid_cast.h>
@@ -42,7 +41,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <fmt/core.h>
 
 namespace DB
 {
@@ -920,14 +918,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
-    if (!canEnqueueBackgroundTask())
-    {
-        if (out_disable_reason)
-            *out_disable_reason = fmt::format("Current background tasks memory usage ({}) is more than the limit ({})",
-                formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
-                formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()));
-    }
-    else if (partition_id.empty())
+    if (partition_id.empty())
     {
         UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
         bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;
@@ -2188,6 +2179,35 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const
 {
     return std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+}
+
+PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
+{
+    auto l = std::lock_guard(mutation_prepared_sets_cache_mutex);
+
+    /// Cleanup stale entries where the shared_ptr is expired.
+    while (!mutation_prepared_sets_cache.empty())
+    {
+        auto it = mutation_prepared_sets_cache.begin();
+        if (it->second.lock())
+            break;
+        mutation_prepared_sets_cache.erase(it);
+    }
+
+    /// Look up an existing entry.
+    auto it = mutation_prepared_sets_cache.find(mutation_id);
+    if (it != mutation_prepared_sets_cache.end())
+    {
+        /// If the entry is still alive, return it.
+        auto existing_set_cache = it->second.lock();
+        if (existing_set_cache)
+            return existing_set_cache;
+    }
+
+    /// Create new entry.
+    auto cache = std::make_shared<PreparedSetsCache>();
+    mutation_prepared_sets_cache[mutation_id] = cache;
+    return cache;
 }
 
 void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
