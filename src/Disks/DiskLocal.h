@@ -119,7 +119,7 @@ public:
     /// rudimentary. The more advanced choice would be using
     /// https://github.com/smartmontools/smartmontools. However, it's good enough for now.
     bool canRead() const noexcept;
-    bool canWrite() const noexcept;
+    bool canWrite() noexcept;
 
     DiskObjectStoragePtr createDiskObjectStorage() override;
 
