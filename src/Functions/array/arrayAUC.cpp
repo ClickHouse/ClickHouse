@@ -91,7 +91,7 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    template <typename T, typename U>
+    template <typename ResultType, typename T, typename U>
     static ResultType apply(
         const T * scores,
         const U * labels,
