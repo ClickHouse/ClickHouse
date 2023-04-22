@@ -181,17 +181,15 @@ void BackupWriterS3::copyFileFromDisk(DiskPtr src_disk, const String & src_file_
     /// copyS3File() almost doesn't use network so the throttling is not needed.
     if (getDataSourceDescription() == src_disk->getDataSourceDescription())
     {
-        /// A single file can be represented as multiple objects in S3 bucket.
-        /// However copyS3File() can copy only a single file into a single file.
-        auto objects = src_disk->getStorageObjects(src_file_name);
-        if (objects.size() == 1)
+        /// getBlobPath() can return std::nullopt if the file is stored as multiple objects in S3 bucket.
+        /// In this case we can't use the native copy.
+        if (auto blob_path = src_disk->getBlobPath(src_file_name))
         {
             /// Use more optimal way.
             LOG_TRACE(log, "Copying file {} using native copy", src_file_name);
-            auto object_storage = src_disk->getObjectStorage();
-            std::string src_bucket = object_storage->getObjectsNamespace();
-            auto file_path = fs::path(s3_uri.key) / dest_file_name;
-            copyS3File(client, src_bucket, objects[0].remote_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
+            const auto & [src_bucket, src_key] = *blob_path;
+            auto dest_key = fs::path(s3_uri.key) / dest_file_name;
+            copyS3File(client, src_bucket, src_key, src_offset, src_size, s3_uri.bucket, dest_key, request_settings, {},
                        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
             return;
         }

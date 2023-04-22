@@ -50,18 +50,28 @@ void copyS3FileToDisk(
 
     String dest_bucket = destination_disk->getObjectStorage()->getObjectsNamespace();
 
-    auto custom_write_object = [&](const StoredObject & object_, WriteMode write_mode_, const std::optional<ObjectAttributes> & object_attributes_) -> size_t
+    auto write_blob_function = [&](const std::pair<String, String> & blob_path_, WriteMode write_mode_, const std::optional<ObjectAttributes> & object_attributes_) -> size_t
     {
         /// Object storage always uses mode `Rewrite` because it simulates append using metadata and different files.
         chassert(write_mode_ == WriteMode::Rewrite);
 
-        copyS3File(s3_client, src_bucket, src_key, *src_offset, *src_size, dest_bucket, /* dest_key= */ object_.remote_path,
-                   request_settings, object_attributes_, scheduler, /* for_disk_s3= */ true);
+        copyS3File(
+            s3_client,
+            src_bucket,
+            src_key,
+            *src_offset,
+            *src_size,
+            /* dest_bucket= */ blob_path_.first,
+            /* dest_key= */ blob_path_.second,
+            request_settings,
+            object_attributes_,
+            scheduler,
+            /* for_disk_s3= */ true);
 
         return *src_size;
     };
 
-    destination_disk->writeFileUsingCustomWriteObject(destination_path, write_mode, custom_write_object);
+    destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
 }
 
 }

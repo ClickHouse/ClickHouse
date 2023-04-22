@@ -579,15 +579,19 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
-void DiskObjectStorage::writeFileUsingCustomWriteObject(
-    const String & path,
-    WriteMode mode,
-    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-        custom_write_object_function)
+std::optional<std::pair<String, String>> DiskObjectStorage::getBlobPath(const String & path) const
+{
+    auto objects = getStorageObjects(path);
+    if (objects.size() != 1)
+        return {};
+    return std::make_pair(object_storage->getObjectsNamespace(), objects[0].absolute_path);
+}
+
+void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     LOG_TEST(log, "Write file: {}", path);
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
+    return transaction->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
 }
 
 void DiskObjectStorage::applyNewSettings(

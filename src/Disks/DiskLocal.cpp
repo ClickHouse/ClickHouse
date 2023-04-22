@@ -328,6 +328,17 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
         fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
 }
 
+std::optional<std::pair<String, String>> DiskLocal::getBlobPath(const String & path) const
+{
+    return std::make_pair(fs::path(disk_path) / path, "");
+}
+
+void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
+{
+    auto blob_path = std::make_pair(fs::path(disk_path) / path, "");
+    std::move(write_blob_function)(blob_path, mode, {});
+}
+
 void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;

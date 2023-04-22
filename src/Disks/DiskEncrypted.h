@@ -131,6 +131,18 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    std::optional<std::pair<String, String>> getBlobPath(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getBlobPath(wrapped_path);
+    }
+
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
+    {
+        auto wrapped_path = wrappedPath(path);
+        delegate->writeFileUsingBlobWritingFunction(wrapped_path, mode, std::move(write_blob_function));
+    }
+
     void removeFile(const String & path) override
     {
         auto wrapped_path = wrappedPath(path);

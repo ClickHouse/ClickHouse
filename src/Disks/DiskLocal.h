@@ -81,6 +81,9 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    std::optional<std::pair<String, String>> getBlobPath(const String & path) const override;
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
+
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
