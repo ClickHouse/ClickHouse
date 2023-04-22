@@ -2233,11 +2233,10 @@ void Server::createServers(
                     http_params));
         });
 
-
+#if USE_ENET
         port_name = "interserver_enet_port";
         createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
-#if USE_ENET
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(config, socket, interserver_listen_host, port);
             socket.setReceiveTimeout(settings.http_receive_timeout);
@@ -2247,11 +2246,8 @@ void Server::createServers(
                 port_name,
                 "ENet communication (interserver): " + address.toString(),
                 std::make_unique<ENetServer>(*this, interserver_listen_host, port));
-#else
-            UNUSED(port);
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ENet support is disabled.");
-#endif
         });
+#endif
 
 
         port_name = "interserver_https_port";
