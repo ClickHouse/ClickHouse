@@ -1,15 +1,16 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/Native.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
-#include <Functions/IFunction.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
