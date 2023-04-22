@@ -19,8 +19,8 @@ using namespace DB;
 
 namespace CurrentMetrics
 {
-    extern const Metric AsyncLoaderThreads;
-    extern const Metric AsyncLoaderThreadsActive;
+    extern const Metric TablesLoaderThreads;
+    extern const Metric TablesLoaderThreadsActive;
 }
 
 namespace DB::ErrorCodes
@@ -38,7 +38,7 @@ struct AsyncLoaderTest
     pcg64 rng{randomSeed()};
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
-        : loader(CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, max_threads, /* log_failures = */ false)
+        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads, /* log_failures = */ false)
     {}
 
     template <typename T>
