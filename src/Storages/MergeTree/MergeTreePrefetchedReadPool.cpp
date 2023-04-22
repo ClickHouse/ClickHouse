@@ -157,7 +157,7 @@ void MergeTreePrefetchedReadPool::startPrefetches() const
     assert(prefetch_queue.top().task->priority == highest_priority);
     while (!prefetch_queue.empty())
     {
-        auto top = std::move(prefetch_queue.top());
+        const auto & top = prefetch_queue.top();
         createPrefetchedReaderForTask(*top.task);
 #ifndef NDEBUG
         if (prev.task)
