@@ -14,7 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferENet.h>
 
 #if USE_ENET
 
@@ -95,7 +95,7 @@ void ENetServer::run()
 
                         auto endpoint = ch_server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
 
-                        BufferWithOwnMemory<WriteBuffer> out(DBMS_DEFAULT_BUFFER_SIZE);
+                        BufferWithOwnMemory<WriteBufferENet> out(DBMS_DEFAULT_BUFFER_SIZE);
 
                         std::shared_lock lock(endpoint->rwlock);
                         if (endpoint->blocker.isCancelled())
@@ -113,15 +113,17 @@ void ENetServer::run()
                             endpoint->processQuery(pck, out, resp_pck);
                         }
 
-                        out.finalize();
-
-                        LOG_INFO(logger, "ENET Finished query");
-
                         auto buf = out.buffer();
+
+                        LOG_INFO(logger, "ENET Finished query {} {}", buf.begin(), buf.size());
+
+                        
                         char data[buf.size()];
                         memcpy(buf.begin(), data, buf.size());
 
-                        resp_pck.set("body", std::string("bebe"));
+                        out.finalize();
+
+                        resp_pck.set("body", std::string(data));
 
                         auto resp_str = resp_pck.serialize();
                         auto resp_cstr = resp_str.c_str();

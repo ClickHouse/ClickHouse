@@ -448,7 +448,9 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         writeBinary(desc.file_size, out);
 
         auto file_in = desc.input_buffer_getter();
+
         HashingWriteBuffer hashing_out(out);
+
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
 
         if (blocker.isCancelled())

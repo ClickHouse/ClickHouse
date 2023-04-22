@@ -120,7 +120,7 @@ namespace detail
 
 
         #if USE_ENET
-        std::string protocol = "enet";
+        std::string protocol = "tcp";
         #else
         std::string protocol = "tcp";
         #endif
