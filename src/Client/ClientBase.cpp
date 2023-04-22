@@ -67,10 +67,10 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <iostream>
 #include <filesystem>
 #include <map>
-#include <regex>
 #include <unordered_map>
 
 #include "config_version.h"
@@ -123,7 +123,6 @@ namespace ProfileEvents
 namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
-const std::string UNICODE_DASH = "—";
 }
 
 namespace DB
@@ -2551,9 +2550,17 @@ void ClientBase::init(int argc, char ** argv)
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
-    /// Interpret Unicode dash as default double-dash
+    /// Interpret Unicode dashes as default hyphens
     for (auto & arg : common_arguments)
-        arg = std::regex_replace(arg, std::regex(UNICODE_DASH), "--");
+    {
+        // replace em-dash with double-hyphen
+        boost::replace_all(arg, "—", "--");
+        // replace en-dash with hyphen
+        boost::replace_all(arg, "–", "-");
+        // replace mathematical minus with hyphen
+        boost::replace_all(arg, "−", "-");
+    }
+
 
     po::variables_map options;
     OptionsDescription options_description;

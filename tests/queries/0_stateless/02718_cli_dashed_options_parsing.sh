@@ -33,8 +33,21 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE test";
 echo $?
 
 #################
-echo "Test 2: check that unicode dash processed correctly"
+echo "Test 2: check that unicode dashes are handled correctly"
+
+echo "Test 2.1: check em-dash support"
+# Unicode code: U+2014
 $CLICKHOUSE_LOCAL —query "SELECT 1";
+
+echo "Test 2.2: check en-dash support"
+# Unicode code: U+2013
+$CLICKHOUSE_LOCAL ––query "SELECT 1";
+$CLICKHOUSE_LOCAL –q "SELECT 1";
+
+echo "Test 2.3 check mathematical minus support"
+# Unicode code: U+2212
+$CLICKHOUSE_LOCAL −−query "SELECT 1";
+$CLICKHOUSE_LOCAL −q "SELECT 1";
 
 rm $file_name_1
 rm $file_name_2
