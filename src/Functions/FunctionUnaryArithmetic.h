@@ -130,6 +130,48 @@ struct FixedStringUnaryOperationImpl
     }
 };
 
+template <typename Op>
+struct FixedStringUnaryOperationReduceImpl
+{
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+        MULTITARGET_FUNCTION_HEADER(static UInt64 NO_INLINE),
+        vectorImpl,
+        MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) { /// NOLINT
+            UInt64 res = 0;
+            while (start < end)
+                res += Op::apply(*start++);
+            return res;
+        }))
+
+    static UInt64 NO_INLINE vector(const UInt8 * start, const UInt8 * end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            return vectorImplAVX512BW(start, end);
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            return vectorImplAVX512F(start, end);
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            return vectorImplAVX2(start, end);
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            return vectorImplSSE42(start, end);
+        }
+#endif
+
+        return vectorImpl(start, end);
+    }
+};
+
+
 
 template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
@@ -143,6 +185,7 @@ class FunctionUnaryArithmetic : public IFunction
 {
     static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs || IsUnaryOperation<Op>::sign;
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
+    static constexpr bool reduce_fixed_string_for_chars = allow_fixed_string && Op<UInt8>::reduce_fixed_string_for_chars;
     static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
     ContextPtr context;
@@ -232,9 +275,18 @@ public:
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
             {
-                if constexpr (!Op<DataTypeFixedString>::allow_fixed_string)
+                if constexpr (!allow_fixed_string)
                     return false;
-                result = std::make_shared<DataType>(type.getN());
+                /// For `bitCount`, when argument is FixedString, it's return type
+                /// should be integer instead of FixedString, the return value is
+                /// the sum of `bitCount` apply to each chars.
+                else
+                {
+                    if constexpr (reduce_fixed_string_for_chars)
+                        result = std::make_shared<DataTypeUInt64>();
+                    else
+                        result = std::make_shared<DataType>(type.getN());
+                }
             }
             else if constexpr (std::is_same_v<DataTypeInterval, DataType>)
             {
@@ -282,12 +334,32 @@ public:
                 {
                     if (const auto * col = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
                     {
-                        auto col_res = ColumnFixedString::create(col->getN());
-                        auto & vec_res = col_res->getChars();
-                        vec_res.resize(col->size() * col->getN());
-                        FixedStringUnaryOperationImpl<Op<UInt8>>::vector(col->getChars(), vec_res);
-                        result_column = std::move(col_res);
-                        return true;
+                        if constexpr (reduce_fixed_string_for_chars)
+                        {
+                            auto size = col->size();
+
+                            auto col_res = ColumnUInt64::create(size);
+                            auto & vec_res = col_res->getData();
+
+                            const auto & chars = col->getChars();
+                            auto n = col->getN();
+                            for (size_t i = 0; i < size; ++i)
+                            {
+                                vec_res[i] = FixedStringUnaryOperationReduceImpl<Op<UInt8>>::vector(
+                                    chars.data() + n * i, chars.data() + n * (i + 1));
+                            }
+                            result_column = std::move(col_res);
+                            return true;
+                        }
+                        else
+                        {
+                            auto col_res = ColumnFixedString::create(col->getN());
+                            auto & vec_res = col_res->getChars();
+                            vec_res.resize(col->size() * col->getN());
+                            FixedStringUnaryOperationImpl<Op<UInt8>>::vector(col->getChars(), vec_res);
+                            result_column = std::move(col_res);
+                            return true;
+                        }
                     }
                 }
             }

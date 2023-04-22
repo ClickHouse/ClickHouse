@@ -11,3 +11,5 @@ SELECT bitCount(toInt16(-1));
 SELECT bitCount(toInt8(-1));
 
 SELECT x, bitCount(x), hex(reinterpretAsString(x)) FROM VALUES ('x Float64', (1), (-1), (inf));
+
+SELECT toFixedString('Hello, world!!!!', 16) AS x, bitCount(x);
