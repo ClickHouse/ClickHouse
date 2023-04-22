@@ -270,29 +270,10 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
 
 size_t MergeTreePrefetchedReadPool::getApproxSizeOfGranule(const IMergeTreeDataPart & part) const
 {
-    const auto & columns = part.getColumns();
-    auto all_columns_are_fixed_size = columns.end() == std::find_if(
-        columns.begin(), columns.end(),
-        [](const auto & col){ return col.type->haveMaximumSizeOfValue() == false; });
-
-    if (all_columns_are_fixed_size)
-    {
-        size_t approx_size = 0;
-        for (const auto & col : columns)
-            approx_size += col.type->getMaximumSizeOfValueInMemory() * fixed_index_granularity;
-
-        if (!index_granularity_bytes)
-            return approx_size;
-
-        return std::min(index_granularity_bytes, approx_size);
-    }
-
-    const size_t approx_size = static_cast<size_t>(std::round(static_cast<double>(part.getBytesOnDisk()) / part.getMarksCount()));
-
-    if (!index_granularity_bytes)
-        return approx_size;
-
-    return std::min(index_granularity_bytes, approx_size);
+    ColumnSize columns_size{};
+    for (const auto & col_name : column_names)
+        columns_size.add(part.getColumnSize(col_name));
+    return columns_size.data_compressed / part.getMarksCount();
 }
 
 MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInfos(
