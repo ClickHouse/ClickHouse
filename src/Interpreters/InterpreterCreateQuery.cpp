@@ -227,6 +227,16 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
+    if (create.storage->engine->name == "Replicated" && !internal && !create.attach)
+    {
+        /// Fill in default parameters
+        if (create.storage->engine->arguments->children.size() == 1)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{shard}"));
+
+        if (create.storage->engine->arguments->children.size() == 2)
+            create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{replica}"));
+    }
+
     if ((create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
         && !internal && !create.attach)
