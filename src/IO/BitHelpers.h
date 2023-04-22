@@ -223,7 +223,10 @@ private:
         }
         UInt64 tmp_buffer = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8);
 
-        unalignedStoreBigEndian<UInt64>(dest_current, tmp_buffer);
+        if (std::endian::native != std::endian::big)
+            tmp_buffer = std::byteswap(tmp_buffer);
+
+        memcpy(dest_current, &tmp_buffer, to_write);
         dest_current += to_write;
 
         bits_buffer <<= to_write * 8;
