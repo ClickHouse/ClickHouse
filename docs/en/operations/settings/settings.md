@@ -1123,7 +1123,7 @@ Could be used for throttling speed when replicating the data to add or replace n
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.
 
-Default value: 50.
+Default value: 1000.
 
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
@@ -4075,6 +4075,47 @@ Possible values:
 - 1 - enabled
 
 Default value: `0`.
+
+## async_socket_for_remote {#async_socket_for_remote}
+
+Enables asynchronous read from socket while executing remote query.
+
+Enabled by default.
+
+## async_query_sending_for_remote {#async_query_sending_for_remote}
+
+Enables asynchronous connection creation and query sending while executing remote query.
+
+Enabled by default.
+
+## use_hedged_requests {#use_hedged_requests}
+
+Enables hadged requests logic for remote queries. It allows to establish many connections with different replicas for query.
+New connection is enabled in case existent connection(s) with replica(s) were not established within `hedged_connection_timeout`
+or no data was received within `receive_data_timeout`. Query uses the first connection which send non empty progress packet (or data packet, if `allow_changing_replica_until_first_data_packet`);
+other connections are cancelled. Queries with `max_parallel_replicas > 1` are supported.
+
+Enabled by default.
+
+## hedged_connection_timeout {#hedged_connection_timeout}
+
+If we can't establish connection with replica after this timeout in hedged requests, we start working with the next replica without cancelling connection to the previous.
+Timeout value is in milliseconds.
+
+Default value: `50`.
+
+## receive_data_timeout {#receive_data_timeout}
+
+This timeout is set when the query is sent to the replica in hedged requests, if we don't receive first packet of data and we don't make any progress in query execution after this timeout,
+we start working with the next replica, without cancelling connection to the previous.
+Timeout value is in milliseconds.
+
+Default value: `2000`
+
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
+
+If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
+(but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
 
 ## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterwards, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
