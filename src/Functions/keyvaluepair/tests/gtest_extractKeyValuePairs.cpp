@@ -130,7 +130,7 @@ INSTANTIATE_TEST_SUITE_P(Simple, extractKVPairKeyValuePairExtractorTest,
     )
 );
 
-// It is agreed that value with an invalid escape sequence in it is considered malformed and shouldn't be included in result.
+// Perform best-effort parsing for invalid escape sequences
 INSTANTIATE_TEST_SUITE_P(InvalidEscapeSeqInValue, extractKVPairKeyValuePairExtractorTest,
         ::testing::ValuesIn(std::initializer_list<KeyValuePairExtractorTestParam>
         {
@@ -139,7 +139,8 @@ INSTANTIATE_TEST_SUITE_P(InvalidEscapeSeqInValue, extractKVPairKeyValuePairExtra
                 KeyValuePairExtractorBuilder().withEscaping(),
                 R"in(valid_key:valid_value key:invalid_val\)in",
                 ExpectedValues{
-                    {"valid_key", "valid_value"}
+                    {"valid_key", "valid_value"},
+                    {"key", "invalid_val"}
                 }
             },
             // Not handling escape sequences == do not care of broken one, `invalid_val\` must be present
