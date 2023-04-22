@@ -17,12 +17,10 @@ struct NameArrayDotProduct
     static constexpr auto name = "arrayDotProduct";
 };
 
-
 class ArrayDotProductImpl
 {
 public:
-
-    static DataTypePtr getReturnType(const DataTypePtr left_type, const DataTypePtr & right_type)
+    static DataTypePtr getReturnType(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const auto & common_type = getLeastSupertype(DataTypes{left_type, right_type});
         switch (common_type->getTypeId())
@@ -56,11 +54,10 @@ public:
         size_t size)
     {
         ResultType result = 0;
-        for (size_t i = 0; i < size; ++i) 
+        for (size_t i = 0; i < size; ++i)
             result += static_cast<ResultType>(left[i]) * static_cast<ResultType>(right[i]);
         return result;
     }
-
 };
 
 using FunctionArrayDotProduct = FunctionArrayScalarProduct<ArrayDotProductImpl, NameArrayDotProduct>;
