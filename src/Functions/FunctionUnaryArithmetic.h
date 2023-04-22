@@ -2,10 +2,12 @@
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
@@ -30,7 +32,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
 }
-
 
 template <typename A, typename Op>
 struct UnaryOperationImpl
@@ -172,8 +173,6 @@ struct FixedStringUnaryOperationReduceImpl
     }
 };
 
-
-
 template <typename FunctionName>
 struct FunctionUnaryArithmeticMonotonicity;
 
@@ -185,8 +184,8 @@ template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
     static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs || IsUnaryOperation<Op>::sign;
-    static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
-    static constexpr bool reduce_fixed_string_for_chars = allow_fixed_string && Op<UInt8>::reduce_fixed_string_for_chars;
+    static constexpr bool allow_string_or_fixed_string = Op<UInt8>::allow_string_or_fixed_string;
+    static constexpr bool is_bit_count = IsUnaryOperation<Op>::bit_count;
     static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
     ContextPtr context;
@@ -214,8 +213,8 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeDecimal<Decimal128>,
             DataTypeDecimal<Decimal256>,
             DataTypeFixedString,
-            DataTypeInterval
-        >(type, std::forward<F>(f));
+            DataTypeString,
+            DataTypeInterval>(type, std::forward<F>(f));
     }
 
     static FunctionOverloadResolverPtr
@@ -248,7 +247,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return false;
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -276,17 +278,29 @@ public:
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
             {
-                if constexpr (!allow_fixed_string)
+                if constexpr (!allow_string_or_fixed_string)
                     return false;
                 /// For `bitCount`, when argument is FixedString, it's return type
                 /// should be integer instead of FixedString, the return value is
                 /// the sum of `bitCount` apply to each chars.
                 else
                 {
-                    if constexpr (reduce_fixed_string_for_chars)
+                    if constexpr (is_bit_count)
                         result = std::make_shared<DataTypeUInt64>();
                     else
                         result = std::make_shared<DataType>(type.getN());
+                }
+            }
+            else if constexpr (std::is_same_v<DataTypeString, DataType>)
+            {
+                if constexpr (!allow_string_or_fixed_string)
+                    return false;
+                else
+                {
+                    if constexpr (is_bit_count)
+                        result = std::make_shared<DataTypeUInt64>();
+                    else
+                        result = std::make_shared<DataType>();
                 }
             }
             else if constexpr (std::is_same_v<DataTypeInterval, DataType>)
@@ -331,11 +345,11 @@ public:
 
             if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
             {
-                if constexpr (allow_fixed_string)
+                if constexpr (allow_string_or_fixed_string)
                 {
                     if (const auto * col = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
                     {
-                        if constexpr (reduce_fixed_string_for_chars)
+                        if constexpr (is_bit_count)
                         {
                             auto size = col->size();
 
@@ -358,6 +372,49 @@ public:
                             auto & vec_res = col_res->getChars();
                             vec_res.resize(col->size() * col->getN());
                             FixedStringUnaryOperationImpl<Op<UInt8>>::vector(col->getChars(), vec_res);
+                            result_column = std::move(col_res);
+                            return true;
+                        }
+                    }
+                }
+            }
+            else if constexpr (std::is_same_v<DataTypeString, DataType>)
+            {
+                if constexpr (allow_string_or_fixed_string)
+                {
+                    if (const auto * col = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
+                    {
+                        if constexpr (is_bit_count)
+                        {
+                            auto size = col->size();
+
+                            auto col_res = ColumnUInt64::create(size);
+                            auto & vec_res = col_res->getData();
+
+                            const auto & chars = col->getChars();
+                            const auto & offsets = col->getOffsets();
+                            for (size_t i = 0; i < size; ++i)
+                            {
+                                vec_res[i] = FixedStringUnaryOperationReduceImpl<Op<UInt8>>::vector(
+                                    chars.data() + offsets[i], chars.data() + offsets[i + 1]);
+                            }
+                            result_column = std::move(col_res);
+                            return true;
+                        }
+                        else
+                        {
+                            auto col_res = ColumnString::create();
+                            auto & vec_res = col_res->getChars();
+                            auto & offset_res = col_res->getOffsets();
+
+                            const auto & vec_col_str = col->getChars();
+                            const auto & offset_col_str = col->getOffsets();
+
+                            vec_res.resize(vec_col_str.size());
+                            offset_res.resize(offset_col_str.size());
+                            memcpy(offset_res.data(), offset_col_str.data(), offset_res.size() * sizeof(UInt64));
+
+                            FixedStringUnaryOperationImpl<Op<UInt8>>::vector(vec_col_str, vec_res);
                             result_column = std::move(col_res);
                             return true;
                         }
