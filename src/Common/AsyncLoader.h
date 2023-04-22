@@ -5,6 +5,7 @@
 #include <memory>
 #include <map>
 #include <mutex>
+#include <vector>
 #include <unordered_set>
 #include <unordered_map>
 #include <boost/noncopyable.hpp>
@@ -19,6 +20,7 @@ class LoadJob;
 using LoadJobPtr = std::shared_ptr<LoadJob>;
 using LoadJobSet = std::unordered_set<LoadJobPtr>;
 class LoadTask;
+using LoadTaskPtr = std::shared_ptr<LoadTask>;
 class AsyncLoader;
 
 // Execution status of a load job.
@@ -37,17 +39,23 @@ class LoadJob : private boost::noncopyable
 {
 public:
     template <class Func>
-    LoadJob(LoadJobSet && dependencies_, String name_, Func && func_)
+    LoadJob(LoadJobSet && dependencies_, String name_, ssize_t priority_, Func && func_)
         : dependencies(std::move(dependencies_))
         , name(std::move(name_))
         , func(std::forward<Func>(func_))
+        , load_priority(priority_)
+    {}
+
+    template <class Func>
+    LoadJob(LoadJobSet && dependencies_, String name_, Func && func_)
+        : LoadJob(std::move(dependencies_), std::move(name_), 0, std::forward<Func>(func_))
     {}
 
     // Current job status.
     LoadStatus status() const;
     std::exception_ptr exception() const;
 
-    // Returns current value of a priority of the job. May differ from initial priority passed to `AsyncLoader:::schedule()` call.
+    // Returns current value of a priority of the job. May differ from initial priority.
     ssize_t priority() const;
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
@@ -72,7 +80,7 @@ private:
     void finish();
 
     std::function<void(const LoadJobPtr & self)> func;
-    std::atomic<ssize_t> load_priority{0};
+    std::atomic<ssize_t> load_priority;
 
     mutable std::mutex mutex;
     mutable std::condition_variable finished;
@@ -87,6 +95,49 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, Func && func)
     return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), std::forward<Func>(func));
 }
 
+template <class Func>
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, ssize_t priority, Func && func)
+{
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), priority, std::forward<Func>(func));
+}
+
+// Represents a logically connected set of LoadJobs required to achieve some goals (final LoadJob in the set).
+class LoadTask : private boost::noncopyable
+{
+public:
+    LoadTask(AsyncLoader & loader_, LoadJobSet && jobs_, LoadJobSet && goals_ = {});
+    ~LoadTask();
+
+    // Merge all jobs from other task into this task.
+    void merge(const LoadTaskPtr & o);
+
+    // Schedule all jobs with AsyncLoader.
+    void schedule();
+
+    // Remove all jobs of this task from AsyncLoader.
+    void remove();
+
+    // Do not track jobs in this task.
+    // WARNING: Jobs will never be removed() and are going to be stored as finished jobs until ~AsyncLoader().
+    void detach();
+
+    // Return the final jobs in this tasks. This jobs subset should be used as `dependencies` for dependent jobs or tasks.
+    const LoadJobSet & goals() const { return goal_jobs.empty() ? jobs : goal_jobs; }
+
+private:
+    friend class AsyncLoader;
+
+    AsyncLoader & loader;
+    LoadJobSet jobs;
+    LoadJobSet goal_jobs;
+};
+
+inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJobSet && goals = {})
+{
+    return std::make_shared<LoadTask>(loader, std::move(jobs), std::move(goals));
+}
+
+
 // `AsyncLoader` is a scheduler for DAG of `LoadJob`s. It tracks dependencies and priorities of jobs.
 // Basic usage example:
 //     auto job_func = [&] (const LoadJobPtr & self) {
@@ -95,28 +146,29 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, Func && func)
 //     auto job1 = makeLoadJob({}, "job1", job_func);
 //     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
 //     auto job3 = makeLoadJob({ job1 }, "job3", job_func);
-//     auto task = async_loader.schedule({ job1, job2, job3 }, /* priority = */ 0);
+//     auto task = makeLoadTask(async_loader, { job1, job2, job3 });
+//     task.schedule();
 // Here we have created and scheduled a task consisting of three jobs. Job1 has no dependencies and is run first.
 // Job2 and job3 depend on job1 and are run only after job1 completion. Another thread may prioritize a job and wait for it:
-//     async_loader->prioritize(job3, /* priority = */ 1); // higher priority jobs are run first
+//     async_loader->prioritize(job3, /* priority = */ 1); // higher priority jobs are run first, default priority is zero.
 //     job3->wait(); // blocks until job completion or cancellation and rethrow an exception (if any)
 //
 // AsyncLoader tracks state of all scheduled jobs. Job lifecycle is the following:
-// 1)  Job is constructed with PENDING status.
-// 2)  Job is scheduled and placed into a task. Scheduled job may be ready (i.e. have all its dependencies finished) or blocked.
-// 3a) When all dependencies are successfully executed, job became ready. Ready job is enqueued into the ready queue.
-// 3b) If at least one of job dependencies is failed or canceled, then this job is canceled (with all it's dependent jobs as well).
-//     On cancellation an ASYNC_LOAD_CANCELED exception is generated and saved inside LoadJob object. Job status is changed to CANCELED.
-//     Exception is rethrown by any existing or new `wait()` call. Job is moved to the set of finished jobs.
-// 4)  Scheduled pending ready job starts execution by a worker. Job is dequeuedCallback `job_func` is called.
-//     Status of an executing job is PENDING. And it is still considered as scheduled job by AsyncLoader.
+// 1)  Job is constructed with PENDING status and initial priority. The job is placed into a task.
+// 2)  The task is scheduled with all its jobs. A scheduled job may be ready (i.e. have all its dependencies finished) or blocked.
+// 3a) When all dependencies are successfully executed, the job became ready. A ready job is enqueued into the ready queue.
+// 3b) If at least one of the job dependencies is failed or canceled, then this job is canceled (with all it's dependent jobs as well).
+//     On cancellation an ASYNC_LOAD_CANCELED exception is generated and saved inside LoadJob object. The job status is changed to CANCELED.
+//     Exception is rethrown by any existing or new `wait()` call. The job is moved to the set of the finished jobs.
+// 4)  The scheduled pending ready job starts execution by a worker. The job is dequeuedCallback `job_func` is called.
+//     Status of an executing job is PENDING. And it is still considered as a scheduled job by AsyncLoader.
 //     Note that `job_func` of a CANCELED job is never executed.
-// 5a) On successful execution job status is changed to OK and all existing and new `wait()` calls finish w/o exceptions.
-// 5b) Any exception thrown out of `job_func` is wrapped into ASYNC_LOAD_FAILED exception and save inside LoadJob.
-//     Job status is changed to FAILED. All dependent jobs are canceled. The exception is rethrown from all existing and new `wait()` calls.
-// 6)  Job is no longer considered as scheduled and is instead moved to finished jobs set. This is required for introspection of finished jobs.
-// 7)  Task object containing this job is destructed or `remove()` is explicitly called. Job is removed from the finished job set.
-// 8)  Job is destructed.
+// 5a) On successful execution the job status is changed to OK and all existing and new `wait()` calls finish w/o exceptions.
+// 5b) Any exception thrown out of `job_func` is wrapped into an ASYNC_LOAD_FAILED exception and save inside LoadJob.
+//     The job status is changed to FAILED. All the dependent jobs are canceled. The exception is rethrown from all existing and new `wait()` calls.
+// 6)  The job is no longer considered as scheduled and is instead moved to the finished jobs set. This is just for introspection of the finished jobs.
+// 7)  The task containing this job is destructed or `remove()` is explicitly called. The job is removed from the finished job set.
+// 8)  The job is destructed.
 //
 // Every job has a priority associated with it. AsyncLoader runs higher priority (greater `priority` value) jobs first. Job priority can be elevated
 // (a) if either it has a dependent job with higher priority (in this case priority of a dependent job is inherited);
@@ -125,7 +177,7 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, Func && func)
 // Value stored in load job priority field is atomic and can be increased even during job execution.
 //
 // When task is scheduled it can contain dependencies on previously scheduled jobs. These jobs can have any status.
-// The only forbidden thing is a dependency on job, that was not scheduled in AsyncLoader yet: all dependent jobs are immediately canceled.
+// The only forbidden thing is a dependency on job, that was not scheduled in AsyncLoader yet: all the dependent jobs are immediately canceled.
 class AsyncLoader : private boost::noncopyable
 {
 private:
@@ -174,36 +226,9 @@ private:
 public:
     using Metric = CurrentMetrics::Metric;
 
-    // Helper class that removes all not started and finished jobs in destructor and waits for all the executing jobs to finish.
-    class Task
-    {
-    public:
-        Task();
-        Task(AsyncLoader * loader_, LoadJobSet && jobs_);
-        Task(const Task & o) = delete;
-        Task(Task && o) noexcept;
-        Task & operator=(const Task & o) = delete;
-        ~Task();
-        Task & operator=(Task && o) noexcept;
-
-        // Merge all jobs from other task into this task. Useful for merging jobs with different priorities into one task.
-        void merge(Task && o);
-
-        // Remove all jobs of this task from AsyncLoader.
-        void remove();
-
-        // Do not track jobs in this task.
-        // WARNING: Jobs will never be removed() and are going to be stored as finished jobs until ~AsyncLoader().
-        void detach();
-
-    private:
-        AsyncLoader * loader;
-        LoadJobSet jobs;
-    };
-
     AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_);
 
-    // WARNING: all Task instances returned by `schedule()` should be destructed before AsyncLoader.
+    // WARNING: all LoadTask instances returned by `schedule()` should be destructed before AsyncLoader.
     ~AsyncLoader();
 
     // Start workers to execute scheduled load jobs.
@@ -218,13 +243,17 @@ public:
     //  - or canceled using ~Task() or remove() later.
     void stop();
 
-    // Schedule all `jobs` with given `priority` and return a task containing these jobs.
+    // Schedule all jobs of given task.
     // Higher priority jobs (with greater `priority` value) are executed earlier.
     // All dependencies of a scheduled job inherit its priority if it is higher. This way higher priority job
     // never wait for (blocked by) lower priority jobs (no priority inversion).
-    // Returned task destructor ensures that all the `jobs` are finished (OK, FAILED or CANCELED)
+    // Task destructor ensures that all the `jobs` are finished (OK, FAILED or CANCELED)
     // and are removed from AsyncLoader, so it is thread-safe to destroy them.
-    [[nodiscard]] Task schedule(LoadJobSet && jobs, ssize_t priority = 0);
+    void schedule(LoadTask & task);
+    void schedule(const LoadTaskPtr & task);
+
+    // Schedule all tasks atomically. To ensure only highest priority jobs among all tasks are run first.
+    void schedule(const std::vector<LoadTaskPtr> & tasks);
 
     // Increase priority of a job and all its dependencies recursively.
     void prioritize(const LoadJobPtr & job, ssize_t new_priority);
@@ -242,6 +271,7 @@ private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     String checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock);
     void finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr & job, LoadStatus status, std::exception_ptr exception_from_job = {});
+    void scheduleImpl(const LoadJobSet & jobs);
     void prioritize(const LoadJobPtr & job, ssize_t new_priority, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
     void spawn(std::unique_lock<std::mutex> &);
