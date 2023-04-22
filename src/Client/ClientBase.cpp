@@ -2550,15 +2550,15 @@ void ClientBase::init(int argc, char ** argv)
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
-    /// Interpret Unicode dashes as default hyphens
+    /// Interpret Unicode dashes as default double-hyphen
     for (auto & arg : common_arguments)
     {
-        // replace em-dash with double-hyphen
+        // replace em-dash(U+2014)
         boost::replace_all(arg, "—", "--");
-        // replace en-dash with hyphen
-        boost::replace_all(arg, "–", "-");
-        // replace mathematical minus with hyphen
-        boost::replace_all(arg, "−", "-");
+        // replace en-dash(U+2013)
+        boost::replace_all(arg, "–", "--");
+        // replace mathematical minus(U+2212)
+        boost::replace_all(arg, "−", "--");
     }
 
 

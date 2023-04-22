@@ -27,7 +27,7 @@ $CLICKHOUSE_LOCAL --log-level=debug --server_logs_file $file_name_3 -q "SELECT 1
 
 echo "Test 1.2: Check some option from Settings.h - allow_deprecated_syntax_for_merge_tree"
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test";
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test";
 $CLICKHOUSE_CLIENT --allow-deprecated-syntax-for-merge-tree=1 --query="CREATE TABLE test (d Date, s String) ENGINE = MergeTree(d, s, 8192)";
 $CLICKHOUSE_CLIENT --query="DROP TABLE test";
 echo $?
@@ -41,13 +41,11 @@ $CLICKHOUSE_LOCAL —query "SELECT 1";
 
 echo "Test 2.2: check en-dash support"
 # Unicode code: U+2013
-$CLICKHOUSE_LOCAL ––query "SELECT 1";
-$CLICKHOUSE_LOCAL –q "SELECT 1";
+$CLICKHOUSE_LOCAL –query "SELECT 1";
 
 echo "Test 2.3 check mathematical minus support"
 # Unicode code: U+2212
-$CLICKHOUSE_LOCAL −−query "SELECT 1";
-$CLICKHOUSE_LOCAL −q "SELECT 1";
+$CLICKHOUSE_LOCAL −query "SELECT 1";
 
 rm $file_name_1
 rm $file_name_2
