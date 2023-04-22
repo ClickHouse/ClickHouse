@@ -79,7 +79,7 @@ add_subdirectory (Formats)
 
 
 set(dbms_headers)
-set(dbms_sources Server/WebSocketHandler.h Server/WebSocketHandler.cpp)
+set(dbms_sources)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
@@ -251,6 +251,7 @@ add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+add_object_library(clickhouse_server_ws Server/WebSocket)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
