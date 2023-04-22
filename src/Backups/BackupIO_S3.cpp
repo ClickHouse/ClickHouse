@@ -176,27 +176,9 @@ DataSourceDescription BackupWriterS3::getDataSourceDescription() const
 
 void BackupWriterS3::copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
 {
-    /// copyS3File() can copy to another S3 bucket, but it requires the same S3 URI endpoint.
-    /// We don't check `has_throttling` here (compare with BackupWriterDisk::copyFileFromDisk()) because
-    /// copyS3File() almost doesn't use network so the throttling is not needed.
-    if (getDataSourceDescription() == src_disk->getDataSourceDescription())
-    {
-        /// getBlobPath() can return std::nullopt if the file is stored as multiple objects in S3 bucket.
-        /// In this case we can't use the native copy.
-        if (auto blob_path = src_disk->getBlobPath(src_file_name))
-        {
-            /// Use more optimal way.
-            LOG_TRACE(log, "Copying file {} using native copy", src_file_name);
-            const auto & [src_bucket, src_key] = *blob_path;
-            auto dest_key = fs::path(s3_uri.key) / dest_file_name;
-            copyS3File(client, src_bucket, src_key, src_offset, src_size, s3_uri.bucket, dest_key, request_settings, {},
-                       threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
-            return;
-        }
-    }
-
-    /// Fallback to BackupWriterS3::copyDataToFile().
-    IBackupWriter::copyFileFromDisk(src_disk, src_file_name, src_offset, src_size, dest_file_name);
+    copyS3FileFromDisk(src_disk, src_file_name, src_offset, src_size,
+        client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, read_settings, request_settings,
+        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
 }
 
 void BackupWriterS3::copyDataToFile(
