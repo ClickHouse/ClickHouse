@@ -70,38 +70,6 @@ std::shared_ptr<ActionsDAG> buildPredecessorActionsDag(const Block & header, con
     return dag;
 }
 
-std::shared_ptr<ActionsDAG> buildSuccessorActionsDag(const Block & header, const Names & changed_keys, const DataTypes& changed_data_types, const DataHints & hints)
-{
-    auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-
-    for (size_t i = 0; i < changed_keys.size(); ++i)
-    {
-        const auto & changed_key = changed_keys[i];
-        const auto & changed_data_type = changed_data_types[i];
-
-        const auto & hint = hints.at(changed_key);
-
-        const auto key_to_remove = "__hinted_key_" + changed_key;
-
-        const auto * node_to_remove = &dag->findInOutputs(key_to_remove);
-        ColumnWithTypeAndName const_column;
-        if (hint.lower_boundary->getTypeName() == "Int64")
-            const_column.type = std::make_shared<DataTypeInt64>();
-        else
-            const_column.type = std::make_shared<DataTypeUInt64>();
-        const_column.column = const_column.type->createColumnConst(1, hint.lower_boundary.value());
-        const_column.name = "__plus_value_" + changed_key;
-        const auto * hint_node = &dag->addColumn(const_column);
-
-        ActionsDAG::NodeRawConstPtrs children = {node_to_remove, hint_node};
-        auto plus_function = FunctionFactory::instance().get("plus", Context::getGlobalContextInstance());
-        dag->addOrReplaceInOutputs(dag->addCast(dag->addFunction(plus_function, children, "__uncasted_" + changed_key), changed_data_type, changed_key));
-        dag->removeUnusedResult(key_to_remove);
-    }
-
-    return dag;
-}
-
 }
 
 size_t tryReduceSortingKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
@@ -152,16 +120,7 @@ size_t tryReduceSortingKeysSize(QueryPlan::Node * node, QueryPlan::Nodes & nodes
 
     sorting_node->children = {&predecessor_node};
 
-    const auto & successor_dag = buildSuccessorActionsDag(sorting_step->getOutputStream().header, changed_sorting_keys, changed_data_types, hints);
-
-    auto & successor_node = nodes.emplace_back();
-
-    successor_node.children = {sorting_node};
-    successor_node.step = std::make_unique<ExpressionStep>(sorting_step->getOutputStream(), successor_dag);
-
-    node->children = {&successor_node};
-
-    return 3;
+    return 2;
 }
 
 }
