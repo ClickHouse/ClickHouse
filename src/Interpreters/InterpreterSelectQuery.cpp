@@ -150,7 +150,8 @@ FilterDAGInfoPtr generateFilterActions(
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
-        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
+        /// We should add back quotes around column name as it can contain dots.
+        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
