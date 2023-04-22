@@ -19,8 +19,8 @@ using namespace DB;
 
 namespace CurrentMetrics
 {
-    extern const Metric TablesLoaderThreads;
-    extern const Metric TablesLoaderThreadsActive;
+    extern const Metric AsyncLoaderThreads;
+    extern const Metric AsyncLoaderThreadsActive;
 }
 
 namespace DB::ErrorCodes
@@ -38,7 +38,7 @@ struct AsyncLoaderTest
     pcg64 rng{randomSeed()};
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
-        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads, /* log_failures = */ false)
+        : loader(CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive, max_threads, /* log_failures = */ false)
     {}
 
     template <typename T>
@@ -103,6 +103,13 @@ struct AsyncLoaderTest
             jobs.push_back(makeLoadJob({ jobs[j - 1] }, fmt::format("{}{}", name_prefix, j), job_func));
         return {jobs.begin(), jobs.end()};
     }
+
+    LoadTaskPtr schedule(LoadJobSet && jobs)
+    {
+        LoadTaskPtr task = makeLoadTask(loader, std::move(jobs));
+        task->schedule();
+        return task;
+    }
 };
 
 TEST(AsyncLoader, Smoke)
@@ -123,13 +130,13 @@ TEST(AsyncLoader, Smoke)
     {
         auto job1 = makeLoadJob({}, "job1", job_func);
         auto job2 = makeLoadJob({ job1 }, "job2", job_func);
-        auto task1 = t.loader.schedule({ job1, job2 });
+        auto task1 = t.schedule({ job1, job2 });
 
         auto job3 = makeLoadJob({ job2 }, "job3", job_func);
         auto job4 = makeLoadJob({ job2 }, "job4", job_func);
-        auto task2 = t.loader.schedule({ job3, job4 });
-        auto job5 = makeLoadJob({ job3, job4 }, "job5", job_func);
-        task2.merge(t.loader.schedule({ job5 }, low_priority));
+        auto task2 = t.schedule({ job3, job4 });
+        auto job5 = makeLoadJob({ job3, job4 }, "job5", low_priority, job_func);
+        task2->merge(t.schedule({ job5 }));
 
         std::thread waiter_thread([=] { job5->wait(); });
 
@@ -183,7 +190,7 @@ TEST(AsyncLoader, CycleDetection)
         jobs.push_back(makeLoadJob({}, "job9", job_func));
         jobs.push_back(makeLoadJob({ jobs[9] }, "job10", job_func));
 
-        auto task1 = t.loader.schedule({ jobs.begin(), jobs.end()});
+        auto task1 = t.schedule({ jobs.begin(), jobs.end()});
         FAIL();
     }
     catch (Exception & e)
@@ -203,9 +210,9 @@ TEST(AsyncLoader, CancelPendingJob)
     auto job_func = [&] (const LoadJobPtr &) {};
 
     auto job = makeLoadJob({}, "job", job_func);
-    auto task = t.loader.schedule({ job });
+    auto task = t.schedule({ job });
 
-    task.remove(); // this cancels pending the job (async loader was not started to execute it)
+    task->remove(); // this cancels pending the job (async loader was not started to execute it)
 
     ASSERT_EQ(job->status(), LoadStatus::CANCELED);
     try
@@ -227,9 +234,9 @@ TEST(AsyncLoader, CancelPendingTask)
 
     auto job1 = makeLoadJob({}, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
-    auto task = t.loader.schedule({ job1, job2 });
+    auto task = t.schedule({ job1, job2 });
 
-    task.remove(); // this cancels both jobs (async loader was not started to execute it)
+    task->remove(); // this cancels both jobs (async loader was not started to execute it)
 
     ASSERT_EQ(job1->status(), LoadStatus::CANCELED);
     ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
@@ -263,10 +270,10 @@ TEST(AsyncLoader, CancelPendingDependency)
 
     auto job1 = makeLoadJob({}, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
-    auto task1 = t.loader.schedule({ job1 });
-    auto task2 = t.loader.schedule({ job2 });
+    auto task1 = t.schedule({ job1 });
+    auto task2 = t.schedule({ job2 });
 
-    task1.remove(); // this cancels both jobs, due to dependency (async loader was not started to execute it)
+    task1->remove(); // this cancels both jobs, due to dependency (async loader was not started to execute it)
 
     ASSERT_EQ(job1->status(), LoadStatus::CANCELED);
     ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
@@ -307,12 +314,12 @@ TEST(AsyncLoader, CancelExecutingJob)
     };
 
     auto job = makeLoadJob({}, "job", job_func);
-    auto task = t.loader.schedule({ job });
+    auto task = t.schedule({ job });
 
     sync.arrive_and_wait(); // (A) wait for job to start executing
     std::thread canceler([&]
     {
-        task.remove(); // waits for (C)
+        task->remove(); // waits for (C)
     });
     while (job->waitersCount() == 0)
         std::this_thread::yield();
@@ -354,14 +361,14 @@ TEST(AsyncLoader, CancelExecutingTask)
         task1_jobs.push_back(blocker_job);
         for (int i = 0; i < 100; i++)
             task1_jobs.push_back(makeLoadJob({ blocker_job }, "job_to_cancel", job_to_cancel_func));
-        auto task1 = t.loader.schedule({ task1_jobs.begin(), task1_jobs.end() });
+        auto task1 = t.schedule({ task1_jobs.begin(), task1_jobs.end() });
         auto job_to_succeed = makeLoadJob({ blocker_job }, "job_to_succeed", job_to_succeed_func);
-        auto task2 = t.loader.schedule({ job_to_succeed });
+        auto task2 = t.schedule({ job_to_succeed });
 
         sync.arrive_and_wait(); // (A) wait for job to start executing
         std::thread canceler([&]
         {
-            task1.remove(); // waits for (C)
+            task1->remove(); // waits for (C)
         });
         while (blocker_job->waitersCount() == 0)
             std::this_thread::yield();
@@ -392,7 +399,7 @@ TEST(AsyncLoader, JobFailure)
     };
 
     auto job = makeLoadJob({}, "job", job_func);
-    auto task = t.loader.schedule({ job });
+    auto task = t.schedule({ job });
 
     t.loader.wait();
 
@@ -421,7 +428,7 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
     };
 
     auto failed_job = makeLoadJob({}, "failed_job", failed_job_func);
-    auto failed_task = t.loader.schedule({ failed_job });
+    auto failed_task = t.schedule({ failed_job });
 
     t.loader.wait();
 
@@ -429,7 +436,7 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
 
     auto job1 = makeLoadJob({ failed_job }, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
-    auto task = t.loader.schedule({ job1, job2 });
+    auto task = t.schedule({ job1, job2 });
 
     t.loader.wait();
 
@@ -463,15 +470,15 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
 
     auto canceled_job_func = [&] (const LoadJobPtr &) {};
     auto canceled_job = makeLoadJob({}, "canceled_job", canceled_job_func);
-    auto canceled_task = t.loader.schedule({ canceled_job });
-    canceled_task.remove();
+    auto canceled_task = t.schedule({ canceled_job });
+    canceled_task->remove();
 
     t.loader.start();
 
     auto job_func = [&] (const LoadJobPtr &) {};
     auto job1 = makeLoadJob({ canceled_job }, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
-    auto task = t.loader.schedule({ job1, job2 });
+    auto task = t.schedule({ job1, job2 });
 
     t.loader.wait();
 
@@ -515,10 +522,10 @@ TEST(AsyncLoader, TestConcurrency)
             executing--;
         };
 
-        std::vector<AsyncLoader::Task> tasks;
+        std::vector<LoadTaskPtr> tasks;
         tasks.reserve(concurrency);
         for (int i = 0; i < concurrency; i++)
-            tasks.push_back(t.loader.schedule(t.chainJobSet(5, job_func)));
+            tasks.push_back(t.schedule(t.chainJobSet(5, job_func)));
         t.loader.wait();
         ASSERT_EQ(executing, 0);
     }
@@ -543,10 +550,10 @@ TEST(AsyncLoader, TestOverload)
         };
 
         t.loader.stop();
-        std::vector<AsyncLoader::Task> tasks;
+        std::vector<LoadTaskPtr> tasks;
         tasks.reserve(concurrency);
         for (int i = 0; i < concurrency; i++)
-            tasks.push_back(t.loader.schedule(t.chainJobSet(5, job_func)));
+            tasks.push_back(t.schedule(t.chainJobSet(5, job_func)));
         t.loader.start();
         t.loader.wait();
         ASSERT_EQ(executing, 0);
@@ -565,22 +572,15 @@ TEST(AsyncLoader, StaticPriorities)
     };
 
     std::vector<LoadJobPtr> jobs;
-    jobs.push_back(makeLoadJob({}, "A", job_func)); // 0
-    jobs.push_back(makeLoadJob({ jobs[0] }, "B", job_func)); // 1
-    jobs.push_back(makeLoadJob({ jobs[0] }, "C", job_func)); // 2
-    jobs.push_back(makeLoadJob({ jobs[0] }, "D", job_func)); // 3
-    jobs.push_back(makeLoadJob({ jobs[0] }, "E", job_func)); // 4
-    jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, "F", job_func)); // 5
-    jobs.push_back(makeLoadJob({ jobs[5] }, "G", job_func)); // 6
-    jobs.push_back(makeLoadJob({ jobs[6] }, "H", job_func)); // 7
-    auto task = t.loader.schedule({ jobs[0] }, 0);
-    task.merge(t.loader.schedule({ jobs[1] }, 3));
-    task.merge(t.loader.schedule({ jobs[2] }, 4));
-    task.merge(t.loader.schedule({ jobs[3] }, 1));
-    task.merge(t.loader.schedule({ jobs[4] }, 2));
-    task.merge(t.loader.schedule({ jobs[5] }, 0));
-    task.merge(t.loader.schedule({ jobs[6] }, 0));
-    task.merge(t.loader.schedule({ jobs[7] }, 9));
+    jobs.push_back(makeLoadJob({}, "A", 0, job_func)); // 0
+    jobs.push_back(makeLoadJob({ jobs[0] }, "B", 3, job_func)); // 1
+    jobs.push_back(makeLoadJob({ jobs[0] }, "C", 4, job_func)); // 2
+    jobs.push_back(makeLoadJob({ jobs[0] }, "D", 1, job_func)); // 3
+    jobs.push_back(makeLoadJob({ jobs[0] }, "E", 2, job_func)); // 4
+    jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, "F", 0, job_func)); // 5
+    jobs.push_back(makeLoadJob({ jobs[5] }, "G", 0, job_func)); // 6
+    jobs.push_back(makeLoadJob({ jobs[6] }, "H", 9, job_func)); // 7
+    auto task = t.schedule({ jobs.begin(), jobs.end() });
 
     t.loader.start();
     t.loader.wait();
@@ -614,22 +614,15 @@ TEST(AsyncLoader, DynamicPriorities)
         //     |       +-> F0 --> G0 --> H0
         //     `-> E2 -'
         std::vector<LoadJobPtr> jobs;
-        jobs.push_back(makeLoadJob({}, "A", job_func)); // 0
-        jobs.push_back(makeLoadJob({ jobs[0] }, "B", job_func)); // 1
-        jobs.push_back(makeLoadJob({ jobs[0] }, "C", job_func)); // 2
-        jobs.push_back(makeLoadJob({ jobs[0] }, "D", job_func)); // 3
-        jobs.push_back(makeLoadJob({ jobs[0] }, "E", job_func)); // 4
-        jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, "F", job_func)); // 5
-        jobs.push_back(makeLoadJob({ jobs[5] }, "G", job_func)); // 6
-        jobs.push_back(makeLoadJob({ jobs[6] }, "H", job_func)); // 7
-        auto task = t.loader.schedule({ jobs[0] }, 0);
-        task.merge(t.loader.schedule({ jobs[1] }, 3));
-        task.merge(t.loader.schedule({ jobs[2] }, 4));
-        task.merge(t.loader.schedule({ jobs[3] }, 1));
-        task.merge(t.loader.schedule({ jobs[4] }, 2));
-        task.merge(t.loader.schedule({ jobs[5] }, 0));
-        task.merge(t.loader.schedule({ jobs[6] }, 0));
-        task.merge(t.loader.schedule({ jobs[7] }, 0));
+        jobs.push_back(makeLoadJob({}, "A", 0, job_func)); // 0
+        jobs.push_back(makeLoadJob({ jobs[0] }, "B", 3, job_func)); // 1
+        jobs.push_back(makeLoadJob({ jobs[0] }, "C", 4, job_func)); // 2
+        jobs.push_back(makeLoadJob({ jobs[0] }, "D", 1, job_func)); // 3
+        jobs.push_back(makeLoadJob({ jobs[0] }, "E", 2, job_func)); // 4
+        jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, "F", 0, job_func)); // 5
+        jobs.push_back(makeLoadJob({ jobs[5] }, "G", 0, job_func)); // 6
+        jobs.push_back(makeLoadJob({ jobs[6] }, "H", 0, job_func)); // 7
+        auto task = t.schedule({ jobs.begin(), jobs.end() });
 
         job_to_prioritize = jobs[6];
 
@@ -656,12 +649,12 @@ TEST(AsyncLoader, RandomIndependentTasks)
         t.randomSleepUs(100, 500, 5);
     };
 
-    std::vector<AsyncLoader::Task> tasks;
+    std::vector<LoadTaskPtr> tasks;
     tasks.reserve(512);
     for (int i = 0; i < 512; i++)
     {
         int job_count = t.randomInt(1, 32);
-        tasks.push_back(t.loader.schedule(t.randomJobSet(job_count, 5, job_func)));
+        tasks.push_back(t.schedule(t.randomJobSet(job_count, 5, job_func)));
         t.randomSleepUs(100, 900, 20); // avg=100us
     }
 }
@@ -673,7 +666,7 @@ TEST(AsyncLoader, RandomDependentTasks)
 
     std::mutex mutex;
     std::condition_variable cv;
-    std::vector<AsyncLoader::Task> tasks;
+    std::vector<LoadTaskPtr> tasks;
     std::vector<LoadJobPtr> all_jobs;
 
     auto job_func = [&] (const LoadJobPtr & self)
@@ -695,7 +688,7 @@ TEST(AsyncLoader, RandomDependentTasks)
         int job_count = t.randomInt(1, 32);
         LoadJobSet jobs = t.randomJobSet(job_count, 5, all_jobs, job_func);
         all_jobs.insert(all_jobs.end(), jobs.begin(), jobs.end());
-        tasks.push_back(t.loader.schedule(std::move(jobs)));
+        tasks.push_back(t.schedule(std::move(jobs)));
 
         // Cancel random old task
         if (tasks.size() > 100)
@@ -732,7 +725,7 @@ TEST(AsyncLoader, SetMaxThreads)
 
     // Generate enough independent jobs
     for (int i = 0; i < 1000; i++)
-        t.loader.schedule({makeLoadJob({}, "job", job_func)}).detach();
+        t.schedule({makeLoadJob({}, "job", job_func)})->detach();
 
     t.loader.start();
     while (sync_index < syncs.size())

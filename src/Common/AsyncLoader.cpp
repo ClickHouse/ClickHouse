@@ -88,59 +88,40 @@ void LoadJob::finish()
         finished.notify_all();
 }
 
-
-AsyncLoader::Task::Task()
-    : loader(nullptr)
-{}
-
-AsyncLoader::Task::Task(AsyncLoader * loader_, LoadJobSet && jobs_)
+LoadTask::LoadTask(AsyncLoader & loader_, LoadJobSet && jobs_, LoadJobSet && goal_jobs_)
     : loader(loader_)
     , jobs(std::move(jobs_))
+    , goal_jobs(std::move(goal_jobs_))
 {}
 
-AsyncLoader::Task::Task(AsyncLoader::Task && o) noexcept
-    : loader(std::exchange(o.loader, nullptr))
-    , jobs(std::move(o.jobs))
-{}
-
-AsyncLoader::Task::~Task()
+LoadTask::~LoadTask()
 {
     remove();
 }
 
-AsyncLoader::Task & AsyncLoader::Task::operator=(AsyncLoader::Task && o) noexcept
+void LoadTask::merge(const LoadTaskPtr & task)
 {
-    loader = std::exchange(o.loader, nullptr);
-    jobs = std::move(o.jobs);
-    return *this;
+    chassert(&loader == &task->loader);
+    jobs.merge(task->jobs);
+    goal_jobs.merge(task->goal_jobs);
 }
 
-void AsyncLoader::Task::merge(AsyncLoader::Task && o)
+void LoadTask::schedule()
 {
-    if (!loader)
-    {
-        *this = std::move(o);
-    }
-    else
-    {
-        chassert(loader == o.loader);
-        jobs.merge(o.jobs);
-        o.loader = nullptr;
-    }
+    loader.schedule(*this);
 }
 
-void AsyncLoader::Task::remove()
+void LoadTask::remove()
 {
-    if (loader)
+    if (!jobs.empty())
     {
-        loader->remove(jobs);
-        detach();
+        loader.remove(jobs);
+        jobs.clear();
     }
 }
 
-void AsyncLoader::Task::detach()
+void LoadTask::detach()
 {
-    loader = nullptr;
     jobs.clear();
 }
 
@@ -178,7 +159,30 @@ void AsyncLoader::stop()
     pool.wait();
 }
 
-AsyncLoader::Task AsyncLoader::schedule(LoadJobSet && jobs, ssize_t priority)
+void AsyncLoader::schedule(LoadTask & task)
+{
+    chassert(this == &task.loader);
+    scheduleImpl(task.jobs);
+}
+
+void AsyncLoader::schedule(const LoadTaskPtr & task)
+{
+    chassert(this == &task->loader);
+    scheduleImpl(task->jobs);
+}
+
+void AsyncLoader::schedule(const std::vector<LoadTaskPtr> & tasks)
+{
+    LoadJobSet all_jobs;
+    for (const auto & task : tasks)
+    {
+        chassert(this == &task->loader);
+        all_jobs.insert(task->jobs.begin(), task->jobs.end());
+    }
+    scheduleImpl(all_jobs);
+}
+
+void AsyncLoader::scheduleImpl(const LoadJobSet & jobs)
 {
     std::unique_lock lock{mutex};
 
@@ -202,9 +206,8 @@ AsyncLoader::Task AsyncLoader::schedule(LoadJobSet && jobs, ssize_t priority)
     {
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            scheduled_jobs.emplace(job, Info{.initial_priority = priority, .priority = priority});
+            scheduled_jobs.emplace(job, Info{.initial_priority = job->load_priority, .priority = job->load_priority});
         });
-        job->load_priority.store(priority); // Set user-facing priority
     }
 
     // Process dependencies on scheduled pending jobs
@@ -223,7 +226,7 @@ AsyncLoader::Task AsyncLoader::schedule(LoadJobSet && jobs, ssize_t priority)
                 info.dependencies_left++;
 
                 // Priority inheritance: prioritize deps to have at least given `priority` to avoid priority inversion
-                prioritize(dep, priority, lock);
+                prioritize(dep, info.priority, lock);
             }
         }
 
@@ -282,8 +285,6 @@ AsyncLoader::Task AsyncLoader::schedule(LoadJobSet && jobs, ssize_t priority)
             // Job was already canceled on previous iteration of this cycle -- skip
         }
     }
-
-    return Task(this, std::move(jobs));
 }
 
 void AsyncLoader::prioritize(const LoadJobPtr & job, ssize_t new_priority)
