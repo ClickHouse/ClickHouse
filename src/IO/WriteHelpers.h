@@ -1193,8 +1193,8 @@ inline void writeBinaryEndian(const T & x, WriteBuffer & buf)
     }
     else
     {
-        for (ssize_t i = std::size(x.items) - 1; i >= 0; --i)
-            writeBinaryEndian<endian>(x.items[i], buf);
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
     }
 }
 
