@@ -13,14 +13,12 @@ BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const String & file_path_,
     const ReadSettings & settings_,
     const std::optional<UInt64> & file_size_,
-    const std::optional<UInt128> & checksum_,
-    const std::shared_ptr<TemporaryFileOnDisk> & temporary_file_)
+    const std::optional<UInt128> & checksum_)
     : disk(disk_)
     , file_path(file_path_)
     , settings(settings_)
     , file_size(file_size_)
     , checksum(checksum_)
-    , temporary_file_on_disk(temporary_file_)
 {
 }
 

@@ -10,9 +10,8 @@ BackupEntryFromAppendOnlyFile::BackupEntryFromAppendOnlyFile(
     const String & file_path_,
     const ReadSettings & settings_,
     const std::optional<UInt64> & file_size_,
-    const std::optional<UInt128> & checksum_,
-    const std::shared_ptr<TemporaryFileOnDisk> & temporary_file_)
-    : BackupEntryFromImmutableFile(disk_, file_path_, settings_, file_size_, checksum_, temporary_file_)
+    const std::optional<UInt128> & checksum_)
+    : BackupEntryFromImmutableFile(disk_, file_path_, settings_, file_size_, checksum_)
     , limit(BackupEntryFromImmutableFile::getSize())
 {
 }

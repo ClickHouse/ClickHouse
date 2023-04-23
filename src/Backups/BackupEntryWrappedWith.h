@@ -28,10 +28,16 @@ private:
 };
 
 template <typename T>
+BackupEntryPtr wrapBackupEntryWith(BackupEntryPtr && backup_entry, const T & custom_value)
+{
+    return std::make_shared<BackupEntryWrappedWith<T>>(std::move(backup_entry), custom_value);
+}
+
+template <typename T>
 void wrapBackupEntriesWith(std::vector<std::pair<String, BackupEntryPtr>> & backup_entries, const T & custom_value)
 {
     for (auto & [_, backup_entry] : backup_entries)
-        backup_entry = std::make_shared<BackupEntryWrappedWith<T>>(std::move(backup_entry), custom_value);
+        backup_entry = wrapBackupEntryWith(std::move(backup_entry), custom_value);
 }
 
 }
