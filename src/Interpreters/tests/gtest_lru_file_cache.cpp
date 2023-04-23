@@ -135,11 +135,12 @@ TEST_F(FileCacheTest, get)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
+    settings.base_path = cache_base_path;
     settings.max_size = 30;
     settings.max_elements = 5;
 
     {
-        auto cache = DB::FileCache(cache_base_path, settings);
+        auto cache = DB::FileCache(settings);
         cache.initialize();
         auto key = cache.hash("key1");
 
@@ -516,7 +517,7 @@ TEST_F(FileCacheTest, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::FileCache(cache_base_path, settings);
+        auto cache2 = DB::FileCache(settings);
         cache2.initialize();
         auto key = cache2.hash("key1");
 
@@ -537,7 +538,8 @@ TEST_F(FileCacheTest, get)
 
         auto settings2 = settings;
         settings2.max_file_segment_size = 10;
-        auto cache2 = DB::FileCache(caches_dir / "cache2", settings2);
+        settings2.base_path = caches_dir / "cache2";
+        auto cache2 = DB::FileCache(settings2);
         cache2.initialize();
         auto key = cache2.hash("key1");
 
@@ -558,8 +560,9 @@ TEST_F(FileCacheTest, writeBuffer)
     settings.max_size = 100;
     settings.max_elements = 5;
     settings.max_file_segment_size = 5;
+    settings.base_path = cache_base_path;
 
-    DB::FileCache cache(cache_base_path, settings);
+    DB::FileCache cache(settings);
     cache.initialize();
 
     auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
@@ -658,8 +661,9 @@ TEST_F(FileCacheTest, temporaryData)
     DB::FileCacheSettings settings;
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
+    settings.base_path = cache_base_path;
 
-    DB::FileCache file_cache(cache_base_path, settings);
+    DB::FileCache file_cache(settings);
     file_cache.initialize();
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
@@ -704,6 +708,27 @@ TEST_F(FileCacheTest, temporaryData)
 
         ASSERT_EQ(file_cache.getUsedCacheSize(), used_size_before_attempt);
     }
+
+    {
+        size_t before_used_size = file_cache.getUsedCacheSize();
+        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+
+        auto write_buf_stream = tmp_data->createRawStream();
+
+        write_buf_stream->write("1234567890", 10);
+        write_buf_stream->write("abcde", 5);
+        auto read_buf = dynamic_cast<IReadableWriteBuffer *>(write_buf_stream.get())->tryGetReadBuffer();
+
+        ASSERT_GT(file_cache.getUsedCacheSize(), before_used_size + 10);
+
+        char buf[15];
+        size_t read_size = read_buf->read(buf, 15);
+        ASSERT_EQ(read_size, 15);
+        ASSERT_EQ(std::string(buf, 15), "1234567890abcde");
+        read_size = read_buf->read(buf, 15);
+        ASSERT_EQ(read_size, 0);
+    }
+
     {
         auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
         auto & stream = tmp_data->createStream(generateBlock());

@@ -121,7 +121,7 @@ Pipe StorageHDFSCluster::read(
                 processed_stage,
                 extension);
 
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
         }
     }
 

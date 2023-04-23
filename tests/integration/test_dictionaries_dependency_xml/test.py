@@ -114,7 +114,7 @@ def test_dependent_tables(started_cluster):
     query(
         "create dictionary a.d (n int default 0, m int default 42) primary key n "
         "source(clickhouse(host 'localhost' port tcpPort() user 'default' table 'src' password '' db 'lazy'))"
-        "lifetime(min 1 max 10) layout(flat()) SETTINGS(check_dictionary_primary_key = 0)"
+        "lifetime(min 1 max 10) layout(flat())"
     )
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
@@ -126,7 +126,7 @@ def test_dependent_tables(started_cluster):
     query(
         "create dictionary test.d (n int default 0, m int default 42) primary key n "
         "source(clickhouse(host 'localhost' port tcpPort() user 'default' table 'src' password '' db 'default'))"
-        "lifetime(min 1 max 10) layout(flat()) SETTINGS(check_dictionary_primary_key = 0)"
+        "lifetime(min 1 max 10) layout(flat())"
     )
     query(
         "create table join (n int, m default dictGet('a.d', 'm', toUInt64(3)),"

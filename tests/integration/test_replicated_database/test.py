@@ -698,12 +698,12 @@ def create_some_tables(db):
     main_node.query(
         f"CREATE DICTIONARY {db}.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0)"
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
     )
     dummy_node.query(
         f"CREATE DICTIONARY {db}.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0)"
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
     )
 
 
@@ -766,7 +766,7 @@ def test_recover_staled_replica(started_cluster):
         main_node.query_with_retry(
             "CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
             "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
-            "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0);",
+            "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());",
             settings=settings,
         )
 

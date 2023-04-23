@@ -884,7 +884,7 @@ def test_tables_dependency():
 
     node1.query(
         "CREATE DICTIONARY mydb.dict ON CLUSTER 'cluster' (x Int64, y String) PRIMARY KEY x "
-        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'mydb' TABLE 'src')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(check_dictionary_primary_key = 0)"
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'mydb' TABLE 'src')) LAYOUT(FLAT()) LIFETIME(0)"
     )
 
     node1.query(
