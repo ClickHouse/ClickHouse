@@ -407,14 +407,14 @@ public:
                             auto & vec_res = col_res->getChars();
                             auto & offset_res = col_res->getOffsets();
 
-                            const auto & vec_col_str = col->getChars();
-                            const auto & offset_col_str = col->getOffsets();
+                            const auto & vec_col = col->getChars();
+                            const auto & offset_col = col->getOffsets();
 
-                            vec_res.resize(vec_col_str.size());
-                            offset_res.resize(offset_col_str.size());
-                            memcpy(offset_res.data(), offset_col_str.data(), offset_res.size() * sizeof(UInt64));
+                            vec_res.resize(vec_col.size());
+                            offset_res.resize(offset_col.size());
+                            memcpy(offset_res.data(), offset_col.data(), offset_res.size() * sizeof(UInt64));
 
-                            FixedStringUnaryOperationImpl<Op<UInt8>>::vector(vec_col_str, vec_res);
+                            FixedStringUnaryOperationImpl<Op<UInt8>>::vector(vec_col, vec_res);
                             result_column = std::move(col_res);
                             return true;
                         }
