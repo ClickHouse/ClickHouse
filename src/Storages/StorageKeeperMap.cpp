@@ -864,7 +864,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             local_context,
             /*can_execute_*/ true,
             /*return_all_columns_*/ true,
-            /*return_deleted_rows_*/ true);
+            /*return_mutated_rows*/ true);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -924,10 +924,16 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
     if (commands.front().column_to_update_expression.contains(primary_key))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     auto interpreter = std::make_unique<MutationsInterpreter>(
-        storage_ptr, metadata_snapshot, commands, local_context, /*can_execute_*/ true, /*return_all_columns*/ true);
+        storage_ptr,
+        metadata_snapshot,
+        commands,
+        local_context,
+        /*can_execute_*/ true,
+        /*return_all_columns*/ true,
+        /*return_mutated_rows*/ true);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 

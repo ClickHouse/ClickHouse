@@ -124,3 +124,7 @@ Finally, entries in the query cache are not shared between users due to security
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](settings/settings.md#query-cache-share-between-users).
+
+## Related Content
+
+- Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

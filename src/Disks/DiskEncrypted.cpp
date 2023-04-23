@@ -360,6 +360,19 @@ SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
     return delegate->getDirectorySyncGuard(wrapped_path);
 }
 
+std::unordered_map<String, String> DiskEncrypted::getSerializedMetadata(const std::vector<String> & paths) const
+{
+    std::vector<String> wrapped_paths;
+    wrapped_paths.reserve(paths.size());
+    for (const auto & path : paths)
+        wrapped_paths.emplace_back(wrappedPath(path));
+    auto metadata = delegate->getSerializedMetadata(wrapped_paths);
+    std::unordered_map<String, String> res;
+    for (size_t i = 0; i != paths.size(); ++i)
+        res.emplace(paths[i], metadata.at(wrapped_paths.at(i)));
+    return res;
+}
+
 void DiskEncrypted::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr /*context*/,
