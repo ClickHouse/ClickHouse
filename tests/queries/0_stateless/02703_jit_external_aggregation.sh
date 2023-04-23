@@ -7,9 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # This query should return empty result in every of five runs:
 
-for _ in {1..5}
-do
-    $CLICKHOUSE_CLIENT --compile_aggregate_expressions 0 --query "
+$CLICKHOUSE_CLIENT --compile_aggregate_expressions 1 --min_count_to_compile_aggregate_expression=0 --query "
 SELECT
     COUNT() AS c,
     group_key,
@@ -30,6 +28,5 @@ ORDER BY group_key ASC
 LIMIT 10
 SETTINGS max_bytes_before_external_group_by = 200000
 " && echo -n '.'
-done
 
 echo
