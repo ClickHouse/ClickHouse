@@ -723,13 +723,31 @@ namespace
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
 
-                if (*cur != expected)
+                if (*cur != expected) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
                         String(expected, 1),
+                        String(*cur, 1));
+
+                ++cur;
+                return cur;
+            }
+
+            template <NeedCheckSpace need_check_space>
+            static Pos assertNumber(Pos cur, Pos end, const String & fragment)
+            {
+                if constexpr (need_check_space == NeedCheckSpace::Yes)
+                    checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
+
+                if (*cur < '0' || *cur > '9') [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because {} is not a number",
+                        fragment,
+                        std::string_view(cur, end - cur),
                         String(*cur, 1));
 
                 ++cur;
@@ -1071,6 +1089,16 @@ namespace
                 Int32 second;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second);
                 date.setSecond(second);
+                return cur;
+            }
+
+            static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
+            {
+                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
+
+                for (size_t i = 0; i < 6; ++i)
+                    cur = assertNumber<NeedCheckSpace::No>(cur, end, fragment);
+
                 return cur;
             }
 
@@ -1485,6 +1513,10 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
+                        // Fractional seconds
+                        case 'f':
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMicrosecond));
+                            break;
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
@@ -1637,8 +1669,6 @@ namespace
                         /// Unimplemented
 
                         /// Fractional seconds
-                        case 'f':
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
                         case 'U':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                         case 'v':

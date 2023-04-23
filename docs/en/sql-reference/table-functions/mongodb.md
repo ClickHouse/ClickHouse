@@ -16,19 +16,19 @@ mongodb(host:port, database, collection, user, password, structure [, options])
 
 **Arguments**
 
--   `host:port` — MongoDB server address.
+- `host:port` — MongoDB server address.
 
--   `database` — Remote database name.
+- `database` — Remote database name.
 
--   `collection` — Remote collection name.
+- `collection` — Remote collection name.
 
--   `user` — MongoDB user.
+- `user` — MongoDB user.
 
--   `password` — User password.
+- `password` — User password.
 
--   `structure` - The schema for the ClickHouse table returned from this function.
+- `structure` - The schema for the ClickHouse table returned from this function.
 
--   `options` - MongoDB connection string options (optional parameter).
+- `options` - MongoDB connection string options (optional parameter).
 
 
 **Returned Value**
@@ -70,5 +70,5 @@ SELECT * FROM mongodb(
 
 **See Also**
 
--   [The `MongoDB` table engine](/docs/en/engines/table-engines/integrations/mongodb.md)
--   [Using MongoDB as a dictionary source](/docs/en/sql-reference/dictionaries/index.md#mongodb)
+- [The `MongoDB` table engine](/docs/en/engines/table-engines/integrations/mongodb.md)
+- [Using MongoDB as a dictionary source](/docs/en/sql-reference/dictionaries/index.md#mongodb)

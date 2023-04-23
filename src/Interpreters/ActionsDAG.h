@@ -410,7 +410,20 @@ class FindOriginalNodeForOutputName
 
 public:
     explicit FindOriginalNodeForOutputName(const ActionsDAGPtr & actions);
-    const ActionsDAG::Node* find(const String& output_name);
+    const ActionsDAG::Node * find(const String & output_name);
+
+private:
+    ActionsDAGPtr actions;
+    NameToNodeIndex index;
+};
+
+class FindAliasForInputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindAliasForInputName(const ActionsDAGPtr & actions);
+    const ActionsDAG::Node * find(const String & name);
 
 private:
     ActionsDAGPtr actions;
