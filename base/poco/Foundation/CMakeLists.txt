@@ -31,8 +31,6 @@ set (SRCS
     src/ASCIIEncoding.cpp
     src/AsyncChannel.cpp
     src/AtomicCounter.cpp
-    src/Base32Decoder.cpp
-    src/Base32Encoder.cpp
     src/Base64Decoder.cpp
     src/Base64Encoder.cpp
     src/BinaryReader.cpp
