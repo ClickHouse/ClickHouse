@@ -1480,9 +1480,9 @@ void AsynchronousMetrics::update(TimePoint update_time)
     values = new_values;
 }
 
-void AsynchronousMetrics::updateCgroupMemoryMetrics(std::optional<ReadBufferFromFilePRead> memory_limit_in, std::optional<ReadBufferFromFilePRead> memory_usage_in) 
+void AsynchronousMetrics::updateCgroupMemoryMetrics(std::optional<ReadBufferFromFilePRead> memory_limit_in, std::optional<ReadBufferFromFilePRead> memory_usage_in)
 {
-        try 
+        try
         {
             memory_limit_in->rewind();
             memory_usage_in->rewind();
