@@ -66,10 +66,15 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
 
-    openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory.max", cgroupmem_v2_limit_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_v2_usage_in_bytes);
+    /// CGroups v2
+    openFileIfExists("/sys/fs/cgroup/memory.max", cgroupmem_limit_in_bytes);
+    openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_usage_in_bytes);
+
+    /// CGroups v1
+    if (!cgroupmem_limit_in_bytes)
+        openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
+    if (!cgroupmem_usage_in_bytes)
+        openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
 
     openSensors();
     openBlockDevices();
@@ -896,11 +901,6 @@ void AsynchronousMetrics::update(TimePoint update_time)
         updateCgroupMemoryMetrics(cgroupmem_limit_in_bytes, cgroupmem_usage_in_bytes);
     } 
     
-    if (cgroupmem_v2_limit_in_bytes && cgroupmem_v2_usage_in_bytes)
-    {
-        updateCgroupMemoryMetrics(cgroupmem_v2_limit_in_bytes, cgroupmem_v2_usage_in_bytes);
-    }
-
     if (meminfo)
     {
         try
@@ -1467,35 +1467,21 @@ void AsynchronousMetrics::update(TimePoint update_time)
     values = new_values;
 }
 
-void AsynchronousMetrics::updateCgroupMemoryMetrics(std::optional<ReadBufferFromFilePRead> memoryLimitReadBuffer, std::optional<ReadBufferFromFilePRead> memoryUsageReadBuffer) 
+void AsynchronousMetrics::updateCgroupMemoryMetrics(std::optional<ReadBufferFromFilePRead> memory_limit_in, std::optional<ReadBufferFromFilePRead> memory_usage_in) 
 {
         try 
         {
-            memoryLimitReadBuffer->rewind();
-            memoryUsageReadBuffer->rewind();
+            memory_limit_in->rewind();
+            memory_usage_in->rewind();
 
             uint64_t cgroup_mem_limit_in_bytes = 0;
             uint64_t cgroup_mem_usage_in_bytes = 0;
 
-            string cgroup_mem_limit_str = "";
-            readText(cgroup_mem_limit_str, *memoryLimitReadBuffer);
-            if (std::isdigit(cgroup_mem_limit_str)) 
-            {
-                memoryLimitReadBuffer->rewind();
-                readText(cgroup_mem_limit_in_bytes, *memoryLimitReadBuffer);
-            }
-            readText(cgroup_mem_usage_in_bytes, *memoryUsageReadBuffer);
+            tryReadText(cgroup_mem_limit_in_bytes, *memory_limit_in);
+            tryReadText(cgroup_mem_usage_in_bytes, *memory_usage_in);
 
-            if (cgroup_mem_limit_in_bytes || cgroup_mem_usage_in_bytes)
-            {
-                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes. If stated zero, CgroupMemoryTotal is the same as OSMemoryTotal." };
-                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
-            }
-            else
-            {
-                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
-                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
-            }
+            new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
+            new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
         }
         catch (...)
         {
