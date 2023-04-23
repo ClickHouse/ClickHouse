@@ -68,6 +68,7 @@ struct MergeListElement : boost::noncopyable
 {
     const StorageID table_id;
     std::string partition_id;
+    std::string partition;
 
     const std::string result_part_name;
     const std::string result_part_path;
