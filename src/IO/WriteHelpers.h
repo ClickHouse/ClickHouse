@@ -1178,7 +1178,7 @@ requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
     if constexpr (std::endian::native != endian)
-        std::byteswap(x);
+        x = std::byteswap(x);
     writePODBinary(x, buf);
 }
 
