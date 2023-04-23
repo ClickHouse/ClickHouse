@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
@@ -392,9 +393,12 @@ void DataPartStorageOnDiskBase::backup(
             file_hash = {it->second.file_hash.first, it->second.file_hash.second};
         }
 
-        backup_entries.emplace_back(
-            filepath_in_backup,
-            std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, read_settings, file_size, file_hash, temp_dir_owner));
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, read_settings, file_size, file_hash);
+
+        if (temp_dir_owner)
+            backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
+
+        backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
     }
 }
 

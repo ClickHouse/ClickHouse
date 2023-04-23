@@ -7,7 +7,6 @@
 
 namespace DB
 {
-class TemporaryFileOnDisk;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
@@ -22,8 +21,7 @@ public:
         const String & file_path_,
         const ReadSettings & settings_,
         const std::optional<UInt64> & file_size_ = {},
-        const std::optional<UInt128> & checksum_ = {},
-        const std::shared_ptr<TemporaryFileOnDisk> & temporary_file_ = {});
+        const std::optional<UInt128> & checksum_ = {});
 
     ~BackupEntryFromImmutableFile() override;
 
@@ -43,7 +41,6 @@ private:
     mutable std::optional<UInt64> file_size TSA_GUARDED_BY(get_file_size_mutex);
     mutable std::mutex get_file_size_mutex;
     const std::optional<UInt128> checksum;
-    const std::shared_ptr<TemporaryFileOnDisk> temporary_file_on_disk;
 };
 
 }
