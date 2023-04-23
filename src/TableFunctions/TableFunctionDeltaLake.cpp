@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_AWS_S3
+#if USE_AWS_S3 && USE_PARQUET
 
 #include <Storages/DataLakes/StorageDeltaLake.h>
 #include <TableFunctions/ITableFunctionDataLake.h>

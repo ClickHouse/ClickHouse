@@ -1870,8 +1870,7 @@ try
             if (outdated_unloaded_data_parts.empty())
                 break;
 
-            part = std::move(outdated_unloaded_data_parts.back());
-            outdated_unloaded_data_parts.pop_back();
+            part = outdated_unloaded_data_parts.back();
         }
 
         auto res = loadDataPartWithRetries(
@@ -1886,6 +1885,15 @@ try
             res.part->remove();
         else
             preparePartForRemoval(res.part);
+
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            chassert(part == outdated_unloaded_data_parts.back());
+            outdated_unloaded_data_parts.pop_back();
+
+            if (outdated_unloaded_data_parts.empty())
+                break;
+        }
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
