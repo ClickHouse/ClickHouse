@@ -1172,13 +1172,31 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
 
-    res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
-        .withPartInfo(part_info)
-        .withPartFormatFromDisk()
-        .build();
-
     String part_path = fs::path(relative_data_path) / part_name;
     String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
+
+    try
+    {
+        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
+            .withPartInfo(part_info)
+            .withPartFormatFromDisk()
+            .build();
+    }
+    catch (const fs::filesystem_error &)
+    {
+        // build a fake part and mark it as broken in case of filesystem error. if the
+        // error impacts part directory instead of single files, an exception will be
+        // thrown during detach and silently ignored.
+        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
+            .withPartStorageType(MergeTreeDataPartStorageType::Full)
+            .withPartType(MergeTreeDataPartType::Wide)
+            .build();
+
+        res.is_broken = true;
+        tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part_name, part_path));
+
+        return res;
+    }
 
     if (part_disk_ptr->exists(marker_path))
     {
