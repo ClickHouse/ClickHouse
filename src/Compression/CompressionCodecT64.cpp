@@ -326,7 +326,7 @@ void load(const char * src, T * buf, UInt32 tail = 64)
         /// as little-endian types on big-endian machine (s390x, etc).
         for (UInt32 i = 0; i < tail; ++i)
         {
-            buf[i] = unalignedLoadLE<T>(src + i * sizeof(T));
+            buf[i] = unalignedLoadLittleEndian<T>(src + i * sizeof(T));
         }
     }
 }
