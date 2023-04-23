@@ -65,7 +65,7 @@ void ENetServer::run()
         throw 1;
     }
 
-    while (true)
+    while (!_stopped)
     {
         ENetEvent event;
         LOG_INFO(logger, "Server ENET STEP");
@@ -113,23 +113,18 @@ void ENetServer::run()
                             endpoint->processQuery(pck, out, resp_pck);
                         }
 
-                        auto buf = out.buffer();
+                        LOG_TRACE(logger, "{}", out.res());
 
-                        LOG_INFO(logger, "ENET Finished query {} {}", buf.begin(), buf.size());
+                        //resp_pck.set("body", std::string(data));
 
-                        
-                        char data[buf.size()];
-                        memcpy(buf.begin(), data, buf.size());
+                        //auto resp_str = resp_pck.serialize();
+                        //auto resp_cstr = resp_str.c_str();
 
-                        out.finalize();
+                        auto str = out.res();
+                        auto res_str = str.c_str();
 
-                        resp_pck.set("body", std::string(data));
-
-                        auto resp_str = resp_pck.serialize();
-                        auto resp_cstr = resp_str.c_str();
-
-                        ENetPacket* resp = enet_packet_create (resp_cstr,
-                                                strlen (resp_cstr) + 1,
+                        ENetPacket* resp = enet_packet_create (res_str,
+                                                out.res().size() + 1,
                                                 ENET_PACKET_FLAG_RELIABLE);
 
                         enet_peer_send (event.peer, 0, resp);

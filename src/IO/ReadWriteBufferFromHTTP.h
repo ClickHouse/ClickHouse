@@ -120,7 +120,7 @@ namespace detail
 
 
         #if USE_ENET
-        std::string protocol = "tcp";
+        std::string protocol = "enet";
         #else
         std::string protocol = "tcp";
         #endif
@@ -236,7 +236,6 @@ namespace detail
                     auto request_str = request.serialize();
                     auto request_cstr = request_str.c_str();
 
-                    LOG_INFO(log, "ENET READY {}", request_cstr);
                     ENetPacket * packet = enet_packet_create (request_cstr,
                                             request_str.size() + 1,
                                             ENET_PACKET_FLAG_RELIABLE);
@@ -270,6 +269,7 @@ namespace detail
                     enet_host_flush(client);
 
                     uint8_t* data = nullptr;
+                    size_t data_size = 0;
 
                     while (enet_host_service(client, &event, 5000) > 0)
                     {
@@ -280,8 +280,9 @@ namespace detail
                                 {
                                     ENetPack pck;
                                     pck.deserialize(reinterpret_cast<char *>(event.packet->data));
-                                    LOG_INFO(log, "ENET RECEIVED {}", pck.get("body", "a"));
                                     data = event.packet->data;
+                                    LOG_INFO(log, "ENET RECEIVED {}", reinterpret_cast<char*>(data));
+                                    data_size = event.packet->dataLength;
                                     enet_packet_destroy(event.packet);
                                 }
                                 break;
@@ -299,13 +300,11 @@ namespace detail
                         throw 1;
                     }
 
-                    std::string str_data = reinterpret_cast<char*>(data);
+                    response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
 
-                    LOG_INFO(log, "ENET RECEIVED {}", str_data);
+                    LOG_INFO(log, "ENET RECEIVED {}", reinterpret_cast<char*>(data));
 
-                    istr->clear();
-
-                    istr->get(reinterpret_cast<char*>(data), str_data.size());
+                    istr->get(reinterpret_cast<char*>(data), data_size);
 
                     enet_deinitialize();
 
