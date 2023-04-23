@@ -134,7 +134,6 @@ set (SRCS
     src/StreamCopier.cpp
     src/String.cpp
     src/StringTokenizer.cpp
-    src/SynchronizedObject.cpp
     src/SyslogChannel.cpp
     src/Task.cpp
     src/TaskManager.cpp
