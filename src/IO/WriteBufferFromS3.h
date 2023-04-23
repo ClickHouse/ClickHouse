@@ -9,7 +9,6 @@
 #include <list>
 
 #include <base/types.h>
-#include <Common/logger_useful.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>

@@ -1,12 +1,13 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 #include <algorithm>
 
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Common/noexcept_scope.h>
+#include <Common/logger_useful.h>
 
 
 namespace CurrentMetrics

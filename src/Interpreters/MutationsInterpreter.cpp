@@ -38,6 +38,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 
 
 namespace DB
@@ -976,10 +977,15 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
 
-        for (const auto & ast : stage.filters)
+        if (!stage.filters.empty())
         {
+            auto ast = stage.filters.front();
+            if (stage.filters.size() > 1)
+                ast = makeASTForLogicalAnd(std::move(stage.filters));
+
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
+
             stage.analyzer->appendExpression(actions_chain, ast, dry_run);
             stage.filter_column_names.push_back(ast->getColumnName());
         }

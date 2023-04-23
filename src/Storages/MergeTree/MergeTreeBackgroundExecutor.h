@@ -9,12 +9,11 @@
 #include <variant>
 #include <utility>
 
-
 #include <boost/circular_buffer.hpp>
 #include <boost/noncopyable.hpp>
+#include <Poco/Event.h>
 
 #include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Stopwatch.h>
 #include <base/defines.h>
