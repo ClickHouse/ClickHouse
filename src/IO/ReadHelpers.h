@@ -1540,8 +1540,8 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 /// Skip to next character after next \0. If no \0 in stream, skip to end.
 void skipNullTerminated(ReadBuffer & buf);
 
-/** This function just copies the data from buffer's internal position (in.position())
-  * to current position (from arguments) into memory.
+/** This function just copies the data from buffer's position (in.position())
+  * to current position (from arguments) appending into memory.
   */
 void saveUpToPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * current);
 
