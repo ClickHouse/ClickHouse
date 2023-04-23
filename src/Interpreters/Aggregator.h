@@ -301,11 +301,13 @@ struct AggregationMethodStringNoCache
     {
         if constexpr (nullable)
         {
-            static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*key_columns[0]);
+            assert_cast<ColumnString &>(column_nullable.getNestedColumn()).insertData(key.data, key.size);
+            column_nullable.getNullMapData().push_back(0);
         }
         else
         {
-            static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
+            assert_cast<ColumnString &>(*key_columns[0]).insertData(key.data, key.size);
         }
     }
 };
@@ -339,7 +341,7 @@ struct AggregationMethodFixedString
 
     static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
+        assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
     }
 };
 
@@ -373,11 +375,11 @@ struct AggregationMethodFixedStringNoCache
     {
         if constexpr (nullable)
         {
-            static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+            assert_cast<ColumnNullable &>(*key_columns[0]).insertData(key.data, key.size);
         }
         else
         {
-            static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
+            assert_cast<ColumnFixedString &>(*key_columns[0]).insertData(key.data, key.size);
         }
     }
 };
