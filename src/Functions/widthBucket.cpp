@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <Common/register_objects.h>

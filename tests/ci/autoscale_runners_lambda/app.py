@@ -59,11 +59,11 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     "returns the multipliers for scaling down and up ASG by types"
     # Scaling down is quicker on the lack of running jobs than scaling up on
     # queue
-    scale_down = 3
+    scale_down = 2
     scale_up = 5
     if runner_type == "style-checker":
         # the style checkers have so many noise, so it scales up too quickly
-        scale_down = 2
+        scale_down = 1
         scale_up = 10
     return scale_down, scale_up
 

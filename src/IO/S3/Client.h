@@ -4,13 +4,13 @@
 
 #if USE_AWS_S3
 
-#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Credentials.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
@@ -227,8 +227,7 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HTTPHeaderEntries headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request);
+        CredentialsConfiguration credentials_configuration);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,

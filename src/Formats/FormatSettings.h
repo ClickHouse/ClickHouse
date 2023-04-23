@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/Defines.h>
 #include <base/types.h>
+#include <base/unit.h>
 
 
 namespace DB
@@ -81,7 +82,8 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    UInt64 max_binary_string_size = 0;
+    UInt64 max_binary_string_size = 1_GiB;
+    UInt64 max_binary_array_size = 1_GiB;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
@@ -211,6 +213,9 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        // TODO: This should probably be shared among all formats and with
+        //       https://github.com/ClickHouse/ClickHouse/issues/38755
+        bool preserve_order = false;
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;

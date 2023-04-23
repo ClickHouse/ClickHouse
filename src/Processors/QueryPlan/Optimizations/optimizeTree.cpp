@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
+    extern const int PROJECTION_NOT_USED;
 }
 
 namespace QueryPlanOptimizations
@@ -103,6 +105,10 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
+    size_t num_applied_projection = 0;
+    bool has_reading_from_mt = false;
+
     Stack stack;
     stack.push_back({.node = &root});
 
@@ -112,8 +118,13 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (frame.next_child == 0)
         {
+            has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
+
+            if (optimization_settings.optimize_projection)
+                num_applied_projection += optimizeUseAggregateProjections(*frame.node, nodes);
 
             if (optimization_settings.aggregation_in_order)
                 optimizeAggregationInOrder(*frame.node, nodes);
@@ -131,11 +142,35 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             continue;
         }
 
+        if (optimization_settings.optimize_projection)
+        {
+            if (optimizeUseNormalProjections(stack, nodes))
+            {
+                ++num_applied_projection;
+
+                if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
+                    throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                    "Too many projection optimizations applied to query plan. Current limit {}",
+                                    max_optimizations_to_apply);
+
+                /// Stack is updated after this optimization and frame is not valid anymore.
+                /// Try to apply optimizations again to newly added plan steps.
+                --stack.back().next_child;
+                continue;
+            }
+        }
+
+        optimizePrewhere(stack, nodes);
         optimizePrimaryKeyCondition(stack);
         enableMemoryBoundMerging(*frame.node, nodes);
 
         stack.pop_back();
     }
+
+    if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
+        throw Exception(
+            ErrorCodes::PROJECTION_NOT_USED,
+            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
 }
 
 }
