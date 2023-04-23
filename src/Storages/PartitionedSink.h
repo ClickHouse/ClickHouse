@@ -45,7 +45,6 @@ private:
     Arena partition_keys_arena;
 
     SinkPtr getSinkForPartitionKey(StringRef partition_key);
-
 };
 
 }

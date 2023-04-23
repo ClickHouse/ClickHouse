@@ -8,12 +8,19 @@
 #include <pcg-random/pcg_random.hpp>
 #include <Common/randomSeed.h>
 #include <Common/InterruptListener.h>
+#include <Common/CurrentMetrics.h>
 
 #include <Core/Types.h>
 #include "Stats.h"
 
 using Ports = std::vector<UInt16>;
 using Strings = std::vector<std::string>;
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+}
 
 class Runner
 {
@@ -27,7 +34,7 @@ public:
         bool continue_on_error_,
         size_t max_iterations_)
         : concurrency(concurrency_)
-        , pool(concurrency)
+        , pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
         , hosts_strings(hosts_strings_)
         , generator(getGenerator(generator_name))
         , max_time(max_time_)
