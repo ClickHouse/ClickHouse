@@ -7,6 +7,7 @@
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

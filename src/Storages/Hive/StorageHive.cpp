@@ -275,8 +275,8 @@ public:
                 else
                     read_buf = std::move(remote_read_buf);
 
-                auto input_format = FormatFactory::instance().getInputFormat(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
+                auto input_format = FormatFactory::instance().getInput(
+                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file), /* max_parsing_threads */ 1);
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -607,8 +607,14 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     writeString("\n", wb);
 
     ReadBufferFromString buffer(wb.str());
-    auto format = FormatFactory::instance().getInputFormat(
-        "CSV", buffer, partition_key_expr->getSampleBlock(), getContext(), getContext()->getSettingsRef().max_block_size);
+    auto format = FormatFactory::instance().getInput(
+        "CSV",
+        buffer,
+        partition_key_expr->getSampleBlock(),
+        getContext(),
+        getContext()->getSettingsRef().max_block_size,
+        std::nullopt,
+        /* max_parsing_threads */ 1);
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;

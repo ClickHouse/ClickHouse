@@ -33,6 +33,9 @@ public:
 
     void start();
 
+    ClusterPtr getCluster(const String & cluster_name) const;
+    std::unordered_map<String, ClusterPtr> getClusters() const;
+
     ~ClusterDiscovery();
 
 private:
@@ -123,6 +126,9 @@ private:
     /// The `shared_ptr` is used because it's passed to watch callback.
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
     std::shared_ptr<UpdateFlags> clusters_to_update;
+
+    mutable std::mutex mutex;
+    std::unordered_map<String, ClusterPtr> cluster_impls;
 
     ThreadFromGlobalPool main_thread;
 
