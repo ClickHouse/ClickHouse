@@ -71,8 +71,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+
 namespace impl
 {
+    constexpr auto EMPTY_HASH{0xe28dbde7fe22e41c};
+
     struct SipHashKey
     {
         UInt64 key0 = 0;
@@ -1196,13 +1199,9 @@ private:
     {
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
-            if (column->isNullAt(i))
-            {
-                vec_to[i] = static_cast<ToType>(0xe28dbde7fe22e41c);
-                continue;
-            }
-            StringRef bytes = column->getDataAt(i);
-            const ToType h = apply(key, bytes.data, bytes.size);
+            const ToType h = column->isNullAt(i) ? static_cast<ToType>(impl::EMPTY_HASH) :
+                apply(key, column->getDataAt(i).data, column->getDataAt(i).size);
+
             if constexpr (first)
                 vec_to[i] = h;
             else
@@ -1440,7 +1439,7 @@ public:
         if (arguments.size() <= first_data_argument)
         {
             /// Return a fixed random-looking magic number when input is empty
-            vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
+            vec_to.assign(input_rows_count, static_cast<ToType>(impl::EMPTY_HASH));
         }
 
         KeyType key{};
