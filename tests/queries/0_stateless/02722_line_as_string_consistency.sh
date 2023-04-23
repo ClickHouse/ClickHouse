@@ -13,6 +13,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # regardless whether the parallel parsing enabled or not,
 # and this test checks that.
 
-for _ in {1..10000}; do echo -ne 'Hello\n\r'; done | $CLICKHOUSE_LOCAL --min_chunk_bytes_for_parallel_parsing 1 --input_format_parallel_parsing 0 --query "SELECT hex(*), count() FROM table GROUP BY ALL ORDER BY count() DESC" --input-format LineAsString
+for _ in {1..10000}; do echo -ne 'Hello\n\r'; done | $CLICKHOUSE_LOCAL --min_chunk_bytes_for_parallel_parsing 1 --input_format_parallel_parsing 0 --query "SELECT hex(*), count() FROM table GROUP BY ALL ORDER BY 2 DESC, 1" --input-format LineAsString
 echo '---'
-for _ in {1..10000}; do echo -ne 'Hello\n\r'; done | $CLICKHOUSE_LOCAL --min_chunk_bytes_for_parallel_parsing 1 --input_format_parallel_parsing 1 --query "SELECT hex(*), count() FROM table GROUP BY ALL ORDER BY count() DESC" --input-format LineAsString
+for _ in {1..10000}; do echo -ne 'Hello\n\r'; done | $CLICKHOUSE_LOCAL --min_chunk_bytes_for_parallel_parsing 1 --input_format_parallel_parsing 1 --query "SELECT hex(*), count() FROM table GROUP BY ALL ORDER BY 2 DESC, 1" --input-format LineAsString
