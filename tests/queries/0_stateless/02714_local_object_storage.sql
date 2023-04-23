@@ -24,3 +24,5 @@ SETTINGS disk = disk(
 
 INSERT INTO test SELECT 1, 'test';
 SELECT * FROM test;
+
+DROP TABLE test SYNC;
