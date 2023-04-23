@@ -197,6 +197,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     auto function_base = function->build(arguments);
     return addFunctionImpl(
+        function,
         function_base,
         std::move(children),
         std::move(arguments),
@@ -213,6 +214,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     auto [arguments, all_const] = getFunctionArguments(children);
 
     return addFunctionImpl(
+        {},
         function.getFunction(),
         std::move(children),
         std::move(arguments),
@@ -229,6 +231,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     auto [arguments, all_const] = getFunctionArguments(children);
 
     return addFunctionImpl(
+        {},
         function_base,
         std::move(children),
         std::move(arguments),
@@ -254,6 +257,7 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
+    const FunctionOverloadResolverPtr & function,
     const FunctionBasePtr & function_base,
     NodeRawConstPtrs children,
     ColumnsWithTypeAndName arguments,
@@ -270,6 +274,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     node.function_base = function_base;
     node.result_type = result_type;
     node.function = node.function_base->prepare(arguments);
+    node.function->setResolver(function); /// It's needed for spark compatibility.
     node.is_deterministic = node.function_base->isDeterministic();
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
@@ -2477,6 +2482,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                 auto function_base = function_overload_resolver ? function_overload_resolver->build(arguments) : node->function_base;
 
                 result_node = &result_dag->addFunctionImpl(
+                    function_overload_resolver,
                     function_base,
                     std::move(function_children),
                     std::move(arguments),
