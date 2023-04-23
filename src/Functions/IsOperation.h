@@ -5,8 +5,9 @@ namespace DB
 
 /// These classes should be present in DB namespace (cannot place them into namelesspace)
 template <typename> struct AbsImpl;
-template <typename> struct NegateImpl;
 template <typename> struct BitCountImpl;
+template <typename> struct NegateImpl;
+template <typename> struct SignImpl;
 template <typename, typename> struct PlusImpl;
 template <typename, typename> struct MinusImpl;
 template <typename, typename> struct MultiplyImpl;
@@ -22,9 +23,6 @@ template <typename, typename> struct NotEqualsOp;
 template <typename, typename> struct LessOrEqualsOp;
 template <typename, typename> struct GreaterOrEqualsOp;
 template <typename, typename> struct BitHammingDistanceImpl;
-
-template <typename>
-struct SignImpl;
 
 template <template <typename, typename> typename Op1, template <typename, typename> typename Op2>
 struct IsSameOperation
