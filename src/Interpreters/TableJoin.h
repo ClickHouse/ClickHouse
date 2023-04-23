@@ -19,7 +19,6 @@
 #include <utility>
 #include <memory>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

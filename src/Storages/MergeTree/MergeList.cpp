@@ -11,24 +11,6 @@ namespace DB
 {
 
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group)
-{
-    chassert(thread_group);
-
-    /// might be nullptr
-    prev_thread_group = CurrentThread::getGroup();
-
-    CurrentThread::detachFromGroupIfNotDetached();
-    CurrentThread::attachToGroup(thread_group);
-}
-
-ThreadGroupSwitcher::~ThreadGroupSwitcher()
-{
-    CurrentThread::detachFromGroupIfNotDetached();
-    if (prev_thread_group)
-        CurrentThread::attachToGroup(prev_thread_group);
-}
-
 MergeListElement::MergeListElement(
     const StorageID & table_id_,
     FutureMergedMutatedPartPtr future_part,
@@ -59,7 +41,7 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    thread_group = ThreadGroupStatus::createForBackgroundProcess(context);
+    thread_group = ThreadGroup::createForBackgroundProcess(context);
 }
 
 MergeInfo MergeListElement::getInfo() const
