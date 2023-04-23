@@ -132,9 +132,9 @@ public:
         if (it == cache.end())
             return;
         size_t sz = weight_function(*it->second);
+        Base::user_quotas->decreaseActual(it->first.user_name, sz);
         cache.erase(it);
         size_in_bytes -= sz;
-        Base::user_quotas->decreaseActual(it->first.user_name, sz);
     }
 
     MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
