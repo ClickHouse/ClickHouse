@@ -1797,6 +1797,26 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
         node->flushAllData();
 }
 
+void StorageDistributed::flushClusterNodesAllSettings(ContextPtr local_context)
+{
+    /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
+    auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+
+    std::vector<std::shared_ptr<DistributedAsyncInsertDirectoryQueue>> directory_monitors;
+
+    {
+        std::lock_guard lock(cluster_nodes_mutex);
+
+        directory_monitors.reserve(cluster_nodes_data.size());
+        for (auto & node : cluster_nodes_data)
+            directory_monitors.push_back(node.second.directory_monitor);
+    }
+
+    /// TODO: Maybe it should be executed in parallel
+    for (auto & node : directory_monitors)
+        node->flushAllSettings(local_context);
+}
+
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     assert(relative_data_path != new_path_to_table_data);

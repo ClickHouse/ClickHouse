@@ -528,6 +528,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_DISTRIBUTED:
             flushDistributed(query);
             break;
+        case Type::FLUSH_SETTINGS_DISTRIBUTED:
+            flushDistributedSettings(query);
+            break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
             break;
@@ -967,6 +970,16 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
+void InterpreterSystemQuery::flushDistributedSettings(ASTSystemQuery &)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_FLUSH_SETTINGS_DISTRIBUTED, table_id);
+
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
+        storage_distributed->flushClusterNodesAllSettings(getContext());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
+}
+
 [[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
@@ -1149,6 +1162,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_DISTRIBUTED:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::FLUSH_SETTINGS_DISTRIBUTED:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_SETTINGS_DISTRIBUTED, query.getDatabase(), query.getTable());
             break;
         }
         case Type::FLUSH_LOGS:

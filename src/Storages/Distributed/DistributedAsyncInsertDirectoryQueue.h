@@ -63,6 +63,7 @@ public:
     void updatePath(const std::string & new_relative_path);
 
     void flushAllData();
+    void flushAllSettings(const ContextPtr & context_);
 
     void shutdownAndDropAllData();
 
@@ -99,8 +100,8 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
-    void processFiles();
-    void processFile(const std::string & file_path);
+    bool processFiles(const bool & is_flush_settings, ContextPtr context);
+    void processFile(const std::string & file_path, const bool & is_flush_settings, ContextPtr context);
     void processFilesWithBatching();
 
     void markAsBroken(const std::string & file_path);

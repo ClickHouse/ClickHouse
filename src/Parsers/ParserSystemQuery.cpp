@@ -296,6 +296,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         case Type::FLUSH_DISTRIBUTED:
+        case Type::FLUSH_SETTINGS_DISTRIBUTED:
         case Type::RESTORE_REPLICA:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
