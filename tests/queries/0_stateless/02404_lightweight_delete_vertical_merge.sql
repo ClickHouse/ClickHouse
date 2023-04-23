@@ -26,7 +26,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -48,7 +48,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -66,7 +66,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -85,7 +85,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -102,7 +102,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -121,7 +121,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -138,7 +138,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -157,7 +157,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 
@@ -176,7 +176,7 @@ ORDER BY name;
 
 SELECT name, column, type, rows
 FROM system.parts_columns
-WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND active
+WHERE (database = currentDatabase()) AND (table = 'lwd_test') AND column != '_block_number' AND active
 ORDER BY name, column;
 
 

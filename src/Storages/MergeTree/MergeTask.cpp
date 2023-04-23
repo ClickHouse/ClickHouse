@@ -249,12 +249,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         }
     }
 
-    global_ctx->storage_columns.emplace_back(BlockNumberColumn);
-    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
-
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
+
+    if (ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary && !ctx->need_remove_expired_values)
+        global_ctx->storage_columns.emplace_back(BlockNumberColumn);
+    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
     {
@@ -879,7 +880,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
-    global_ctx->merging_column_names.emplace_back(BlockNumberColumn.name);
+    if (!ctx->need_remove_expired_values)
+        global_ctx->merging_column_names.emplace_back(BlockNumberColumn.name);
 
     for (const auto & part : global_ctx->future_part->parts)
     {
@@ -985,6 +987,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
+        for (const auto & col : global_ctx->merging_column_names)
+        {
+            if (col != BlockNumberColumn.name)
+                global_ctx->deduplicate_by_columns.emplace_back(col);
+        }
+
         if (DistinctSortedTransform::isApplicable(header, sort_description, global_ctx->deduplicate_by_columns))
             res_pipe.addTransform(std::make_shared<DistinctSortedTransform>(
                 res_pipe.getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));

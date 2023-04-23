@@ -12,7 +12,7 @@ OPTIMIZE TABLE t_sparse_detach FINAL;
 SELECT count() FROM t_sparse_detach WHERE s != '';
 
 SELECT column, serialization_kind FROM system.parts_columns
-WHERE table = 't_sparse_detach' AND database = currentDatabase() AND active
+WHERE table = 't_sparse_detach' AND database = currentDatabase() AND column != '_block_number' AND active
 ORDER BY column;
 
 DETACH TABLE t_sparse_detach;
@@ -21,7 +21,7 @@ ATTACH TABLE t_sparse_detach;
 SELECT count() FROM t_sparse_detach WHERE s != '';
 
 SELECT column, serialization_kind FROM system.parts_columns
-WHERE table = 't_sparse_detach' AND database = currentDatabase() AND active
+WHERE table = 't_sparse_detach' AND database = currentDatabase() AND column != '_block_number' AND active
 ORDER BY column;
 
 TRUNCATE TABLE t_sparse_detach;
@@ -38,7 +38,7 @@ OPTIMIZE TABLE t_sparse_detach FINAL;
 SELECT count() FROM t_sparse_detach WHERE s != '';
 
 SELECT column, serialization_kind FROM system.parts_columns
-WHERE table = 't_sparse_detach' AND database = currentDatabase() AND active
+WHERE table = 't_sparse_detach' AND database = currentDatabase() AND column != '_block_number' AND active
 ORDER BY column;
 
 DETACH TABLE t_sparse_detach;
@@ -47,7 +47,7 @@ ATTACH TABLE t_sparse_detach;
 SELECT count() FROM t_sparse_detach WHERE s != '';
 
 SELECT column, serialization_kind FROM system.parts_columns
-WHERE table = 't_sparse_detach' AND database = currentDatabase() AND active
+WHERE table = 't_sparse_detach' AND database = currentDatabase() AND column != '_block_number' AND active
 ORDER BY column;
 
 DROP TABLE t_sparse_detach;
