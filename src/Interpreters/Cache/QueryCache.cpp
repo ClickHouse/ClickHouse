@@ -407,14 +407,14 @@ void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & c
 {
     std::lock_guard lock(mutex);
 
-    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size", 1_GiB);
+    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", 1_GiB);
     cache.setMaxSize(max_size_in_bytes);
 
     size_t max_entries = config.getUInt64("query_cache.max_entries", 1024);
     cache.setMaxCount(max_entries);
 
-    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size", 1_MiB);
-    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows", 30'000'000);
+    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", 1_MiB);
+    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", 30'000'000);
 }
 
 }
