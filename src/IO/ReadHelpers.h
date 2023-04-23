@@ -1122,7 +1122,7 @@ inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
     readPODBinary(x, buf);
     if constexpr (std::endian::native != endian)
-        std::byteswap(x);
+        x = std::byteswap(x);
 }
 
 template <std::endian endian, typename T>
