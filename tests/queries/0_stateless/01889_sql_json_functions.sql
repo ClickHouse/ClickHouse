@@ -25,6 +25,10 @@ SELECT JSON_VALUE('{"hello":1}', '$[hello]');
 SELECT JSON_VALUE('{"hello":1}', '$["hello"]');
 SELECT JSON_VALUE('{"hello":1}', '$[\'hello\']');
 SELECT JSON_VALUE('{"hello 1":1}', '$["hello 1"]');
+SELECT JSON_VALUE('{"1key":1}', '$..1key'); -- { serverError 36 }
+SELECT JSON_VALUE('{"1key":1}', '$1key'); -- { serverError 36 }
+SELECT JSON_VALUE('{"1key":1}', '$key'); -- { serverError 36 }
+SELECT JSON_VALUE('{"1key":1}', '$.[key]'); -- { serverError 36 }
 
 SELECT '--JSON_QUERY--';
 SELECT JSON_QUERY('{"hello":1}', '$');
@@ -43,6 +47,10 @@ SELECT JSON_QUERY('{"hello":1}', '$[hello]');
 SELECT JSON_QUERY('{"hello":1}', '$["hello"]');
 SELECT JSON_QUERY('{"hello":1}', '$[\'hello\']');
 SELECT JSON_QUERY('{"hello 1":1}', '$["hello 1"]');
+SELECT JSON_QUERY('{"1key":1}', '$..1key'); -- { serverError 36 }
+SELECT JSON_QUERY('{"1key":1}', '$1key'); -- { serverError 36 }
+SELECT JSON_QUERY('{"1key":1}', '$key'); -- { serverError 36 }
+SELECT JSON_QUERY('{"1key":1}', '$.[key]'); -- { serverError 36 }
 
 SELECT '--JSON_EXISTS--';
 SELECT JSON_EXISTS('{"hello":1}', '$');

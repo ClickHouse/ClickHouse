@@ -22,18 +22,11 @@ bool ParserJSONPathMemberSquareBracketAccess::parseImpl(Pos & pos, ASTPtr & node
     }
     else if (pos->type == TokenType::StringLiteral)
     {
-        try
-        {
-            ReadBufferFromMemory in(pos->begin, pos->size());
-            String name;
-            readQuotedStringWithSQLStyle(name, in);
-            member_name = std::make_shared<ASTIdentifier>(name);
-            ++pos;
-        }
-        catch (const Exception &)
-        {
-            return false;
-        }
+        ReadBufferFromMemory in(pos->begin, pos->size());
+        String name;
+        readQuotedStringWithSQLStyle(name, in);
+        member_name = std::make_shared<ASTIdentifier>(name);
+        ++pos;
     }
     else
     {
