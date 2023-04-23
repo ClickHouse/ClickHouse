@@ -225,7 +225,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             }
             else if (ParserKeyword("ON").ignore(pos, expected))
             {
-                /// OR is operator with lowest priority, so start parsing from it.
                 if (!ParserExpression().parse(pos, table_join->on_expression, expected))
                     return false;
             }

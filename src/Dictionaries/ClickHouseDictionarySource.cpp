@@ -175,7 +175,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     else
     {
         pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
     }
 
     return pipeline;
@@ -198,7 +198,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
         /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
         Block invalidate_sample_block;
         QueryPipeline pipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
         return readInvalidateQuery(std::move(pipeline));
     }
 }

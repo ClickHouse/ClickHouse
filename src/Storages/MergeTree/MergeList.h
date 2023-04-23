@@ -62,20 +62,6 @@ using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
 struct Settings;
 
 
-/**
- * Since merge is executed with multiple threads, this class
- * switches the parent MemoryTracker as part of the thread group to account all the memory used.
- */
-class ThreadGroupSwitcher : private boost::noncopyable
-{
-public:
-    explicit ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group);
-    ~ThreadGroupSwitcher();
-
-private:
-    ThreadGroupStatusPtr prev_thread_group;
-};
-
 struct MergeListElement : boost::noncopyable
 {
     const StorageID table_id;
@@ -113,7 +99,7 @@ struct MergeListElement : boost::noncopyable
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    ThreadGroupStatusPtr thread_group;
+    ThreadGroupPtr thread_group;
 
     MergeListElement(
         const StorageID & table_id_,
