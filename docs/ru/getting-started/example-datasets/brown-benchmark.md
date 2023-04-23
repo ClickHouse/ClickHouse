@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/brown-benchmark
 sidebar_position: 20
 sidebar_label: Brown University Benchmark
 ---

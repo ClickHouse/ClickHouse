@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/Context.h>
@@ -13,7 +13,6 @@
 #    include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
-#    include <Parsers/MySQL/ASTDropQuery.h>
 #endif
 
 namespace DB
@@ -35,7 +34,7 @@ BlockIO InterpreterExternalDDLQuery::execute()
     const ASTExternalDDLQuery & external_ddl_query = query->as<ASTExternalDDLQuery &>();
 
     if (getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute EXTERNAL DDL FROM.");
+        throw Exception("Cannot parse and execute EXTERNAL DDL FROM.", ErrorCodes::SYNTAX_ERROR);
 
     if (external_ddl_query.from->name == "MySQL")
     {
@@ -43,9 +42,9 @@ BlockIO InterpreterExternalDDLQuery::execute()
         const ASTs & arguments = external_ddl_query.from->arguments->children;
 
         if (arguments.size() != 2 || !arguments[0]->as<ASTIdentifier>() || !arguments[1]->as<ASTIdentifier>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MySQL External require two identifier arguments.");
+            throw Exception("MySQL External require two identifier arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-        if (external_ddl_query.external_ddl->as<MySQLParser::ASTDropQuery>())
+        if (external_ddl_query.external_ddl->as<ASTDropQuery>())
             return MySQLInterpreter::InterpreterMySQLDropQuery(
                 external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
                 getIdentifierName(arguments[1])).execute();

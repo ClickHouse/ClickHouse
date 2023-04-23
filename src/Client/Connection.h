@@ -4,7 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include "config.h"
+#include <Common/config.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -93,8 +93,6 @@ public:
 
     Protocol::Compression getCompression() const { return compression; }
 
-    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return password_complexity_rules; }
-
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -110,7 +108,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -167,10 +165,7 @@ private:
     /// For inter-server authorization
     String cluster;
     String cluster_secret;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    std::optional<UInt64> nonce;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
@@ -211,8 +206,6 @@ private:
       * Only traffic for transferring blocks is accounted. Other packets don't.
       */
     ThrottlerPtr throttler;
-
-    std::vector<std::pair<String, String>> password_complexity_rules;
 
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
@@ -268,8 +261,7 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    ParallelReadRequest receiveParallelReadRequest() const;
-    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
+    PartitionReadRequest receivePartitionReadRequest() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/COW.h>
 
@@ -44,8 +43,6 @@ void fillMissingColumns(
     Columns & res_columns,
     size_t num_rows,
     const NamesAndTypesList & requested_columns,
-    const NamesAndTypesList & available_columns,
-    const NameSet & partially_read_columns,
     StorageMetadataPtr metadata_snapshot);
 
 }

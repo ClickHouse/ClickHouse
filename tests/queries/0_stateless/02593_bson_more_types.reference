@@ -1,5 +1,0 @@
-{'a\\u0000b':42}
-c1	Nullable(Int32)					
-c2	Nullable(Int32)					
-c3	Map(String, Nullable(Int32))					
-a	b	{42:42}

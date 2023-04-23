@@ -1,9 +1,9 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Common/checkStackSize.h>
+#include <Common/getRandomASCIIString.h>
 #include <ranges>
 #include <Common/logger_useful.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -134,98 +134,10 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
-        /// The client for an object storage may do retries internally
-        /// and there could be a situation when a query succeeded, but the response is lost
-        /// due to network error or similar. And when it will retry an operation it may receive
-        /// a 404 HTTP code. We don't want to threat this code as a real error for deletion process
-        /// (e.g. throwing some exceptions) and thus we just use method `removeObjectsIfExists`
         if (!delete_metadata_only && !objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
-
-struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperation
-{
-    RemoveBatchRequest remove_paths;
-    bool keep_all_batch_data;
-    NameSet file_names_remove_metadata_only;
-    StoredObjects objects_to_remove;
-    bool remove_from_cache = false;
-
-    RemoveManyObjectStorageOperation(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        const RemoveBatchRequest & remove_paths_,
-        bool keep_all_batch_data_,
-        const NameSet & file_names_remove_metadata_only_)
-        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
-        , remove_paths(remove_paths_)
-        , keep_all_batch_data(keep_all_batch_data_)
-        , file_names_remove_metadata_only(file_names_remove_metadata_only_)
-    {}
-
-    std::string getInfoForLog() const override
-    {
-        return fmt::format("RemoveManyObjectStorageOperation (paths size: {}, keep all batch {}, files to keep {})", remove_paths.size(), keep_all_batch_data, fmt::join(file_names_remove_metadata_only, ", "));
-    }
-
-    void execute(MetadataTransactionPtr tx) override
-    {
-        for (const auto & [path, if_exists] : remove_paths)
-        {
-
-            if (!metadata_storage.exists(path))
-            {
-                if (if_exists)
-                    continue;
-
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
-            }
-
-            if (!metadata_storage.isFile(path))
-                throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
-
-            try
-            {
-                uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
-                auto objects = metadata_storage.getStorageObjects(path);
-
-                tx->unlinkMetadata(path);
-
-                /// File is really redundant
-                if (hardlink_count == 0 && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                    objects_to_remove.insert(objects_to_remove.end(), objects.begin(), objects.end());
-            }
-            catch (const Exception & e)
-            {
-                /// If it's impossible to read meta - just remove it from FS.
-                if (e.code() == ErrorCodes::UNKNOWN_FORMAT
-                    || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
-                    || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
-                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
-                {
-                    tx->unlinkFile(path);
-                }
-                else
-                    throw;
-            }
-        }
-    }
-
-    void undo() override
-    {
-
-    }
-
-    void finalize() override
-    {
-        /// Read comment inside RemoveObjectStorageOperation class
-        /// TL;DR Don't pay any attention to 404 status code
-        if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
-    }
-};
-
 
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
@@ -302,9 +214,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void execute(MetadataTransactionPtr tx) override
     {
-        /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
-        if (metadata_storage.exists(path))
-            removeMetadataRecursive(tx, path);
+        removeMetadataRecursive(tx, path);
     }
 
     void undo() override
@@ -324,9 +234,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                     remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
                 }
             }
-            /// Read comment inside RemoveObjectStorageOperation class
-            /// TL;DR Don't pay any attention to 404 status code
-            object_storage.removeObjectsIfExist(remove_from_remote);
+            object_storage.removeObjects(remove_from_remote);
         }
     }
 };
@@ -371,10 +279,8 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     void finalize() override
     {
-        /// Read comment inside RemoveObjectStorageOperation class
-        /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
 
@@ -508,7 +414,7 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
         {
             if (metadata_storage.exists(to_path))
-                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", to_path);
+                throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
 
             if (!metadata_storage.exists(from_path))
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);
@@ -581,8 +487,14 @@ void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
 void DiskObjectStorageTransaction::removeSharedFiles(
     const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    auto operation = std::make_unique<RemoveManyObjectStorageOperation>(object_storage, metadata_storage, files, keep_all_batch_data, file_names_remove_metadata_only);
-    operations_to_execute.emplace_back(std::move(operation));
+    for (const auto & file : files)
+    {
+        bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+        if (file.if_exists)
+            removeSharedFileIfExists(file.path, keep_file);
+        else
+            removeSharedFile(file.path, keep_file);
+    }
 }
 
 namespace
@@ -620,7 +532,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 
-    if (autocommit)
+    if  (autocommit)
     {
         create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
         {
@@ -667,44 +579,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         std::move(create_metadata_callback),
         buf_size,
         settings);
-}
-
-
-void DiskObjectStorageTransaction::writeFileUsingCustomWriteObject(
-    const String & path,
-    WriteMode mode,
-    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-        custom_write_object_function)
-{
-    /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
-    auto blob_name = object_storage.generateBlobNameForPath(path);
-    std::optional<ObjectAttributes> object_attributes;
-
-    if (metadata_helper)
-    {
-        auto revision = metadata_helper->revision_counter + 1;
-        metadata_helper->revision_counter++;
-        object_attributes = {
-            {"path", path}
-        };
-        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
-    }
-
-    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
-    auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
-
-    operations_to_execute.emplace_back(std::move(write_operation));
-
-    /// We always use mode Rewrite because we simulate append using metadata and different files
-    size_t object_size = std::move(custom_write_object_function)(object, WriteMode::Rewrite, object_attributes);
-
-    /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
-    if (mode == WriteMode::Rewrite)
-        metadata_transaction->createMetadataFile(path, blob_name, object_size);
-    else
-        metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
-
-    metadata_transaction->commit();
 }
 
 
@@ -767,11 +641,9 @@ void DiskObjectStorageTransaction::commit()
         {
             operations_to_execute[i]->execute(metadata_transaction);
         }
-        catch (...)
+        catch (Exception & ex)
         {
-            tryLogCurrentException(
-                &Poco::Logger::get("DiskObjectStorageTransaction"),
-                fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
+            ex.addMessage(fmt::format("While executing operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
             {
@@ -779,12 +651,9 @@ void DiskObjectStorageTransaction::commit()
                 {
                     operations_to_execute[j]->undo();
                 }
-                catch (...)
+                catch (Exception & rollback_ex)
                 {
-                    tryLogCurrentException(
-                        &Poco::Logger::get("DiskObjectStorageTransaction"),
-                        fmt::format("An error occurred while undoing transaction's operation #{}", i));
-
+                    rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
                     throw;
                 }
             }
@@ -806,12 +675,6 @@ void DiskObjectStorageTransaction::commit()
 
     for (const auto & operation : operations_to_execute)
         operation->finalize();
-}
-
-void DiskObjectStorageTransaction::undo()
-{
-    for (const auto & operation : operations_to_execute | std::views::reverse)
-        operation->undo();
 }
 
 }

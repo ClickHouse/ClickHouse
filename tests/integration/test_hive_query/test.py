@@ -152,8 +152,6 @@ def test_orc_groupby(started_cluster):
     node = started_cluster.instances["h0_0_0"]
     result = node.query(
         """
-    DROP TABLE IF EXISTS default.demo_orc;
-    CREATE TABLE default.demo_orc (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo_orc') PARTITION BY(day);
     SELECT day, count(*) FROM default.demo_orc group by day order by day
             """
     )
@@ -337,8 +335,6 @@ def test_text_count(started_cluster):
     node = started_cluster.instances["h0_0_0"]
     result = node.query(
         """
-    DROP TABLE IF EXISTS default.demo_orc;
-    CREATE TABLE default.demo_orc (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo_orc') PARTITION BY(day);
     SELECT day, count(*) FROM default.demo_orc group by day order by day SETTINGS format_csv_delimiter = '\x01'
             """
     )

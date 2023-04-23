@@ -20,7 +20,7 @@ public:
         size_t max_block_size,
         size_t max_block_bytes)
         : IMergingTransform(
-            num_inputs, header, {}, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
+            num_inputs, header, {}, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
             header,
             num_inputs,
             params,

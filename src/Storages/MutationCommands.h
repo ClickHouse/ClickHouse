@@ -37,7 +37,6 @@ struct MutationCommand
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
-        ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
     };
 
     Type type = EMPTY;
@@ -73,12 +72,10 @@ struct MutationCommand
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    std::shared_ptr<ASTExpressionList> ast() const;
 
-    void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
+    void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
-    std::string toString() const;
-    bool hasNonEmptyMutationCommands() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

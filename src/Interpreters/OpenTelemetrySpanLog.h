@@ -1,18 +1,30 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 
 namespace DB
 {
 
-struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
+struct OpenTelemetrySpan
+{
+    UUID trace_id;
+    UInt64 span_id;
+    UInt64 parent_span_id;
+    std::string operation_name;
+    UInt64 start_time_us;
+    UInt64 finish_time_us;
+    Map attributes;
+    // I don't understand how Links work, namely, which direction should they
+    // point to, and how they are related with parent_span_id, so no Links for now.
+};
+
+struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
 {
     OpenTelemetrySpanLogElement() = default;
-    OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
-        : OpenTelemetry::Span(span) {}
+    explicit OpenTelemetrySpanLogElement(const OpenTelemetrySpan & span)
+        : OpenTelemetrySpan(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
     static NamesAndTypesList getNamesAndTypes();
@@ -21,12 +33,23 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
     static const char * getCustomColumnList() { return nullptr; }
 };
 
-// OpenTelemetry standardizes some Log data as well, so it's not just
+// OpenTelemetry standartizes some Log data as well, so it's not just
 // OpenTelemetryLog to avoid confusion.
 class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
 {
 public:
     using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
+};
+
+struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
+{
+    explicit OpenTelemetrySpanHolder(const std::string & _operation_name);
+    void addAttribute(const std::string& name, UInt64 value);
+    void addAttribute(const std::string& name, const std::string& value);
+    void addAttribute(const Exception & e);
+    void addAttribute(std::exception_ptr e);
+
+    ~OpenTelemetrySpanHolder();
 };
 
 }

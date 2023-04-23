@@ -10,15 +10,29 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(bool pre_distinct)
+static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & distinct_names)
 {
-    const bool preserves_number_of_streams = pre_distinct;
+    if (distinct_names.empty())
+        return false;
+
+    /// Now we need to check that distinct_names is a subset of columns.
+    std::unordered_set<std::string_view> columns_set(columns.begin(), columns.end());
+    for (const auto & name : distinct_names)
+        if (!columns_set.contains(name))
+            return false;
+
+    return true;
+}
+
+static ITransformingStep::Traits getTraits(bool pre_distinct, bool already_distinct_columns)
+{
     return ITransformingStep::Traits
     {
         {
-            .returns_single_stream = !pre_distinct,
-            .preserves_number_of_streams = preserves_number_of_streams,
-            .preserves_sorting = preserves_number_of_streams,
+            .preserves_distinct_columns = already_distinct_columns, /// Will be calculated separately otherwise
+            .returns_single_stream = !pre_distinct && !already_distinct_columns,
+            .preserves_number_of_streams = pre_distinct || already_distinct_columns,
+            .preserves_sorting = true, /// Sorting is preserved indeed because of implementation.
         },
         {
             .preserves_number_of_rows = false,
@@ -48,23 +62,34 @@ DistinctStep::DistinctStep(
     : ITransformingStep(
             input_stream_,
             input_stream_.header,
-            getTraits(pre_distinct_))
+            getTraits(pre_distinct_, checkColumnsAlreadyDistinct(columns_, input_stream_.distinct_columns)))
     , set_size_limits(set_size_limits_)
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
     , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
+    if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
+        && (!pre_distinct /// Main distinct
+            || input_stream_.has_single_port)) /// pre_distinct for single port works as usual one
+    {
+        /// Build distinct set.
+        for (const auto & name : columns)
+            output_stream->distinct_columns.insert(name);
+    }
 }
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    const auto & input_stream = input_streams.back();
+    if (checkColumnsAlreadyDistinct(columns, input_stream.distinct_columns))
+        return;
+
     if (!pre_distinct)
         pipeline.resize(1);
 
     if (optimize_distinct_in_order)
     {
-        const auto & input_stream = input_streams.back();
         const SortDescription distinct_sort_desc = getSortDescription(input_stream.sort_description, columns);
         if (!distinct_sort_desc.empty())
         {
@@ -78,17 +103,12 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                             return nullptr;
 
                         return std::make_shared<DistinctSortedChunkTransform>(
-                            header,
-                            set_size_limits,
-                            limit_hint,
-                            distinct_sort_desc,
-                            columns,
-                            input_stream.sort_scope == DataStream::SortScope::Stream);
+                            header, set_size_limits, limit_hint, distinct_sort_desc, columns, false);
                     });
                 return;
             }
             /// final distinct for sorted stream (sorting inside and among chunks)
-            if (input_stream.sort_scope == DataStream::SortScope::Global)
+            if (input_stream.sort_mode == DataStream::SortMode::Stream)
             {
                 assert(input_stream.has_single_port);
 
@@ -172,7 +192,16 @@ void DistinctStep::updateOutputStream()
     output_stream = createOutputStream(
         input_streams.front(),
         input_streams.front().header,
-        getTraits(pre_distinct).data_stream_traits);
+        getTraits(pre_distinct, checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns)).data_stream_traits);
+
+    if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
+        && (!pre_distinct /// Main distinct
+            || input_streams.front().has_single_port)) /// pre_distinct for single port works as usual one
+    {
+        /// Build distinct set.
+        for (const auto & name : columns)
+            output_stream->distinct_columns.insert(name);
+    }
 }
 
 }

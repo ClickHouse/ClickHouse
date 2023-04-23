@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/optimizing-performance/sampling-query-profiler
 sidebar_position: 54
 sidebar_label: Query Profiling
 ---
@@ -30,7 +29,7 @@ To analyze the `trace_log` system table:
 
 -   Use the `addressToLine`, `addressToSymbol` and `demangle` [introspection functions](../../sql-reference/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
 
-If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui.md#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
+If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
 
 ## Example {#example}
 

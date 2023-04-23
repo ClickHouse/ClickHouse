@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/combinators
 sidebar_position: 37
 sidebar_label: Combinators
 ---
@@ -285,3 +284,4 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
+

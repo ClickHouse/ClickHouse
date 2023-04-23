@@ -79,7 +79,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ParserExpression expr_parser;
 
-    while (Block current = executor.readBlock())
+    while (Block current = executor.read())
     {
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
@@ -155,8 +155,9 @@ ColumnsDescription getStructureOfRemoteTable(
         }
     }
 
-    throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
-        "All attempts to get table structure failed. Log: \n\n{}\n", fail_messages);
+    throw NetException(
+        "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
+        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
 }
 
 ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
@@ -187,7 +188,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
         executor.setMainTable(remote_table_id);
 
         ColumnsDescription res;
-        while (auto block = executor.readBlock())
+        while (auto block = executor.read())
         {
             const auto & name_col = *block.getByName("name").column;
             const auto & type_col = *block.getByName("type").column;
@@ -195,11 +196,11 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
             size_t size = name_col.size();
             for (size_t i = 0; i < size; ++i)
             {
-                auto name = name_col[i].get<const String &>();
-                auto type_name = type_col[i].get<const String &>();
+                auto name = get<const String &>(name_col[i]);
+                auto type_name = get<const String &>(type_col[i]);
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && storage_column->type->hasDynamicSubcolumns())
+                if (storage_column && isObject(storage_column->type))
                     res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }
@@ -219,7 +220,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     }
 
     if (columns.empty())
-        throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE, "All attempts to get table structure failed");
+        throw NetException("All attempts to get table structure failed", ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
 
     return columns;
 }

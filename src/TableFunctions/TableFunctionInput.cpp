@@ -26,7 +26,7 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
     const auto * function = ast_function->as<ASTFunction>();
 
     if (!function->arguments)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments", getName());
+        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
 
     auto args = function->arguments->children;
 
@@ -37,8 +37,8 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
     }
 
     if (args.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' requires exactly 1 argument: structure", getName());
+        throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "structure");
 }

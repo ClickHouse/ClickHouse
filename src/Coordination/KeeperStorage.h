@@ -47,7 +47,7 @@ public:
 
         const auto & getData() const noexcept { return data; }
 
-        void addChild(StringRef child_path, bool update_size = true);
+        void addChild(StringRef child_path);
 
         void removeChild(StringRef child_path);
 
@@ -63,8 +63,6 @@ public:
         // copy only necessary information for preprocessing and digest calculation
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
-
-        void recalculateSize();
 
     private:
         String data;
@@ -427,8 +425,6 @@ public:
 
     void finalize();
 
-    bool isFinalized() const;
-
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
@@ -468,7 +464,6 @@ public:
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 
-    void recalculateStats();
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);

@@ -3,13 +3,7 @@
 #include <chrono>
 #include <mutex>
 #include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric ThreadsInOvercommitTracker;
-}
 
 namespace ProfileEvents
 {
@@ -37,8 +31,6 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
 
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return OvercommitResult::NONE;
-
-    CurrentMetrics::Increment metric_increment(CurrentMetrics::ThreadsInOvercommitTracker);
     // NOTE: Do not change the order of locks
     //
     // global mutex must be acquired before overcommit_m, because
@@ -178,8 +170,7 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
 
 GlobalOvercommitTracker::GlobalOvercommitTracker(DB::ProcessList * process_list_)
     : OvercommitTracker(process_list_)
-{
-}
+{}
 
 void GlobalOvercommitTracker::pickQueryToExcludeImpl()
 {
@@ -189,16 +180,16 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
     for (auto const & query : process_list->processes)
     {
-        if (query->isKilled())
+        if (query.isKilled())
             continue;
 
         Int64 user_soft_limit = 0;
-        if (auto const * user_process_list = query->getUserProcessList())
+        if (auto const * user_process_list = query.getUserProcessList())
             user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
         if (user_soft_limit == 0)
             continue;
 
-        auto * memory_tracker = query->getMemoryTracker();
+        auto * memory_tracker = query.getMemoryTracker();
         if (!memory_tracker)
             continue;
         auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);

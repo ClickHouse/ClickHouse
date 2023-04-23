@@ -22,9 +22,9 @@ std::string extractTimeZoneNameFromColumn(const IColumn & column)
     const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(&column);
 
     if (!time_zone_column)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of time zone argument of function, must be constant string",
-                        column.getName());
+        throw Exception("Illegal column " + column.getName()
+            + " of time zone argument of function, must be constant string",
+            ErrorCodes::ILLEGAL_COLUMN);
 
     return time_zone_column->getValue<String>();
 }
@@ -59,7 +59,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
     {
         std::string time_zone = extractTimeZoneNameFromColumn(*arguments[time_zone_arg_num].column);
         if (time_zone.empty())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
+            throw Exception("Provided time zone must be non-empty and be a valid time zone", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return DateLUT::instance(time_zone);
     }
     else

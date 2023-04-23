@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/database-engines/sqlite
 sidebar_position: 32
 sidebar_label: SQLite
 ---

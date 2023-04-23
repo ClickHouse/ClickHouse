@@ -5,7 +5,6 @@ select ucase('foo');
 select LOWER('Foo');
 select UPPER('Foo');
 select REPLACE('bar', 'r', 'z');
-select REGEXP_REPLACE('bar', '.', 'z');
 select Locate('foo', 'o');
 select SUBSTRING('foo', 1, 2);
 select Substr('foo', 2);

@@ -48,9 +48,6 @@ set(gRPC_ABSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
 # We don't want to build C# extensions.
 set(gRPC_BUILD_CSHARP_EXT OFF)
 
-# TODO: Remove this. We generally like to compile with C++23 but grpc isn't ready yet.
-set (CMAKE_CXX_STANDARD 20)
-
 set(_gRPC_CARES_LIBRARIES ch_contrib::c-ares)
 set(gRPC_CARES_PROVIDER "clickhouse" CACHE STRING "" FORCE)
 add_subdirectory("${_gRPC_SOURCE_DIR}" "${_gRPC_BINARY_DIR}")

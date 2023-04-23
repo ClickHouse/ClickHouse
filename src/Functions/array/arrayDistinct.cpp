@@ -48,8 +48,9 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it  has type {}.",
-                getName(), arguments[0]->getName());
+            throw Exception("Argument for function " + getName() + " must be array but it "
+                " has type " + arguments[0]->getName() + ".",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto nested_type = removeNullable(array_type->getNestedType());
 

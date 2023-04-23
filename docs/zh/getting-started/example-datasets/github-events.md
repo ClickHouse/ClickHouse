@@ -1,5 +1,4 @@
 ---
-slug: /zh/getting-started/example-datasets/github-events
 sidebar_position: 11
 sidebar_label: GitHub 事件数据集
 ---

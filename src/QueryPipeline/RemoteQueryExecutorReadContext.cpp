@@ -1,7 +1,6 @@
 #if defined(OS_LINUX)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
-#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Client/IConnections.h>
@@ -44,7 +43,7 @@ struct RemoteQueryExecutorRoutine
         {
             while (true)
             {
-                read_context.packet = connections.receivePacketUnlocked(ReadCallback{read_context, sink});
+                read_context.packet = connections.receivePacketUnlocked(ReadCallback{read_context, sink}, false /* is_draining */);
                 sink = std::move(sink).resume();
             }
         }
@@ -127,12 +126,12 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
     epoll_event events[3];
     events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
-    size_t num_events = epoll.getManyReady(3, events, blocking);
+    int num_events = epoll.getManyReady(3, events, blocking);
 
     bool is_socket_ready = false;
     bool is_pipe_alarmed = false;
 
-    for (size_t i = 0; i < num_events; ++i)
+    for (int i = 0; i < num_events; ++i)
     {
         if (events[i].data.fd == connection_fd)
             is_socket_ready = true;
@@ -147,9 +146,9 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
 
     if (is_timer_alarmed && !is_socket_ready)
     {
-        /// Socket receive timeout. Drain it in case or error, or it may be hide by timeout exception.
+        /// Socket receive timeout. Drain it in case of error, or it may be hide by timeout exception.
         timer.drain();
-        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded");
+        throw NetException("Timeout exceeded", ErrorCodes::SOCKET_TIMEOUT);
     }
 
     return true;
@@ -220,15 +219,9 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 {
     /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
-    {
-        int err = close(pipe_fd[0]);
-        chassert(!err || errno == EINTR);
-    }
+        close(pipe_fd[0]);
     if (pipe_fd[1] != -1)
-    {
-        int err = close(pipe_fd[1]);
-        chassert(!err || errno == EINTR);
-    }
+        close(pipe_fd[1]);
 }
 
 }

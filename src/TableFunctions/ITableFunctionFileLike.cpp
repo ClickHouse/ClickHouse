@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 
 #include <Storages/StorageFile.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -33,23 +34,18 @@ String ITableFunctionFileLike::getFormatFromFirstArgument()
     return FormatFactory::instance().getFormatFromFileName(filename, true);
 }
 
-bool ITableFunctionFileLike::supportsReadingSubsetOfColumns()
-{
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format);
-}
-
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", getName());
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires at least 1 argument", getName());
+        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -66,10 +62,8 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
         return;
 
     if (args.size() != 3 && args.size() != 4)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' requires 1, 2, 3 or 4 arguments: "
-            "filename, format (default auto), structure (default auto) and compression method (default auto)",
-            getName());
+        throw Exception("Table function '" + getName() + "' requires 1, 2, 3 or 4 arguments: filename, format (default auto), structure (default auto) and compression method (default auto)",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     structure = checkAndGetLiteralArgument<String>(args[2], "structure");
 

@@ -18,7 +18,7 @@ namespace mysqlxx
 
 Query::Query(Connection * conn_, const std::string & query_string) : conn(conn_)
 {
-    /// Makes sense if called from the other thread than Connection.
+    /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
 
     query = query_string;
@@ -26,7 +26,7 @@ Query::Query(Connection * conn_, const std::string & query_string) : conn(conn_)
 
 Query::Query(const Query & other) : conn(other.conn)
 {
-    /// Makes sense if called from the other thread than Connection.
+    /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
 
     query = other.query;
@@ -64,7 +64,7 @@ void Query::executeImpl()
         case CR_SERVER_LOST:
             throw ConnectionLost(errorMessage(mysql_driver), err_no);
         default:
-            throw BadQuery(errorMessage(mysql_driver, query), err_no);
+            throw BadQuery(errorMessage(mysql_driver), err_no);
         }
     }
 }

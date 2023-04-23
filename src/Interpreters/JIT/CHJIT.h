@@ -1,12 +1,11 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 
 #include <unordered_map>
 #include <atomic>
-#include <mutex>
 
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>

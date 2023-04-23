@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/text_log
----
 # text_log
 
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
@@ -28,7 +25,6 @@ Columns:
 -   `revision` (UInt32) — ClickHouse revision.
 -   `source_file` (LowCardinality(String)) — Source file from which the logging was done.
 -   `source_line` (UInt64) — Source line from which the logging was done.
--   `message_format_string` (LowCardinality(String)) — A format string that was used to format the message.
 
 **Example**
 
@@ -52,5 +48,6 @@ message:                 Update period 15 seconds
 revision:                54440
 source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void DB::DNSCacheUpdater::start()
 source_line:             45
-message_format_string:   Update period {} seconds
 ```
+
+ [Original article](https://clickhouse.com/docs/en/operations/system-tables/text_log) <!--hide-->

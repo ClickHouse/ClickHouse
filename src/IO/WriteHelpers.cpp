@@ -1,8 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <cinttypes>
-#include <utility>
-#include <Common/formatIPv6.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 namespace DB
@@ -18,6 +16,19 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
         writeHexByteLowercase(src[src_pos], &dst[dst_pos]);
         dst_pos += 2;
     }
+}
+
+void formatUUID(const UInt8 * src16, UInt8 * dst36)
+{
+    formatHex(&src16[0], &dst36[0], 4);
+    dst36[8] = '-';
+    formatHex(&src16[4], &dst36[9], 2);
+    dst36[13] = '-';
+    formatHex(&src16[6], &dst36[14], 2);
+    dst36[18] = '-';
+    formatHex(&src16[8], &dst36[19], 2);
+    dst36[23] = '-';
+    formatHex(&src16[10], &dst36[24], 6);
 }
 
 /** Function used when byte ordering is important when parsing uuid
@@ -36,29 +47,6 @@ void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36)
     formatHex(src16 + 2, &dst36[24], 6);
 }
 
-void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
-{
-    size_t idx = (ip >> 24);
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
-    buf.write('.');
-    idx = (ip >> 16) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
-    buf.write('.');
-    idx = (ip >> 8) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
-    buf.write('.');
-    idx = ip & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
-}
-
-void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
-{
-    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
-    char * paddr = addr;
-
-    formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
-    buf.write(addr, paddr - addr - 1);
-}
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {

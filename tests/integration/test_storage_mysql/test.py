@@ -765,7 +765,7 @@ def test_settings(started_cluster):
 
     rw_timeout = 20123001
     connect_timeout = 20123002
-    node1.query(f"SELECT * FROM mysql(mysql_with_settings, table='test_settings')")
+    node1.query(f"SELECT * FROM mysql(mysql_with_settings)")
     assert node1.contains_in_log(
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )

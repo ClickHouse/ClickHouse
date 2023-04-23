@@ -1,16 +1,17 @@
 #pragma once
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <Interpreters/Context_fwd.h>
-#include <Storages/StorageMySQL.h>
 
 namespace mysqlxx { class PoolWithFailover; }
 
 namespace DB
 {
+struct StorageMySQLConfiguration;
 
-mysqlxx::PoolWithFailover createMySQLPoolWithFailover(const StorageMySQL::Configuration & configuration, const MySQLSettings & mysql_settings);
+template <typename T> mysqlxx::PoolWithFailover
+createMySQLPoolWithFailover(const StorageMySQLConfiguration & configuration, const T & mysql_settings);
 
 }
 

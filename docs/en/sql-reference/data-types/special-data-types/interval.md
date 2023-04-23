@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/special-data-types/interval
 sidebar_position: 61
 sidebar_label: Interval
 ---
@@ -8,7 +7,7 @@ sidebar_label: Interval
 
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator.
 
-:::note    
+:::warning    
 `Interval` data type values can’t be stored in tables.
 :::
 

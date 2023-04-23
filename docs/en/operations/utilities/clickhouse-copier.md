@@ -1,5 +1,4 @@
 ---
-slug: /en/operations/utilities/clickhouse-copier
 sidebar_position: 59
 sidebar_label: clickhouse-copier
 ---
@@ -8,7 +7,7 @@ sidebar_label: clickhouse-copier
 
 Copies data from the tables in one cluster to tables in another (or the same) cluster.
 
-:::note    
+:::warning    
 To get a consistent copy, the data in the source tables and partitions should not change during the entire process.
 :::
 
@@ -185,3 +184,5 @@ Parameters:
 ```
 
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
+
+[Original article](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

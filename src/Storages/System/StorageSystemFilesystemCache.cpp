@@ -2,9 +2,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Common/FileCache.h>
+#include <Common/FileSegment.h>
+#include <Common/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 
@@ -24,9 +24,7 @@ NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
         {"cache_hits", std::make_shared<DataTypeUInt64>()},
         {"references", std::make_shared<DataTypeUInt64>()},
         {"downloaded_size", std::make_shared<DataTypeUInt64>()},
-        {"persistent", std::make_shared<DataTypeNumber<UInt8>>()},
-        {"kind", std::make_shared<DataTypeString>()},
-        {"unbound", std::make_shared<DataTypeNumber<UInt8>>()},
+        {"persistent", std::make_shared<DataTypeNumber<UInt8>>()}
     };
 }
 
@@ -47,11 +45,8 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
         for (const auto & file_segment : file_segments)
         {
             res_columns[0]->insert(cache_base_path);
-
-            /// Do not use `file_segment->getPathInLocalCache` here because it will lead to nullptr dereference
-            /// (because file_segments in getSnapshot doesn't have `cache` field set)
             res_columns[1]->insert(
-                cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind()));
+                cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->isPersistent()));
 
             const auto & range = file_segment->range();
             res_columns[2]->insert(range.left);
@@ -62,8 +57,6 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[7]->insert(file_segment->getRefCount());
             res_columns[8]->insert(file_segment->getDownloadedSize());
             res_columns[9]->insert(file_segment->isPersistent());
-            res_columns[10]->insert(toString(file_segment->getKind()));
-            res_columns[11]->insert(file_segment->isUnbound());
         }
     }
 }

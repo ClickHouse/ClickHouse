@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Common/VariableContext.h>
-#include <base/types.h>
-#include <base/strong_typedef.h>
+#include "base/types.h"
 #include <atomic>
 #include <memory>
 #include <cstddef>
@@ -15,7 +14,7 @@
 namespace ProfileEvents
 {
     /// Event identifier (index in array).
-    using Event = StrongTypedef<size_t, struct EventTag>;
+    using Event = size_t;
     using Count = size_t;
     using Increment = Int64;
     using Counter = std::atomic<Count>;
@@ -26,12 +25,10 @@ namespace ProfileEvents
 
     class Counters
     {
-    private:
         Counter * counters = nullptr;
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
         Counters * parent = nullptr;
-        bool trace_profile_events = false;
 
     public:
 
@@ -54,8 +51,15 @@ namespace ProfileEvents
             return counters[event];
         }
 
-        void increment(Event event, Count amount = 1);
-        void incrementNoTrace(Event event, Count amount = 1);
+        inline void increment(Event event, Count amount = 1)
+        {
+            Counters * current = this;
+            do
+            {
+                current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+                current = current->parent;
+            } while (current != nullptr);
+        }
 
         struct Snapshot
         {
@@ -93,11 +97,6 @@ namespace ProfileEvents
             parent = parent_;
         }
 
-        void setTraceProfileEvents(bool value)
-        {
-            trace_profile_events = value;
-        }
-
         /// Set all counters to zero
         void resetCounters();
 
@@ -106,10 +105,6 @@ namespace ProfileEvents
 
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
-
-    /// The same as above but ignores value of setting 'trace_profile_events'
-    /// and never sends profile event to trace log.
-    void incrementNoTrace(Event event, Count amount = 1);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);

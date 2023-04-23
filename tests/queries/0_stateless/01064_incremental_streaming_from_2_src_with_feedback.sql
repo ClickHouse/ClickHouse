@@ -1,5 +1,4 @@
 SET joined_subquery_requires_alias = 0;
-SET max_threads = 1;
 
 -- incremental streaming usecase
 -- that has sense only if data filling order has guarantees of chronological order
@@ -13,7 +12,7 @@ DROP TABLE IF EXISTS mv_checkouts2target;
 -- that is the final table, which is filled incrementally from 2 different sources
 
 CREATE TABLE target_table Engine=SummingMergeTree() ORDER BY id
-SETTINGS index_granularity=128, index_granularity_bytes = '10Mi'
+SETTINGS index_granularity=128
 AS
    SELECT
      number as id,

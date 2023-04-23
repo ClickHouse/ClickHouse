@@ -3,9 +3,11 @@
 import datetime
 import decimal
 import os
+import sys
+import time
 import uuid
-import logging
 
+import docker
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
@@ -17,7 +19,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
-cluster.add_instance(
+node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/postresql.xml",
@@ -28,8 +30,6 @@ cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/default_passwd.xml"],
-    with_postgres=True,
-    with_postgresql_java_client=True,
     env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
@@ -37,83 +37,135 @@ server_port = 5433
 
 
 @pytest.fixture(scope="module")
-def started_cluster():
+def server_address():
+    cluster.start()
     try:
-        cluster.start()
-
-        yield cluster
-    except Exception as ex:
-        logging.exception(ex)
-        raise ex
+        yield cluster.get_instance_ip("node")
     finally:
         cluster.shutdown()
 
 
-def test_psql_client(started_cluster):
-    node = cluster.instances["node"]
-
-    for query_file in ["query1.sql", "query2.sql", "query3.sql", "query4.sql"]:
-        started_cluster.copy_file_to_container(
-            started_cluster.postgres_id,
-            os.path.join(SCRIPT_DIR, "queries", query_file),
-            f"/{query_file}",
-        )
-    cmd_prefix = [
-        "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=default dbname=default password=123",
-    ]
-    cmd_prefix += ["--no-align", "--field-separator=' '"]
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query1.sql"], shell=True
-    )
-    logging.debug(res)
-    assert res == "\n".join(["a", "1", "(1 row)", ""])
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query2.sql"], shell=True
-    )
-    logging.debug(res)
-    assert res == "\n".join(["a", "колонка", "(1 row)", ""])
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query3.sql"], shell=True
-    )
-    logging.debug(res)
-    assert res == "\n".join(
+@pytest.fixture(scope="module")
+def psql_client():
+    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, "docker_compose_postgresql.yml")
+    run_and_check(
         [
-            "SELECT 0",
-            "SELECT 0",
-            "SELECT 0",
-            "INSERT 0 0",
-            "INSERT 0 0",
-            "column",
-            "0",
-            "0",
-            "1",
-            "1",
-            "5",
-            "5",
-            "(6 rows)",
-            "SELECT 0\n",
+            "docker-compose",
+            "-p",
+            cluster.project_name,
+            "-f",
+            docker_compose,
+            "up",
+            "--force-recreate",
+            "-d",
+            "--build",
         ]
     )
+    yield docker.DockerClient(
+        base_url="unix:///var/run/docker.sock",
+        version=cluster.docker_api_version,
+        timeout=600,
+    ).containers.get(cluster.project_name + "_psql_1")
 
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query4.sql"], shell=True
+
+@pytest.fixture(scope="module")
+def psql_server(psql_client):
+    """Return PostgreSQL container when it is healthy."""
+    retries = 30
+    for i in range(retries):
+        info = psql_client.client.api.inspect_container(psql_client.name)
+        if info["State"]["Health"]["Status"] == "healthy":
+            break
+        time.sleep(1)
+    else:
+        print(info["State"])
+        raise Exception(
+            "PostgreSQL server has not started after {} retries.".format(retries)
+        )
+
+    return psql_client
+
+
+@pytest.fixture(scope="module")
+def java_container():
+    docker_compose = os.path.join(
+        DOCKER_COMPOSE_PATH, "docker_compose_postgresql_java_client.yml"
     )
-    logging.debug(res)
-    assert res == "\n".join(
-        ["SELECT 0", "INSERT 0 0", "tmp_column", "0", "1", "(2 rows)", "SELECT 0\n"]
+    run_and_check(
+        [
+            "docker-compose",
+            "-p",
+            cluster.project_name,
+            "-f",
+            docker_compose,
+            "up",
+            "--force-recreate",
+            "-d",
+            "--build",
+        ]
+    )
+    yield docker.DockerClient(
+        base_url="unix:///var/run/docker.sock",
+        version=cluster.docker_api_version,
+        timeout=600,
+    ).containers.get(cluster.project_name + "_java_1")
+
+
+def test_psql_is_ready(psql_server):
+    pass
+
+
+def test_psql_client(psql_client, server_address):
+    cmd_prefix = 'psql "sslmode=require host={server_address} port={server_port} user=default dbname=default password=123" '.format(
+        server_address=server_address, server_port=server_port
+    )
+    cmd_prefix += "--no-align --field-separator=' ' "
+
+    code, (stdout, stderr) = psql_client.exec_run(
+        cmd_prefix + '-c "SELECT 1 as a"', demux=True
+    )
+    assert stdout.decode() == "\n".join(["a", "1", "(1 row)", ""])
+
+    code, (stdout, stderr) = psql_client.exec_run(
+        cmd_prefix + '''-c "SELECT 'колонка' as a"''', demux=True
+    )
+    assert stdout.decode() == "\n".join(["a", "колонка", "(1 row)", ""])
+
+    code, (stdout, stderr) = psql_client.exec_run(
+        cmd_prefix
+        + "-c "
+        + """
+        "CREATE DATABASE x;
+        USE x;
+        CREATE TABLE table1 (column UInt32) ENGINE = Memory;
+        INSERT INTO table1 VALUES (0), (1), (5);
+        INSERT INTO table1 VALUES (0), (1), (5);
+        SELECT * FROM table1 ORDER BY column;"
+        """,
+        demux=True,
+    )
+    assert stdout.decode() == "\n".join(
+        ["column", "0", "0", "1", "1", "5", "5", "(6 rows)", ""]
     )
 
+    code, (stdout, stderr) = psql_client.exec_run(
+        cmd_prefix
+        + "-c "
+        + """
+        "DROP DATABASE x;
+        CREATE TEMPORARY TABLE tmp (tmp_column UInt32);
+        INSERT INTO tmp VALUES (0), (1);
+        SELECT * FROM tmp ORDER BY tmp_column;"
+        """,
+        demux=True,
+    )
+    assert stdout.decode() == "\n".join(["tmp_column", "0", "1", "(2 rows)", ""])
 
-def test_python_client(started_cluster):
-    node = cluster.instances["node"]
 
+def test_python_client(server_address):
     with pytest.raises(py_psql.InternalError) as exc_info:
         ch = py_psql.connect(
-            host=node.ip_address,
+            host=server_address,
             port=server_port,
             user="default",
             password="123",
@@ -127,7 +179,7 @@ def test_python_client(started_cluster):
     )
 
     ch = py_psql.connect(
-        host=node.ip_address,
+        host=server_address,
         port=server_port,
         user="default",
         password="123",
@@ -157,37 +209,26 @@ def test_python_client(started_cluster):
         decimal.Decimal("0.3333330000"),
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
-    cur.execute("DROP DATABASE x")
 
 
-def test_java_client(started_cluster):
-    node = cluster.instances["node"]
-
+def test_java_client(server_address, java_container):
     with open(os.path.join(SCRIPT_DIR, "java.reference")) as fp:
         reference = fp.read()
 
     # database not exists exception.
-    with pytest.raises(Exception) as exc:
-        res = started_cluster.exec_in_container(
-            started_cluster.postgresql_java_client_docker_id,
-            [
-                "bash",
-                "-c",
-                f"java JavaConnectorTest --host {node.hostname} --port {server_port} --user default --database abc",
-            ],
-        )
-        assert (
-            "org.postgresql.util.PSQLException: ERROR: Invalid user or password"
-            in str(exc.value)
-        )
+    code, (stdout, stderr) = java_container.exec_run(
+        "java JavaConnectorTest --host {host} --port {port} --user default --database "
+        "abc".format(host=server_address, port=server_port),
+        demux=True,
+    )
+    assert code == 1
 
     # non-empty password passed.
-    res = started_cluster.exec_in_container(
-        started_cluster.postgresql_java_client_docker_id,
-        [
-            "bash",
-            "-c",
-            f"java JavaConnectorTest --host {node.hostname} --port {server_port} --user default --password 123 --database default",
-        ],
+    code, (stdout, stderr) = java_container.exec_run(
+        "java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database "
+        "default".format(host=server_address, port=server_port),
+        demux=True,
     )
-    assert res == reference
+    print(stdout, stderr, file=sys.stderr)
+    assert code == 0
+    assert stdout.decode() == reference

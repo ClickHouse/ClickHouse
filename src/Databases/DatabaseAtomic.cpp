@@ -60,7 +60,7 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
     std::lock_guard lock(mutex);
     auto it = table_name_to_path.find(table_name);
     if (it == table_name_to_path.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} not found in database {}", table_name, database_name);
+        throw Exception("Table " + table_name + " not found in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
     assert(it->second != data_path && !it->second.empty());
     return it->second;
 }
@@ -82,7 +82,7 @@ void DatabaseAtomic::drop(ContextPtr)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
     fs::remove_all(getMetadataPath());
 }
@@ -106,7 +106,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     auto table = DatabaseOrdinary::detachTableUnlocked(name);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleanupDetachedTables();
+    not_in_use = cleanupDetachedTables(); //-V1001
     return table;
 }
 
@@ -169,7 +169,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         }
 
         if (!allowMoveTableToOtherDatabaseEngine(to_database))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
+            throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     if (exchange && !supportsAtomicRename())
@@ -212,7 +212,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             return;
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
             if (mv->hasInnerTable())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
+                throw Exception("Cannot move MaterializedView with inner table to other database", ErrorCodes::NOT_IMPLEMENTED);
     };
 
     String table_data_path;
@@ -273,7 +273,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     else
         renameNoReplace(old_metadata_path, new_metadata_path);
 
-    /// After metadata was successfully moved, the following methods should not throw (if they do, it's a logical error)
+    /// After metadata was successfully moved, the following methods should not throw (if them do, it's a logical error)
     table_data_path = detach(*this, table_name, table->storesDataOnDisk());
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
@@ -342,7 +342,7 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
 
     if (table_id.uuid != actual_table_id.uuid)
-        throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot alter table because it was renamed");
+        throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
     auto txn = query_context->getZooKeeperMetadataTransaction();
     if (txn && !query_context->isInternalSubquery())
@@ -366,7 +366,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
     if (detached_tables.contains(uuid))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table with UUID {}, "
-                        "because it was detached but still used by some query. Retry later.", uuid);
+                        "because it was detached but still used by some query. Retry later.", toString(uuid));
 }
 
 void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
@@ -405,8 +405,8 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
     }
     std::lock_guard lock(mutex);
     if (!detached_tables.empty())
-        throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Database {} cannot be detached, because some tables are still in use. "
-                        "Retry later.", backQuoteIfNeed(database_name));
+        throw Exception("Database " + backQuoteIfNeed(database_name) + " cannot be detached, "
+                        "because some tables are still in use. Retry later.", ErrorCodes::DATABASE_NOT_EMPTY);
 }
 
 DatabaseTablesIteratorPtr
@@ -477,7 +477,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -490,7 +490,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -509,9 +509,6 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     {
         try
         {
-            /// fs::exists could return false for broken symlink
-            if (FS::isSymlinkNoThrow(metadata_symlink))
-                fs::remove(metadata_symlink);
             fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
@@ -525,13 +522,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
-    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
-    if (check_ref_deps || check_loading_deps)
+    if (query_context->getSettingsRef().check_table_dependencies)
     {
         std::lock_guard lock(mutex);
         for (auto & table : tables)
-            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first});
     }
 
     try
@@ -540,7 +535,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 
     auto new_name_escaped = escapeForFileName(new_name);

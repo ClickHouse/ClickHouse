@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/alter/update
 sidebar_position: 40
 sidebar_label: UPDATE
 ---
@@ -26,3 +25,4 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] WHERE
 -   [Мутации](../../../sql-reference/statements/alter/index.md#mutations)
 -   [Синхронность запросов ALTER](../../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting
+

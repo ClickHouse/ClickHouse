@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/multiword-types
 sidebar_position: 61
 sidebar_label: Составные типы
 ---
@@ -26,3 +25,4 @@ sidebar_label: Составные типы
 | NATIONAL CHAR                       | [String](../../sql-reference/data-types/string.md)        |
 | BINARY LARGE OBJECT                 | [String](../../sql-reference/data-types/string.md)        |
 | BINARY VARYING                      | [String](../../sql-reference/data-types/string.md)        |
+

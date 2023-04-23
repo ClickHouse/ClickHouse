@@ -10,7 +10,7 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.4.9.110",
+    tag="20.1.10.70",
     with_installed_binary=True,
     stay_alive=True,
 )
@@ -18,7 +18,7 @@ node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.4.9.110",
+    tag="20.1.10.70",
     with_installed_binary=True,
     stay_alive=True,
 )
@@ -26,7 +26,7 @@ node3 = cluster.add_instance(
     "node3",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.4.9.110",
+    tag="20.1.10.70",
     with_installed_binary=True,
     stay_alive=True,
 )
@@ -91,8 +91,8 @@ def test_mutate_and_upgrade(start_cluster):
 
     node2.query("OPTIMIZE TABLE mt FINAL")
 
-    assert node1.query("SELECT id FROM mt ORDER BY id") == "1\n4\n"
-    assert node2.query("SELECT id FROM mt ORDER BY id") == "1\n4\n"
+    assert node1.query("SELECT id FROM mt") == "1\n4\n"
+    assert node2.query("SELECT id FROM mt") == "1\n4\n"
 
     for node in [node1, node2]:
         node.query("DROP TABLE mt")

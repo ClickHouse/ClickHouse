@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/rename
 sidebar_position: 48
 sidebar_label: RENAME
 ---
@@ -9,9 +8,8 @@ sidebar_label: RENAME
 重命名数据库、表或字典。 可以在单个查询中重命名多个实体。
 请注意，具有多个实体的`RENAME`查询是非原子操作。 要以原子方式交换实体名称，请使用[EXCHANGE](./exchange.md)语法.
 
-:::note
+!!! note "注意"
 `RENAME`仅支持[Atomic](../../engines/database-engines/atomic.md)数据库引擎.
-:::
 
 **语法**
 

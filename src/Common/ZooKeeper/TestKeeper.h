@@ -8,7 +8,6 @@
 
 #include <Poco/Timespan.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
@@ -34,7 +33,7 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 class TestKeeper final : public IKeeper
 {
 public:
-    explicit TestKeeper(const zkutil::ZooKeeperArgs & args_);
+    TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_);
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
@@ -124,7 +123,10 @@ private:
 
     Container container;
 
-    zkutil::ZooKeeperArgs args;
+    String root_path;
+    ACLs default_acls;
+
+    Poco::Timespan operation_timeout;
 
     std::mutex push_request_mutex;
     std::atomic<bool> expired{false};
@@ -146,3 +148,4 @@ private:
 };
 
 }
+

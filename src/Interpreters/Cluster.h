@@ -224,7 +224,7 @@ public:
     const ShardInfo & getAnyShardInfo() const
     {
         if (shards_info.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
+            throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
         return shards_info.front();
     }
 
@@ -250,14 +250,11 @@ public:
     std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
-    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
+    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
 
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
     bool maybeCrossReplication() const;
-
-    /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
-    bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
 
 private:
     SlotToShard slot_to_shard;
@@ -274,7 +271,7 @@ private:
 
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
-    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
+    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings);
 
     /// Inter-server secret
     String secret;
@@ -289,8 +286,6 @@ private:
 
     /// An array of shards. For each shard, an array of replica addresses (servers that are considered identical).
     AddressesWithFailover addresses_with_failover;
-
-    bool allow_distributed_ddl_queries = true;
 
     size_t remote_shard_count = 0;
     size_t local_shard_count = 0;

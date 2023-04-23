@@ -41,7 +41,7 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & se
             thread_to_wake = threads_queue.popAny();
 
         if (thread_to_wake >= use_threads)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
+            throw Exception("Non-empty queue without allocated thread", ErrorCodes::LOGICAL_ERROR);
 
         lock.unlock();
         executor_contexts[thread_to_wake]->wakeUp();
@@ -89,7 +89,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
             {
                 if (finished)
                     return;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
+                throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
             }
 
             context.setTask(static_cast<ExecutingGraph::Node *>(res.data));

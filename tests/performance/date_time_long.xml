@@ -6,6 +6,7 @@
                <value>toSecond</value>
                <value>toMinute</value>
                <value>toHour</value>
+               <value>toDayOfWeek</value>
                <value>toDayOfMonth</value>
                <value>toDayOfYear</value>
                <value>toMonth</value>
@@ -46,33 +47,21 @@
                <value>toUnixTimestamp</value>
            </values>
        </substitution>
-        <substitution>
-           <name>datetime_transform_with_mode</name>
-           <values>
-               <value>toDayOfWeek</value>
-               <value>toStartOfWeek</value>
-               <value>toWeek</value>
-               <value>toYearWeek</value>
-           </values>
-        </substitution>
        <substitution>
            <name>date_transform</name>
            <values>
-               <value>toDayOfMonth</value>
                <value>toDayOfWeek</value>
+               <value>toDayOfMonth</value>
                <value>toDayOfYear</value>
-               <value>toWeek</value>
                <value>toMonth</value>
                <value>toQuarter</value>
                <value>toYear</value>
-               <value>toYearWeek</value>
                <value>toISOWeek</value>
                <value>toISOYear</value>
 
                <value>toDate</value>
                <value>toMonday</value>
                <value>toStartOfDay</value>
-               <value>toStartOfWeek</value>
                <value>toStartOfMonth</value>
                <value>toStartOfQuarter</value>
                <value>toStartOfYear</value>
@@ -89,6 +78,14 @@
 
                <value>toRelativeQuarterNum</value>
            </values>
+        </substitution>
+        <substitution>
+            <name>time_zone</name>
+            <values>
+               <value>UTC</value>
+               <value>Asia/Istanbul</value>
+               <value>Asia/Kolkata</value>
+            </values>
         </substitution>
         <substitution>
             <name>binary_function</name>
@@ -119,21 +116,11 @@
                 <value>subtractYears</value>
             </values>
         </substitution>
-        <substitution>
-            <name>time_zone</name>
-            <values>
-               <value>UTC</value>
-               <value>Asia/Istanbul</value>
-               <value>Asia/Kolkata</value>
-            </values>
-        </substitution>
     </substitutions>
 
     <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {datetime_transform}(t, '{time_zone}'))</query>
-    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {datetime_transform_with_mode}(t, 0, '{time_zone}'))</query>
     <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDate('2017-01-01') + number % 1000 + rand() % 10 AS t, {date_transform}(t))</query>
     <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, {binary_function}(t, 1))</query>
-
     <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, toStartOfInterval(t, INTERVAL 1 month))</query>
     <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, date_trunc('month', t))</query>
 </test>

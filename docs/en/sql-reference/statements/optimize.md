@@ -1,13 +1,13 @@
 ---
-slug: /en/sql-reference/statements/optimize
 sidebar_position: 47
 sidebar_label: OPTIMIZE
-title: "OPTIMIZE Statement"
 ---
+
+# OPTIMIZE Statement
 
 This query tries to initialize an unscheduled merge of data parts for tables.
 
-:::note
+:::warning
 `OPTIMIZE` can’t fix the `Too many parts` error.
 :::
 
@@ -19,17 +19,17 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, the [MaterializedView](../../engines/table-engines/special/materializedview.md) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren’t supported.
 
-When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `2`) or on current replica (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `1`).
+When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting is set to `2`) or on current replica (if the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting is set to `1`).
 
 -   If `OPTIMIZE` does not perform a merge for any reason, it does not notify the client. To enable notifications, use the [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
--   If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](alter/partition.md#how-to-set-partition-expression).
--   If you specify `FINAL`, optimization is performed even when all the data is already in one part. You can control this behaviour with [optimize_skip_merged_partitions](../../operations/settings/settings.md#optimize-skip-merged-partitions). Also, the merge is forced even if concurrent merges are performed.
+-   If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](../../sql-reference/statements/alter/index.md#alter-how-to-specify-part-expr).
+-   If you specify `FINAL`, optimization is performed even when all the data is already in one part. Also merge is forced even if concurrent merges are performed.
 -   If you specify `DEDUPLICATE`, then completely identical rows (unless by-clause is specified) will be deduplicated (all columns are compared), it makes sense only for the MergeTree engine.
 
 You can specify how long (in seconds) to wait for inactive replicas to execute `OPTIMIZE` queries by the [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
 
 :::note    
-If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+If the `replication_alter_partitions_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
 ## BY expression

@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -21,7 +20,6 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"Memory", static_cast<UInt8>(TraceType::Memory)},
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
     {"MemoryPeak", static_cast<UInt8>(TraceType::MemoryPeak)},
-    {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
 };
 
 NamesAndTypesList TraceLogElement::getNamesAndTypes()
@@ -38,8 +36,6 @@ NamesAndTypesList TraceLogElement::getNamesAndTypes()
         {"query_id", std::make_shared<DataTypeString>()},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"size", std::make_shared<DataTypeInt64>()},
-        {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"increment", std::make_shared<DataTypeInt64>()},
     };
 }
 
@@ -57,13 +53,6 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
-
-    String event_name;
-    if (event != ProfileEvents::end())
-        event_name = ProfileEvents::getName(event);
-
-    columns[i++]->insert(event_name);
-    columns[i++]->insert(increment);
 }
 
 }

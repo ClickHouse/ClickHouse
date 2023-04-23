@@ -8,7 +8,8 @@ CREATE TABLE replicated_table_r2(id Int32, name String) ENGINE = ReplicatedMerge
 
 INSERT INTO replicated_table_r1 select number, toString(number) FROM numbers(100);
 
-SET mutations_sync = 0;
+SET mutations_sync = 2;
+SET allow_experimental_lightweight_delete = 1;
 
 DELETE FROM replicated_table_r1 WHERE id = 10;
 
@@ -43,7 +44,7 @@ SELECT count(*) FROM t_light_r1;
 SELECT * FROM t_light_r1 ORDER BY a;
 SELECT * FROM t_light_r2 ORDER BY a;
 
-OPTIMIZE TABLE t_light_r1 FINAL SETTINGS mutations_sync = 2;
+OPTIMIZE TABLE t_light_r1 FINAL;
 SELECT count(*) FROM t_light_r1;
 
 DROP TABLE IF EXISTS t_light_r1 SYNC;

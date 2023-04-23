@@ -101,7 +101,7 @@ public:
         PoolBase * getPool() const
         {
             if (!data)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Attempt to get pool from uninitialized entry");
+                throw DB::Exception("Attempt to get pool from uninitialized entry", DB::ErrorCodes::LOGICAL_ERROR);
             return &data->data.pool;
         }
 

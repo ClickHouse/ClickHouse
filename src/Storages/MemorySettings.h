@@ -8,7 +8,7 @@ namespace DB
 class ASTStorage;
 
 
-#define MEMORY_SETTINGS(M, ALIAS) \
+#define MEMORY_SETTINGS(M) \
     M(Bool, compress, false, "Compress data in memory", 0) \
 
 DECLARE_SETTINGS_TRAITS(memorySettingsTraits, MEMORY_SETTINGS)

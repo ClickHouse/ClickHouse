@@ -17,6 +17,7 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = false, /// TODO: it seem to actually be true. Check it later.
             .returns_single_stream = true,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -32,17 +33,15 @@ FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_
     , sort_description(std::move(sort_description_)), interpolate_description(interpolate_description_)
 {
     if (!input_stream_.has_single_port)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
+        throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
 }
 
 void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipelineBuilder::StreamType::Totals)
-            return std::make_shared<FillingNoopTransform>(header, sort_description);
-
-        return std::make_shared<FillingTransform>(header, sort_description, std::move(interpolate_description));
+        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+        return std::make_shared<FillingTransform>(header, sort_description, std::move(interpolate_description), on_totals);
     });
 }
 
@@ -61,7 +60,7 @@ void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
 void FillingStep::updateOutputStream()
 {
     if (!input_streams.front().has_single_port)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
+        throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
 
     output_stream = createOutputStream(
         input_streams.front(), FillingTransform::transformHeader(input_streams.front().header, sort_description), getDataStreamTraits());
