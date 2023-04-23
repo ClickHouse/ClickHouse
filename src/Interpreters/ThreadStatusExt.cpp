@@ -19,6 +19,7 @@
 #include <Common/setThreadName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -41,14 +42,14 @@ namespace ErrorCodes
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 
-ThreadGroupStatus::ThreadGroupStatus(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_)
     : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
 {}
 
-std::vector<UInt64> ThreadGroupStatus::getInvolvedThreadIds() const
+std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
     std::vector<UInt64> res;
 
@@ -60,20 +61,36 @@ std::vector<UInt64> ThreadGroupStatus::getInvolvedThreadIds() const
     return res;
 }
 
-void ThreadGroupStatus::linkThread(UInt64 thread_it)
+void ThreadGroup::linkThread(UInt64 thread_it)
 {
     std::lock_guard lock(mutex);
     thread_ids.insert(thread_it);
 }
 
-ThreadGroupStatusPtr ThreadGroupStatus::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
+ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
-    auto group = std::make_shared<ThreadGroupStatus>(query_context_, std::move(fatal_error_callback_));
+    auto group = std::make_shared<ThreadGroup>(query_context_, std::move(fatal_error_callback_));
     group->memory_tracker.setDescription("(for query)");
     return group;
 }
 
-void ThreadGroupStatus::attachQueryForLog(const String & query_, UInt64 normalized_hash)
+ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_context)
+{
+    auto group = std::make_shared<ThreadGroup>(storage_context);
+
+    group->memory_tracker.setDescription("background process to apply mutate/merge in table");
+    /// However settings from storage context have to be applied
+    const Settings & settings = storage_context->getSettingsRef();
+    group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+    group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+    group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
+    if (settings.memory_tracker_fault_probability > 0.0)
+        group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
+
+    return group;
+}
+
+void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
 {
     auto hash = normalized_hash ? normalized_hash : normalizedQueryHash<false>(query_);
 
@@ -93,10 +110,28 @@ void ThreadStatus::attachQueryForLog(const String & query_)
     thread_group->attachQueryForLog(local_data.query_for_logs, local_data.normalized_query_hash);
 }
 
-void ThreadGroupStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
+void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
 {
     std::lock_guard lock(mutex);
     shared_data.profile_queue_ptr = profile_queue;
+}
+
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group)
+{
+    chassert(thread_group);
+
+    /// might be nullptr
+    prev_thread_group = CurrentThread::getGroup();
+
+    CurrentThread::detachFromGroupIfNotDetached();
+    CurrentThread::attachToGroup(thread_group);
+}
+
+ThreadGroupSwitcher::~ThreadGroupSwitcher()
+{
+    CurrentThread::detachFromGroupIfNotDetached();
+    if (prev_thread_group)
+        CurrentThread::attachToGroup(prev_thread_group);
 }
 
 void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
@@ -152,7 +187,7 @@ void ThreadStatus::applyQuerySettings()
 #endif
 }
 
-void ThreadStatus::attachToGroupImpl(const ThreadGroupStatusPtr & thread_group_)
+void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
@@ -218,7 +253,7 @@ void ThreadStatus::setInternalThread()
     internal_thread = true;
 }
 
-void ThreadStatus::attachToGroup(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
+void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
 {
     if (thread_group && check_detached)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't attach query to the thread, it is already attached");
@@ -480,7 +515,10 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
 {
     auto query_context_ptr = query_context.lock();
     if (!query_context_ptr)
+    {
+        LOG_ERROR(log, "No query context, query_views_log will not be written (this should never happen)");
         return;
+    }
 
     auto views_log = query_context_ptr->getQueryViewsLog();
     if (!views_log)
@@ -522,14 +560,14 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
     views_log->add(element);
 }
 
-void CurrentThread::attachToGroup(const ThreadGroupStatusPtr & thread_group)
+void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
     current_thread->attachToGroup(thread_group, true);
 }
 
-void CurrentThread::attachToGroupIfDetached(const ThreadGroupStatusPtr & thread_group)
+void CurrentThread::attachToGroupIfDetached(const ThreadGroupPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
@@ -555,7 +593,7 @@ CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context, std::func
     if (!query_context->hasQueryContext())
         query_context->makeQueryContext();
 
-    auto group = ThreadGroupStatus::createForQuery(query_context, std::move(fatal_error_callback));
+    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
     CurrentThread::attachToGroup(group);
 }
 
@@ -565,7 +603,7 @@ CurrentThread::QueryScope::QueryScope(ContextPtr query_context, std::function<vo
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
 
-    auto group = ThreadGroupStatus::createForQuery(query_context, std::move(fatal_error_callback));
+    auto group = ThreadGroup::createForQuery(query_context, std::move(fatal_error_callback));
     CurrentThread::attachToGroup(group);
 }
 

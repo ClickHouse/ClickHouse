@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
+    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
 {
 }
 
@@ -129,10 +129,17 @@ void ORCBlockInputFormat::prepareReader()
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching);
 
-    ArrowFieldIndexUtil<true> field_util(
-        format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.allow_missing_columns);
-    include_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
+    const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
+    std::unordered_set<String> nested_table_names;
+    if (format_settings.orc.import_nested)
+        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
+
+    for (int i = 0; i < schema->num_fields(); ++i)
+    {
+        const auto & name = schema->field(i)->name();
+        if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
+            include_indices.push_back(i);
+    }
 }
 
 ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

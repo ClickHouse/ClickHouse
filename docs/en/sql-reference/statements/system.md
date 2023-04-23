@@ -114,11 +114,11 @@ This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper. Note that `SYSTEM RELOAD CONFIG` does not reload `USER` configuration stored in ZooKeeper, it only reloads `USER` configuration that is stored in `users.xml`.  To reload all `USER` config use `SYSTEM RELOAD USERS`
 
 ## RELOAD USERS
 
-Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. Note that `SYSTEM RELOAD CONFIG` will only reload users.xml access storage.
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. 
 
 ## SHUTDOWN
 
@@ -222,6 +222,14 @@ Clears freezed backup with the specified name from all the disks. See more about
 
 ``` sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
+```
+
+### WAIT LOADING PARTS
+
+Wait until all asynchronously loading data parts of a table (outdated data parts) will became loaded.
+
+``` sql
+SYSTEM WAIT LOADING PARTS [db.]merge_tree_family_table_name
 ```
 
 ## Managing ReplicatedMergeTree Tables

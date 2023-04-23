@@ -86,7 +86,12 @@ public:
 
     DataTypePtr getResultType() const override
     {
-        return getExpression()->getResultType();
+        return result_type;
+    }
+
+    void resolve(DataTypePtr lambda_type)
+    {
+        result_type = std::move(lambda_type);
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
@@ -102,6 +107,7 @@ protected:
 
 private:
     Names argument_names;
+    DataTypePtr result_type;
 
     static constexpr size_t arguments_child_index = 0;
     static constexpr size_t expression_child_index = 1;

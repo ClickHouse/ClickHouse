@@ -144,12 +144,17 @@ public:
                 return Entry(*items.back());
             }
 
-            LOG_INFO(log, "No free connections in pool. Waiting.");
-
             if (timeout < 0)
+            {
+                LOG_INFO(log, "No free connections in pool. Waiting undefinitelly.");
                 available.wait(lock);
+            }
             else
-                available.wait_for(lock, std::chrono::microseconds(timeout));
+            {
+                auto timeout_ms = std::chrono::microseconds(timeout);
+                LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
+                available.wait_for(lock, timeout_ms);
+            }
         }
     }
 
