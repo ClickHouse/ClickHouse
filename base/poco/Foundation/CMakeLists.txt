@@ -81,9 +81,6 @@ set (SRCS
     src/HexBinaryEncoder.cpp
     src/InflatingStream.cpp
     src/JSONString.cpp
-    src/Latin1Encoding.cpp
-    src/Latin2Encoding.cpp
-    src/Latin9Encoding.cpp
     src/LineEndingConverter.cpp
     src/LocalDateTime.cpp
     src/LogFile.cpp
@@ -92,7 +89,6 @@ set (SRCS
     src/LoggingRegistry.cpp
     src/LogStream.cpp
     src/Manifest.cpp
-    src/MD4Engine.cpp
     src/MD5Engine.cpp
     src/MemoryPool.cpp
     src/MemoryStream.cpp
@@ -136,7 +132,6 @@ set (SRCS
     src/StreamChannel.cpp
     src/StreamConverter.cpp
     src/StreamCopier.cpp
-    src/StreamTokenizer.cpp
     src/String.cpp
     src/StringTokenizer.cpp
     src/SynchronizedObject.cpp
@@ -175,9 +170,6 @@ set (SRCS
     src/VarHolder.cpp
     src/VarIterator.cpp
     src/Void.cpp
-    src/Windows1250Encoding.cpp
-    src/Windows1251Encoding.cpp
-    src/Windows1252Encoding.cpp
 )
 
 add_library (_poco_foundation ${SRCS})
