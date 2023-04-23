@@ -19,10 +19,22 @@ namespace DB
 bool ParserJSONPathMemberAccess::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     // There's a special case, that a path member can begin with number
+    // some invalid cases as following
+    //   - ".123" is parsed as a number, not a dot and a number
+    //   - ".123abc" is parsed as two parts, a number ".123" and a token "abc"
+    //   - ".abc" is parsed as two parts. a dot and a token "abc"
+    // "$..123abc" is parsed into three parts, ".", ".123" and "abc"
     if (pos->type != TokenType::Dot && pos->type != TokenType::Number)
         return false;
     if (pos->type != TokenType::Number)
+    {
         ++pos;
+        // Check the case "$..123abc"
+        if (pos->type == TokenType::Number)
+        {
+            return false;
+        }
+    }
 
     ASTPtr member_name;
 
