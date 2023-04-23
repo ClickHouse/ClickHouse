@@ -13,14 +13,13 @@ namespace ErrorCodes
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Block & header_,
+    const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
-    , header(header_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
     const auto & storage_settings = data_part->storage.getSettings();
@@ -33,7 +32,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         /* rewrite_primary_key = */ false);
 
     writer = data_part->getWriter(
-        header.getNamesAndTypesList(),
+        columns_list_,
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,

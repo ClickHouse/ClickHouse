@@ -105,6 +105,7 @@ NameSet injectRequiredColumns(
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
         .withSystemColumns();
+
     if (with_subcolumns)
         options.withSubcolumns();
 
@@ -319,6 +320,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
         .withSystemColumns();
+
     if (with_subcolumns)
         options.withSubcolumns();
 

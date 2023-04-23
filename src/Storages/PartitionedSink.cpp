@@ -76,7 +76,7 @@ void PartitionedSink::consume(Chunk chunk)
         if (inserted)
             it->value.first = copyStringInArena(partition_keys_arena, partition_key);
 
-        chunk_row_index_to_partition_index[row] = it->getMapped();
+        chunk_row_index_to_partition_index[row] = static_cast<UInt32>(it->getMapped());
     }
 
     size_t columns_size = columns.size();
@@ -87,7 +87,7 @@ void PartitionedSink::consume(Chunk chunk)
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
-        MutableColumns partition_index_to_column_split = columns[column_index]->scatter(partitions_size, chunk_row_index_to_partition_index);
+        MutableColumns partition_index_to_column_split = columns[column_index]->scatter(static_cast<UInt32>(partitions_size), chunk_row_index_to_partition_index);
 
         /// Add chunks into partition_index_to_chunk with sizes of result columns
         if (column_index == 0)

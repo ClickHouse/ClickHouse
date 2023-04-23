@@ -65,6 +65,12 @@ public:
         column.type = std::move(column_type);
     }
 
+    /// Set column name
+    void setColumnName(String column_name)
+    {
+        column.name = std::move(column_name);
+    }
+
     /// Returns true if column node has expression, false otherwise
     bool hasExpression() const
     {

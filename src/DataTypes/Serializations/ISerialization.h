@@ -89,16 +89,6 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
-    struct ISubcolumnCreator
-    {
-        virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-        virtual SerializationPtr create(const SerializationPtr & prev) const = 0;
-        virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
-        virtual ~ISubcolumnCreator() = default;
-    };
-
-    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
-
     struct SubstreamData
     {
         SubstreamData() = default;
@@ -131,6 +121,14 @@ public:
         SerializationInfoPtr serialization_info;
     };
 
+    struct ISubcolumnCreator
+    {
+        virtual void create(SubstreamData & data, const String & name) const = 0;
+        virtual ~ISubcolumnCreator() = default;
+    };
+
+    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
+
     struct Substream
     {
         enum Type
@@ -152,6 +150,8 @@ public:
             ObjectStructure,
             ObjectData,
 
+            MapShard,
+
             Regular,
         };
 
@@ -162,6 +162,8 @@ public:
 
         /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;
+
+        UInt64 map_shard_num = 0;
 
         /// Data for current substream.
         SubstreamData data;
@@ -192,6 +194,7 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
+        bool type_map_enumerate_shards = true;
     };
 
     virtual void enumerateStreams(
@@ -378,7 +381,7 @@ public:
 
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
-    static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+    static SubstreamData createFromPath(const SubstreamPath & path, const String & name, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>

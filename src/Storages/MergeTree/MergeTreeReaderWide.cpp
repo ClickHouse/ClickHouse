@@ -45,11 +45,11 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         mark_ranges_,
         settings_,
         avg_value_size_hints_)
+    , has_shared_streams(columns_to_read.size())
 {
     try
     {
-        for (size_t i = 0; i < columns_to_read.size(); ++i)
-            addStreams(columns_to_read[i], serializations[i], profile_callback_, clock_type_);
+        addStreams(profile_callback_, clock_type_);
     }
     catch (...)
     {
@@ -105,10 +105,9 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     {
         try
         {
-            auto & cache = caches[columns_to_read[pos].getNameInStorage()];
             prefetchForColumn(
                 priority, columns_to_read[pos], serializations[pos], from_mark, continue_reading,
-                current_task_last_mark, cache);
+                current_task_last_mark, getSubstreamsCache(pos));
         }
         catch (Exception & e)
         {
@@ -152,12 +151,11 @@ size_t MergeTreeReaderWide::readRows(
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_to_read.getNameInStorage()];
 
                 readData(
                     column_to_read, serializations[pos], column,
                     from_mark, continue_reading, current_task_last_mark,
-                    max_rows_to_read, cache, /* was_prefetched =*/ !prefetched_streams.empty());
+                    max_rows_to_read, getSubstreamsCache(pos), /* was_prefetched =*/ !prefetched_streams.empty());
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -205,54 +203,66 @@ size_t MergeTreeReaderWide::readRows(
     return read_rows;
 }
 
-void MergeTreeReaderWide::addStreams(
-    const NameAndTypePair & name_and_type,
-    const SerializationPtr & serialization,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback,
-    clockid_t clock_type)
+void MergeTreeReaderWide::addStreams(const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    bool has_any_stream = false;
-    bool has_all_streams = true;
+    std::unordered_map<String, std::vector<size_t>> column_indexes_by_stream_name;
 
-    ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
+    for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        bool has_any_stream = false;
+        bool has_all_streams = true;
 
-        if (streams.contains(stream_name))
+        ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
         {
+            auto stream_name = ISerialization::getFileNameForStream(columns_to_read[i], substream_path);
+
+            if (streams.contains(stream_name))
+            {
+                column_indexes_by_stream_name[stream_name].push_back(i);
+                has_any_stream = true;
+                return;
+            }
+
+            bool data_file_exists = data_part_info_for_read->getChecksums().files.contains(stream_name + DATA_FILE_EXTENSION);
+
+            /** If data file is missing then we will not try to open it.
+            * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
+            */
+            if (!data_file_exists)
+            {
+                has_all_streams = false;
+                return;
+            }
+
             has_any_stream = true;
-            return;
-        }
+            column_indexes_by_stream_name[stream_name].push_back(i);
 
-        bool data_file_exists = data_part_info_for_read->getChecksums().files.contains(stream_name + DATA_FILE_EXTENSION);
+            auto context = data_part_info_for_read->getContext();
+            auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+            bool is_low_cardinality_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
-        /** If data file is missing then we will not try to open it.
-          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
-          */
-        if (!data_file_exists)
+            streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
+                data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
+                data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
+                uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+                &data_part_info_for_read->getIndexGranularityInfo(),
+                profile_callback, clock_type, is_low_cardinality_dict, load_marks_threadpool));
+        };
+
+        serializations[i]->enumerateStreams(callback);
+
+        if (has_any_stream && !has_all_streams)
+            partially_read_columns.insert(columns_to_read[i].name);
+    }
+
+    for (const auto & [_, indexes] : column_indexes_by_stream_name)
+    {
+        if (indexes.size() > 1)
         {
-            has_all_streams = false;
-            return;
+            for (const auto & idx : indexes)
+                has_shared_streams[idx] = true;
         }
-
-        has_any_stream = true;
-        bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
-
-        auto context = data_part_info_for_read->getContext();
-        auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-
-        streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
-            data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
-            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-            &data_part_info_for_read->getIndexGranularityInfo(),
-            profile_callback, clock_type, is_lc_dict, load_marks_threadpool));
-    };
-
-    serialization->enumerateStreams(callback);
-
-    if (has_any_stream && !has_all_streams)
-        partially_read_columns.insert(name_and_type.name);
+    }
 }
 
 
@@ -263,10 +273,10 @@ static ReadBuffer * getStream(
     const NameAndTypePair & name_and_type,
     size_t from_mark, bool seek_to_mark,
     size_t current_task_last_mark,
-    ISerialization::SubstreamsCache & cache)
+    ISerialization::SubstreamsCache * cache)
 {
     /// If substream have already been read.
-    if (cache.contains(ISerialization::getSubcolumnNameForStream(substream_path)))
+    if (cache && cache->contains(ISerialization::getSubcolumnNameForStream(substream_path)))
         return nullptr;
 
     String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
@@ -290,7 +300,7 @@ void MergeTreeReaderWide::deserializePrefix(
     const SerializationPtr & serialization,
     const NameAndTypePair & name_and_type,
     size_t current_task_last_mark,
-    ISerialization::SubstreamsCache & cache)
+    ISerialization::SubstreamsCache * cache)
 {
     const auto & name = name_and_type.name;
     if (!deserialize_binary_bulk_state_map.contains(name))
@@ -311,7 +321,7 @@ void MergeTreeReaderWide::prefetchForColumn(
     size_t from_mark,
     bool continue_reading,
     size_t current_task_last_mark,
-    ISerialization::SubstreamsCache & cache)
+    ISerialization::SubstreamsCache * cache)
 {
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
@@ -335,7 +345,7 @@ void MergeTreeReaderWide::prefetchForColumn(
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type, const SerializationPtr & serialization, ColumnPtr & column,
     size_t from_mark, bool continue_reading, size_t current_task_last_mark,
-    size_t max_rows_to_read, ISerialization::SubstreamsCache & cache, bool was_prefetched)
+    size_t max_rows_to_read, ISerialization::SubstreamsCache * cache, bool was_prefetched)
 {
     double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
@@ -355,8 +365,17 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, cache);
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
+}
+
+ISerialization::SubstreamsCache * MergeTreeReaderWide::getSubstreamsCache(size_t column_idx)
+{
+    /// Use substream cache only if column uses shared streams because
+    /// sometimes additional computations are required to put subcolumn to cache.
+    if (has_shared_streams[column_idx])
+        return &caches[columns_to_read[column_idx].getNameInStorage()];
+    return nullptr;
 }
 
 }

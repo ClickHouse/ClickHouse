@@ -22,7 +22,7 @@ TEST(AsyncInsertsTest, testScatterOffsetsBySelector)
         IColumn::Selector selector(selector_data.size());
         size_t num_rows = selector_data.size();
         for (size_t i = 0; i < num_rows; i++)
-            selector[i] = selector_data[i];
+            selector[i] = static_cast<UInt32>(selector_data[i]);
 
         auto results = scatterOffsetsBySelector(offset_ptr, selector, part_num);
         ASSERT_EQ(results.size(), expected.size());

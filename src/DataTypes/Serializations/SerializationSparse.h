@@ -91,11 +91,11 @@ private:
         const size_t size;
 
         SubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
-            : offsets(offsets_), size(size_) {}
+            : offsets(offsets_), size(size_)
+        {
+        }
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        void create(SubstreamData & data, const String & name) const override;
     };
 
     SerializationPtr nested;

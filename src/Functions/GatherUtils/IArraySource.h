@@ -21,6 +21,7 @@ struct IArraySource
     virtual size_t getSizeForReserve() const = 0;
     virtual const typename ColumnArray::Offsets & getOffsets() const = 0;
     virtual size_t getColumnSize() const = 0;
+    virtual MutableColumnPtr createValuesColumn() const = 0;
     virtual bool isConst() const { return false; }
     virtual bool isNullable() const { return false; }
 

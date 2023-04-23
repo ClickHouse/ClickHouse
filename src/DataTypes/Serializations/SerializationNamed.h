@@ -66,11 +66,10 @@ private:
         SubcolumnCreator(const String & name_, bool escape_delimiter_)
             : name(name_), escape_delimiter(escape_delimiter_) {}
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override
+        void create(SubstreamData & data, const String &) const override
         {
-            return std::make_shared<SerializationNamed>(prev, name, escape_delimiter);
+            if (data.serialization)
+                data.serialization = std::make_shared<SerializationNamed>(data.serialization, name, escape_delimiter);
         }
     };
 

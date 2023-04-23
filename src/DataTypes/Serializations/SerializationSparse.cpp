@@ -137,14 +137,13 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
-SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev) const
+void SerializationSparse::SubcolumnCreator::create(SubstreamData & data, const String &) const
 {
-    return std::make_shared<SerializationSparse>(prev);
-}
+    if (data.serialization)
+        data.serialization = std::make_shared<SerializationSparse>(data.serialization);
 
-ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) const
-{
-    return ColumnSparse::create(prev, offsets, size);
+    if (data.column)
+        data.column = ColumnSparse::create(data.column, offsets, size);
 }
 
 void SerializationSparse::enumerateStreams(

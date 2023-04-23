@@ -34,7 +34,7 @@ IColumn::Selector createBlockSelector(
     {
         const auto data = assert_cast<const ColumnConst &>(column).getValue<T>();
         const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
-        selector.assign(num_rows, shard_num);
+        selector.assign(num_rows, static_cast<UInt32>(shard_num));
     }
     else
     {
@@ -46,7 +46,7 @@ IColumn::Selector createBlockSelector(
         const auto & data = typeid_cast<const ColumnVector<T> &>(column).getData();
 
         for (size_t i = 0; i < num_rows; ++i)
-            selector[i] = slots[static_cast<TUInt32Or64>(data[i]) - (static_cast<TUInt32Or64>(data[i]) / divider) * total_weight];
+            selector[i] = static_cast<UInt32>(slots[static_cast<TUInt32Or64>(data[i]) - (static_cast<TUInt32Or64>(data[i]) / divider) * total_weight]);
     }
 
     return selector;

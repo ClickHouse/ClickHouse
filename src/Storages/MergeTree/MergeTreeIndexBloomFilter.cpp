@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <base/types.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -52,7 +53,8 @@ bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) co
         nodes_to_check.pop_back();
 
         const auto & column_name = node_to_check->getColumnName();
-        if (required_columns_set.find(column_name) != required_columns_set.end())
+        if (required_columns_set.contains(column_name)
+            || required_columns_set.contains(Nested::splitName(column_name).first))
             return true;
 
         if (const auto * function = typeid_cast<const ASTFunction *>(node_to_check.get()))

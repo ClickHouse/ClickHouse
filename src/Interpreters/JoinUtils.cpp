@@ -581,7 +581,7 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
-template <Fn<size_t(size_t)> Sharder>
+template <Fn<UInt32(UInt32)> Sharder>
 static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
 {
     const auto & hashes = hash.getData();
@@ -589,11 +589,11 @@ static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder
 
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(intHashCRC32(hashes[i]));
+        selector[i] = sharder(static_cast<UInt32>(intHashCRC32(hashes[i])));
     return selector;
 }
 
-template <Fn<size_t(size_t)> Sharder>
+template <Fn<UInt32(UInt32)> Sharder>
 static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
 {
     size_t num_rows = block.rows();
@@ -617,7 +617,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
 
     for (size_t i = 0; i < num_cols; ++i)
     {
-        auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
+        auto dispatched_columns = block.getByPosition(i).column->scatter(static_cast<UInt32>(num_shards), selector);
         assert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
@@ -630,12 +630,12 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
 static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
     size_t mask = num_shards - 1;
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](UInt32 hash) -> UInt32 { return hash & mask; });
 }
 
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](UInt32 hash) -> UInt32 { return hash % num_shards; });
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)

@@ -179,9 +179,12 @@ static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, s
 
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
+    {
         /// Apply intHash64 to mix bits in data.
         /// HashTable internally uses WeakHash32, and we need to get different lower bits not to cause collisions.
-        selector[i] = intHash64(data[i]) & (num_shards - 1);
+        selector[i] = static_cast<UInt32>(intHash64(data[i]) & (num_shards - 1));
+    }
+
     return selector;
 }
 
@@ -214,7 +217,7 @@ Blocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, cons
 
     for (size_t i = 0; i < num_cols; ++i)
     {
-        auto dispatched_columns = from_block.getByPosition(i).column->scatter(num_shards, selector);
+        auto dispatched_columns = from_block.getByPosition(i).column->scatter(static_cast<UInt32>(num_shards), selector);
         assert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {

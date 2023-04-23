@@ -91,7 +91,6 @@ public:
         }
 
         auto sink = GatherUtils::concat(sources);
-
         return sink;
     }
 
