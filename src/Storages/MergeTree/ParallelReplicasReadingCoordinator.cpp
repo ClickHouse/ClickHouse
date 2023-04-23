@@ -9,6 +9,7 @@
 
 #include <consistent_hashing.h>
 
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
@@ -47,7 +48,6 @@ public:
     }
 
     Stats stats;
-    std::mutex mutex;
     size_t replicas_count;
 
     explicit ImplInterface(size_t replicas_count_)
@@ -220,9 +220,11 @@ void DefaultCoordinator::finalizeReadingState()
 
 void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    std::lock_guard lock(mutex);
-
     updateReadingState(announcement);
+
+    if (announcement.replica_num >= stats.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", announcement.replica_num, stats.size());
+
     stats[announcement.replica_num].number_of_requests +=1;
 
     ++sent_initial_requests;
@@ -282,8 +284,6 @@ void DefaultCoordinator::selectPartsAndRanges(const PartRefs & container, size_t
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
-    std::lock_guard lock(mutex);
-
     LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
 
     size_t current_mark_size = 0;
@@ -349,7 +349,6 @@ public:
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    std::lock_guard lock(mutex);
     LOG_TRACE(log, "Received an announecement {}", announcement.describe());
 
     /// To get rid of duplicates
@@ -387,8 +386,6 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
 template <CoordinationMode mode>
 ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest request)
 {
-    std::lock_guard lock(mutex);
-
     if (request.mode != mode)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Replica {} decided to read in {} mode, not in {}. This is a bug",
@@ -479,16 +476,27 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
 
 void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
+    std::lock_guard lock(mutex);
+
     if (!pimpl)
+    {
+        setMode(announcement.mode);
         initialize();
+    }
+
 
     return pimpl->handleInitialAllRangesAnnouncement(announcement);
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
+    std::lock_guard lock(mutex);
+
     if (!pimpl)
+    {
+        setMode(request.mode);
         initialize();
+    }
 
     return pimpl->handleRequest(std::move(request));
 }

@@ -106,6 +106,15 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     // representation.
     PODArray<MarkInCompressedFile> plain_marks(marks_count * columns_in_mark); // temporary
 
+    if (file_size == 0 && marks_count != 0)
+    {
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Empty marks file '{}': {}, must be: {}",
+            std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
+            file_size, expected_uncompressed_size);
+    }
+
     if (!index_granularity_info.mark_type.compressed && expected_uncompressed_size != file_size)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
@@ -148,7 +157,12 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         }
 
         if (i * mark_size != expected_uncompressed_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}", mrk_path);
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
+                mrk_path, marks_count, expected_uncompressed_size, i, reader->count());
+        }
     }
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
