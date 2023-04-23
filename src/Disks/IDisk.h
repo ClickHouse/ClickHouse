@@ -251,6 +251,20 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
+    /// Reads a file from an encrypted disk without decrypting it.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(
+        const String & path, const ReadSettings & settings = ReadSettings{}) const;
+
+    /// Writes an already encrypted file to an encrypted disk.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite,
+        const WriteSettings & settings = {}) const;
+
+    /// Returns the size of encrypted file on an encrypted disk.
+    virtual size_t getEncryptedFileSize(const String & path) const;
+
     virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
 
     virtual bool supportsCache() const { return false; }

@@ -198,6 +198,29 @@ public:
         delegate->removeSharedFileIfExists(wrapped_path, flag);
     }
 
+    std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(
+        const String & path, const ReadSettings & settings) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->readFile(wrapped_path, settings);
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->writeFile(wrapped_path, buf_size, mode, settings);
+    }
+
+    size_t getEncryptedFileSize(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getFileSize(wrapped_path);
+    }
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override
     {
         auto wrapped_path = wrappedPath(path);
