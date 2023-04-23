@@ -285,8 +285,11 @@ public:
                 /// the sum of `bitCount` apply to each chars.
                 else
                 {
+                    /// UInt16 can save bitCount of FixedString less than 8192,
+                    /// it's should enough for almost all cases, and the setting
+                    /// `allow_suspicious_fixed_string_types` is disabled by default.
                     if constexpr (is_bit_count)
-                        result = std::make_shared<DataTypeUInt64>();
+                        result = std::make_shared<DataTypeUInt16>();
                     else
                         result = std::make_shared<DataType>(type.getN());
                 }
@@ -353,8 +356,9 @@ public:
                         {
                             auto size = col->size();
 
-                            auto col_res = ColumnUInt64::create(size);
+                            auto col_res = ColumnUInt16::create(size);
                             auto & vec_res = col_res->getData();
+                            vec_res.resize(col->size());
 
                             const auto & chars = col->getChars();
                             auto n = col->getN();
@@ -396,7 +400,7 @@ public:
                             for (size_t i = 0; i < size; ++i)
                             {
                                 vec_res[i] = FixedStringUnaryOperationReduceImpl<Op<UInt8>>::vector(
-                                    chars.data() + offsets[i], chars.data() + offsets[i + 1]);
+                                    chars.data() + offsets[i - 1], chars.data() + offsets[i]);
                             }
                             result_column = std::move(col_res);
                             return true;
@@ -480,7 +484,7 @@ public:
         return castType(arguments[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
-            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
                 return false;
             else
                 return !IsDataTypeDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
@@ -495,7 +499,7 @@ public:
         castType(types[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
-            if constexpr (std::is_same_v<DataTypeFixedString, DataType>)
+            if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
                 return false;
             else
             {
