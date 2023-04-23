@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPathInLocalCache(), (O_APPEND | O_CREAT | O_WRONLY)))
+    : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPathInLocalCache()))
     , file_segment(file_segment_)
 {
 }
@@ -25,7 +25,7 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_)
     : WriteBufferFromFileDecorator(
         segment_holder_->size() == 1
-        ? std::make_unique<WriteBufferFromFile>(segment_holder_->front().getPathInLocalCache(), (O_APPEND | O_CREAT | O_WRONLY))
+        ? std::make_unique<WriteBufferFromFile>(segment_holder_->front().getPathInLocalCache())
         : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
