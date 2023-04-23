@@ -116,16 +116,12 @@ def create_some_tables(db):
     node.query(
         "CREATE DICTIONARY {}.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB '{}')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0)".format(
-            db, db
-        )
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())".format(db, db)
     )
     node.query(
         "CREATE DICTIONARY {}.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB '{}')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT()) SETTINGS(check_dictionary_primary_key = 0)".format(
-            db, db
-        )
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())".format(db, db)
     )
     node.query(
         "CREATE TABLE {}.merge (n int) ENGINE=Merge('{}', '(mt)|(mv)')".format(db, db)

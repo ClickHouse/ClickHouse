@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <check_dictionary_primary_key>0</check_dictionary_primary_key>
-        </default>
-    </profiles>
-</clickhouse>
