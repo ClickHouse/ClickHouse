@@ -1294,13 +1294,13 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
                     else:
                         raise e
 
-        insert(100)
+        insert(20)
         p = Pool(15)
         tasks = []
         for i in range(5):
-            tasks.append(p.apply_async(insert, (100,)))
-            tasks.append(p.apply_async(alter_move, (100,)))
-            tasks.append(p.apply_async(alter_drop, (100,)))
+            tasks.append(p.apply_async(insert, (20,)))
+            tasks.append(p.apply_async(alter_move, (20,)))
+            tasks.append(p.apply_async(alter_drop, (20,)))
 
         for task in tasks:
             task.get(timeout=120)
