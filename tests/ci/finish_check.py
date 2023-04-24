@@ -4,11 +4,11 @@ from github import Github
 
 from commit_status_helper import (
     CI_STATUS_NAME,
+    NotSet,
     get_commit,
     get_commit_filtered_statuses,
     post_commit_status,
 )
-from env_helper import GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 
@@ -32,7 +32,7 @@ def main():
         post_commit_status(
             commit,
             "success",
-            status.target_url or "",
+            status.target_url or NotSet,
             "All checks finished",
             CI_STATUS_NAME,
             pr_info,

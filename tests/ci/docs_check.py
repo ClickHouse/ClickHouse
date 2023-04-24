@@ -10,6 +10,7 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
+    NotSet,
     RerunHelper,
     get_commit,
     post_commit_status,
@@ -66,7 +67,9 @@ def main():
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")
-        post_commit_status(commit, "success", "", "No changes in docs", NAME, pr_info)
+        post_commit_status(
+            commit, "success", NotSet, "No changes in docs", NAME, pr_info
+        )
         sys.exit(0)
 
     if pr_info.has_changes_in_documentation():

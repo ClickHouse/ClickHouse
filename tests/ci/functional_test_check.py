@@ -20,6 +20,7 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
+    NotSet,
     RerunHelper,
     get_commit,
     override_status,
@@ -287,7 +288,12 @@ def main():
             state = override_status("success", check_name, validate_bugfix_check)
             if args.post_commit_status == "commit_status":
                 post_commit_status(
-                    commit, state, "", NO_CHANGES_MSG, check_name_with_group, pr_info
+                    commit,
+                    state,
+                    NotSet,
+                    NO_CHANGES_MSG,
+                    check_name_with_group,
+                    pr_info,
                 )
             elif args.post_commit_status == "file":
                 post_commit_status_to_file(

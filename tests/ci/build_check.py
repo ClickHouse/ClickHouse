@@ -10,6 +10,7 @@ from typing import List, Tuple
 
 from ci_config import CI_CONFIG, BuildConfig
 from commit_status_helper import (
+    NotSet,
     get_commit_filtered_statuses,
     get_commit,
     post_commit_status,
@@ -255,7 +256,7 @@ def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
                 post_commit_status(
                     commit,
                     "pending",
-                    status.url,
+                    status.target_url or NotSet,
                     "Set to pending on rerun",
                     report_status,
                     pr_info,
