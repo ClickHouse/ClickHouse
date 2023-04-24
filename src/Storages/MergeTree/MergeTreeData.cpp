@@ -181,15 +181,15 @@ namespace ErrorCodes
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
 {
-    NameSet index_key_set;
+    std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        const auto & tree_hash = child->getTreeHash();
-        const String key = toString(tree_hash.first);
+        IAST::Hash hash = child->getTreeHash();
+        UInt64 first_half_of_hash = hash.first;
 
-        if (!index_key_set.emplace(key).second)
+        if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Primary key or secondary indices contains duplicate expressios");
+                    "Primary key or secondary index contains a duplicate expression. To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'");
     }
 }
 
@@ -476,18 +476,13 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
             "{} is greater than the sorting key length: {}", primary_key_size, sorting_key_size);
 
-    NameSet primary_key_columns_set;
-
     bool allow_suspicious_indices = getSettings()->allow_suspicious_indices;
-
     if (local_context)
-        allow_suspicious_indices = local_context->getSettingsRef().allow_suspicious_indices ? true : allow_suspicious_indices;
+        allow_suspicious_indices = local_context->getSettingsRef().allow_suspicious_indices;
 
     if (!allow_suspicious_indices && !attach)
-    {
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
-    }
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
@@ -593,10 +588,11 @@ void MergeTreeData::checkProperties(
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata,
+void MergeTreeData::setProperties(
+    const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
-    const ContextPtr local_context)
+    ContextPtr local_context)
 {
     checkProperties(new_metadata, old_metadata, attach, local_context);
     setInMemoryMetadata(new_metadata);
