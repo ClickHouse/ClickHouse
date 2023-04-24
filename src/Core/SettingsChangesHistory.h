@@ -82,6 +82,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
 {
     {"23.4", {{"connect_timeout_with_failover_ms", 50, 1000, "Increase default connect timeout because of async connect"},
               {"connect_timeout_with_failover_secure_ms", 100, 1000, "Increase default secure connect timeout because of async connect"},
+              {"parallelize_output_from_storages", false, true, "Parallelize output for reading step from storage. It allows parallelizing query processing right after reading from storage if possible"},
               {"hedged_connection_timeout_ms", 100, 50, "Start new connection in hedged requests after 50 ms instead of 100 to correspond with previous connect timeout"}}},
     {"23.3", {{"output_format_parquet_version", "1.0", "2.latest", "Use latest Parquet format version for output format"},
               {"input_format_json_ignore_unknown_keys_in_named_tuple", false, true, "Improve parsing JSON objects as named tuples"},
