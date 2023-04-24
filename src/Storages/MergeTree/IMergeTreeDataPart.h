@@ -393,7 +393,6 @@ public:
     /// Version used for transactions.
     static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
-
     static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// One of part files which is used to check how many references (I'd like
@@ -463,6 +462,8 @@ public:
     void removeVersionMetadata();
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
+    /// Returns true if remove() or renameToDetached() is called.
+    bool isRemoveOfPartStarted() const { return true; }
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
@@ -609,8 +610,7 @@ private:
 
     mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
-    /// This ugly flag is needed for debug assertions only
-    mutable bool part_is_probably_removed_from_disk = false;
+    mutable std::atomic_bool is_remove_of_part_started = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

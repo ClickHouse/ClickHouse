@@ -1548,7 +1548,7 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (!isStoredOnDisk())
         return false;
 
-    if (part_is_probably_removed_from_disk)
+    if (is_remove_of_part_started)
         return true;
 
     if (state == MergeTreeDataPartState::Temporary)
@@ -1680,7 +1680,7 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo()
 void IMergeTreeDataPart::remove()
 {
     assert(assertHasValidVersionMetadata());
-    part_is_probably_removed_from_disk = true;
+    is_remove_of_part_started = true;
 
     auto can_remove_callback = [this] ()
     {
@@ -1765,10 +1765,10 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix)
 {
+    is_remove_of_part_started = true;
     auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
     assert(path_to_detach);
     renameTo(path_to_detach.value(), true);
-    part_is_probably_removed_from_disk = true;
 }
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
