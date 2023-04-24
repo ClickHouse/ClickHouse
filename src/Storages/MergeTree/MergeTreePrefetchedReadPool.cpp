@@ -6,7 +6,9 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Interpreters/Context.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <base/getThreadId.h>
 
@@ -22,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
@@ -78,6 +81,9 @@ struct MergeTreePrefetchedReadPool::PartInfo
 
     size_t approx_size_of_mark = 0;
     size_t prefetch_step_marks = 0;
+
+    size_t estimated_memory_usage_for_single_prefetch = 0;
+    size_t required_readers_num = 0;
 };
 
 std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedReader(
@@ -134,14 +140,37 @@ void MergeTreePrefetchedReadPool::createPrefetchedReaderForTask(MergeTreeReadTas
 
 bool MergeTreePrefetchedReadPool::TaskHolder::operator <(const TaskHolder & other) const
 {
-    return task->priority < other.task->priority;
+    chassert(task->priority >= 0);
+    chassert(other.task->priority >= 0);
+    return -task->priority < -other.task->priority; /// Less is better.
+    /// With default std::priority_queue, top() returns largest element.
+    /// So closest to 0 will be on top with this comparator.
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches() const
 {
-    for (const auto & task : prefetch_queue)
+    if (prefetch_queue.empty())
+        return;
+
+    [[maybe_unused]] TaskHolder prev(nullptr, 0);
+    [[maybe_unused]] const int64_t highest_priority = reader_settings.read_settings.priority + 1;
+    assert(prefetch_queue.top().task->priority == highest_priority);
+    while (!prefetch_queue.empty())
     {
-        createPrefetchedReaderForTask(*task.task);
+        const auto & top = prefetch_queue.top();
+        createPrefetchedReaderForTask(*top.task);
+#ifndef NDEBUG
+        if (prev.task)
+        {
+            assert(top.task->priority >= highest_priority);
+            if (prev.thread_id == top.thread_id)
+            {
+                assert(prev.task->priority < top.task->priority);
+            }
+        }
+        prev = top;
+#endif
+        prefetch_queue.pop();
     }
 }
 
@@ -154,8 +183,8 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
 
     if (!started_prefetches)
     {
-        startPrefetches();
         started_prefetches = true;
+        startPrefetches();
     }
 
     auto it = threads_tasks.find(thread);
@@ -298,6 +327,7 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
 {
     PartsInfos result;
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    const auto & settings = getContext()->getSettingsRef();
     const bool predict_block_size_bytes = preferred_block_size_bytes > 0;
 
     for (const auto & part : parts)
@@ -336,6 +366,37 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         part_info->column_name_set = {required_column_names.begin(), required_column_names.end()};
         part_info->task_columns = task_columns;
 
+        /// adjustBufferSize(), which is done in MergeTreeReaderStream and MergeTreeReaderCompact,
+        /// lowers buffer size if file size (or required read range) is less. So we know that the
+        /// settings.prefetch_buffer_size will be lowered there, therefore we account it here as well.
+        /// But here we make a more approximate lowering (because we do not have loaded marks yet),
+        /// while in adjustBufferSize it will be presize.
+        for (const auto & col : task_columns.columns)
+        {
+            const auto col_size = part.data_part->getColumnSize(col.name).data_compressed;
+            part_info->estimated_memory_usage_for_single_prefetch += std::min<size_t>(col_size, settings.prefetch_buffer_size);
+            ++part_info->required_readers_num;
+        }
+        if (reader_settings.apply_deleted_mask && part.data_part->hasLightweightDelete())
+        {
+            const auto col_size = part.data_part->getColumnSize(
+                LightweightDeleteDescription::FILTER_COLUMN.name).data_compressed;
+            part_info->estimated_memory_usage_for_single_prefetch += std::min<size_t>(col_size, settings.prefetch_buffer_size);
+            ++part_info->required_readers_num;
+        }
+        if (prewhere_info)
+        {
+            for (const auto & columns : task_columns.pre_columns)
+            {
+                for (const auto & col : columns)
+                {
+                    const size_t col_size = part.data_part->getColumnSize(col.name).data_compressed;
+                    part_info->estimated_memory_usage_for_single_prefetch += std::min<size_t>(col_size, settings.prefetch_buffer_size);
+                    ++part_info->required_readers_num;
+                }
+            }
+        }
+
         result.push_back(std::move(part_info));
     }
 
@@ -363,7 +424,6 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
         min_prefetch_step_marks = static_cast<size_t>(std::round(static_cast<double>(sum_marks) / settings.filesystem_prefetches_limit));
     }
 
-    size_t total_prefetches_approx = 0;
     for (const auto & part : parts_infos)
     {
         if (settings.filesystem_prefetch_step_marks)
@@ -422,11 +482,14 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
         "Sum marks: {}, threads: {}, min_marks_per_thread: {}, result prefetch step marks: {}, prefetches limit: {}, total_size_approx: {}",
         sum_marks, threads, min_marks_per_thread, settings.filesystem_prefetch_step_bytes, settings.filesystem_prefetches_limit, total_size_approx);
 
-    size_t current_prefetches_count = 0;
-    prefetch_queue.reserve(total_prefetches_approx);
+    size_t allowed_memory_usage = settings.filesystem_prefetch_max_memory_usage;
+    if (!allowed_memory_usage)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `filesystem_prefetch_max_memory_usage` must be non-zero");
+    std::optional<size_t> allowed_prefetches_num = settings.filesystem_prefetches_limit
+        ? std::optional<size_t>(settings.filesystem_prefetches_limit)
+        : std::nullopt;
 
     ThreadsTasks result_threads_tasks;
-    size_t memory_usage_approx = 0;
     for (size_t i = 0, part_idx = 0; i < threads && part_idx < parts_infos.size(); ++i)
     {
         auto need_marks = min_marks_per_thread;
@@ -514,22 +577,25 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
 
             read_task->priority = priority;
 
-            bool allow_prefetch = !settings.filesystem_prefetches_limit || current_prefetches_count + 1 <= settings.filesystem_prefetches_limit;
-            if (allow_prefetch && settings.filesystem_prefetch_max_memory_usage)
+            bool allow_prefetch = false;
+            if (allowed_memory_usage
+                && (allowed_prefetches_num.has_value() == false || allowed_prefetches_num.value() > 0))
             {
-                size_t num_readers = 1;
-                if (reader_settings.apply_deleted_mask && part.data_part->hasLightweightDelete())
-                    ++num_readers;
-                if (prewhere_info)
-                    num_readers += part.task_columns.pre_columns.size();
-                memory_usage_approx += settings.max_read_buffer_size * num_readers;
+                allow_prefetch = part.estimated_memory_usage_for_single_prefetch <= allowed_memory_usage
+                    && (allowed_prefetches_num.has_value() == false
+                        || part.required_readers_num <= allowed_prefetches_num.value());
 
-                allow_prefetch = memory_usage_approx <= settings.filesystem_prefetch_max_memory_usage;
+                if (allow_prefetch)
+                {
+                    allowed_memory_usage -= part.estimated_memory_usage_for_single_prefetch;
+                    if (allowed_prefetches_num.has_value())
+                        *allowed_prefetches_num -= part.required_readers_num;
+                }
             }
+
             if (allow_prefetch)
             {
-                prefetch_queue.emplace(TaskHolder(read_task.get()));
-                ++current_prefetches_count;
+                prefetch_queue.emplace(TaskHolder(read_task.get(), i));
             }
             ++priority;
 

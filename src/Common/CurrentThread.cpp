@@ -25,6 +25,13 @@ void CurrentThread::updatePerformanceCounters()
     current_thread->updatePerformanceCounters();
 }
 
+void CurrentThread::updatePerformanceCountersIfNeeded()
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->updatePerformanceCountersIfNeeded();
+}
+
 bool CurrentThread::isInitialized()
 {
     return current_thread;
@@ -83,7 +90,7 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
 }
 
 
-ThreadGroupStatusPtr CurrentThread::getGroup()
+ThreadGroupPtr CurrentThread::getGroup()
 {
     if (unlikely(!current_thread))
         return nullptr;

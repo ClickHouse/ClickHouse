@@ -6,6 +6,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
 
 
