@@ -20,9 +20,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
@@ -50,7 +48,7 @@ namespace
     const std::unordered_map<String, std::pair<String, Int32>> monthMap{
         {"jan", {"uary", 1}},
         {"feb", {"ruary", 2}},
-        {"mar", {"rch", 3}},
+        {"mar", {"ch", 3}},
         {"apr", {"il", 4}},
         {"may", {"", 5}},
         {"jun", {"e", 6}},
@@ -103,16 +101,16 @@ namespace
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
         bool has_year = false; /// Whether year was explicitly specified.
 
-        /// If is_clock_hour = true, is_hour_of_half_day = true, hour's range is [1, 12]
-        /// If is_clock_hour = true, is_hour_of_half_day = false, hour's range is [1, 24]
-        /// If is_clock_hour = false, is_hour_of_half_day = true, hour's range is [0, 11]
-        /// If is_clock_hour = false, is_hour_of_half_day = false, hour's range is [0, 23]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = true, hour's range is [1, 12]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = false, hour's range is [1, 24]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = true, hour's range is [0, 11]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = false, hour's range is [0, 23]
         Int32 hour = 0;
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
 
         bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
-        bool is_clock_hour = false; /// Whether the hour is clockhour
+        bool hour_starts_at_1 = false; /// Whether the hour is clockhour
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
         bool has_time_zone_offset = false; /// If true, time zone offset is explicitly specified.
@@ -139,7 +137,7 @@ namespace
             second = 0;
 
             is_am = true;
-            is_clock_hour = false;
+            hour_starts_at_1 = false;
             is_hour_of_half_day = false;
 
             has_time_zone_offset = false;
@@ -277,23 +275,23 @@ namespace
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text);
         }
 
-        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
+        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool hour_starts_at_1_ = false)
         {
             Int32 max_hour;
             Int32 min_hour;
             Int32 new_hour = hour_;
-            if (!is_hour_of_half_day_ && !is_clock_hour_)
+            if (!is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 23;
                 min_hour = 0;
             }
-            else if (!is_hour_of_half_day_ && is_clock_hour_)
+            else if (!is_hour_of_half_day_ && hour_starts_at_1_)
             {
                 max_hour = 24;
                 min_hour = 1;
                 new_hour = hour_ % 24;
             }
-            else if (is_hour_of_half_day_ && !is_clock_hour_)
+            else if (is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 11;
                 min_hour = 0;
@@ -308,16 +306,16 @@ namespace
             if (hour_ < min_hour || hour_ > max_hour)
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_DATETIME,
-                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and is_clock_hour={}",
+                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and hour_starts_at_1={}",
                     hour,
                     max_hour,
                     min_hour,
                     is_hour_of_half_day_,
-                    is_clock_hour_);
+                    hour_starts_at_1_);
 
             hour = new_hour;
             is_hour_of_half_day = is_hour_of_half_day_;
-            is_clock_hour = is_clock_hour_;
+            hour_starts_at_1 = hour_starts_at_1_;
         }
 
         void setMinute(Int32 minute_)
@@ -466,8 +464,15 @@ namespace
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
+        const bool mysql_M_is_month_name;
+
         static constexpr auto name = Name::name;
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseDateTimeImpl>(); }
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
+
+        explicit FunctionParseDateTimeImpl(ContextPtr context)
+            : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+        {
+        }
 
         String getName() const override { return name; }
 
@@ -480,33 +485,15 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.size() != 1 && arguments.size() != 2 && arguments.size() != 3)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3",
-                    getName(),
-                    arguments.size());
+            FunctionArgumentDescriptors args{
+                {"time", &isString<IDataType>, nullptr, "String"},
+                {"format", &isString<IDataType>, nullptr, "String"},
+            };
 
-            if (!isString(arguments[0].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            if (arguments.size() == 3)
+                args.emplace_back(FunctionArgumentDescriptor{"timezone", &isString<IDataType>, nullptr, "String"});
 
-            if (arguments.size() > 1 && !isString(arguments[1].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
-
-            if (arguments.size() > 2 && !isString(arguments[2].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}. Should be String",
-                    arguments[0].type->getName(),
-                    getName());
+            validateFunctionArgumentTypes(*this, arguments, args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
@@ -736,13 +723,31 @@ namespace
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
 
-                if (*cur != expected)
+                if (*cur != expected) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
                         String(expected, 1),
+                        String(*cur, 1));
+
+                ++cur;
+                return cur;
+            }
+
+            template <NeedCheckSpace need_check_space>
+            static Pos assertNumber(Pos cur, Pos end, const String & fragment)
+            {
+                if constexpr (need_check_space == NeedCheckSpace::Yes)
+                    checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
+
+                if (*cur < '0' || *cur > '9') [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because {} is not a number",
+                        fragment,
+                        std::string_view(cur, end - cur),
                         String(*cur, 1));
 
                 ++cur;
@@ -785,6 +790,38 @@ namespace
 
                 date.setMonth(it->second.second);
                 cur += 3;
+                return cur;
+            }
+
+            static Pos mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment);
+                String text1(cur, 3);
+                boost::to_lower(text1);
+                auto it = monthMap.find(text1);
+                if (it == monthMap.end())
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1);
+                cur += 3;
+
+                size_t expected_remaining_size = it->second.first.size();
+                checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                String text2(cur, expected_remaining_size);
+                boost::to_lower(text2);
+                if (text2 != it->second.first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1 + text2);
+                cur += expected_remaining_size;
+
+                date.setMonth(it->second.second);
                 return cur;
             }
 
@@ -920,7 +957,7 @@ namespace
 
             static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 6, "jodaDayOfWeekText requires size >= 6", fragment);
+                checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment);
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -934,7 +971,7 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                checkSpace(cur, end, expected_remaining_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -1052,6 +1089,16 @@ namespace
                 Int32 second;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second);
                 date.setSecond(second);
+                return cur;
+            }
+
+            static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
+            {
+                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
+
+                for (size_t i = 0; i < 6; ++i)
+                    cur = assertNumber<NeedCheckSpace::No>(cur, end, fragment);
+
                 return cur;
             }
 
@@ -1466,6 +1513,10 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
+                        // Fractional seconds
+                        case 'f':
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMicrosecond));
+                            break;
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
@@ -1532,9 +1583,14 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
 
-                        // Minute (00-59)
+                        // Depending on a setting
+                        // - Full month [January...December]
+                        // - Minute (00-59) OR
                         case 'M':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
+                            if (mysql_M_is_month_name)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // AM or PM
@@ -1613,8 +1669,6 @@ namespace
                         /// Unimplemented
 
                         /// Fractional seconds
-                        case 'f':
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
                         case 'U':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                         case 'v':
@@ -1776,14 +1830,6 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            if (arguments.size() < 2)
-            {
-                if constexpr (parse_syntax == ParseSyntax::Joda)
-                    return "yyyy-MM-dd HH:mm:ss";
-                else
-                    return "%Y-%m-%d %H:%M:%S";
-            }
-
             const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!format_column)
                 throw Exception(
@@ -1856,7 +1902,7 @@ REGISTER_FUNCTION(ParseDateTime)
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name);
     factory.registerFunction<FunctionParseDateTimeOrZero>();
     factory.registerFunction<FunctionParseDateTimeOrNull>();
-    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name);
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();

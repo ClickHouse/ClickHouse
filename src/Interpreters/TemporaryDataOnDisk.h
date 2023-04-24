@@ -85,10 +85,17 @@ public:
 
     explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_);
 
-    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope);
+    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Metric metric_scope);
 
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
     TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
+
+    /// Write raw data directly into buffer.
+    /// Differences from `createStream`:
+    ///   1) it doesn't account data in parent scope
+    ///   2) returned buffer owns resources (instead of TemporaryDataOnDisk itself)
+    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
+    WriteBufferPtr createRawStream(size_t max_file_size = 0);
 
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
@@ -96,13 +103,13 @@ public:
     const StatAtomic & getStat() const { return stat; }
 
 private:
-    TemporaryFileStream & createStreamToCacheFile(const Block & header, size_t max_file_size);
-    TemporaryFileStream & createStreamToRegularFile(const Block & header, size_t max_file_size);
+    FileSegmentsHolder createCacheFile(size_t max_file_size);
+    TemporaryFileOnDiskHolder createRegularFile(size_t max_file_size);
 
     mutable std::mutex mutex;
     std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
 
-    typename CurrentMetrics::Value current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
+    typename CurrentMetrics::Metric current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
 };
 
 /*

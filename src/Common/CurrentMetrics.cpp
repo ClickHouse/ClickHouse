@@ -78,6 +78,12 @@
     M(BackupsThreadsActive, "Number of threads in thread pool for BACKUP running a task.") \
     M(RestoreThreads, "Number of threads in the thread pool for RESTORE.") \
     M(RestoreThreadsActive, "Number of threads in the thread pool for RESTORE running a task.") \
+    M(MarksLoaderThreads, "Number of threads in thread pool for loading marks.") \
+    M(MarksLoaderThreadsActive, "Number of threads in the thread pool for loading marks running a task.") \
+    M(IOPrefetchThreads, "Number of threads in the IO prefertch thread pool.") \
+    M(IOPrefetchThreadsActive, "Number of threads in the IO prefetch thread pool running a task.") \
+    M(IOWriterThreads, "Number of threads in the IO writer thread pool.") \
+    M(IOWriterThreadsActive, "Number of threads in the IO writer thread pool running a task.") \
     M(IOThreads, "Number of threads in the IO thread pool.") \
     M(IOThreadsActive, "Number of threads in the IO thread pool running a task.") \
     M(ThreadPoolRemoteFSReaderThreads, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool.") \
@@ -120,6 +126,8 @@
     M(DDLWorkerThreadsActive, "Number of threads in the DDLWORKER thread pool for ON CLUSTER queries running a task.") \
     M(StorageDistributedThreads, "Number of threads in the StorageDistributed thread pool.") \
     M(StorageDistributedThreadsActive, "Number of threads in the StorageDistributed thread pool running a task.") \
+    M(DistributedInsertThreads, "Number of threads used for INSERT into Distributed.") \
+    M(DistributedInsertThreadsActive, "Number of threads used for INSERT into Distributed running a task.") \
     M(StorageS3Threads, "Number of threads in the StorageS3 thread pool.") \
     M(StorageS3ThreadsActive, "Number of threads in the StorageS3 thread pool running a task.") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
@@ -130,6 +138,10 @@
     M(SystemReplicasThreadsActive, "Number of threads in the system.replicas thread pool running a task.") \
     M(RestartReplicaThreads, "Number of threads in the RESTART REPLICA thread pool.") \
     M(RestartReplicaThreadsActive, "Number of threads in the RESTART REPLICA thread pool running a task.") \
+    M(QueryPipelineExecutorThreads, "Number of threads in the PipelineExecutor thread pool.") \
+    M(QueryPipelineExecutorThreadsActive, "Number of threads in the PipelineExecutor thread pool running a task.") \
+    M(ParquetDecoderThreads, "Number of threads in the ParquetBlockInputFormat thread pool running a task.") \
+    M(ParquetDecoderThreadsActive, "Number of threads in the ParquetBlockInputFormat thread pool.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
     M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
@@ -178,10 +190,10 @@
 
 namespace CurrentMetrics
 {
-    #define M(NAME, DOCUMENTATION) extern const Metric NAME = __COUNTER__;
+    #define M(NAME, DOCUMENTATION) extern const Metric NAME = Metric(__COUNTER__);
         APPLY_FOR_METRICS(M)
     #undef M
-    constexpr Metric END = __COUNTER__;
+    constexpr Metric END = Metric(__COUNTER__);
 
     std::atomic<Value> values[END] {};    /// Global variable, initialized by zeros.
 
