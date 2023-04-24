@@ -221,7 +221,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
     const auto * end = pos + size;
     while (pos + 8 <= end)
     {
-        auto word = unalignedLoadLE<UInt64>(pos);
+        auto word = unalignedLoadLittleEndian<UInt64>(pos);
         updated_value = static_cast<UInt32>(intHashCRC32(word, updated_value));
 
         pos += 8;
@@ -233,7 +233,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
         DB::UInt8 tail_size = end - pos;
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
-        auto word = unalignedLoadLE<UInt64>(end - 8);
+        auto word = unalignedLoadLittleEndian<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.
         /// word & mask = '\0\0\0\0\0XYZ' (bytes are reversed because of little ending)
         word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
@@ -344,6 +344,8 @@ DEFINE_HASH(DB::Int256)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 DEFINE_HASH(DB::UUID)
+DEFINE_HASH(DB::IPv4)
+DEFINE_HASH(DB::IPv6)
 
 #undef DEFINE_HASH
 
