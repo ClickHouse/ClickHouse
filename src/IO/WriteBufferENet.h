@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cassert>
 #include <cstring>
+#include <mutex>
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -25,18 +26,22 @@ class WriteBufferENet : public WriteBuffer
 public:
     WriteBufferENet(Position ptr, size_t size) : WriteBuffer(ptr, size) {}
 
-    std::string res() {
+    char* res()
+    {
       return st;
     }
 
 private:
-    std::string st;
+    std::mutex mutex;
+    char st[DBMS_DEFAULT_BUFFER_SIZE];
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
     void nextImpl() override
     {
-        st += std::string(working_buffer.begin());
+        std::lock_guard lock(mutex);
+        std::strcat(st, working_buffer.begin());
+        std::memset(working_buffer.begin(), '\0', working_buffer.size());
         return;
     }
 

@@ -39,18 +39,18 @@ class ENetPack
             std::string res = "";
             for (auto pair: data)
             {
-                res += pair.first + "=" + pair.second + "\t";
+                res += pair.first + "=" + pair.second + '\t';
             }
             return res;
         }
 
-        void deserialize(const char * inp)
+        std::string deserialize(const char * inp)
         {
             std::string res(inp);
             size_t i = 0;
             std::string prev = "";
             std::string cur = "";
-            while (i < res.size())
+            while (i < res.size() && res[i] != '\r')
             {
                 if (res[i] == '=')
                 {
@@ -69,6 +69,7 @@ class ENetPack
                 }
                 ++i;
             }
+            return res.substr(i, res.size() - i - 1);
         }
 
     public:

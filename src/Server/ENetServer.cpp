@@ -113,19 +113,25 @@ void ENetServer::run()
                             endpoint->processQuery(pck, out, resp_pck);
                         }
 
-                        LOG_TRACE(logger, "{}", out.res());
+                        out.finalize();
+
+                        LOG_TRACE(logger, "\n{}", out.res());
 
                         //resp_pck.set("body", std::string(data));
 
                         //auto resp_str = resp_pck.serialize();
                         //auto resp_cstr = resp_str.c_str();
 
-                        auto str = out.res();
-                        auto res_str = str.c_str();
+                        auto str = std::string(out.res());
 
-                        ENetPacket* resp = enet_packet_create (res_str,
-                                                out.res().size() + 1,
-                                                ENET_PACKET_FLAG_RELIABLE);
+                        auto response_str = resp_pck.serialize();
+                        response_str += "\r" + str;
+
+                        auto response_cstr = response_str.c_str();
+
+                        ENetPacket * resp = enet_packet_create (response_cstr,
+                                            response_str.size() + 1,
+                                            ENET_PACKET_FLAG_RELIABLE);
 
                         enet_peer_send (event.peer, 0, resp);
 

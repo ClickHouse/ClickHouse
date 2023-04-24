@@ -242,9 +242,9 @@ namespace detail
 
                     ENetAddress address;
 
-                    //enet_address_set_host (& address, uri_.getHost().c_str());
+                    enet_address_set_host (& address, uri_.getHost().c_str());
                     //address.port = uri_.getPort();
-                    enet_address_set_host (& address, "127.0.0.1");
+                    //enet_address_set_host (& address, "127.0.0.1");
                     address.port = 9008;
 
                     ENetPeer * peer = enet_host_connect(client, &address, 2, 0);
@@ -268,8 +268,7 @@ namespace detail
 
                     enet_host_flush(client);
 
-                    uint8_t* data = nullptr;
-                    size_t data_size = 0;
+                    ENetPack resp;
 
                     while (enet_host_service(client, &event, 5000) > 0)
                     {
@@ -278,11 +277,17 @@ namespace detail
                             case ENET_EVENT_TYPE_RECEIVE:
                                 // Receive packet from Service
                                 {
-                                    ENetPack pck;
-                                    pck.deserialize(reinterpret_cast<char *>(event.packet->data));
-                                    data = event.packet->data;
-                                    LOG_INFO(log, "ENET RECEIVED {}", reinterpret_cast<char*>(data));
-                                    data_size = event.packet->dataLength;
+                                    if (event.packet->data == nullptr)
+                                    {
+                                        response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
+                                        enet_deinitialize();
+                                        throw 1;
+                                    }
+                                    auto data = resp.deserialize(reinterpret_cast<char*>(event.packet->data));
+                                    LOG_INFO(log, "ENET RECEIVED {}", data);
+                                    char data_char[data.size() + 1];
+                                    strcpy(data_char, data.c_str());
+                                    istr->get(data_char, data.size() - 1);
                                     enet_packet_destroy(event.packet);
                                 }
                                 break;
@@ -291,20 +296,8 @@ namespace detail
                         }
                     }
 
-                    enet_peer_disconnect(peer, 0);
-
-                    if (data == nullptr)
-                    {
-                        response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND);
-                        enet_deinitialize();
-                        throw 1;
-                    }
-
                     response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
-
-                    LOG_INFO(log, "ENET RECEIVED {}", reinterpret_cast<char*>(data));
-
-                    istr->get(reinterpret_cast<char*>(data), data_size);
+                    enet_peer_disconnect(peer, 0);
 
                     enet_deinitialize();
 
