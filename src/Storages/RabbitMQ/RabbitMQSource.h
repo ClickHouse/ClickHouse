@@ -24,7 +24,7 @@ public:
     ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
-    RabbitMQConsumerPtr getBuffer() { return consumer; }
+    void updateChannel(RabbitMQConnection & connection) { consumer->updateChannel(connection); }
 
     Chunk generate() override;
 
@@ -50,6 +50,8 @@ private:
 
     uint64_t max_execution_time_ms = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+
+    RabbitMQConsumer::CommitInfo commit_info;
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,

@@ -2181,6 +2181,35 @@ std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const
     return std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
 }
 
+PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
+{
+    auto l = std::lock_guard(mutation_prepared_sets_cache_mutex);
+
+    /// Cleanup stale entries where the shared_ptr is expired.
+    while (!mutation_prepared_sets_cache.empty())
+    {
+        auto it = mutation_prepared_sets_cache.begin();
+        if (it->second.lock())
+            break;
+        mutation_prepared_sets_cache.erase(it);
+    }
+
+    /// Look up an existing entry.
+    auto it = mutation_prepared_sets_cache.find(mutation_id);
+    if (it != mutation_prepared_sets_cache.end())
+    {
+        /// If the entry is still alive, return it.
+        auto existing_set_cache = it->second.lock();
+        if (existing_set_cache)
+            return existing_set_cache;
+    }
+
+    /// Create new entry.
+    auto cache = std::make_shared<PreparedSetsCache>();
+    mutation_prepared_sets_cache[mutation_id] = cache;
+    return cache;
+}
+
 void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
 {
     part->info.min_block = part->info.max_block = increment.get();
