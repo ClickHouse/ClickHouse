@@ -4,8 +4,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Common/typeid_cast.h>
 
+#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseFileSystem.h>
 
 #include <Storages/IStorage_fwd.h>
 
@@ -258,7 +258,7 @@ DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context
 DatabasePtr CreateClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_)
 {
     auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
-    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFileSystem>(name_, "", context_));
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
     databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
     return databaseCombiner;
 }

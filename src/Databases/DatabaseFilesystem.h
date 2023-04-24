@@ -12,18 +12,18 @@ namespace DB
 class Context;
 
 /**
-  * DatabaseFileSystem allows to interact with files stored on the file system
+  * DatabaseFilesystem allows to interact with files stored on the file system
   * Uses TableFunctionFile to implicitly load file when a user requests the table, and provides read-only access to the data in the file
   * Tables are cached inside the database for quick access
   *
   * Used in clickhouse-local to access local files
   */
-class DatabaseFileSystem : public IDatabase, protected WithContext
+class DatabaseFilesystem : public IDatabase, protected WithContext
 {
 public:
-    DatabaseFileSystem(const String & name, const String & path, ContextPtr context);
+    DatabaseFilesystem(const String & name, const String & path, ContextPtr context);
 
-    String getEngineName() const override { return "FileSystem"; }
+    String getEngineName() const override { return "Filesystem"; }
 
     bool isTableExist(const String & name, ContextPtr context) const override;
 
