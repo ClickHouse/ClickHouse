@@ -5,6 +5,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
 #include <IO/Operators.h>
+#include "Common/logger_useful.h"
+#include "Processors/QueryPlan/CreatingSetsStep.h"
 
 namespace DB
 {
@@ -66,30 +68,30 @@ String PreparedSetKey::toString() const
     return buf.str();
 }
 
-SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
-                                                   SizeLimits set_size_limit, bool transform_null_in)
-{
-    SubqueryForSet & subquery = subqueries[subquery_id];
+// SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
+//                                                    SizeLimits set_size_limit, bool transform_null_in)
+// {
+//     SubqueryForSet & subquery = subqueries[subquery_id];
 
-    /// If you already created a Set with the same subquery / table for another ast
-    /// In that case several PreparedSetKey would share same subquery and set
-    /// Not sure if it's really possible case (maybe for distributed query when set was filled by external table?)
-    if (subquery.set.isValid())
-        sets[key] = subquery.set;
-    else
-    {
-        subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
-        sets[key] = FutureSet(subquery.promise_to_fill_set.get_future());
-    }
+//     /// If you already created a Set with the same subquery / table for another ast
+//     /// In that case several PreparedSetKey would share same subquery and set
+//     /// Not sure if it's really possible case (maybe for distributed query when set was filled by external table?)
+//     if (subquery.set.isValid())
+//         sets[key] = subquery.set;
+//     else
+//     {
+//         subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
+//         sets[key] = FutureSet(subquery.promise_to_fill_set.get_future());
+//     }
 
-    if (!subquery.set_in_progress)
-    {
-        subquery.key = key.toString();
-        subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
-    }
+//     if (!subquery.set_in_progress)
+//     {
+//         subquery.key = key.toString();
+//         subquery.set_in_progress = std::make_shared<Set>(set_size_limit, false, transform_null_in);
+//     }
 
-    return subquery;
-}
+//     return subquery;
+// }
 
 /// If the subquery is not associated with any set, create default-constructed SubqueryForSet.
 /// It's aimed to fill external table passed to SubqueryForSet::createSource.
@@ -154,26 +156,6 @@ QueryPlanPtr SubqueryForSet::detachSource()
 }
 
 
-FutureSet::FutureSet(SetPtr set)
-{
-    std::promise<SetPtr> promise;
-    promise.set_value(set);
-    *this = FutureSet(promise.get_future());
-}
-
-
-bool FutureSet::isReady() const
-{
-    return future_set.valid() &&
-        future_set.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-}
-
-bool FutureSet::isCreated() const
-{
-    return isReady() && get() != nullptr && get()->isCreated();
-}
-
-
 std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseToBuild(const String & key)
 {
     std::lock_guard lock(cache_mutex);
@@ -192,6 +174,43 @@ std::variant<std::promise<SetPtr>, SharedSet> PreparedSetsCache::findOrPromiseTo
     Entry & entry = cache[key];
     entry.future = promise_to_fill_set.get_future();
     return promise_to_fill_set;
+}
+
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & context, bool create_ordered_set)
+{
+    if (set)
+        return nullptr;
+
+    auto set_cache = context->getPreparedSetsCache();
+    if (set_cache)
+    {
+        auto from_cache = set_cache->findOrPromiseToBuild(subquery.key);
+        if (from_cache.index() == 0)
+        {
+            subquery.promise_to_fill_set = std::move(std::get<0>(from_cache));
+        }
+        else
+        {
+            LOG_TRACE(&Poco::Logger::get("FutureSetFromSubquery"), "Waiting for set, key: {}", subquery.key);
+            set = std::get<1>(from_cache).get();
+            return nullptr;
+        }
+    }
+
+    subquery.set = set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
+
+    auto plan = subquery.detachSource();
+
+    const Settings & settings = context->getSettingsRef();
+    auto creating_set = std::make_unique<CreatingSetStep>(
+            plan->getCurrentDataStream(),
+            subquery_id,
+            std::move(subquery),
+            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
+            context);
+    creating_set->setStepDescription("Create set for subquery");
+    plan->addStep(std::move(creating_set));
+    return plan;
 }
 
 };
