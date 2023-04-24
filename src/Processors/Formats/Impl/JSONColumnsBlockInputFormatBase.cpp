@@ -72,7 +72,7 @@ void JSONColumnsReaderBase::skipColumn()
 
 JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
-    : IInputFormat(header_, in_)
+    : IInputFormat(header_, &in_)
     , format_settings(format_settings_)
     , fields(header_.getNamesAndTypes())
     , serializations(header_.getSerializations())
