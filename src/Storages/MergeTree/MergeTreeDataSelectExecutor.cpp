@@ -1435,18 +1435,21 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         return res;
     }
 
-    size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
-    const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
+    const auto & key_indices = key_condition.getKeyIndices();
+    DataTypes key_types;
+    for (size_t i : key_indices)
+    {
+        index_columns->emplace_back(ColumnWithTypeAndName{index[i], primary_key.data_types[i], primary_key.column_names[i]});
+        key_types.emplace_back(primary_key.data_types[i]);
+    }
 
-    std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
     /// If there are no monotonic functions, there is no need to save block reference.
     /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
     if (key_condition.hasMonotonicFunctionsChain())
     {
-        auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
-        for (size_t i = 0; i < used_key_size; ++i)
-            index_columns->emplace_back(ColumnWithTypeAndName{index[i], primary_key.data_types[i], primary_key.column_names[i]});
 
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
@@ -1458,9 +1461,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
     else
     {
-        create_field_ref = [&index](size_t row, size_t column, FieldRef & field)
+        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
-            index[column]->get(row, field);
+            (*index_columns)[column].column->get(row, field);
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;
@@ -1468,6 +1471,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     /// NOTE Creating temporary Field objects to pass to KeyCondition.
+    size_t used_key_size = key_indices.size();
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
@@ -1492,10 +1496,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 create_field_ref(range.end, i, index_right[i]);
             }
         }
-        return key_condition.mayBeTrueInRange(
-            used_key_size, index_left.data(), index_right.data(), primary_key.data_types);
+        return key_condition.mayBeTrueInRange(used_key_size, index_left.data(), index_right.data(), key_types);
     };
 
+    const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
     if (!key_condition.matchesExactContinuousRange())
     {
         // Do exclusion search, where we drop ranges that do not match
