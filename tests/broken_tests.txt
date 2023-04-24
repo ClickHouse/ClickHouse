@@ -123,7 +123,6 @@
 02713_array_low_cardinality_string
 02707_skip_index_with_in
 02707_complex_query_fails_analyzer
-02699_polygons_sym_difference_rollup
 02680_mysql_ast_logical_err
 02661_quantile_approx
 02540_duplicate_primary_key2

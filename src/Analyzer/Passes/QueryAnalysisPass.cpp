@@ -6679,7 +6679,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
-    if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.isGroupByWithTotals())
+    if (query_node_typed.isGroupByWithGroupingSets()
+        && query_node_typed.isGroupByWithTotals()
+        && query_node_typed.getGroupBy().getNodes().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");
 
     if (query_node_typed.isGroupByWithGroupingSets() && is_rollup_or_cube)
