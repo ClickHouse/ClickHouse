@@ -133,12 +133,13 @@ struct FixedStringUnaryOperationImpl
 };
 
 template <typename Op>
-struct FixedStringUnaryOperationReduceImpl
+struct StringUnaryOperationReduceImpl
 {
     MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
         MULTITARGET_FUNCTION_HEADER(static UInt64 NO_INLINE),
         vectorImpl,
-        MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) { /// NOLINT
+        MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) /// NOLINT
+        {
             UInt64 res = 0;
             while (start < end)
                 res += Op::apply(*start++);
@@ -364,7 +365,7 @@ public:
                             auto n = col->getN();
                             for (size_t i = 0; i < size; ++i)
                             {
-                                vec_res[i] = FixedStringUnaryOperationReduceImpl<Op<UInt8>>::vector(
+                                vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
                                     chars.data() + n * i, chars.data() + n * (i + 1));
                             }
                             result_column = std::move(col_res);
@@ -399,8 +400,8 @@ public:
                             const auto & offsets = col->getOffsets();
                             for (size_t i = 0; i < size; ++i)
                             {
-                                vec_res[i] = FixedStringUnaryOperationReduceImpl<Op<UInt8>>::vector(
-                                    chars.data() + offsets[i - 1], chars.data() + offsets[i]);
+                                vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
+                                    chars.data() + offsets[i - 1], chars.data() + offsets[i] - 1);
                             }
                             result_column = std::move(col_res);
                             return true;
