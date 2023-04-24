@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageExecutable.h>
@@ -25,7 +26,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -61,6 +63,21 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
             "Table function '{}' requires minimum 3 arguments: script_name, format, structure, [input_query...]",
             getName());
 
+    auto check_argument = [&](size_t i, const std::string & argument_name)
+    {
+        if (!args[i]->as<ASTIdentifier>() &&
+            !args[i]->as<ASTLiteral>() &&
+            !args[i]->as<ASTQueryParameter>() &&
+            !args[i]->as<ASTSubquery>())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of argument '{}' for table function '{}': must be an identifier or string literal",
+                argument_name, getName());
+    };
+
+    check_argument(0, "script_name");
+    check_argument(1, "format");
+    check_argument(2, "structure");
+
     for (size_t i = 0; i <= 2; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
@@ -83,15 +100,18 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         }
         else
         {
-            ASTPtr query = args[i]->children.at(0);
-            if (query->as<ASTSelectWithUnionQuery>())
+            ASTPtr query;
+            if (!args[i]->children.empty())
+                query = args[i]->children.at(0);
+
+            if (query && query->as<ASTSelectWithUnionQuery>())
             {
                 input_queries.emplace_back(std::move(query));
             }
             else
             {
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
+                    ErrorCodes::BAD_ARGUMENTS,
                     "Table function '{}' argument is invalid {}",
                     getName(),
                     args[i]->formatForErrorMessage());

@@ -2,11 +2,11 @@
 
 #if USE_AWS_S3
 
-#    include <Storages/StorageHudi.h>
-#    include <TableFunctions/ITableFunctionDataLake.h>
-#    include <TableFunctions/TableFunctionFactory.h>
-#    include <TableFunctions/TableFunctionS3.h>
-#    include "registerTableFunctions.h"
+#include <Storages/DataLakes/StorageHudi.h>
+#include <TableFunctions/ITableFunctionDataLake.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionS3.h>
+#include "registerTableFunctions.h"
 
 namespace DB
 {
@@ -15,7 +15,7 @@ struct TableFunctionHudiName
 {
     static constexpr auto name = "hudi";
 };
-using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudi, TableFunctionS3>;
+using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudiS3, TableFunctionS3>;
 
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {

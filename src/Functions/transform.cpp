@@ -860,7 +860,7 @@ private:
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
             {
-                if (std::endian::native == std::endian::little)
+                if constexpr (std::endian::native == std::endian::little)
                     memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
                 else
                     memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
@@ -881,7 +881,7 @@ private:
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
             {
-                if (std::endian::native == std::endian::little)
+                if constexpr (std::endian::native == std::endian::little)
                     memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
                 else
                     memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
@@ -904,7 +904,7 @@ private:
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
             {
-                if (std::endian::native == std::endian::little)
+                if constexpr (std::endian::native == std::endian::little)
                     memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
                 else
                     memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
@@ -980,7 +980,7 @@ private:
             const auto * it = table.find(ref);
             if (it)
             {
-                if (std::endian::native == std::endian::little)
+                if constexpr (std::endian::native == std::endian::little)
                     memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
                 else
                     memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
@@ -1006,7 +1006,7 @@ private:
             const auto * it = table.find(ref);
             if (it)
             {
-                if (std::endian::native == std::endian::little)
+                if constexpr (std::endian::native == std::endian::little)
                     memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
                 else
                     memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));

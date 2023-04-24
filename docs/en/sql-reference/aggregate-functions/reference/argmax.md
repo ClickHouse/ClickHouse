@@ -15,12 +15,12 @@ argMax(arg, val)
 
 **Arguments**
 
--   `arg` — Argument.
--   `val` — Value.
+- `arg` — Argument.
+- `val` — Value.
 
 **Returned value**
 
--   `arg` value that corresponds to maximum `val` value.
+- `arg` value that corresponds to maximum `val` value.
 
 Type: matches `arg` type.
 
