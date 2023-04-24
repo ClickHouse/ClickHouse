@@ -43,6 +43,7 @@ sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 For other Linux distribution - check the availability of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
 As of April 2023, any version of Clang >= 15 will work.
+GCC as a compiler is not supported
 To build with a specific Clang version:
 
 ``` bash
