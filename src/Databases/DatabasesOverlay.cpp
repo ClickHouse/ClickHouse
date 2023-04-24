@@ -65,7 +65,12 @@ void DatabasesOverlay::createTable(ContextPtr context_, const String & table_nam
             continue;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no databases for CREATE TABLE {} query in Database{}", table_name, getEngineName());
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There is no databases for CREATE TABLE `{}` query in database `{}` (engine {})",
+        table_name,
+        getDatabaseName(),
+        getEngineName());
 }
 
 void DatabasesOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
@@ -82,7 +87,12 @@ void DatabasesOverlay::dropTable(ContextPtr context_, const String & table_name,
             continue;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no databases for DROP TABLE {} query in Database{}", table_name, getEngineName());
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There is no databases for DROP TABLE `{}` query in database `{}` (engine {})",
+        table_name,
+        getDatabaseName(),
+        getEngineName());
 }
 
 void DatabasesOverlay::attachTable(
@@ -100,7 +110,12 @@ void DatabasesOverlay::attachTable(
             continue;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no databases for ATTACH TABLE query in Database{}", getEngineName());
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There is no databases for ATTACH TABLE `{}` query in database `{}` (engine {})",
+        table_name,
+        getDatabaseName(),
+        getEngineName());
 }
 
 StoragePtr DatabasesOverlay::detachTable(ContextPtr context_, const String & table_name)
@@ -119,7 +134,12 @@ StoragePtr DatabasesOverlay::detachTable(ContextPtr context_, const String & tab
             continue;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no databases for DETACH TABLE {} query in Database{}", table_name, getEngineName());
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There is no databases for DETACH TABLE `{}` query in database `{}` (engine {})",
+        table_name,
+        getDatabaseName(),
+        getEngineName());
 }
 
 ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr context_, bool throw_on_error) const
@@ -132,7 +152,12 @@ ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr
             break;
     }
     if (!result && throw_on_error)
-        throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no metadata of table {} in Database{}", name, getEngineName());
+        throw Exception(
+            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
+            "There is no metadata of table `{}` in database `{}` (engine {})",
+            name,
+            getDatabaseName(),
+            getEngineName());
     return result;
 }
 
@@ -201,7 +226,12 @@ void DatabasesOverlay::alterTable(ContextPtr local_context, const StorageID & ta
             continue;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no databases for alterTable in Database{}", getEngineName());
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There is no databases for ALTER TABLE `{}` query in database `{}` (engine {})",
+        table_id.table_name,
+        getDatabaseName(),
+        getEngineName());
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>>
