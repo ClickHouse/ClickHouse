@@ -251,7 +251,7 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    if FEATURE_LABEL in pr_labels_to_add:
+    if FEATURE_LABEL in pr_info.labels:
         print(f"The '{FEATURE_LABEL}' in the labels, expect the 'Docs Check' status")
         commit.create_status(
             context=DOCS_NAME,
