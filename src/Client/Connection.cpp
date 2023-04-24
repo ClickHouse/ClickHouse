@@ -236,7 +236,8 @@ void Connection::disconnect()
     try
     {
         // finalize() can write to socket and throw an exception.
-        out->finalize();
+        if (out)
+            out->finalize();
     }
     catch (...)
     {
