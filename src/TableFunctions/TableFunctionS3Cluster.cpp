@@ -127,7 +127,6 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             columns,
             ConstraintsDescription{},
             context,
-            7,
             structure_argument_was_provided);
     }
 

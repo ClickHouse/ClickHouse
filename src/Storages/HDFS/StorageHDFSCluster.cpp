@@ -19,6 +19,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
 
 #include <memory>
 
@@ -28,16 +29,15 @@ namespace DB
 
 StorageHDFSCluster::StorageHDFSCluster(
     ContextPtr context_,
-    String cluster_name_,
+    const String & cluster_name_,
     const String & uri_,
     const StorageID & table_id_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & compression_method_,
-    size_t table_function_max_arguments,
     bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageHDFSCluster (" + table_id_.table_name + ")"), table_function_max_arguments, structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageHDFSCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
     , uri(uri_)
     , format_name(format_name_)
     , compression_method(compression_method_)
@@ -58,6 +58,12 @@ StorageHDFSCluster::StorageHDFSCluster(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 }
+
+void StorageHDFSCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure)
+{
+    addColumnsStructureToQueryWithHDFSClusterEngine(query, structure);
+}
+
 
 RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ASTPtr, ContextPtr context) const
 {

@@ -28,7 +28,6 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
-        size_t table_function_max_arguments,
         bool structure_argument_was_provided_);
 
     std::string getName() const override { return "S3Cluster"; }
@@ -42,6 +41,8 @@ protected:
 
 private:
     void updateBeforeRead(const ContextPtr & context) override { updateConfigurationIfChanged(context); }
+
+    void addColumnsStructureToQuery(ASTPtr & query, const String & structure) override;
 
     StorageS3::Configuration s3_configuration;
     NamesAndTypesList virtual_columns;
