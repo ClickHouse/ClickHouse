@@ -39,8 +39,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
-#include <Processors/Sources/ThrowingExceptionSource.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 
 namespace DB

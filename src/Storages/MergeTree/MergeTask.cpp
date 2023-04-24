@@ -253,7 +253,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
-    if (ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary && !ctx->need_remove_expired_values)
+    if (!ctx->need_remove_expired_values)
         global_ctx->storage_columns.emplace_back(BlockNumberColumn);
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
