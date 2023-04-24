@@ -3,12 +3,14 @@
 #include <cstring>
 #include <map>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace
 {
 bool AreAllPartialKeysUnique(const std::vector<EntropyLearnedHashing::Key> & data, const std::vector<size_t> & positions)
 {
-    std::set<EntropyLearnedHashing::Key> partial_keys;
+    std::unordered_set<EntropyLearnedHashing::Key> partial_keys;
     for (const auto & key : data)
     {
         if (!partial_keys.insert(EntropyLearnedHashing::getPartialKey(key, positions)).second)
@@ -26,7 +28,7 @@ std::pair<size_t, size_t> NextByte(const std::vector<EntropyLearnedHashing::Key>
     for (size_t i = 0; i < max_len; ++i)
     {
         chosen_bytes.push_back(i);
-        std::map<EntropyLearnedHashing::Key, size_t> count_table;
+        std::unordered_map<EntropyLearnedHashing::Key, size_t> count_table;
         size_t collisions = 0;
         // TODO: check collisions is really sum of a_i^(a_i - 1)/2, not sum of a_i^2
         for (const auto & key : keys)
