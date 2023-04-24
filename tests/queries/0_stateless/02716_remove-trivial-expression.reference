@@ -1,0 +1,12 @@
+Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY [lifted up part]))))
+Actions: INPUT : 0 -> number UInt64 : 0
+         FUNCTION sipHash64(number :: 0) -> sipHash64(number) UInt64 : 1
+         ALIAS sipHash64(number) :: 1 -> h UInt64 : 0
+Positions: 0
+  Limit (preliminary LIMIT (without OFFSET))
+  Limit 10
+  Offset 0
+    Sorting (Sorting for ORDER BY)
+    Sort description: number ASC
+    Limit 10
+      ReadFromStorage (SystemNumbers)
