@@ -8,6 +8,7 @@ from github import Github
 
 from commit_status_helper import (
     CI_STATUS_NAME,
+    NotSet,
     format_description,
     get_commit,
     post_commit_status,
@@ -16,7 +17,7 @@ from commit_status_helper import (
     set_mergeable_check,
 )
 from docs_check import NAME as DOCS_NAME
-from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
+from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
@@ -256,7 +257,7 @@ def main():
         post_commit_status(  # do not pass pr_info here intentionally
             commit,
             "pending",
-            "",
+            NotSet,
             f"expect adding docs for {FEATURE_LABEL}",
             DOCS_NAME,
         )
@@ -287,16 +288,17 @@ def main():
         )
         sys.exit(1)
 
-    url = GITHUB_RUN_URL
     if not can_run:
         print("::notice ::Cannot run")
         post_commit_status(
-            commit, labels_state, url, description, CI_STATUS_NAME, pr_info
+            commit, labels_state, NotSet, description, CI_STATUS_NAME, pr_info
         )
         sys.exit(1)
     else:
         print("::notice ::Can run")
-        post_commit_status(commit, "pending", url, description, CI_STATUS_NAME, pr_info)
+        post_commit_status(
+            commit, "pending", NotSet, description, CI_STATUS_NAME, pr_info
+        )
 
 
 if __name__ == "__main__":

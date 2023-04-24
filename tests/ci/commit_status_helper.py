@@ -3,10 +3,11 @@
 import csv
 import os
 import time
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 import logging
 
 from github import Github
+from github.GithubObject import _NotSetType, NotSet as NotSet  # type: ignore
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
@@ -75,9 +76,9 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 def post_commit_status(
     commit: Commit,
     state: str,
-    report_url: str,
-    description: str,
-    check_name: str,
+    report_url: Union[_NotSetType, str] = NotSet,
+    description: Union[_NotSetType, str] = NotSet,
+    check_name: Union[_NotSetType, str] = NotSet,
     pr_info: Optional[PRInfo] = None,
 ) -> None:
     """The parameters are given in the same order as for commit.create_status,
