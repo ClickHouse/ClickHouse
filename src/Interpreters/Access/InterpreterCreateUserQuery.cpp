@@ -2,7 +2,6 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDatabaseOrNone.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -12,14 +11,12 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
-    extern const int OPENSSL_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 namespace
 {
