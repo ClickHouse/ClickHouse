@@ -385,7 +385,7 @@ void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 /// threads, so we can't know the size of these data.
 size_t ColumnAggregateFunction::byteSize() const
 {
-    return data.size() * sizeof(data[0]) + (my_arena ? my_arena->reservedBytes() : 0);
+    return data.size() * sizeof(data[0]) + (my_arena ? my_arena->usedBytes() : 0);
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const

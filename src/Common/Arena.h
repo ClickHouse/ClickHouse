@@ -81,7 +81,7 @@ private:
     /// Last contiguous MemoryChunk of memory.
     MemoryChunk * head;
     size_t allocated_bytes;
-    size_t reserved_bytes;
+    size_t used_bytes;
     size_t page_size;
 
     static size_t roundUpToPageSize(size_t s, size_t page_size)
@@ -132,7 +132,7 @@ public:
         , linear_growth_threshold(linear_growth_threshold_)
         , head(new MemoryChunk(initial_size_, nullptr))
         , allocated_bytes(head->size())
-        , reserved_bytes(0)
+        , used_bytes(0)
         , page_size(static_cast<size_t>(::getPageSize()))
     {
     }
@@ -145,7 +145,7 @@ public:
     /// Get piece of memory, without alignment.
     char * alloc(size_t size)
     {
-        reserved_bytes += size;
+        used_bytes += size;
         if (unlikely(static_cast<std::ptrdiff_t>(size) > head->end - head->pos))
             addMemoryChunk(size);
 
@@ -158,7 +158,7 @@ public:
     /// Get piece of memory with alignment
     char * alignedAlloc(size_t size, size_t alignment)
     {
-        reserved_bytes += size;
+        used_bytes += size;
         do
         {
             void * head_pos = head->pos;
@@ -190,7 +190,7 @@ public:
       */
     void * rollback(size_t size)
     {
-        reserved_bytes -= size;
+        used_bytes -= size;
         head->pos -= size;
         ASAN_POISON_MEMORY_REGION(head->pos, size + pad_right);
         return head->pos;
@@ -309,8 +309,8 @@ public:
     /// Size of all MemoryChunks in bytes.
     size_t allocatedBytes() const { return allocated_bytes; }
 
-    /// Total reserved space of all MemoryChunks in bytes.
-    size_t reservedBytes() const { return reserved_bytes; }
+    /// Total space actually used (not counting padding or space unused by caller allocations) in all MemoryChunks in bytes.
+    size_t usedBytes() const { return used_bytes; }
 
     /// Bad method, don't use it -- the MemoryChunks are not your business, the entire
     /// purpose of the arena code is to manage them for you, so if you find
