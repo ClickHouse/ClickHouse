@@ -513,7 +513,8 @@ CREATE TABLE system.parts
     `last_removal_attemp_time` DateTime,
     `removal_state` String,
     `bytes` UInt64,
-    `marks_size` UInt64
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -567,7 +568,8 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
     `bytes` UInt64,
-    `marks_size` UInt64
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -688,7 +690,8 @@ CREATE TABLE system.projection_parts
     `rows_where_ttl_info.min` Array(DateTime),
     `rows_where_ttl_info.max` Array(DateTime),
     `bytes` UInt64,
-    `marks_size` UInt64
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemProjectionParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -742,7 +745,8 @@ CREATE TABLE system.projection_parts_columns
     `column_data_uncompressed_bytes` UInt64,
     `column_marks_bytes` UInt64,
     `bytes` UInt64,
-    `marks_size` UInt64
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemProjectionPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'

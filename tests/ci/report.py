@@ -196,7 +196,7 @@ class TestResult:
             )
         for log_path in log_paths:
             file = Path(log_path)
-            assert file.exists()
+            assert file.exists(), file
             self.log_files.append(file)
 
 

@@ -123,12 +123,13 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
 QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_,
-    const std::optional<String> & username_,
+    const String & user_name_, bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
     : ast(removeQueryCacheSettings(ast_))
     , header(header_)
-    , username(username_)
+    , user_name(user_name_)
+    , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
 {
@@ -169,7 +170,8 @@ bool QueryCache::IsStale::operator()(const Key & key) const
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
-QueryCache::Writer::Writer(Cache & cache_, const Key & key_,
+QueryCache::Writer::Writer(
+    Cache & cache_, const Key & key_,
     size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
@@ -245,12 +247,12 @@ void QueryCache::Writer::finalizeWrite()
         for (auto & chunk : *query_result)
         {
             convertToFullIfSparse(chunk);
-            const size_t rows_chunk = chunk.getNumRows();
-            size_t rows_chunk_processed = 0;
 
+            const size_t rows_chunk = chunk.getNumRows();
             if (rows_chunk == 0)
                 continue;
 
+            size_t rows_chunk_processed = 0;
             while (true)
             {
                 if (rows_remaining_in_squashed == 0)
@@ -263,7 +265,7 @@ void QueryCache::Writer::finalizeWrite()
                 const size_t rows_to_append = std::min(rows_chunk - rows_chunk_processed, rows_remaining_in_squashed);
                 squashed_chunks.back().append(chunk, rows_chunk_processed, rows_to_append);
                 rows_chunk_processed += rows_to_append;
-                rows_remaining_in_squashed += rows_to_append;
+                rows_remaining_in_squashed -= rows_to_append;
 
                 if (rows_chunk_processed == rows_chunk)
                     break;
@@ -307,7 +309,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         return;
     }
 
-    if (entry->key.username.has_value() && entry->key.username != key.username)
+    if (!entry->key.is_shared && entry->key.user_name != key.user_name)
     {
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
         return;
@@ -368,8 +370,13 @@ QueryCache::Reader QueryCache::createReader(const Key & key)
     return Reader(cache, key, lock);
 }
 
-QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size)
+QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota)
 {
+    /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
+    /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
+    /// users.xml change.
+    cache.setQuotaForUser(key.user_name, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
+
     std::lock_guard lock(mutex);
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
@@ -399,7 +406,7 @@ std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
 }
 
 QueryCache::QueryCache()
-    : cache(std::make_unique<TTLCachePolicy<Key, Chunks, KeyHasher, QueryResultWeight, IsStale>>())
+    : cache(std::make_unique<TTLCachePolicy<Key, Chunks, KeyHasher, QueryResultWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
 }
 
@@ -407,14 +414,14 @@ void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & c
 {
     std::lock_guard lock(mutex);
 
-    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size", 1_GiB);
+    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", 1_GiB);
     cache.setMaxSize(max_size_in_bytes);
 
     size_t max_entries = config.getUInt64("query_cache.max_entries", 1024);
     cache.setMaxCount(max_entries);
 
-    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size", 1_MiB);
-    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows", 30'000'000);
+    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", 1_MiB);
+    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", 30'000'000);
 }
 
 }
