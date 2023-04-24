@@ -8,11 +8,12 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -21,12 +22,12 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(&Poco::Logger::get("DatabaseFileSystem(" + name_ + ")"))
 {
     if (path.empty())
-        path = Poco::Path::current();
+        path = fs::current_path();
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string& table_name) const
 {
-    return Poco::Path(path, table_name).toString();
+    return fs::path(path) / table_name;
 }
 
 void DatabaseFilesystem::addTable(const std::string& table_name, StoragePtr table_storage) const
@@ -43,8 +44,8 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr) const
             return true;
     }
 
-    Poco::File table_file(getTablePath(name));
-    return table_file.exists() && table_file.isFile();
+    fs::path table_file_path(getTablePath(name));
+    return fs::exists(table_file_path) && fs::is_regular_file(table_file_path);
 }
 
 StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const
@@ -62,8 +63,7 @@ StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr conte
     try
     {
         // If the table doesn't exist in the tables map, check if the corresponding file exists
-        Poco::File table_file(table_path);
-        if (!table_file.exists())
+        if (!fs::exists(table_path) || !fs::is_regular_file(table_path))
             return nullptr;
 
         // If the file exists, create a new table using TableFunctionFile and return it.
