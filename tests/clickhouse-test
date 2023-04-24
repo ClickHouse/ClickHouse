@@ -551,7 +551,7 @@ class SettingsRandomizer:
             0, 1
         ),
         "filesystem_prefetch_max_memory_usage": lambda: random.choice(
-            ["10Mi", "100Mi", "500Mi"]
+            ["32Mi", "64Mi", "128Mi"]
         ),
         "filesystem_prefetches_limit": lambda: random.choice(
             [0, 10]
