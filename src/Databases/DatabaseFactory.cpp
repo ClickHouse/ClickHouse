@@ -3,11 +3,11 @@
 #include <filesystem>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
+#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/DatabaseFileSystem.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -15,10 +15,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
-#include <Common/logger_useful.h>
 #include <Common/Macros.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 
 #include "config.h"
 
@@ -133,13 +133,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "FileSystem"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
 
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "FileSystem"};
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem"};
 
     static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
@@ -433,7 +433,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
     }
 #endif
-    else if (engine_name == "FileSystem")
+    else if (engine_name == "Filesystem")
     {
         const ASTFunction * engine = engine_define->engine;
 
@@ -443,13 +443,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine->arguments && !engine->arguments->children.empty())
         {
             if (engine->arguments->children.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "FileSystem database requires at most 1 argument: file_system_path");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires at most 1 argument: filesystem_path");
 
             const auto & arguments = engine->arguments->children;
             init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        return std::make_shared<DatabaseFileSystem>(database_name, init_path, context);
+        return std::make_shared<DatabaseFilesystem>(database_name, init_path, context);
     }
 
     throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
