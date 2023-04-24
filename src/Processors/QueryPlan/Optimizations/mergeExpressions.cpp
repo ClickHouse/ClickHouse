@@ -96,7 +96,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         if (all_input_nodes && inputs_outputs_identical && identical_inputs_and_header)
         {
             // Remove the redundant expression step
-            parent_node->step = std::move(child);
             parent_node->children.swap(child_node->children);
             return 1;
         }
