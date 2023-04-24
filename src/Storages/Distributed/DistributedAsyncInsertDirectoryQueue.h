@@ -100,7 +100,7 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
-    bool processFiles(const bool & is_flush_settings, ContextPtr context);
+    void processFiles(const bool & is_flush_settings, ContextPtr context);
     void processFile(const std::string & file_path, const bool & is_flush_settings, ContextPtr context);
     void processFilesWithBatching();
 

@@ -404,10 +404,10 @@ try
     {
         /// Process unprocessed file.
         if (!current_file.empty())
-            processFile(current_file, false, nullptr);
+            processFile(current_file, is_flush_settings, context_);
 
         while (pending_files.tryPop(current_file))
-            processFile(current_file, false, nullptr);
+            processFile(current_file, is_flush_settings, context_);
     }
 
     std::lock_guard status_lock(status_mutex);
