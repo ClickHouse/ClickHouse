@@ -48,6 +48,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Functions/EntropyLeardnedHash.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
@@ -1723,18 +1724,19 @@ struct ImplWyHash64
 struct ImplEntropyLearnedHash
 {
     static constexpr auto name = "entropyLearnedHash";
-    // TODO: made also a function, which would set positions by training the method on some dataset
-    static std::vector<size_t> positions;
     using ReturnType = UInt64;
 
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(h1, h2)); }
-    static auto apply(const char * s, const size_t len) {
+    static auto apply(const char * s, const size_t len) 
+    {
+        UNUSED(len);
+        // TODO: make also a function, which would set positions by training the method on some dataset
+        static std::vector<size_t> positions;
         // TODO: why undefined symbols of using ctor of Key, positions, GetBytes? 
-        auto key = EntropyLearnedHashing::Key(s, len);
-        auto subkey = key.GetSubKey(positions);
-        auto& bytesVector = subkey.GetBytes();
+        EntropyLearnedHashing::Key key(s);
+        EntropyLearnedHashing::Key subkey = EntropyLearnedHashing::getPartialKey(key, positions);
         // TODO: replace hardcoded cityhash by specified hash function
-        return CityHash_v1_0_2::CityHash64(bytesVector.data(), bytesVector.size());
+        return CityHash_v1_0_2::CityHash64(subkey.data(), subkey.size());
     }
     static constexpr bool use_int_hash_for_pods = true;
 };
