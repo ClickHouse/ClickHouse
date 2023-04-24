@@ -99,7 +99,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
             out.finalize();
             return;
         }
-        
+
         try
         {
             writeString(message, out);
