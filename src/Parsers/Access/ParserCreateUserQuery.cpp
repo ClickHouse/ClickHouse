@@ -162,8 +162,8 @@ namespace
             auth_data = std::make_shared<ASTAuthenticationData>();
 
             auth_data->type = type;
-            auth_data->is_password = expect_password;
-            auth_data->is_hash = expect_hash;
+            auth_data->contains_password = expect_password;
+            auth_data->contains_hash = expect_hash;
 
             if (value)
                 auth_data->children.push_back(std::move(value));

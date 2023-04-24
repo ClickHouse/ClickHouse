@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Access/Common/AuthenticationData.h>
-
 #include <Common/Throttler.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>

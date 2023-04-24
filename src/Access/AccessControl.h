@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/MultipleAccessStorage.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Common.h>
 #include <base/scope_guard.h>
