@@ -214,6 +214,11 @@ bool DataPartStorageOnDiskBase::isBroken() const
     return volume->getDisk()->isBroken();
 }
 
+bool DataPartStorageOnDiskBase::isReadonly() const
+{
+    return volume->getDisk()->isReadOnly();
+}
+
 void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
 {
     volume->getDisk()->syncRevision(revision);
@@ -685,6 +690,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);
+        request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
