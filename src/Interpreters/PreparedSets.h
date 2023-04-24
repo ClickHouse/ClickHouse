@@ -10,6 +10,14 @@
 #include <Storages/IStorage_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include "Core/Block.h"
+#include "Interpreters/Context.h"
+#include "Interpreters/Set.h"
+#include "Processors/Executors/CompletedPipelineExecutor.h"
+#include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
+#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
+#include "Processors/Sinks/NullSink.h"
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -25,30 +33,83 @@ class InterpreterSelectWithUnionQuery;
 /// At analysis stage the FutureSets are created but not necessarily filled. Then for non-constant sets there
 /// must be an explicit step to build them before they can be used.
 /// FutureSet objects can be stored in PreparedSets and are not intended to be used from multiple threads.
-class FutureSet final
+// class FutureSet final
+// {
+// public:
+//     FutureSet() = default;
+
+//     /// Create FutureSet from an object that will be created in the future.
+//     explicit FutureSet(const std::shared_future<SetPtr> & future_set_) : future_set(future_set_) {}
+
+//     /// Create FutureSet from a ready set.
+//     explicit FutureSet(SetPtr readySet);
+
+//     /// The set object will be ready in the future, as opposed to 'null' object  when FutureSet is default constructed.
+//     bool isValid() const { return future_set.valid(); }
+
+//     /// The the value of SetPtr is ready, but the set object might not have been filled yet.
+//     bool isReady() const;
+
+//     /// The set object is ready and filled.
+//     bool isCreated() const;
+
+//     SetPtr get() const { chassert(isReady()); return future_set.get(); }
+
+// private:
+//     std::shared_future<SetPtr> future_set;
+// };
+
+class FutureSet
 {
 public:
-    FutureSet() = default;
+    virtual ~FutureSet() = default;
 
-    /// Create FutureSet from an object that will be created in the future.
-    explicit FutureSet(const std::shared_future<SetPtr> & future_set_) : future_set(future_set_) {}
+    virtual bool isReady() const = 0;
+    virtual SetPtr get() const = 0;
 
-    /// Create FutureSet from a ready set.
-    explicit FutureSet(SetPtr readySet);
+    virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
+    virtual std::unique_ptr<QueryPlan> build(const ContextPtr & context) = 0;
+};
 
-    /// The set object will be ready in the future, as opposed to 'null' object  when FutureSet is default constructed.
-    bool isValid() const { return future_set.valid(); }
+using FutureSetPtr = std::unique_ptr<FutureSet>;
 
-    /// The the value of SetPtr is ready, but the set object might not have been filled yet.
-    bool isReady() const;
+class FutureSetFromTuple final : public FutureSet
+{
+public:
+    FutureSetFromTuple(Block block_, const SizeLimits & size_limits_, bool transform_null_in_);
 
-    /// The set object is ready and filled.
-    bool isCreated() const;
+    bool isReady() const override { return set != nullptr; }
+    SetPtr get() const override { return set; }
 
-    SetPtr get() const { chassert(isReady()); return future_set.get(); }
+    SetPtr buildOrderedSetInplace(const ContextPtr &) override
+    {
+        fill(true);
+        return set;
+    }
+
+    std::unique_ptr<QueryPlan> build(const ContextPtr &) override
+    {
+        fill(false);
+        return nullptr;
+    }
 
 private:
-    std::shared_future<SetPtr> future_set;
+    Block block;
+    SizeLimits size_limits;
+    bool transform_null_in;
+
+    SetPtr set;
+
+    void fill(bool create_ordered_set)
+    {
+        if (set)
+            return;
+
+        set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
+        set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
+        set->insertFromBlock(block.getColumnsWithTypeAndName());
+        set->finishInsert();
+    }
 };
 
 /// Information on how to build set for the [GLOBAL] IN section.
@@ -66,11 +127,12 @@ public:
 
     /// Build this set from the result of the subquery.
     String key;
-    SetPtr set_in_progress;
+    SetPtr set;
     /// After set_in_progress is finished it will be put into promise_to_fill_set and thus all FutureSet's
     /// that are referencing this set will be filled.
+
     std::promise<SetPtr> promise_to_fill_set;
-    FutureSet set = FutureSet{promise_to_fill_set.get_future()};
+    // FutureSet set = FutureSet{promise_to_fill_set.get_future()};
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.
@@ -79,6 +141,67 @@ public:
     /// The source is obtained using the InterpreterSelectQuery subquery.
     std::unique_ptr<QueryPlan> source;
 };
+
+class FutureSetFromSubquery : public FutureSet
+{
+public:
+    FutureSetFromSubquery(SubqueryForSet subquery_, String subquery_id, SizeLimits set_size_limit_, bool transform_null_in_);
+
+    bool isReady() const override { return set != nullptr; }
+    SetPtr get() const override { return set; }
+
+    SetPtr buildOrderedSetInplace(const ContextPtr & context) override
+    {
+        auto plan = buildPlan(context, true);
+
+        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+        pipeline.complete(std::make_shared<NullSink>(Block()));
+
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+
+        return set;
+    }
+
+    std::unique_ptr<QueryPlan> build(const ContextPtr & context) override
+    {
+        return buildPlan(context, false);
+    }
+
+private:
+    SetPtr set;
+    SubqueryForSet subquery;
+    String subquery_id;
+    SizeLimits size_limits;
+    bool transform_null_in;
+
+    std::unique_ptr<QueryPlan> buildPlan(const ContextPtr & context, bool create_ordered_set);
+};
+
+// class FutureSetFromFuture : public FutureSet
+// {
+// public:
+//     FutureSetFromFuture(std::shared_future<SetPtr> future_set_);
+
+//     bool isReady() const override { return future_set.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
+//     SetPtr get() const override { return future_set.get(); }
+
+//     SetPtr buildOrderedSetInplace(const ContextPtr &) override
+//     {
+//         fill(true);
+//         return set;
+//     }
+
+//     std::unique_ptr<QueryPlan> build(const ContextPtr &) override
+//     {
+//         fill(false);
+//         return nullptr;
+//     }
+
+// private:
+//     std::shared_future<SetPtr> future_set;
+// }
 
 struct PreparedSetKey
 {
@@ -132,7 +255,7 @@ private:
     std::unordered_map<PreparedSetKey, FutureSet, PreparedSetKey::Hash> sets;
 
     /// This is the information required for building sets
-    SubqueriesForSets subqueries;
+    // SubqueriesForSets subqueries;
 };
 
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
