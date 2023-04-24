@@ -10,17 +10,7 @@
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <boost/range/algorithm/copy.hpp>
-
-#include "config.h"
-
-#if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#     include <openssl/err.h>
-#endif
 
 namespace DB
 {
@@ -33,115 +23,6 @@ namespace ErrorCodes
 }
 namespace
 {
-    AuthenticationData makeAuthenticationData(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
-    {
-        if (query.type && *query.type == AuthenticationType::NO_PASSWORD)
-            return AuthenticationData();
-
-        size_t args_size = query.children.size();
-        ASTs args(args_size);
-        for (size_t i = 0; i < args_size; ++i)
-            args[i] = evaluateConstantExpressionAsLiteral(query.children[i], context);
-
-        if (query.is_password)
-        {
-            if (!query.type && !context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get default password type without context");
-
-            if (check_password_rules && !context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check password complexity rules without context");
-
-            /// NOTE: We will also extract bcrypt workfactor from context
-
-            String value = checkAndGetLiteralArgument<String>(args[0], "password");
-
-            AuthenticationType current_type;
-
-            if (query.type)
-                current_type = *query.type;
-            else
-                current_type = context->getAccessControl().getDefaultPasswordType();
-
-            AuthenticationData auth_data(current_type);
-
-            if (check_password_rules)
-                context->getAccessControl().checkPasswordComplexityRules(value);
-
-            if (query.type == AuthenticationType::SHA256_PASSWORD)
-            {
-    #if USE_SSL
-                ///random generator FIPS complaint
-                uint8_t key[32];
-                if (RAND_bytes(key, sizeof(key)) != 1)
-                {
-                    char buf[512] = {0};
-                    ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-                }
-
-                String salt;
-                salt.resize(sizeof(key) * 2);
-                char * buf_pos = salt.data();
-                for (uint8_t k : key)
-                {
-                    writeHexByteUppercase(k, buf_pos);
-                    buf_pos += 2;
-                }
-                value.append(salt);
-                auth_data.setSalt(salt);
-    #else
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
-    #endif
-            }
-
-            auth_data.setPassword(value);
-            return auth_data;
-        }
-
-        AuthenticationData auth_data(*query.type);
-
-        if (query.is_hash)
-        {
-            String value = checkAndGetLiteralArgument<String>(args[0], "hash");
-            auth_data.setPasswordHashHex(value);
-
-            if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
-            {
-                String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
-                auth_data.setSalt(parsed_salt);
-            }
-        }
-        else if (query.type == AuthenticationType::LDAP)
-        {
-            String value = checkAndGetLiteralArgument<String>(args[0], "ldap_server_name");
-            auth_data.setLDAPServerName(value);
-        }
-        else if (query.type == AuthenticationType::KERBEROS)
-        {
-            if (!args.empty())
-            {
-                String value = checkAndGetLiteralArgument<String>(args[0], "kerberos_realm");
-                auth_data.setKerberosRealm(value);
-            }
-        }
-        else if (query.type == AuthenticationType::SSL_CERTIFICATE)
-        {
-            boost::container::flat_set<String> common_names;
-            for (const auto & arg : args)
-                common_names.insert(checkAndGetLiteralArgument<String>(arg, "common_name"));
-
-            auth_data.setSSLCertificateCommonNames(std::move(common_names));
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected ASTAuthenticationData structure");
-        }
-
-
-        return auth_data;
-    }
-
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
@@ -236,7 +117,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     std::optional<AuthenticationData> auth_data;
     if (query.auth_data)
-        auth_data = makeAuthenticationData(*query.auth_data, getContext(), !query.attach);
+        auth_data = AuthenticationData::fromAST(*query.auth_data, getContext(), !query.attach);
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -321,7 +202,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
 {
     std::optional<AuthenticationData> auth_data;
     if (query.auth_data)
-        auth_data = makeAuthenticationData(*query.auth_data, {}, !query.attach);
+        auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
 
     updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
 }

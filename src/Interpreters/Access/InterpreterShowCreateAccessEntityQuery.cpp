@@ -9,9 +9,6 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -38,71 +35,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 
 namespace
 {
-    std::shared_ptr<ASTAuthenticationData> makeASTAuthenticationData(AuthenticationData auth_data)
-    {
-        auto node = std::make_shared<ASTAuthenticationData>();
-        auto auth_type = auth_data.getType();
-        node->type = auth_type;
-
-        switch (auth_type)
-        {
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-            {
-                node->is_password = true;
-                node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getPassword()));
-                break;
-            }
-            case AuthenticationType::SHA256_PASSWORD:
-            {
-                node->is_hash = true;
-                node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getPasswordHashHex()));
-
-                if (!auth_data.getSalt().empty())
-                    node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getSalt()));
-                break;
-            }
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            {
-                node->is_hash = true;
-                node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getPasswordHashHex()));
-                break;
-            }
-            case AuthenticationType::LDAP:
-            {
-                node->children.push_back(std::make_shared<ASTLiteral>(auth_data.getLDAPServerName()));
-                break;
-            }
-            case AuthenticationType::KERBEROS:
-            {
-                const auto & realm = auth_data.getKerberosRealm();
-
-                if (!realm.empty())
-                    node->children.push_back(std::make_shared<ASTLiteral>(realm));
-
-                break;
-            }
-            case AuthenticationType::SSL_CERTIFICATE:
-            {
-                for (const auto & name : auth_data.getSSLCertificateCommonNames())
-                    node->children.push_back(std::make_shared<ASTLiteral>(name));
-
-                break;
-            }
-
-            case AuthenticationType::NO_PASSWORD: [[fallthrough]];
-            case AuthenticationType::MAX:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
-        }
-
-        return node;
-    }
-
     ASTPtr getCreateQueryImpl(
         const User & user,
         const AccessControl * access_control /* not used if attach_mode == true */,
@@ -125,7 +62,7 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = makeASTAuthenticationData(user.auth_data);
+            query->auth_data = user.auth_data.toAST();
 
         if (!user.settings.empty())
         {

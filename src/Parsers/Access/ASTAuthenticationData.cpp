@@ -1,7 +1,6 @@
 #include <Parsers/Access/ASTAuthenticationData.h>
 
 #include <Access/AccessControl.h>
-#include <Access/Common/AuthenticationData.h>
 #include <Common/Exception.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/Operators.h>
@@ -17,7 +16,7 @@ namespace ErrorCodes
 
 std::optional<String> ASTAuthenticationData::getPassword() const
 {
-    if (is_password)
+    if (contains_password)
     {
         if (const auto * password = children[0]->as<const ASTLiteral>())
         {
@@ -70,7 +69,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
-                if (is_hash)
+                if (contains_hash)
                     auth_type_name = "sha256_hash";
 
                 prefix = "BY";
@@ -81,7 +80,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
-                if (is_hash)
+                if (contains_hash)
                     auth_type_name = "double_sha1_hash";
 
                 prefix = "BY";

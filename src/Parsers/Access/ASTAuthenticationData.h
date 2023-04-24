@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/Common/AuthenticationType.h>
 #include <optional>
 
 
@@ -38,8 +38,8 @@ public:
     /// AuthenticationType::NO_PASSWORD is specified explicitly.
     std::optional<AuthenticationType> type;
 
-    bool is_password = false;
-    bool is_hash = false;
+    bool contains_password = false;
+    bool contains_hash = false;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
