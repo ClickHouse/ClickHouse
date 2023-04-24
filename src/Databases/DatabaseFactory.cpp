@@ -437,7 +437,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        // If init_path is empty, then the current path from Poco will be used
+        /// If init_path is empty, then the current path will be used
         std::string init_path;
 
         if (engine->arguments && !engine->arguments->children.empty())
