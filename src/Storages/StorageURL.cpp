@@ -662,7 +662,7 @@ Pipe IStorageURLBase::read(
     }
     else
     {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([uri, max_addresses, done = false]() mutable
+        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([&, max_addresses, done = false]() mutable
         {
             if (done)
                 return StorageURLSource::FailoverOptions{};
