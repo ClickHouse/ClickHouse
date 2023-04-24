@@ -39,7 +39,7 @@ public:
     {
         /// The first argument is a constant string with the name of datepart.
 
-        result_type_is_date = false;
+        intermediate_type_is_date = false;
         String datepart_param;
         auto check_first_argument = [&]
         {
@@ -59,7 +59,7 @@ public:
             if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-            result_type_is_date = (datepart_kind == IntervalKind::Year) || (datepart_kind == IntervalKind::Quarter)
+            intermediate_type_is_date = (datepart_kind == IntervalKind::Year) || (datepart_kind == IntervalKind::Quarter)
                 || (datepart_kind == IntervalKind::Month) || (datepart_kind == IntervalKind::Week);
         };
 
@@ -91,14 +91,6 @@ public:
                     "This argument is optional and must be a constant string with timezone name",
                     arguments[2].type->getName(),
                     getName());
-
-            if (second_argument_is_date && result_type_is_date)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The timezone argument of function {} with datepart '{}' "
-                    "is allowed only when the 2nd argument has the type DateTime",
-                    getName(),
-                    datepart_param);
         };
 
         if (arguments.size() == 2)
@@ -121,10 +113,7 @@ public:
                 arguments.size());
         }
 
-        if (result_type_is_date)
-            return std::make_shared<DataTypeDateTime>();
-        else
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1));
+        return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -146,15 +135,15 @@ public:
 
         if (arguments.size() == 2)
             truncated_column = to_start_of_interval->build(temp_columns)
-                                    ->execute(temp_columns, result_type_is_date ? date_type : result_type, input_rows_count);
+                                    ->execute(temp_columns, intermediate_type_is_date ? date_type : result_type, input_rows_count);
         else
         {
             temp_columns[2] = arguments[2];
             truncated_column = to_start_of_interval->build(temp_columns)
-                                    ->execute(temp_columns, result_type_is_date ? date_type : result_type, input_rows_count);
+                                    ->execute(temp_columns, intermediate_type_is_date ? date_type : result_type, input_rows_count);
         }
 
-        if (!result_type_is_date)
+        if (!intermediate_type_is_date)
             return truncated_column;
 
         ColumnsWithTypeAndName temp_truncated_column(1);
@@ -174,7 +163,7 @@ public:
 private:
     ContextPtr context;
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
-    mutable bool result_type_is_date = false;
+    mutable bool intermediate_type_is_date = false;
 };
 
 }
