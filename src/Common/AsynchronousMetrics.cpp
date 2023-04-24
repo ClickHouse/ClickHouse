@@ -906,10 +906,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
 
     if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
-    {
         updateCgroupMemoryMetrics(cgroupmem_limit_in_bytes, cgroupmem_usage_in_bytes);
-    } 
-    
+
     if (meminfo)
     {
         try
