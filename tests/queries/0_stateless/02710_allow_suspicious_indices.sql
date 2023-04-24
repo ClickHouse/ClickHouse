@@ -1,4 +1,3 @@
------------------------------------------------------------
 -- Check CREATE TABLE
 
 DROP TABLE IF EXISTS tbl;
@@ -9,7 +8,6 @@ DROP TABLE IF EXISTS tbl;
 CREATE TABLE tbl (id UInt32, INDEX idx (id + 1, id + 1) TYPE minmax) ENGINE = MergeTree() ORDER BY id;  -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tbl (id UInt32, INDEX idx (id + 1, id + 1) TYPE minmax) ENGINE = MergeTree() ORDER BY id SETTINGS allow_suspicious_indices = 1;
 
------------------------------------------------------------
 -- Check ALTER TABLE
 
 DROP TABLE IF EXISTS tbl;
