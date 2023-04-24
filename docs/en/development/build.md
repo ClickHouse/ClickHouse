@@ -118,7 +118,7 @@ sudo yum --nogpg install git cmake make clang python3 ccache yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
-make -j $(nproc)
+ninja
 ```
 
 Here is an example of how to build `clang` and all the llvm infrastructure from sources:
