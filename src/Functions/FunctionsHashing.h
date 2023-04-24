@@ -1731,8 +1731,8 @@ struct ImplEntropyLearnedHash
     {
         UNUSED(len);
         // TODO: make also a function, which would set positions by training the method on some dataset
-        static std::vector<size_t> positions;
-        // TODO: why undefined symbols of using ctor of Key, positions, GetBytes? 
+        const auto ids_manager_ptr = EntropyLearnedHashing::IDsManager::getInstance();
+        const auto& positions = ids_manager_ptr->positions_by_id[ids_manager_ptr->default_id];
         EntropyLearnedHashing::Key key(s);
         EntropyLearnedHashing::Key subkey = EntropyLearnedHashing::getPartialKey(key, positions);
         // TODO: replace hardcoded cityhash by specified hash function
