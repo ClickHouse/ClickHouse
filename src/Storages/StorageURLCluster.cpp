@@ -19,6 +19,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
 
 #include <memory>
 
@@ -28,15 +29,17 @@ namespace DB
 
 StorageURLCluster::StorageURLCluster(
     ContextPtr context_,
-    String cluster_name_,
+    const String & cluster_name_,
+    const String & uri_,
+    const String & format_,
+    const String & compression_method_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const StorageURL::Configuration & configuration_,
-    size_t table_function_max_arguments,
     bool structure_argument_was_provided_)
-    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageURLCluster (" + table_id_.table_name + ")"), table_function_max_arguments, structure_argument_was_provided_)
-    , uri(configuration_.url)
+    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageURLCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
+    , uri(uri_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
 
@@ -44,9 +47,9 @@ StorageURLCluster::StorageURLCluster(
 
     if (columns_.empty())
     {
-        auto columns = StorageURL::getTableStructureFromData(configuration_.format,
+        auto columns = StorageURL::getTableStructureFromData(format_,
             uri,
-            chooseCompressionMethod(Poco::URI(uri).getPath(), configuration_.compression_method),
+            chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method_),
             configuration_.headers,
             std::nullopt,
             context_);
@@ -57,6 +60,11 @@ StorageURLCluster::StorageURLCluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
+}
+
+void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure)
+{
+    addColumnsStructureToQueryWithURLClusterEngine(query, structure);
 }
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(ASTPtr, ContextPtr context) const

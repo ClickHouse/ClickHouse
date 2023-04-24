@@ -19,7 +19,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDictionary.h>
-#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
 
 #include <memory>
 #include <string>
@@ -28,15 +27,13 @@ namespace DB
 {
 
 IStorageCluster::IStorageCluster(
-    String cluster_name_,
+    const String & cluster_name_,
     const StorageID & table_id_,
     Poco::Logger * log_,
-    size_t max_function_arguments_,
     bool structure_argument_was_provided_)
     : IStorage(table_id_)
     , log(log_)
     , cluster_name(cluster_name_)
-    , max_function_arguments(max_function_arguments_)
     , structure_argument_was_provided(structure_argument_was_provided_)
 {
 }
@@ -80,8 +77,7 @@ Pipe IStorageCluster::read(
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     if (!structure_argument_was_provided)
-        addColumnsStructureToQueryWithClusterEngine(
-            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), max_function_arguments, getName());
+        addColumnsStructureToQuery(query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()));
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));

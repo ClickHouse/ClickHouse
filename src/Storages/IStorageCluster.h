@@ -16,10 +16,9 @@ class IStorageCluster : public IStorage
 {
 public:
     IStorageCluster(
-        String cluster_name_,
+        const String & cluster_name_,
         const StorageID & table_id_,
         Poco::Logger * log_,
-        size_t max_function_arguments_,
         bool structure_argument_was_provided_);
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
@@ -36,10 +35,11 @@ public:
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
 
+    virtual void addColumnsStructureToQuery(ASTPtr & query, const String & structure) = 0;
+
 private:
     Poco::Logger * log;
     String cluster_name;
-    size_t max_function_arguments;
     bool structure_argument_was_provided;
 };
 

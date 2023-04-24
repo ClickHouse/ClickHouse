@@ -106,11 +106,13 @@ StoragePtr TableFunctionURLCluster::getStorage(
         storage = std::make_shared<StorageURLCluster>(
             context,
             cluster_name,
+            filename,
+            format,
+            compression_method,
             StorageID(getDatabaseName(), table_name),
             getActualTableStructure(context),
             ConstraintsDescription{},
             configuration,
-            5,
             structure != "auto");
     }
     return storage;
