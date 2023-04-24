@@ -958,6 +958,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(sort_columns[i], 1, 1);
 
+#ifndef NDEBUG
     if (!sort_description.empty())
     {
         for (size_t i = 0; i < pipes.size(); ++i)
@@ -971,6 +972,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             });
         }
     }
+#endif
 
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
@@ -1038,6 +1040,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     auto res_pipe = Pipe::unitePipes(std::move(pipes));
     res_pipe.addTransform(std::move(merged_transform));
 
+#ifndef NDEBUG
     if (!sort_description.empty())
     {
         res_pipe.addSimpleTransform([&](const Block & header_)
@@ -1046,6 +1049,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             return transform;
         });
     }
+#endif
 
     if (global_ctx->deduplicate)
     {
