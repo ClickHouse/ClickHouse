@@ -1023,7 +1023,9 @@ def test_cleanup_stale_nodes():
     # We won't create any backups, just write trash into [Zoo]Keeper manually
 
     node1.query("DROP TABLE IF EXISTS batch_zkinsert")
-    node1.query("CREATE TABLE batch_zkinsert (name String, path String, value String) ENGINE Memory;")
+    node1.query(
+        "CREATE TABLE batch_zkinsert (name String, path String, value String) ENGINE Memory;"
+    )
 
     BACKUP_COUNT = 100
     RETRIES_COUNT = 20
@@ -1033,9 +1035,13 @@ def test_cleanup_stale_nodes():
         backup_id = str(uuid.uuid4())
         backup_ids.append(backup_id)
         backup_name = f"backup-{backup_id}"
-        node1.query(f"INSERT INTO batch_zkinsert (name, path, value) values ('{backup_name}', '/clickhouse/backups/', ''), ('state', '/clickhouse/backups/{backup_name}', ''), ('parts_names', '/clickhouse/backups/{backup_name}', '');")
+        node1.query(
+            f"INSERT INTO batch_zkinsert (name, path, value) values ('{backup_name}', '/clickhouse/backups/', ''), ('state', '/clickhouse/backups/{backup_name}', ''), ('parts_names', '/clickhouse/backups/{backup_name}', '');"
+        )
 
-    node1.query("INSERT INTO system.zookeeper (name, path, value) SELECT name, path, value from batch_zkinsert;")
+    node1.query(
+        "INSERT INTO system.zookeeper (name, path, value) SELECT name, path, value from batch_zkinsert;"
+    )
 
     number_of_tries = 0
 
