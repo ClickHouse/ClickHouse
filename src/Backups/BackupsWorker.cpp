@@ -49,7 +49,7 @@ namespace Stage = BackupCoordinationStage;
 
 namespace
 {
-    std::shared_ptr<IBackupCoordination> makeBackupCoordination(const ContextPtr & context, const BackupsWorker::Settings & global_settings, const BackupSettings & backup_settings, bool remote)
+    std::shared_ptr<IBackupCoordination> makeBackupCoordination(const ContextPtr & context, const BackupsWorker::GlobalSettings & global_settings, const BackupSettings & backup_settings, bool remote)
     {
         if (remote)
         {
@@ -86,7 +86,7 @@ namespace
     }
 
     std::shared_ptr<IRestoreCoordination>
-    makeRestoreCoordination(const ContextPtr & context, const BackupsWorker::Settings & global_settings, const RestoreSettings & restore_settings, bool remote)
+    makeRestoreCoordination(const ContextPtr & context, const BackupsWorker::GlobalSettings & global_settings, const RestoreSettings & restore_settings, bool remote)
     {
         if (remote)
         {
@@ -178,7 +178,43 @@ namespace
 }
 
 
-BackupsWorker::BackupsWorker(const Settings & settings)
+std::unique_ptr<BackupsWorker> BackupsWorker::createFromContext(ContextPtr global_context)
+{
+    const auto & config_ = global_context->getConfigRef();
+    const auto & settings_ = global_context->getSettingsRef();
+
+    BackupsWorker::GlobalSettings backup_restore_settings
+    {
+        .num_backup_threads = config_.getUInt64("backup_threads", settings_.backup_threads),
+        .num_restore_threads = config_.getUInt64("restore_threads", settings_.restore_threads),
+        .allow_concurrent_backups = config_.getBool("backups.allow_concurrent_backups", true),
+        .allow_concurrent_restores = config_.getBool("backups.allow_concurrent_restores", true),
+        .stale_backups_restores_check_period_ms = config_.getUInt64("backups.stale_backups_restores_check_period_ms", 600000), // 10 minutes
+        .stale_backups_restores_cleanup_timeout_ms = config_.getUInt64("backups.stale_backups_restores_cleanup_timeout_ms", 86400000), // 24 hours
+        .consecutive_failed_checks_to_consider_as_stale = config_.getUInt64("backups.consecutive_failed_checks_to_consider_as_stale", 3),
+        .root_zookeeper_path = config_.getString("backups.zookeeper_path", "/clickhouse/backups")
+    };
+
+    auto result = std::make_unique<BackupsWorker>(backup_restore_settings);
+
+    if (global_context->hasZooKeeper())
+    {
+        result->backup_restore_cleanup_thread.emplace(
+            [global_context = global_context] { return global_context->getZooKeeper(); }, /// Circular dependency on Context?
+            global_context->getSchedulePool(),
+            backup_restore_settings.root_zookeeper_path,
+            backup_restore_settings.stale_backups_restores_check_period_ms,
+            backup_restore_settings.stale_backups_restores_cleanup_timeout_ms,
+            backup_restore_settings.consecutive_failed_checks_to_consider_as_stale);
+
+        result->backup_restore_cleanup_thread->start();
+    }
+
+    return result;
+}
+
+
+BackupsWorker::BackupsWorker(const GlobalSettings & settings)
     : global_settings(settings)
     , backups_thread_pool(std::make_unique<ThreadPool>(
         CurrentMetrics::BackupsThreads,
@@ -951,6 +987,9 @@ void BackupsWorker::shutdown()
 
     backups_thread_pool->wait();
     restores_thread_pool->wait();
+
+    if (backup_restore_cleanup_thread)
+        backup_restore_cleanup_thread->shutdown();
 
     if (has_active_backups_and_restores)
         LOG_INFO(log, "All backup and restore tasks have finished");

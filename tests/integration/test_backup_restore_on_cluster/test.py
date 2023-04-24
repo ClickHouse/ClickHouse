@@ -32,7 +32,6 @@ node1 = cluster.add_instance(
     external_dirs=["/backups/"],
     macros={"replica": "node1", "shard": "shard1"},
     with_zookeeper=True,
-    stay_alive=True,
 )
 
 node2 = cluster.add_instance(
@@ -1027,14 +1026,14 @@ def test_cleanup_stale_nodes():
     node1.query("CREATE TABLE batch_zkinsert (name String, path String, value String) ENGINE Memory;")
 
     BACKUP_COUNT = 100
-    RETRIES_COUNT = 10
+    RETRIES_COUNT = 20
     backup_ids = []
 
     for _ in range(BACKUP_COUNT):
-        id = str(uuid.uuid4())
-        backup_ids.append(id)
-        backup_name = f"backup-{id}"
-        node1.query(f"INSERT INTO batch_zkinsert (name, path, value) values ('/clickhouse/backups/', '{backup_name}', ''), ('/clickhouse/backups/{backup_name}', 'state', ''), ('/clickhouse/backups/{backup_name}', 'parts_names', '');")
+        backup_id = str(uuid.uuid4())
+        backup_ids.append(backup_id)
+        backup_name = f"backup-{backup_id}"
+        node1.query(f"INSERT INTO batch_zkinsert (name, path, value) values ('{backup_name}', '/clickhouse/backups/', ''), ('state', '/clickhouse/backups/{backup_name}', ''), ('parts_names', '/clickhouse/backups/{backup_name}', '');")
 
     node1.query("INSERT INTO system.zookeeper (name, path, value) SELECT name, path, value from batch_zkinsert;")
 
@@ -1063,4 +1062,4 @@ def test_cleanup_stale_nodes():
                 print("Test failed", sys.exc_info())
                 exit(1)
 
-            time.sleep(0.1)
+            time.sleep(0.3)

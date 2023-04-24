@@ -1,6 +1,7 @@
 <clickhouse>
     <backups>
-        <stale_backups_restores_check_period_ms>1</stale_backups_restores_check_period_ms>
+        <stale_backups_restores_check_period_ms>100</stale_backups_restores_check_period_ms>
         <stale_backups_restores_cleanup_timeout_ms>1</stale_backups_restores_cleanup_timeout_ms>
+        <consecutive_failed_checks_to_consider_as_stale>10</consecutive_failed_checks_to_consider_as_stale>
     </backups>
 </clickhouse>

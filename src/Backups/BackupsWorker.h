@@ -17,6 +17,7 @@ class ASTBackupQuery;
 struct BackupSettings;
 struct RestoreSettings;
 struct BackupInfo;
+struct Settings;
 class IBackupCoordination;
 class IRestoreCoordination;
 class IBackup;
@@ -31,8 +32,7 @@ using DataRestoreTasks = std::vector<std::function<void()>>;
 class BackupsWorker
 {
 public:
-
-    struct Settings
+    struct GlobalSettings
     {
         size_t num_backup_threads;
         size_t num_restore_threads;
@@ -40,10 +40,13 @@ public:
         bool allow_concurrent_restores;
         size_t stale_backups_restores_check_period_ms;
         size_t stale_backups_restores_cleanup_timeout_ms;
+        size_t consecutive_failed_checks_to_consider_as_stale;
         String root_zookeeper_path;
     };
 
-    explicit BackupsWorker(const Settings & global_backup_settings);
+    explicit BackupsWorker(const GlobalSettings & global_backup_settings);
+
+    static std::unique_ptr<BackupsWorker> createFromContext(ContextPtr global_context);
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -146,7 +149,7 @@ private:
     void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
-    Settings global_settings;
+    GlobalSettings global_settings;
     std::unique_ptr<ThreadPool> backups_thread_pool;
     std::unique_ptr<ThreadPool> restores_thread_pool;
 
@@ -158,6 +161,7 @@ private:
     Poco::Logger * log;
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
+    std::optional<BackupRestoreCleanupThread> backup_restore_cleanup_thread;
 };
 
 }
