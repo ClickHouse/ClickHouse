@@ -185,6 +185,7 @@ enum class AccessType
     M(SYSTEM_FLUSH, "", GROUP, SYSTEM) \
     M(SYSTEM_THREAD_FUZZER, "SYSTEM START THREAD FUZZER, SYSTEM STOP THREAD FUZZER, START THREAD FUZZER, STOP THREAD FUZZER", GLOBAL, SYSTEM) \
     M(SYSTEM_UNFREEZE, "SYSTEM UNFREEZE", GLOBAL, SYSTEM) \
+    M(SYSTEM_FAILPOINT, "SYSTEM ENABLE/DISABLE FAILPOINT", GLOBAL, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\

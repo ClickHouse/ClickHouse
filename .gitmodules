@@ -335,3 +335,6 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "contrib/libfiu"]
+	path = contrib/libfiu
+	url = https://github.com/albertito/libfiu.git
