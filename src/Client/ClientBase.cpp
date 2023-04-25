@@ -573,7 +573,7 @@ try
                 UInt64 compression_level = 3;
 
                 if (query_with_output->is_outfile_append && compression_method != CompressionMethod::None)
-				{
+                {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Cannot append to compressed file. Please use uncompressed file or remove APPEND keyword.");
