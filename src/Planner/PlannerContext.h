@@ -57,18 +57,18 @@ class PlannerSet
 {
 public:
     /// Construct planner set that is ready for execution
-    explicit PlannerSet(FutureSet set_)
+    explicit PlannerSet(FutureSetPtr set_)
         : set(std::move(set_))
     {}
 
     /// Construct planner set with set and subquery node
     explicit PlannerSet(QueryTreeNodePtr subquery_node_)
-        : set(promise_to_build_set.get_future())
-        , subquery_node(std::move(subquery_node_))
+        //: set(promise_to_build_set.get_future())
+        : subquery_node(std::move(subquery_node_))
     {}
 
     /// Get a reference to a set that might be not built yet
-    const FutureSet & getSet() const
+    const FutureSetPtr & getSet() const
     {
         return set;
     }
@@ -80,14 +80,14 @@ public:
     }
 
     /// This promise will be fulfilled when set is built and all FutureSet objects will become ready
-    std::promise<SetPtr> extractPromiseToBuildSet()
-    {
-        return std::move(promise_to_build_set);
-    }
+    // std::promise<SetPtr> extractPromiseToBuildSet()
+    // {
+    //     return std::move(promise_to_build_set);
+    // }
 
 private:
-    std::promise<SetPtr> promise_to_build_set;
-    FutureSet set;
+    //std::promise<SetPtr> promise_to_build_set;
+    FutureSetPtr set;
 
     QueryTreeNodePtr subquery_node;
 };

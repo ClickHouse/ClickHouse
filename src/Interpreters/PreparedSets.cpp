@@ -95,11 +95,51 @@ String PreparedSetKey::toString() const
 
 /// If the subquery is not associated with any set, create default-constructed SubqueryForSet.
 /// It's aimed to fill external table passed to SubqueryForSet::createSource.
-SubqueryForSet & PreparedSets::getSubquery(const String & subquery_id) { return subqueries[subquery_id]; }
+void PreparedSets::addStorageToSubquery(const String & subquery_id, StoragePtr storage)
+{
+    auto it = subqueries.find(subquery_id);
+    if (it == subqueries.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find subquery {}", subquery_id);
 
-void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = FutureSet(set_); }
+    it->second->addStorage(std::move(storage));
+}
 
-FutureSet PreparedSets::getFuture(const PreparedSetKey & key) const
+FutureSetPtr PreparedSets::addFromStorage(const PreparedSetKey & key, SetPtr set_)
+{
+    auto from_storage = std::make_shared<FutureSetFromStorage>(std::move(set_));
+    auto [it, inserted] = sets.emplace(key, std::move(from_storage));
+
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", key.toString());
+
+    return it->second;
+}
+
+FutureSetPtr PreparedSets::addFromTuple(const PreparedSetKey & key, Block block)
+{
+    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block));
+    auto [it, inserted] = sets.emplace(key, std::move(from_tuple));
+
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", key.toString());
+
+    return it->second;
+}
+
+FutureSetPtr PreparedSets::addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery)
+{
+    auto id = subquery.key;
+    auto from_subquery = std::make_shared<FutureSetFromSubquery>(std::move(subquery));
+    auto [it, inserted] = sets.emplace(key, from_subquery);
+
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", key.toString());
+
+    subqueries.emplace(id, std::move(from_subquery));
+    return it->second;
+}
+
+FutureSetPtr PreparedSets::getFuture(const PreparedSetKey & key) const
 {
     auto it = sets.find(key);
     if (it == sets.end())
@@ -107,24 +147,24 @@ FutureSet PreparedSets::getFuture(const PreparedSetKey & key) const
     return it->second;
 }
 
-SetPtr PreparedSets::get(const PreparedSetKey & key) const
-{
-    auto it = sets.find(key);
-    if (it == sets.end() || !it->second.isReady())
-        return nullptr;
-    return it->second.get();
-}
+// SetPtr PreparedSets::get(const PreparedSetKey & key) const
+// {
+//     auto it = sets.find(key);
+//     if (it == sets.end() || !it->second.isReady())
+//         return nullptr;
+//     return it->second.get();
+// }
 
-std::vector<FutureSet> PreparedSets::getByTreeHash(IAST::Hash ast_hash) const
-{
-    std::vector<FutureSet> res;
-    for (const auto & it : this->sets)
-    {
-        if (it.first.ast_hash == ast_hash)
-            res.push_back(it.second);
-    }
-    return res;
-}
+// std::vector<FutureSet> PreparedSets::getByTreeHash(IAST::Hash ast_hash) const
+// {
+//     std::vector<FutureSet> res;
+//     for (const auto & it : this->sets)
+//     {
+//         if (it.first.ast_hash == ast_hash)
+//             res.push_back(it.second);
+//     }
+//     return res;
+// }
 
 PreparedSets::SubqueriesForSets PreparedSets::detachSubqueries()
 {
@@ -197,20 +237,44 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
         }
     }
 
-    subquery.set = set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
+
+    const auto & settings = context->getSettingsRef();
+    auto size_limits = getSizeLimitsForSet(settings, create_ordered_set);
+
+    subquery.set = set = std::make_shared<Set>(size_limits, create_ordered_set, settings.transform_null_in);
 
     auto plan = subquery.detachSource();
+    auto description = subquery.key;
 
-    const Settings & settings = context->getSettingsRef();
     auto creating_set = std::make_unique<CreatingSetStep>(
             plan->getCurrentDataStream(),
-            subquery_id,
+            description,
             std::move(subquery),
             SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
             context);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
+}
+
+
+static SizeLimits getSizeLimitsForUnorderedSet(const Settings & settings)
+{
+    return SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
+}
+
+static SizeLimits getSizeLimitsForOrderedSet(const Settings & settings)
+{
+    if (settings.use_index_for_in_with_subqueries_max_values &&
+        settings.use_index_for_in_with_subqueries_max_values < settings.max_rows_in_set)
+        return getSizeLimitsForUnorderedSet(settings);
+
+    return SizeLimits(settings.use_index_for_in_with_subqueries_max_values, settings.max_bytes_in_set, OverflowMode::BREAK);
+}
+
+SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordered_set)
+{
+    return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
 }
 
 };

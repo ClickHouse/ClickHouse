@@ -69,43 +69,46 @@ public:
 
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
     virtual std::unique_ptr<QueryPlan> build(const ContextPtr & context) = 0;
+
+    static SizeLimits getSizeLimitsForSet(const Settings & settings, bool ordered_set);
 };
 
-using FutureSetPtr = std::unique_ptr<FutureSet>;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
 
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Block block_, const SizeLimits & size_limits_, bool transform_null_in_);
+    FutureSetFromTuple(Block block_);
 
     bool isReady() const override { return set != nullptr; }
     SetPtr get() const override { return set; }
 
-    SetPtr buildOrderedSetInplace(const ContextPtr &) override
+    SetPtr buildOrderedSetInplace(const ContextPtr & context) override
     {
-        fill(true);
+        fill(context, true);
         return set;
     }
 
-    std::unique_ptr<QueryPlan> build(const ContextPtr &) override
+    std::unique_ptr<QueryPlan> build(const ContextPtr & context) override
     {
-        fill(false);
+        fill(context, false);
         return nullptr;
     }
 
 private:
     Block block;
-    SizeLimits size_limits;
-    bool transform_null_in;
 
     SetPtr set;
 
-    void fill(bool create_ordered_set)
+    void fill(const ContextPtr & context, bool create_ordered_set)
     {
         if (set)
             return;
 
-        set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
+        const auto & settings = context->getSettingsRef();
+        auto size_limits = getSizeLimitsForSet(settings, create_ordered_set);
+
+        set = std::make_shared<Set>(size_limits, create_ordered_set, settings.transform_null_in);
         set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
         set->insertFromBlock(block.getColumnsWithTypeAndName());
         set->finishInsert();
@@ -145,13 +148,16 @@ public:
 class FutureSetFromSubquery : public FutureSet
 {
 public:
-    FutureSetFromSubquery(SubqueryForSet subquery_, String subquery_id, SizeLimits set_size_limit_, bool transform_null_in_);
+    FutureSetFromSubquery(SubqueryForSet subquery_);
 
     bool isReady() const override { return set != nullptr; }
     SetPtr get() const override { return set; }
 
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override
     {
+        if (!context->getSettingsRef().use_index_for_in_with_subqueries)
+            return nullptr;
+
         auto plan = buildPlan(context, true);
 
         auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
@@ -169,14 +175,32 @@ public:
         return buildPlan(context, false);
     }
 
+    void addStorage(StoragePtr storage) { subquery.table = std::move(storage); }
+
 private:
     SetPtr set;
     SubqueryForSet subquery;
-    String subquery_id;
-    SizeLimits size_limits;
-    bool transform_null_in;
 
     std::unique_ptr<QueryPlan> buildPlan(const ContextPtr & context, bool create_ordered_set);
+};
+
+class FutureSetFromStorage : public FutureSet
+{
+public:
+    FutureSetFromStorage(SetPtr set_); // : set(std::move(set_) {}
+
+    bool isReady() const override { return set != nullptr; }
+    SetPtr get() const override { return set; }
+
+    SetPtr buildOrderedSetInplace(const ContextPtr &) override
+    {
+        return set->hasExplicitSetElements() ? set : nullptr;
+    }
+
+    std::unique_ptr<QueryPlan> build(const ContextPtr &) override { return nullptr; }
+
+private:
+    SetPtr set;
 };
 
 // class FutureSetFromFuture : public FutureSet
@@ -230,15 +254,20 @@ struct PreparedSetKey
 class PreparedSets
 {
 public:
-    using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+    using SubqueriesForSets = std::unordered_map<String, std::shared_ptr<FutureSetFromSubquery>>;
 
-    SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
-                                         SizeLimits set_size_limit, bool transform_null_in);
-    SubqueryForSet & getSubquery(const String & subquery_id);
+    // SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
+    //                                      SizeLimits set_size_limit, bool transform_null_in);
 
-    void set(const PreparedSetKey & key, SetPtr set_);
-    FutureSet getFuture(const PreparedSetKey & key) const;
-    SetPtr get(const PreparedSetKey & key) const;
+    FutureSetPtr addFromStorage(const PreparedSetKey & key, SetPtr set_);
+    FutureSetPtr addFromTuple(const PreparedSetKey & key, Block block);
+    FutureSetPtr addFromSubquery(const PreparedSetKey & key, SubqueryForSet subquery);
+
+    void addStorageToSubquery(const String & subquery_id, StoragePtr external_storage);
+
+    FutureSetPtr getFuture(const PreparedSetKey & key) const;
+    //SubqueryForSet & getSubquery(const String & subquery_id);
+    // SetPtr get(const PreparedSetKey & key) const;
 
     /// Get subqueries and clear them.
     /// We need to build a plan for subqueries just once. That's why we can clear them after accessing them.
@@ -252,10 +281,10 @@ public:
     bool empty() const;
 
 private:
-    std::unordered_map<PreparedSetKey, FutureSet, PreparedSetKey::Hash> sets;
+    std::unordered_map<PreparedSetKey, FutureSetPtr, PreparedSetKey::Hash> sets;
 
     /// This is the information required for building sets
-    // SubqueriesForSets subqueries;
+    SubqueriesForSets subqueries;
 };
 
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
