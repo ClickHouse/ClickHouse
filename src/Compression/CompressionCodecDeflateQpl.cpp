@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include "libaccel_config.h"
 
 namespace DB
 {
@@ -16,11 +17,6 @@ namespace ErrorCodes
     extern const int CANNOT_DECOMPRESS;
 }
 
-std::array<qpl_job *, DeflateQplJobHWPool::MAX_HW_JOB_NUMBER> DeflateQplJobHWPool::hw_job_ptr_pool;
-std::array<std::atomic_bool, DeflateQplJobHWPool::MAX_HW_JOB_NUMBER> DeflateQplJobHWPool::hw_job_ptr_locks;
-bool DeflateQplJobHWPool::job_pool_ready = false;
-std::unique_ptr<uint8_t[]> DeflateQplJobHWPool::hw_jobs_buffer;
-
 DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 {
     static DeflateQplJobHWPool pool;
@@ -28,47 +24,65 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 }
 
 DeflateQplJobHWPool::DeflateQplJobHWPool()
-    : random_engine(std::random_device()())
-    , distribution(0, MAX_HW_JOB_NUMBER - 1)
+    : hw_jobs_max_number(0)
+    , random_engine(std::random_device()())
 {
     Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
-    UInt32 job_size = 0;
     const char * qpl_version = qpl_get_library_version();
 
-    /// Get size required for saving a single qpl job object
-    qpl_get_job_size(qpl_path_hardware, &job_size);
-    /// Allocate entire buffer for storing all job objects
-    hw_jobs_buffer = std::make_unique<uint8_t[]>(job_size * MAX_HW_JOB_NUMBER);
-    /// Initialize pool for storing all job object pointers
-    /// Reallocate buffer by shifting address offset for each job object.
-    for (UInt32 index = 0; index < MAX_HW_JOB_NUMBER; ++index)
+    // loop all configured workqueue size to get maximum job number.
+    accfg_ctx *ctx_ptr = nullptr;
+    auto ctx_status = accfg_new(&ctx_ptr);
+    if (ctx_status == 0)
     {
-        qpl_job * qpl_job_ptr = reinterpret_cast<qpl_job *>(hw_jobs_buffer.get() + index * job_size);
-        if (auto status = qpl_init_job(qpl_path_hardware, qpl_job_ptr); status != QPL_STS_OK)
+        auto *dev_ptr = accfg_device_get_first(ctx_ptr);
+        while (nullptr != dev_ptr) { // loop all devices
+            for (auto *wq_ptr = accfg_wq_get_first(dev_ptr); \
+                wq_ptr != nullptr; \
+                wq_ptr = accfg_wq_get_next(wq_ptr))
+                hw_jobs_max_number += accfg_wq_get_size(wq_ptr);
+            dev_ptr = accfg_device_get_next(dev_ptr);
+        }
+    }
+
+    if(hw_jobs_max_number == 0)
+    {
+        job_pool_ready = false;
+        LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. accfg_context_status: {} ,total_wq_size: {} , QPL Version: {}.", ctx_status, hw_jobs_max_number, qpl_version);
+        return;
+    }
+    distribution = std::uniform_int_distribution<int>(0, hw_jobs_max_number - 1);
+    /// Get size required for saving a single qpl job object
+    qpl_get_job_size(qpl_path_hardware, &per_job_size);
+    /// Allocate job buffer pool for storing all job objects
+    hw_jobs_buffer = std::make_unique<uint8_t[]>(per_job_size * hw_jobs_max_number);
+    hw_job_ptr_locks = std::make_unique<std::atomic_bool[]>(hw_jobs_max_number);
+    /// Initialize all job objects in job buffer pool
+    for (UInt32 index = 0; index < hw_jobs_max_number; ++index)
+    {
+        qpl_job * job_ptr = reinterpret_cast<qpl_job *>(hw_jobs_buffer.get() + index * per_job_size);
+        if (auto status = qpl_init_job(qpl_path_hardware, job_ptr); status != QPL_STS_OK)
         {
             job_pool_ready = false;
-            LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed: {} , falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. QPL Version: {}.", static_cast<UInt32>(status), qpl_version);
+            LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. Status code: {}, QPL Version: {}.", static_cast<UInt32>(status), qpl_version);
             return;
         }
-        hw_job_ptr_pool[index] = qpl_job_ptr;
         unLockJob(index);
     }
 
     job_pool_ready = true;
-    LOG_DEBUG(log, "Hardware-assisted DeflateQpl codec is ready! QPL Version: {}",qpl_version);
+    LOG_DEBUG(log, "Hardware-assisted DeflateQpl codec is ready! QPL Version: {}, hw_jobs_max_number: {}",qpl_version, hw_jobs_max_number);
 }
 
 DeflateQplJobHWPool::~DeflateQplJobHWPool()
 {
-    for (UInt32 i = 0; i < MAX_HW_JOB_NUMBER; ++i)
+    qpl_job * job_ptr = nullptr;
+    for (UInt32 index = 0; index < hw_jobs_max_number; ++index)
     {
-        if (hw_job_ptr_pool[i])
-        {
-            while (!tryLockJob(i));
-            qpl_fini_job(hw_job_ptr_pool[i]);
-            unLockJob(i);
-            hw_job_ptr_pool[i] = nullptr;
-        }
+        job_ptr = reinterpret_cast<qpl_job *>(hw_jobs_buffer.get() + index * per_job_size);
+        while (!tryLockJob(index));
+        qpl_fini_job(job_ptr);
+        unLockJob(index);
     }
     job_pool_ready = false;
 }
@@ -83,14 +97,14 @@ qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 & job_id)
         {
             index = distribution(random_engine);
             retry++;
-            if (retry > MAX_HW_JOB_NUMBER)
+            if (retry > hw_jobs_max_number)
             {
                 return nullptr;
             }
         }
-        job_id = MAX_HW_JOB_NUMBER - index;
-        assert(index < MAX_HW_JOB_NUMBER);
-        return hw_job_ptr_pool[index];
+        job_id = hw_jobs_max_number - index;
+        assert(index < hw_jobs_max_number);
+        return reinterpret_cast<qpl_job *>(hw_jobs_buffer.get() + index * per_job_size);
     }
     else
         return nullptr;
@@ -99,19 +113,19 @@ qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 & job_id)
 void DeflateQplJobHWPool::releaseJob(UInt32 job_id)
 {
     if (isJobPoolReady())
-        unLockJob(MAX_HW_JOB_NUMBER - job_id);
+        unLockJob(hw_jobs_max_number - job_id);
 }
 
 bool DeflateQplJobHWPool::tryLockJob(UInt32 index)
 {
     bool expected = false;
-    assert(index < MAX_HW_JOB_NUMBER);
+    assert(index < hw_jobs_max_number);
     return hw_job_ptr_locks[index].compare_exchange_strong(expected, true);
 }
 
 void DeflateQplJobHWPool::unLockJob(UInt32 index)
 {
-    assert(index < MAX_HW_JOB_NUMBER);
+    assert(index < hw_jobs_max_number);
     hw_job_ptr_locks[index].store(false);
 }
 
