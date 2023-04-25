@@ -107,6 +107,11 @@ public:
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
+    virtual const Processors & getProcessors() const
+    {
+        return processors;
+    }
+
 protected:
     DataStreams input_streams;
     std::optional<DataStream> output_stream;

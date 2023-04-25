@@ -76,6 +76,11 @@ public:
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
+    const Processors & getProcessors() const override
+    {
+        return aggregating;
+    }
+
 private:
     void updateOutputStream() override;
 
