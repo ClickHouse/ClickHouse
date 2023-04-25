@@ -1108,10 +1108,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
 
-    if (Block left_sample_block(left_sample_columns); analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) && sanitizeBlock(left_sample_block, false))
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
-        if (GraceHashJoin::isSupported(analyzed_join))
+
+        // Grace hash join requires that columns exist in left_sample_block.
+        Block left_sample_block(left_sample_columns);
+        if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
             return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
     }
 
