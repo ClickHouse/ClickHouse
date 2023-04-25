@@ -30,7 +30,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_async_inserts_logs"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT table, format, bytes, empty(exception), status,
+    SELECT table, format, bytes, rows, empty(exception), status,
     status = 'ParsingError' ? flush_time_microseconds = 0 : flush_time_microseconds > event_time_microseconds AS time_ok
     FROM system.asynchronous_insert_log
     WHERE database = '$CLICKHOUSE_DATABASE' OR query ILIKE 'INSERT INTO FUNCTION%$CLICKHOUSE_DATABASE%'
