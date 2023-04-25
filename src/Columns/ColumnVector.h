@@ -46,7 +46,22 @@ struct CompareHelper
       */
     static constexpr int compare(T a, U b, int /*nan_direction_hint*/)
     {
-        return a > b ? 1 : (a < b ? -1 : 0);
+        if constexpr (std::endian::native == std::endian::big && std::same_as<T, UUID> && std::same_as<U, UUID>)
+        {
+            UUID tmp_a = a;
+            char *start = reinterpret_cast<char *>(&tmp_a);
+            char *end = start + sizeof(tmp_a);
+            std::reverse(start, end);
+
+            UUID tmp_b = b;
+            start = reinterpret_cast<char *>(&tmp_b);
+            end = start + sizeof(tmp_b);
+            std::reverse(start, end);
+
+            return tmp_a > tmp_b ? 1 : (tmp_a < tmp_b ? -1 : 0);
+        }
+        else
+            return a > b ? 1 : (a < b ? -1 : 0);
     }
 };
 
