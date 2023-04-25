@@ -3,7 +3,7 @@
 import csv
 import os
 import time
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 import logging
 
 from github import Github
@@ -13,9 +13,12 @@ from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS
+from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
+from report import TestResult, TestResults
+from s3_helper import S3Helper
+from upload_result_helper import upload_results
 
 RETRY = 5
 CommitStatuses = List[CommitStatus]
@@ -105,67 +108,133 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
-    if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
-        return
     # to reduce number of parameters, the Github is constructed on the fly
     gh = Github()
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
     repo = get_repo(gh)
-    pr = repo.get_pull(pr_info.number)
-    comment_header = f"<!-- commit {commit.sha} automatic status comment -->\n"
+    statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
+    if not statuses:
+        return
+
+    # We update the report in generate_status_comment function, so do it each
+    # run, even in the release PRs and normal pushes
+    comment_body = generate_status_comment(pr_info, statuses)
+    # We post the comment only to normal and backport PRs
+    if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
+        return
+
+    comment_service_header = comment_body.split("\n", 1)[0]
     comment = None  # type: Optional[IssueComment]
+    pr = repo.get_pull(pr_info.number)
     for ic in pr.get_issue_comments():
-        if ic.body.startswith(comment_header):
+        if ic.body.startswith(comment_service_header):
             comment = ic
             break
 
-    statuses_limit = 25  # the arbitrary limit to use <details> html tag
-    statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
-    details = ""
-    details_ending = ""
-    if statuses_limit < len(statuses):
-        details = "<details><summary>Show the statuses</summary>\n\n"
-        details_ending = "\n\n</details>"
+    if comment is None:
+        pr.create_issue_comment(comment_body)
+        return
+
+    if comment.body == comment_body:
+        logging.info("The status comment is already updated, no needs to change it")
+        return
+    comment.edit(comment_body)
+
+
+def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
+    """The method generates the comment body, as well it updates the CI report"""
+
+    def beauty_state(state: str) -> str:
+        if state == "success":
+            return f"🟢 {state}"
+        if state == "pending":
+            return f"🟡 {state}"
+        if state in ["error", "failure"]:
+            return f"🔴 {state}"
+        return state
+
+    report_url = create_ci_report(pr_info, statuses)
+    worst_state = get_worst_state(statuses)
+    if not worst_state:
+        # Theoretically possible, although
+        # the function should not be used on empty statuses
+        worst_state = "The commit doesn't have the statuses yet"
+    else:
+        worst_state = f"The overall status of the commit is {beauty_state(worst_state)}"
+
     comment_body = (
-        f"This is an automated comment for commit `{commit.sha}` with "
-        f"description of existing statuses\n\n{details}"
-        "<table><thead><tr><th>Check name</th><th>Description</th><th>Status</th>"
-        "<th>Status message</th><th>Optional report URL</th></tr></thead>\n<tbody>"
+        f"<!-- commit {pr_info.sha} automatic status comment -->\n"
+        f"This is an automated comment for commit `{pr_info.sha}` with "
+        f"description of existing statuses\n"
+        f"The full report is available [here]({report_url})\n"
+        f"{worst_state}\n\n<table>"
+        "<thead><tr><th>Check name</th><th>Description</th><th>Status</th></tr></thead>\n"
+        "<tbody>"
     )
-    table_rows = []  # type: List[str]
+    # group checks by the name to get the worst one per each
+    grouped_statuses = {}  # type: Dict[CheckDescription, CommitStatuses]
     for status in statuses:
-        description = ""  # it's impossible to have nothing, but safer to define
-        for cd in CHECK_DESCRIPTIONS:
-            if cd.match_func(status.context):
-                description = cd.description
+        cd = None
+        for c in CHECK_DESCRIPTIONS:
+            if c.match_func(status.context):
+                cd = c
                 break
 
-        if status.state == "success":
-            state = "🟢 "
-        elif status.state == "pending":
-            state = "🟡 "
-        elif status.state in ["error", "failure"]:
-            state = "🔴 "
-        else:
-            state = ""
+        if cd is None or cd == CHECK_DESCRIPTIONS[-1]:
+            # This is the case for either non-found description or a fallback
+            cd = CheckDescription(
+                status.context,
+                CHECK_DESCRIPTIONS[-1].description,
+                CHECK_DESCRIPTIONS[-1].match_func,
+            )
 
-        if status.target_url:
-            link = f'<a href="{status.target_url}">Report</a>'
+        if cd in grouped_statuses:
+            grouped_statuses[cd].append(status)
         else:
-            link = ""
+            grouped_statuses[cd] = [status]
 
+    table_rows = []  # type: List[str]
+    for desc, gs in grouped_statuses.items():
         table_rows.append(
-            f"<tr><td>{status.context}</td><td>{description}</td>"
-            f"<td>{state}{status.state}</td><td>{status.description}</td>"
-            f"<td>{link}</td></tr>\n"
+            f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
+            f"<td>{beauty_state(get_worst_state(gs))}</td></tr>\n"
         )
 
-    comment_footer = f"</table>{details_ending}"
-    comment_body = "".join([comment_header, comment_body, *table_rows, comment_footer])
-    if comment is not None:
-        comment.edit(comment_body)
-        return
-    pr.create_issue_comment(comment_body)
+    table_rows.sort()
+
+    comment_footer = "</table>"
+    return "".join([comment_body, *table_rows, comment_footer])
+
+
+def get_worst_state(statuses: CommitStatuses) -> str:
+    worst_status = None
+    states = {"error": 0, "failure": 1, "pending": 2, "success": 3}
+    for status in statuses:
+        if worst_status is None:
+            worst_status = status
+            continue
+        if states[status.state] < states[worst_status.state]:
+            worst_status = status
+        if worst_status.state == "error":
+            break
+
+    if worst_status is None:
+        return ""
+    return worst_status.state
+
+
+def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
+    """The function converst the statuses to TestResults and uploads the report
+    to S3 tests bucket. Then it returns the URL"""
+    test_results = []  # type: TestResults
+    for status in statuses:
+        log_urls = None
+        if status.target_url is not None:
+            log_urls = [status.target_url]
+        test_results.append(TestResult(status.context, status.state, log_urls=log_urls))
+    return upload_results(
+        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI_STATUS_NAME
+    )
 
 
 def post_commit_status_to_file(
