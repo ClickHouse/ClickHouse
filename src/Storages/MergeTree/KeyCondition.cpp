@@ -1901,7 +1901,8 @@ KeyCondition::Description KeyCondition::getDescription() const
                     keys_from_columns.push_back(std::string(key_names[kc]));
                 }
                 std::string all_key_names = boost::algorithm::join(keys_from_columns, ", ");
-                if (keys_from_columns.size() > 1) {
+                if (keys_from_columns.size() > 1)
+                {
                     all_key_names = "(" + all_key_names + ")";
                 }
                 if (!all_key_names.empty())
