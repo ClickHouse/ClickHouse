@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Interpreters/PartLog.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -19,6 +20,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char rmt_commit_zk_fail_before_op[];
+    extern const char rmt_commit_zk_fail_after_op[];
+}
 
 namespace ErrorCodes
 {
@@ -939,6 +946,25 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         }
 
         ThreadFuzzer::maybeInjectSleep();
+
+        fiu_do_on(FailPoints::rmt_commit_zk_fail_before_op,
+        {
+            if (!zookeeper->fault_policy)
+            {
+                zookeeper->logger = log;
+                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
+            }
+            zookeeper->fault_policy->must_fail_before_op = true;
+        });
+        fiu_do_on(FailPoints::rmt_commit_zk_fail_after_op,
+        {
+            if (!zookeeper->fault_policy)
+            {
+                zookeeper->logger = log;
+                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
+            }
+            zookeeper->fault_policy->must_fail_after_op = true;
+        });
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT

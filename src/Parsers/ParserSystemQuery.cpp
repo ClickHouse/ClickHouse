@@ -140,6 +140,7 @@ enum class SystemQueryTargetType
                                     Expected & expected)
 {
     String cluster_str;
+
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
@@ -247,6 +248,16 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::DROP_DATABASE_REPLICA:
         {
             if (!parseDropReplica(res, pos, expected, /* database */ true))
+                return false;
+            break;
+        }
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->fail_point_name = ast->as<ASTIdentifier &>().name();
+            else
                 return false;
             break;
         }

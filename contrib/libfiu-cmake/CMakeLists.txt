@@ -1,0 +1,16 @@
+set(FIU_DIR "${ClickHouse_SOURCE_DIR}/contrib/libfiu/")
+
+set(FIU_SOURCES
+  ${FIU_DIR}/libfiu/fiu.c
+  ${FIU_DIR}/libfiu/fiu-rc.c
+  ${FIU_DIR}/libfiu/backtrace.c
+  ${FIU_DIR}/libfiu/wtable.c
+  ${FIU_DIR}/libfiu/hash.c
+)
+
+set(FIU_HEADERS "${FIU_DIR}/libfiu")
+
+add_library(fiu ${FIU_SOURCES})
+target_compile_definitions(fiu PUBLIC DUMMY_BACKTRACE)
+target_include_directories(fiu PUBLIC ${FIU_HEADERS})
+add_library(ch_contrib::fiu ALIAS fiu)
