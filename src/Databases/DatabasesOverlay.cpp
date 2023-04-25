@@ -55,14 +55,10 @@ void DatabasesOverlay::createTable(ContextPtr context_, const String & table_nam
 {
     for (auto & db : databases)
     {
-        try
+        if (!db->isReadOnly())
         {
             db->createTable(context_, table_name, table, query);
             return;
-        }
-        catch (...)
-        {
-            continue;
         }
     }
     throw Exception(
@@ -218,8 +214,11 @@ void DatabasesOverlay::alterTable(ContextPtr local_context, const StorageID & ta
     {
         try
         {
-            db->alterTable(local_context, table_id, metadata);
-            return;
+            if (!db->isReadOnly())
+            {
+                db->alterTable(local_context, table_id, metadata);
+                return;
+            }
         }
         catch (...)
         {
