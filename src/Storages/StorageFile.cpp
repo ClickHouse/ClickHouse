@@ -34,6 +34,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ResizeProcessor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -700,7 +701,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    const size_t max_num_streams)
 {
     if (use_table_fd)
     {
@@ -731,7 +732,8 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    if (num_streams > paths.size())
+    size_t num_streams = max_num_streams;
+    if (max_num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;

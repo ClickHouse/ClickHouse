@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <Common/RangeGenerator.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
@@ -21,7 +20,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Poco/URIStreamFactory.h>
-#include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
 #include "config.h"
@@ -93,6 +91,16 @@ namespace detail
     class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
     public:
+        /// Information from HTTP response header.
+        struct FileInfo
+        {
+            // nullopt if the server doesn't report it.
+            std::optional<size_t> file_size;
+            std::optional<time_t> last_modified;
+            bool seekable = false;
+        };
+
+    protected:
         /// HTTP range, including right bound [begin, end].
         struct Range
         {
@@ -100,7 +108,6 @@ namespace detail
             std::optional<size_t> end;
         };
 
-    protected:
         Poco::URI uri;
         std::string method;
         std::string content_encoding;
@@ -119,9 +126,8 @@ namespace detail
         bool use_external_buffer;
 
         size_t offset_from_begin_pos = 0;
-        const Range initial_read_range;
         Range read_range;
-        std::optional<size_t> file_size;
+        std::optional<FileInfo> file_info;
 
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
@@ -137,7 +143,7 @@ namespace detail
         bool withPartialContent(const Range & range) const
         {
             /**
-             * Add range header if we have some passed range (for disk web)
+             * Add range header if we have some passed range
              * or if we want to retry GET request on purpose.
              */
             return range.begin || range.end || retry_with_range_header;
@@ -159,17 +165,14 @@ namespace detail
 
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
+            else if (method == Poco::Net::HTTPRequest::HTTP_POST)
+                request.setContentLength(0);    /// No callback - no body
 
             for (auto & [header, value] : http_header_entries)
                 request.set(header, value);
 
             std::optional<Range> range;
-            if constexpr (for_object_info)
-            {
-                if (withPartialContent(initial_read_range))
-                    range = initial_read_range;
-            }
-            else
+            if constexpr (!for_object_info)
             {
                 if (withPartialContent(read_range))
                     range = Range{getOffset(), read_range.end};
@@ -220,22 +223,20 @@ namespace detail
 
         size_t getFileSize() override
         {
-            if (file_size)
-                return *file_size;
+            if (!file_info)
+                file_info = getFileInfo();
 
-            Poco::Net::HTTPResponse response;
-            getHeadResponse(response);
-
-            if (response.hasContentLength())
-            {
-                if (!read_range.end)
-                    read_range.end = getRangeBegin() + response.getContentLength();
-
-                file_size = response.getContentLength();
-                return *file_size;
-            }
+            if (file_info->file_size)
+                return *file_info->file_size;
 
             throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
+        }
+
+        bool checkIfActuallySeekable() override
+        {
+            if (!file_info)
+                file_info = getFileInfo();
+            return file_info->seekable;
         }
 
         String getFileName() const override { return uri.toString(); }
@@ -299,11 +300,11 @@ namespace detail
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
             const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
-            Range read_range_ = {},
             const RemoteHostFilter * remote_host_filter_ = nullptr,
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
-            bool http_skip_not_found_url_ = false)
+            bool http_skip_not_found_url_ = false,
+            std::optional<FileInfo> file_info_ = std::nullopt)
             : SeekableReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -314,8 +315,7 @@ namespace detail
             , remote_host_filter {remote_host_filter_}
             , buffer_size {buffer_size_}
             , use_external_buffer {use_external_buffer_}
-            , initial_read_range(read_range_)
-            , read_range(read_range_)
+            , file_info(file_info_)
             , http_skip_not_found_url(http_skip_not_found_url_)
             , settings {settings_}
             , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
@@ -485,7 +485,7 @@ namespace detail
             if (withPartialContent(read_range) && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
             {
                 /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
-                if (read_range.begin && *read_range.begin != 0)
+                if (getOffset() != 0)
                 {
                     if (!exception)
                     {
@@ -513,8 +513,9 @@ namespace detail
                 }
             }
 
-            if (!offset_from_begin_pos && !read_range.end && response.hasContentLength())
-                read_range.end = getRangeBegin() + response.getContentLength();
+            // Remember file size. It'll be used to report eof in next nextImpl() call.
+            if (!read_range.end && response.hasContentLength())
+                file_info = parseFileInfo(response, withPartialContent(read_range) ? getOffset() : 0);
 
             try
             {
@@ -544,11 +545,9 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (read_range.end && getOffset() > read_range.end.value())
-            {
-                assert(getOffset() == read_range.end.value() + 1);
+            if ((read_range.end && getOffset() > read_range.end.value()) ||
+                (file_info && file_info->file_size && getOffset() >= file_info->file_size.value()))
                 return false;
-            }
 
             if (impl)
             {
@@ -569,6 +568,7 @@ namespace detail
 
             bool result = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
+            bool last_attempt = false;
 
             auto on_retriable_error = [&]()
             {
@@ -576,11 +576,19 @@ namespace detail
                 impl.reset();
                 auto http_session = session->getSession();
                 http_session->reset();
-                sleepForMilliseconds(milliseconds_to_wait);
+                if (!last_attempt)
+                {
+                    sleepForMilliseconds(milliseconds_to_wait);
+                    milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
+                }
             };
 
-            for (size_t i = 0; i < settings.http_max_tries; ++i)
+            for (size_t i = 0;; ++i)
             {
+                if (last_attempt)
+                    break;
+                last_attempt = i + 1 >= settings.http_max_tries;
+
                 exception = nullptr;
                 initialization_error = InitializeError::NONE;
 
@@ -655,8 +663,6 @@ namespace detail
                     on_retriable_error();
                     exception = std::current_exception();
                 }
-
-                milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
             }
 
             if (exception)
@@ -687,37 +693,80 @@ namespace detail
             {
                 pos = working_buffer.end() - (current_offset - offset_);
                 assert(pos >= working_buffer.begin());
-                assert(pos <= working_buffer.end());
+                assert(pos < working_buffer.end());
 
                 return getPosition();
             }
 
-            auto position = getPosition();
-            if (offset_ > position)
-            {
-                size_t diff = offset_ - position;
-                if (diff < settings.remote_read_min_bytes_for_seek)
-                {
-                    ignore(diff);
-                    return offset_;
-                }
-            }
-
             if (impl)
             {
-                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+                auto position = getPosition();
+                if (offset_ > position)
+                {
+                    size_t diff = offset_ - position;
+                    if (diff < settings.remote_read_min_bytes_for_seek)
+                    {
+                        ignore(diff);
+                        return offset_;
+                    }
+                }
+
+                if (!atEndOfRequestedRangeGuess())
+                    ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
                 impl.reset();
             }
 
             resetWorkingBuffer();
             read_range.begin = offset_;
-            read_range.end = std::nullopt;
             offset_from_begin_pos = 0;
 
             return offset_;
         }
 
-        SeekableReadBuffer::Range getRemainingReadRange() const override { return {getOffset(), read_range.end}; }
+        void setReadUntilPosition(size_t until) override
+        {
+            until = std::max(until, 1ul);
+            if (read_range.end && *read_range.end + 1 == until)
+                return;
+            read_range.end = until - 1;
+            read_range.begin = getPosition();
+            resetWorkingBuffer();
+            if (impl)
+            {
+                if (!atEndOfRequestedRangeGuess())
+                    ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+                impl.reset();
+            }
+        }
+
+        void setReadUntilEnd() override
+        {
+            if (!read_range.end)
+                return;
+            read_range.end.reset();
+            read_range.begin = getPosition();
+            resetWorkingBuffer();
+            if (impl)
+            {
+                if (!atEndOfRequestedRangeGuess())
+                    ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+                impl.reset();
+            }
+        }
+
+        bool supportsRightBoundedReads() const override { return true; }
+
+        // If true, if we destroy impl now, no work was wasted. Just for metrics.
+        bool atEndOfRequestedRangeGuess()
+        {
+            if (!impl)
+                return true;
+            if (read_range.end)
+                return getPosition() > static_cast<off_t>(*read_range.end);
+            if (file_info && file_info->file_size)
+                return getPosition() >= static_cast<off_t>(*file_info->file_size);
+            return false;
+        }
 
         std::string getResponseCookie(const std::string & name, const std::string & def) const
         {
@@ -742,18 +791,62 @@ namespace detail
 
         std::optional<time_t> getLastModificationTime()
         {
+            return getFileInfo().last_modified;
+        }
+
+        FileInfo getFileInfo()
+        {
             Poco::Net::HTTPResponse response;
-            getHeadResponse(response);
-            if (!response.has("Last-Modified"))
-                return std::nullopt;
+            try
+            {
+                getHeadResponse(response);
+            }
+            catch (HTTPException & e)
+            {
+                /// Maybe the web server doesn't support HEAD requests.
+                /// E.g. webhdfs reports status 400.
+                /// We should proceed in hopes that the actual GET request will succeed.
+                /// (Unless the error in transient. Don't want to nondeterministically sometimes
+                /// fall back to slow whole-file reads when HEAD is actually supported; that sounds
+                /// like a nightmare to debug.)
+                if (e.getHTTPStatus() >= 400 && e.getHTTPStatus() <= 499 &&
+                    e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS)
+                    return FileInfo{};
 
-            String date_str = response.get("Last-Modified");
-            struct tm info;
-            char * res = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
-            if (!res || res != date_str.data() + date_str.size())
-                return std::nullopt;
+                throw;
+            }
+            return parseFileInfo(response, 0);
+        }
 
-            return timegm(&info);
+        FileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
+        {
+            FileInfo res;
+
+            if (response.hasContentLength())
+            {
+                res.file_size = response.getContentLength();
+
+                if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
+                {
+                    *res.file_size += requested_range_begin;
+                    res.seekable = true;
+                }
+                else
+                {
+                    res.seekable = response.has("Accept-Ranges") && response.get("Accept-Ranges") == "bytes";
+                }
+            }
+
+            if (response.has("Last-Modified"))
+            {
+                String date_str = response.get("Last-Modified");
+                struct tm info;
+                char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+                if (end == date_str.data() + date_str.size())
+                    res.last_modified = timegm(&info);
+            }
+
+            return res;
         }
     };
 }
@@ -788,11 +881,11 @@ public:
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
-        Range read_range_ = {},
         const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
-        bool skip_not_found_url_ = false)
+        bool skip_not_found_url_ = false,
+        std::optional<FileInfo> file_info_ = std::nullopt)
         : Parent(
             std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts)),
             uri_,
@@ -802,23 +895,21 @@ public:
             buffer_size_,
             settings_,
             http_header_entries_,
-            read_range_,
             remote_host_filter_,
             delay_initialization_,
             use_external_buffer_,
-            skip_not_found_url_)
+            skip_not_found_url_,
+            file_info_)
     {
     }
 };
 
-class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
+class RangedReadWriteBufferFromHTTPFactory : public SeekableReadBufferFactory, public WithFileName
 {
     using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
 
 public:
     RangedReadWriteBufferFromHTTPFactory(
-        size_t total_object_size_,
-        size_t range_step_,
         Poco::URI uri_,
         std::string method_,
         OutStreamCallback out_stream_callback_,
@@ -832,10 +923,7 @@ public:
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
         bool skip_not_found_url_ = false)
-        : range_generator(total_object_size_, range_step_)
-        , total_object_size(total_object_size_)
-        , range_step(range_step_)
-        , uri(uri_)
+        : uri(uri_)
         , method(std::move(method_))
         , out_stream_callback(out_stream_callback_)
         , timeouts(std::move(timeouts_))
@@ -851,15 +939,9 @@ public:
     {
     }
 
-    SeekableReadBufferPtr getReader() override
+    std::unique_ptr<SeekableReadBuffer> getReader() override
     {
-        const auto next_range = range_generator.nextRange();
-        if (!next_range)
-        {
-            return nullptr;
-        }
-
-        return std::make_shared<ReadWriteBufferFromHTTP>(
+        return std::make_unique<ReadWriteBufferFromHTTP>(
             uri,
             method,
             out_stream_callback,
@@ -869,28 +951,36 @@ public:
             buffer_size,
             settings,
             http_header_entries,
-            // HTTP Range has inclusive bounds, i.e. [from, to]
-            ReadWriteBufferFromHTTP::Range{next_range->first, next_range->second - 1},
             remote_host_filter,
             delay_initialization,
             use_external_buffer,
-            skip_not_found_url);
+            skip_not_found_url,
+            file_info);
     }
 
-    off_t seek(off_t off, [[maybe_unused]] int whence) override
+    size_t getFileSize() override
     {
-        range_generator = RangeGenerator{total_object_size, range_step, static_cast<size_t>(off)};
-        return off;
+        auto s = getFileInfo().file_size;
+        if (!s)
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
+        return *s;
     }
 
-    size_t getFileSize() override { return total_object_size; }
+    bool checkIfActuallySeekable() override
+    {
+        return getFileInfo().seekable;
+    }
+
+    ReadWriteBufferFromHTTP::FileInfo getFileInfo()
+    {
+        if (!file_info)
+            file_info = static_cast<ReadWriteBufferFromHTTP*>(getReader().get())->getFileInfo();
+        return *file_info;
+    }
 
     String getFileName() const override { return uri.toString(); }
 
 private:
-    RangeGenerator range_generator;
-    size_t total_object_size;
-    size_t range_step;
     Poco::URI uri;
     std::string method;
     OutStreamCallback out_stream_callback;
@@ -901,6 +991,7 @@ private:
     ReadSettings settings;
     HTTPHeaderEntries http_header_entries;
     const RemoteHostFilter * remote_host_filter;
+    std::optional<ReadWriteBufferFromHTTP::FileInfo> file_info;
     bool delay_initialization;
     bool use_external_buffer;
     bool skip_not_found_url;

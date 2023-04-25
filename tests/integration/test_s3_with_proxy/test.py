@@ -5,6 +5,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 
+
 # Runs simple proxy resolver in python env container.
 def run_resolver(cluster):
     container_id = cluster.get_container_id("resolver")

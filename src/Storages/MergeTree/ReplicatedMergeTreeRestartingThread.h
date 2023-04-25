@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <base/types.h>
 #include <thread>

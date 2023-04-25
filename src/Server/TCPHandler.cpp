@@ -376,7 +376,7 @@ void TCPHandler::runImpl()
 
                 std::lock_guard lock(task_callback_mutex);
 
-                if (state.is_cancelled)
+                if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return {};
 
                 sendReadTaskRequestAssumeLocked();
@@ -392,7 +392,7 @@ void TCPHandler::runImpl()
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
                 std::lock_guard lock(task_callback_mutex);
 
-                if (state.is_cancelled)
+                if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
 
                 sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
@@ -406,7 +406,7 @@ void TCPHandler::runImpl()
                 CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
                 std::lock_guard lock(task_callback_mutex);
 
-                if (state.is_cancelled)
+                if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return std::nullopt;
 
                 sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
@@ -424,7 +424,7 @@ void TCPHandler::runImpl()
 
             auto finish_or_cancel = [this]()
             {
-                if (state.is_cancelled)
+                if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     state.io.onCancelOrConnectionLoss();
                 else
                     state.io.onFinish();
@@ -454,7 +454,7 @@ void TCPHandler::runImpl()
                         {
                             std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
 
-                            if (isQueryCancelled())
+                            if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                                 return true;
 
                             sendProgress();
@@ -673,7 +673,7 @@ bool TCPHandler::readDataNext()
             {
                 LOG_INFO(log, "Client has dropped the connection, cancel the query.");
                 state.is_connection_closed = true;
-                state.is_cancelled = true;
+                state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
                 break;
             }
 
@@ -718,7 +718,7 @@ void TCPHandler::readData()
     while (readDataNext())
         ;
 
-    if (state.is_cancelled)
+    if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
@@ -731,7 +731,7 @@ void TCPHandler::skipData()
     while (readDataNext())
         ;
 
-    if (state.is_cancelled)
+    if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
@@ -769,7 +769,7 @@ void TCPHandler::processInsertQuery()
         while (readDataNext())
             executor.push(std::move(state.block_for_insert));
 
-        if (state.is_cancelled)
+        if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
             executor.cancel();
         else
             executor.finish();
@@ -823,7 +823,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         {
             std::unique_lock lock(task_callback_mutex);
 
-            if (isQueryCancelled())
+            auto cancellation_status = getQueryCancellationStatus();
+            if (cancellation_status == CancellationStatus::FULLY_CANCELLED)
             {
                 /// Several callback like callback for parallel reading could be called from inside the pipeline
                 /// and we have to unlock the mutex from our side to prevent deadlock.
@@ -831,6 +832,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 /// A packet was received requesting to stop execution of the request.
                 executor.cancel();
                 break;
+            }
+            else if (cancellation_status == CancellationStatus::READ_CANCELLED)
+            {
+                executor.cancelReading();
             }
 
             if (after_send_progress.elapsed() / 1000 >= interactive_delay)
@@ -862,7 +867,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
           *  because we have not read all the data yet,
           *  and there could be ongoing calculations in other threads at the same time.
           */
-        if (!isQueryCancelled())
+        if (getQueryCancellationStatus() != CancellationStatus::FULLY_CANCELLED)
         {
             sendTotals(executor.getTotalsBlock());
             sendExtremes(executor.getExtremesBlock());
@@ -1197,7 +1202,8 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                               "Unexpected packet from client (expected Hello, got {})", packet_type);
     }
 
     readStringBinary(client_name, *in);
@@ -1225,6 +1231,9 @@ void TCPHandler::receiveHello()
     is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+            LOG_WARNING(LogFrequencyLimiter(log, 10),
+                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         receiveClusterNameAndSalt();
         return;
     }
@@ -1239,10 +1248,17 @@ void TCPHandler::receiveHello()
         Poco::Net::SecureStreamSocket secure_socket(socket());
         if (secure_socket.havePeerCertificate())
         {
-            session->authenticate(
-                SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
-                getClientAddress(client_info));
-            return;
+            try
+            {
+                session->authenticate(
+                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                    getClientAddress(client_info));
+                return;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
+            }
         }
     }
 #endif
@@ -1309,11 +1325,6 @@ void TCPHandler::sendHello()
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
     }
-    else
-    {
-        LOG_WARNING(LogFrequencyLimiter(log, 10),
-            "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
-    }
     out->next();
 }
 
@@ -1352,8 +1363,7 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
-            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the query");
-            state.is_cancelled = true;
+            decreaseCancellationStatus("Received 'Cancel' packet from the client, canceling the query.");
             return false;
 
         case Protocol::Client::Hello:
@@ -1394,8 +1404,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
     {
         if (packet_type == Protocol::Client::Cancel)
         {
-            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the read task");
-            state.is_cancelled = true;
+            decreaseCancellationStatus("Received 'Cancel' packet from the client, canceling the read task.");
             return {};
         }
         else
@@ -1422,8 +1431,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     {
         if (packet_type == Protocol::Client::Cancel)
         {
-            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the MergeTree read task");
-            state.is_cancelled = true;
+            decreaseCancellationStatus("Received 'Cancel' packet from the client, canceling the MergeTree read task.");
             return std::nullopt;
         }
         else
@@ -1812,14 +1820,37 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
     }
 }
 
-
-bool TCPHandler::isQueryCancelled()
+void TCPHandler::decreaseCancellationStatus(const std::string & log_message)
 {
-    if (state.is_cancelled || state.sent_all_data)
-        return true;
+    auto prev_status = magic_enum::enum_name(state.cancellation_status);
+
+    bool partial_result_on_first_cancel = false;
+    if (query_context)
+    {
+        const auto & settings = query_context->getSettingsRef();
+        partial_result_on_first_cancel = settings.partial_result_on_first_cancel;
+    }
+
+    if (partial_result_on_first_cancel && state.cancellation_status == CancellationStatus::NOT_CANCELLED)
+    {
+        state.cancellation_status = CancellationStatus::READ_CANCELLED;
+    }
+    else
+    {
+        state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
+    }
+
+    auto current_status = magic_enum::enum_name(state.cancellation_status);
+    LOG_INFO(log, "Change cancellation status from {} to {}. Log message: {}", prev_status, current_status, log_message);
+}
+
+QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
+{
+    if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED || state.sent_all_data)
+        return CancellationStatus::FULLY_CANCELLED;
 
     if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
-        return false;
+        return state.cancellation_status;
 
     after_check_cancelled.restart();
 
@@ -1829,9 +1860,9 @@ bool TCPHandler::isQueryCancelled()
         if (in->eof())
         {
             LOG_INFO(log, "Client has dropped the connection, cancel the query.");
-            state.is_cancelled = true;
+            state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
             state.is_connection_closed = true;
-            return true;
+            return CancellationStatus::FULLY_CANCELLED;
         }
 
         UInt64 packet_type = 0;
@@ -1842,16 +1873,17 @@ bool TCPHandler::isQueryCancelled()
             case Protocol::Client::Cancel:
                 if (state.empty())
                     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Cancel received from client");
-                LOG_INFO(log, "Query was cancelled.");
-                state.is_cancelled = true;
-                return true;
+
+                decreaseCancellationStatus("Query was cancelled.");
+
+                return state.cancellation_status;
 
             default:
                 throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
         }
     }
 
-    return false;
+    return state.cancellation_status;
 }
 
 
@@ -1869,7 +1901,7 @@ void TCPHandler::sendData(const Block & block)
         {
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(UInt64(-1), *out);
+                writeVarUInt(VAR_UINT_MAX, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);
