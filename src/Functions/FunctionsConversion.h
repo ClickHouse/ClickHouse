@@ -3098,12 +3098,18 @@ private:
             return &ConvertImplGenericFromString<ColumnString>::execute;
         }
 
+        DataTypePtr from_type_holder;
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
         const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
 
         /// Convert from Map
         if (from_type_map)
-            from_type = checkAndGetDataType<DataTypeArray>(from_type_map->getNestedType().get());
+        {
+            /// Recreate array of unnamed tuples because otherwise it may work
+            /// unexpectedly while converting to array of named tuples.
+            from_type_holder = from_type_map->getNestedTypeWithUnnamedTuple();
+            from_type = assert_cast<const DataTypeArray *>(from_type_holder.get());
+        }
 
         if (!from_type)
         {
