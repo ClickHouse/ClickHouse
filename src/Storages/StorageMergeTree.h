@@ -254,7 +254,7 @@ private:
     /// better readability of exception message. If mutation was killed doesn't
     /// return any ids.
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr,
-                                                                        bool from_another_mutation = true) const;
+                                                                        bool from_another_mutation = false) const;
 
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
 
