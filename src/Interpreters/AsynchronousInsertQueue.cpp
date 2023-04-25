@@ -128,9 +128,10 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
     }
 }
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_)
     : WithContext(context_)
     , pool_size(pool_size_)
+    , flush_on_shutdown(flush_on_shutdown_)
     , queue_shards(pool_size)
     , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, pool_size)
 {
@@ -143,8 +144,6 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
 
 AsynchronousInsertQueue::~AsynchronousInsertQueue()
 {
-    /// TODO: add a setting for graceful shutdown.
-
     LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
     shutdown = true;
 
@@ -156,17 +155,18 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
         assert(dump_by_first_update_threads[i].joinable());
         dump_by_first_update_threads[i].join();
 
+        if (flush_on_shutdown)
         {
-            std::lock_guard lock(shard.mutex);
+            for (auto & [_, elem] : shard.queue)
+                scheduleDataProcessingJob(elem.key, std::move(elem.data), getContext());
+        }
+        else
+        {
 
             for (auto & [_, elem] : shard.queue)
-            {
                 for (const auto & entry : elem.data->entries)
-                {
                     entry->finish(std::make_exception_ptr(Exception(
                         ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
-                }
-            }
         }
     }
 
@@ -210,7 +210,9 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         /// to avoid buffering of huge amount of data in memory.
 
         auto read_buf = getReadBufferFromASTInsertQuery(query);
-        LimitReadBuffer limit_buf(*read_buf, settings.async_insert_max_data_size, /* trow_exception */ false, /* exact_limit */ {});
+        LimitReadBuffer limit_buf(
+            *read_buf, settings.async_insert_max_data_size,
+            /*throw_exception=*/ false, /*exact_limit=*/ {});
 
         WriteBufferFromString write_buf(bytes);
         copyData(limit_buf, write_buf);
@@ -262,18 +264,19 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
         assert(data);
         data->size_in_bytes += entry_data_size;
-        ++data->query_number;
         data->entries.emplace_back(entry);
         insert_future = entry->getFuture();
 
         LOG_TRACE(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
             data->entries.size(), data->size_in_bytes, key.query_str);
 
+        bool has_enough_bytes = data->size_in_bytes >= key.settings.async_insert_max_data_size;
+        bool has_enough_queries = data->entries.size() >= key.settings.async_insert_max_query_number && key.settings.async_insert_deduplicate;
+
         /// Here we check whether we hit the limit on maximum data size in the buffer.
         /// And use setting from query context.
         /// It works, because queries with the same set of settings are already grouped together.
-        if (data->size_in_bytes >= key.settings.async_insert_max_data_size
-            || (data->query_number >= key.settings.async_insert_max_query_number && key.settings.async_insert_deduplicate))
+        if (!flush_stopped && (has_enough_bytes || has_enough_queries))
         {
             data_to_process = std::move(data);
             shard.iterators.erase(it);
@@ -295,6 +298,47 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         .status = PushResult::OK,
         .future = std::move(insert_future),
     };
+}
+
+void AsynchronousInsertQueue::flushAll()
+{
+    std::lock_guard flush_lock(flush_mutex);
+
+    LOG_DEBUG(log, "Requested to flush asynchronous insert queue");
+
+    flush_stopped = true;
+    std::vector<Queue> queues_to_flush(pool_size);
+
+    for (size_t i = 0; i < pool_size; ++i)
+    {
+        std::lock_guard lock(queue_shards[i].mutex);
+        queues_to_flush[i] = std::move(queue_shards[i].queue);
+        queue_shards[i].iterators.clear();
+    }
+
+    size_t total_queries = 0;
+    size_t total_bytes = 0;
+    size_t total_entries = 0;
+
+    for (auto & queue : queues_to_flush)
+    {
+        total_queries += queue.size();
+        for (auto & [_, entry] : queue)
+        {
+            total_bytes += entry.data->size_in_bytes;
+            total_entries += entry.data->entries.size();
+            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext());
+        }
+    }
+
+    LOG_DEBUG(log,
+        "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries)",
+        pool.active(), total_entries, total_bytes, total_queries);
+
+    pool.wait();
+
+    LOG_DEBUG(log, "Finished flushing of asynchronous insert queue");
+    flush_stopped = false;
 }
 
 void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
@@ -321,6 +365,9 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
 
             if (shutdown)
                 return;
+
+            if (flush_stopped)
+                continue;
 
             const auto now = std::chrono::steady_clock::now();
 
