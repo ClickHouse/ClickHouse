@@ -261,6 +261,57 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
+## SHOW INDEX
+
+Displays a list of primary and data skipping indexes of a table.
+
+```sql
+SHOW [EXTENDED] {INDEX | INDEXES |KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>}] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+The database and table name can be specified in abbreviated form as `<db>.<table>`, i.e. `FROM tab FROM db` and `FROM db.tab` are
+equivalent. If no database is specified, the query returns the list of columns from the current database.
+
+The optional keyword `EXTENDED` currently has no effect, it only exists for MySQL compatibility.
+
+`SHOW INDEX` produces a result table with the following structure:
+- table - The name of the table (String)
+- non_unique - 0 if the index can contain duplicates, 1 otherwise (UInt8)
+- key_name - The name of the index. 'PRIMARY' if the index is a primary key index. (String)
+- seq_in_index - currently unused
+- column_name - currently unused
+- collation - currently unused
+- cardinality - currently unused
+- sub_part - currently unused
+- packed - currently unused
+- null - currently unused
+- index_type - the index type, e.g. `primary`, `minmax`, `bloom_filter` etc. (String)
+- comment - currently unused
+- index_comment - currently unused
+- visible - if the index is visible to the optimizer, always `YES` (String)
+- expression - the index expression (String)
+
+**Examples**
+
+Getting information about all indexes in table 'tbl'
+
+```sql
+SHOW INDEX FROM 'orders'
+```
+
+Result:
+
+``` text
+┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type─┬─comment─┬─index_comment─┬─visible─┬─expression─┐
+│ tbl   │          0 │ mm1_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ a, c, d    │
+│ tbl   │          0 │ mm2_idx  │ ᴺᵁᴸᴸ         │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ        │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ minmax     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ          │ YES     │ c, d, e    │
+└───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴────────────┴─────────┴───────────────┴─────────┴────────────┘
+```
+
+**See also**
+
+- [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
+
 ## SHOW PROCESSLIST
 
 ``` sql
