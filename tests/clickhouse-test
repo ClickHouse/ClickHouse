@@ -579,10 +579,19 @@ class SettingsRandomizer:
     }
 
     @staticmethod
-    def get_random_settings():
+    def get_random_settings(args):
         random_settings = []
+        is_debug = False
+        if BuildFlags.DEBUG in args.build_flags:
+            is_debug = True
         for setting, generator in SettingsRandomizer.settings.items():
-            random_settings.append(f"{setting}={generator()}")
+            if (
+                is_debug
+                and setting == "allow_prefetched_read_pool_for_remote_filesystem"
+            ):
+                random_settings.append(f"{setting}=0")
+            else:
+                random_settings.append(f"{setting}={generator()}")
         return random_settings
 
 
@@ -817,7 +826,7 @@ class TestCase:
         )
 
         if self.randomize_settings:
-            self.random_settings = SettingsRandomizer.get_random_settings()
+            self.random_settings = SettingsRandomizer.get_random_settings(args)
 
         if self.randomize_merge_tree_settings:
             self.merge_tree_random_settings = (
