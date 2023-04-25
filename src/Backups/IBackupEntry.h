@@ -27,9 +27,14 @@ public:
     /// Returns a read buffer for reading the data.
     virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer() const = 0;
 
-    virtual String getFilePath() const = 0;
+    /// Returns true if the data returned by getReadBuffer() is encrypted by an encrypted disk.
+    virtual bool isEncryptedByDisk() const { return false; }
 
-    virtual DiskPtr tryGetDiskIfExists() const = 0;
+    /// Returns information about disk and file if this backup entry is generated from a file.  
+    virtual bool isFromFile() const { return false; }
+    virtual bool isFromImmutableFile() const { return false; }
+    virtual String getFilePath() const { return ""; }
+    virtual DiskPtr getDisk() const { return nullptr; }
 
     virtual DataSourceDescription getDataSourceDescription() const = 0;
 };

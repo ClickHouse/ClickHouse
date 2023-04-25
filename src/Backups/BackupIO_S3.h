@@ -23,15 +23,16 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
-    void copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
-                        WriteMode write_mode, const WriteSettings & write_settings) override;
-    DataSourceDescription getDataSourceDescription() const override;
+
+    void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
+                        DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, const WriteSettings & write_settings) override;
 
 private:
-    S3::URI s3_uri;
-    std::shared_ptr<S3::Client> client;
-    ReadSettings read_settings;
+    const S3::URI s3_uri;
+    const std::shared_ptr<S3::Client> client;
+    const ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
+    const DataSourceDescription data_source_description;
 };
 
 
@@ -46,9 +47,9 @@ public:
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
-    void copyDataToFile(const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name) override;
-    void copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name) override;
-    DataSourceDescription getDataSourceDescription() const override;
+    void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) override;
+    void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
+                          bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
@@ -56,10 +57,11 @@ public:
 private:
     void removeFilesBatch(const Strings & file_names);
 
-    S3::URI s3_uri;
-    std::shared_ptr<S3::Client> client;
+    const S3::URI s3_uri;
+    const std::shared_ptr<S3::Client> client;
     S3Settings::RequestSettings request_settings;
     std::optional<bool> supports_batch_delete;
+    const DataSourceDescription data_source_description;
 };
 
 }

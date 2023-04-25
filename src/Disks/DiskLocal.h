@@ -81,7 +81,7 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    std::optional<std::pair<String, String>> getBlobPath(const String & path) const override;
+    Strings getBlobPath(const String & path) const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;
@@ -102,6 +102,7 @@ public:
     void truncateFile(const String & path, size_t size) override;
 
     DataSourceDescription getDataSourceDescription() const override;
+    static DataSourceDescription getLocalDataSourceDescription(const String & path);
 
     bool isRemote() const override { return false; }
 

@@ -209,19 +209,6 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
 
-    /// Returns the path to a blob representing a specified file.
-    /// The meaning of the returned path depends on disk's type.
-    /// For DiskLocal it the absolute path to the file and for DiskObjectStorage it's the name of a namespace
-    /// combined with StoredObject::absolute_path.
-    virtual std::optional<std::pair<String, String>> getBlobPath(const String & path) const = 0;
-
-    using WriteBlobFunction = std::function<size_t(const std::pair<String, String> & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
-
-    /// Write a file using a custom function to write a blob representing the file.
-    /// This method is alternative to writeFile(), the difference is that writeFile() calls IObjectStorage::writeObject()
-    /// to write an object to the object storage while this method allows to specify a callback for that.
-    virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
-
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;
@@ -250,6 +237,20 @@ public:
     /// Differs from removeFileIfExists for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
+
+    /// Returns the path to a blob representing a specified file.
+    /// The meaning of the returned path depends on disk's type.
+    /// E.g. for DiskLocal it the absolute path to the file and for DiskObjectStorage it's the name of the objects' namespace
+    /// combined with StoredObject::absolute_path for each stored object representing a specified file.
+    virtual Strings getBlobPath(const String & path) const = 0;
+
+    using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
+
+    /// Write a file using a custom function to write a blob representing the file.
+    /// This method is alternative to writeFile(), the difference is that for example for DiskObjectStorage
+    /// writeFile() calls IObjectStorage::writeObject() to write an object to the object storage while
+    /// this method allows to specify a callback for that.
+    virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
 
     /// Reads a file from an encrypted disk without decrypting it.
     virtual std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(

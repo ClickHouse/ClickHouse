@@ -24,6 +24,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesLazyBatch.h>

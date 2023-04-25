@@ -68,7 +68,7 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) = 0;
 
-    using WriteBlobFunction = std::function<size_t(const std::pair<String, String> & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
+    using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
     /// Write a file using a custom function to write an object to the disk's object storage.
     virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;

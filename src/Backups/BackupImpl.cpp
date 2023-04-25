@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int WRONG_BASE_BACKUP;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_IS_EMPTY;
+    extern const int CANNOT_RESTORE_TO_NONENCRYPTED_DISK;
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
 }
@@ -339,6 +340,8 @@ void BackupImpl::writeBackupMetadata()
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
                 *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
+            if (info.encrypted_by_disk)
+                *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }
 
         total_size += info.size;
@@ -444,6 +447,7 @@ void BackupImpl::readBackupMetadata()
                 {
                     info.data_file_name = getString(file_config, "data_file", info.file_name);
                 }
+                info.encrypted_by_disk = getBool(file_config, "encrypted_by_disk", false);
             }
 
             file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
@@ -634,6 +638,11 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const String & file_nam
 
 std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
 {
+    return readFileImpl(size_and_checksum, /* read_encrypted= */ false);
+}
+
+std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
+{
     if (open_mode != OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
 
@@ -658,6 +667,14 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum &
                 formatSizeAndChecksum(size_and_checksum));
         }
         info = it->second;
+    }
+
+    if (info.encrypted_by_disk != read_encrypted)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TO_NONENCRYPTED_DISK,
+            "File {} is encrypted in the backup, it can be restored only to an encrypted disk",
+            info.data_file_name);
     }
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
@@ -760,14 +777,21 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, Dis
         info = it->second;
     }
 
+    if (info.encrypted_by_disk && !destination_disk->getDataSourceDescription().is_encrypted)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TO_NONENCRYPTED_DISK,
+            "File {} is encrypted in the backup, it can be restored only to an encrypted disk",
+            info.data_file_name);
+    }
+
     bool file_copied = false;
 
     if (info.size && !info.base_size && !use_archive)
     {
         /// Data comes completely from this backup.
-        reader->copyFileToDisk(info.data_file_name, info.size, destination_disk, destination_path, write_mode, write_settings);
+        reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode, write_settings);
         file_copied = true;
-
     }
     else if (info.size && (info.size == info.base_size))
     {
@@ -786,9 +810,13 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, Dis
     else
     {
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
-        auto read_buffer = readFile(size_and_checksum);
-        auto write_buffer = destination_disk->writeFile(destination_path, std::min<size_t>(info.size, DBMS_DEFAULT_BUFFER_SIZE),
-                                                        write_mode, write_settings);
+        auto read_buffer = readFileImpl(size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
+        std::unique_ptr<WriteBuffer> write_buffer;
+        size_t buf_size = std::min<size_t>(info.size, DBMS_DEFAULT_BUFFER_SIZE);
+        if (info.encrypted_by_disk)
+            write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, write_settings);
+        else
+            write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, write_settings);
         copyData(*read_buffer, *write_buffer, info.size);
         write_buffer->finalize();
     }
@@ -814,8 +842,9 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
             should_check_lock_file = true;
     }
 
-    auto src_disk = entry->tryGetDiskIfExists();
+    auto src_disk = entry->getDisk();
     auto src_file_path = entry->getFilePath();
+    bool from_immutable_file = entry->isFromImmutableFile();
     String src_file_desc = src_file_path.empty() ? "memory buffer" : ("file " + src_file_path);
 
     if (info.data_file_name.empty())
@@ -845,16 +874,16 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         copyData(*read_buffer, *out);
         out->finalize();
     }
-    else if (src_disk)
+    else if (src_disk && from_immutable_file)
     {
         LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-        writer->copyFileFromDisk(src_disk, src_file_path, info.base_size, info.size - info.base_size, info.data_file_name);
+        writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
     }
     else
     {
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
         auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
-        writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
+        writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
 
     {

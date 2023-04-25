@@ -36,24 +36,19 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & fi
     return disk->readFile(path / file_name);
 }
 
-void BackupReaderDisk::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
-                                      WriteMode write_mode, const WriteSettings & write_settings)
+void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
+                                      DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, const WriteSettings & write_settings)
 {
-    if ((write_mode == WriteMode::Rewrite) && (destination_disk->getDataSourceDescription() == getDataSourceDescription()))
+    if ((write_mode == WriteMode::Rewrite) && !encrypted_in_backup)
     {
         /// Use more optimal way.
-        LOG_TRACE(log, "Copying file {} using {} disk", file_name, toString(destination_disk->getDataSourceDescription().type));
-        disk->copyFile(path / file_name, *destination_disk, destination_path, write_settings);
+        LOG_TRACE(log, "Copying file {} from disk {} to disk {}", path_in_backup, disk->getName(), destination_disk->getName());
+        disk->copyFile(path / path_in_backup, *destination_disk, destination_path, write_settings);
         return;
     }
 
     /// Fallback to copy through buffers.
-    IBackupReader::copyFileToDisk(file_name, size, destination_disk, destination_path, write_mode, write_settings);
-}
-
-DataSourceDescription BackupReaderDisk::getDataSourceDescription() const
-{
-    return disk->getDataSourceDescription();
+    IBackupReader::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode, write_settings);
 }
 
 
@@ -118,30 +113,21 @@ void BackupWriterDisk::removeFiles(const Strings & file_names)
         disk->removeDirectory(path);
 }
 
-DataSourceDescription BackupWriterDisk::getDataSourceDescription() const
+void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
+                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
-    return disk->getDataSourceDescription();
-}
-
-void BackupWriterDisk::copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
-{
-    /// IDisk::copyFile() can copy to the same disk only, and it cannot do the throttling.
-    if (!has_throttling && (getDataSourceDescription() == src_disk->getDataSourceDescription()))
+    if (!copy_encrypted && !start_pos && (length == src_disk->getFileSize(src_path)))
     {
-        /// IDisk::copyFile() can copy a file as a whole only.
-        if ((src_offset == 0) && (src_size == src_disk->getFileSize(src_file_name)))
-        {
-            /// Use more optimal way.
-            LOG_TRACE(log, "Copying file {} using {} disk", src_file_name, toString(src_disk->getDataSourceDescription().type));
-            auto dest_file_path = path / dest_file_name;
-            disk->createDirectories(dest_file_path.parent_path());
-            src_disk->copyFile(src_file_name, *disk, dest_file_path);
-            return;
-        }
+        /// Use more optimal way.
+        LOG_TRACE(log, "Copying file {} from disk {} to disk {}", src_path, src_disk->getName(), disk->getName());
+        auto dest_file_path = path / path_in_backup;
+        disk->createDirectories(dest_file_path.parent_path());
+        src_disk->copyFile(src_path, *disk, dest_file_path);
+        return;
     }
 
     /// Fallback to copy through buffers.
-    IBackupWriter::copyFileFromDisk(src_disk, src_file_name, src_offset, src_size, dest_file_name);
+    IBackupWriter::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
 }
