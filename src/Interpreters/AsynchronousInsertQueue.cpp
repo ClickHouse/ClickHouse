@@ -40,6 +40,7 @@ namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
+    extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -481,6 +482,7 @@ try
 
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
+    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
 
     auto finish_entries = [&]
     {

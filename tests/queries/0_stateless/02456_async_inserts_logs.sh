@@ -37,3 +37,8 @@ ${CLICKHOUSE_CLIENT} -q "
     ORDER BY table, status, format"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_async_inserts_logs"
+
+${CLICKHOUSE_CLIENT} -q "
+SELECT event, value > 0 FROM system.events
+WHERE event IN ('AsyncInsertQuery', 'AsyncInsertBytes', 'AsyncInsertRows')
+ORDER BY event"
