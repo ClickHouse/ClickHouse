@@ -4898,19 +4898,8 @@ Pipe MergeTreeData::alterPartition(
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
 
-                /// in case if database is empty it will return current database (which may be default)
-                String from_database = query_context->resolveDatabase(command.from_database);
-
-                StoragePtr from_storage;
-                if (from_database.empty())
-                {
-                    auto resolved = query_context->resolveStorageID({from_database, command.from_table}, Context::ResolveExternal);
-
-                    from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
-                }
-                else
-                    from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
-
+                auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
+                auto from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
 
                 auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());
                 if (!from_storage_merge_tree)
