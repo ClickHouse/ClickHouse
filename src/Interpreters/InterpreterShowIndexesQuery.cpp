@@ -108,8 +108,6 @@ String InterpreterShowIndexesQuery::getRewrittenQuery()
     /// SQL tests can take advantage of this.
     rewritten_query << " ORDER BY index_type, expression";
 
-    std::cout << rewritten_query.str() << std::endl;
-
     return rewritten_query.str();
 }
 
