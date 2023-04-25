@@ -11,6 +11,8 @@
 
 #include <magic_enum.hpp>
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -61,7 +63,7 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
-            chassert(std::filesystem::file_size(getPathInLocalCache()) == size_);
+            chassert(fs::file_size(getPathInLocalCache()) == size_);
             chassert(queue_iterator);
             break;
         }
@@ -354,14 +356,30 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
         chassert(std::filesystem::file_size(getPathInLocalCache()) == downloaded_size);
     }
+    catch (ErrnoException & e)
+    {
+        auto lock = segment_guard.lock();
+        e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lock)));
+
+        int code = e.getErrno();
+        if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+        {
+            const auto file_size = fs::file_size(getPathInLocalCache());
+            chassert(downloaded_size <= file_size);
+            chassert(reserved_size >= file_size);
+            if (downloaded_size != file_size)
+                downloaded_size = file_size;
+        }
+
+        setDownloadFailedUnlocked(lock);
+        throw;
+
+    }
     catch (Exception & e)
     {
         auto lock = segment_guard.lock();
-
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lock)));
-
         setDownloadFailedUnlocked(lock);
-
         throw;
     }
 
@@ -495,7 +513,7 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
     }
 
     chassert(getDownloadedSize(false) > 0);
-    chassert(std::filesystem::file_size(getPathInLocalCache()) > 0);
+    chassert(fs::file_size(getPathInLocalCache()) > 0);
 }
 
 void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
@@ -599,7 +617,7 @@ void FileSegment::complete()
         case State::DOWNLOADED:
         {
             chassert(current_downloaded_size == range().size());
-            chassert(current_downloaded_size == std::filesystem::file_size(getPathInLocalCache()));
+            chassert(current_downloaded_size == fs::file_size(getPathInLocalCache()));
             chassert(!cache_writer);
             break;
         }
