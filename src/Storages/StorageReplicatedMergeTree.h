@@ -252,6 +252,13 @@ public:
         bool replace_existing_lock,
         std::optional<HardlinkedFiles> hardlinked_files) const;
 
+    void getLockSharedDataOps(
+        const IMergeTreeDataPart & part,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        bool replace_existing_lock,
+        std::optional<HardlinkedFiles> hardlinked_files,
+        Coordination::Requests & requests) const;
+
     void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
@@ -860,6 +867,12 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
+    static void getZeroCopyLockNodeCreaetOps(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
+        int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
+        const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 
