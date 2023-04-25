@@ -284,7 +284,9 @@ def handler(event: dict, _: Any) -> dict:
         wf_job["runner_group_name"] or "",  # nullable
         repo["full_name"],
     )
-    logging.info("Got the next event: %s", workflow_job)
+    logging.info(
+        "Got the next event (private_repo=%s): %s", repo["private"], workflow_job
+    )
     if repo["private"]:
         workflow_job.anonimyze()
 
