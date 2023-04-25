@@ -172,6 +172,9 @@ private:
     /// Used for the INSERT into Distributed in case of insert_distributed_sync==1, from DistributedSink.
     DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
+    /// get directory monitors
+    std::vector<std::shared_ptr<DistributedAsyncInsertDirectoryQueue>> getDirectoryMonitors();
+
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
