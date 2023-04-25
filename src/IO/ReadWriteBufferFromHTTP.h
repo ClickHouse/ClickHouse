@@ -270,6 +270,8 @@ namespace detail
 
                     ENetPack resp;
 
+                    std::string data;
+
                     while (enet_host_service(client, &event, 5000) > 0)
                     {
                         switch (event.type)
@@ -283,11 +285,8 @@ namespace detail
                                         enet_deinitialize();
                                         throw 1;
                                     }
-                                    auto data = resp.deserialize(reinterpret_cast<char*>(event.packet->data));
+                                    data = resp.deserialize(reinterpret_cast<char*>(event.packet->data));
                                     LOG_INFO(log, "ENET RECEIVED {}", data);
-                                    char data_char[data.size() + 1];
-                                    strcpy(data_char, data.c_str());
-                                    istr->get(data_char, data.size() - 1);
                                     enet_packet_destroy(event.packet);
                                 }
                                 break;
@@ -296,12 +295,16 @@ namespace detail
                         }
                     }
 
+                    std::istringstream* result_istr;
+                    
+                    result_istr = new std::istringstream(data);
+
                     response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
                     enet_peer_disconnect(peer, 0);
 
                     enet_deinitialize();
 
-                    return istr;
+                    return result_istr;
                     #else
                     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ENet protocol was not enabled during build time");
                     #endif

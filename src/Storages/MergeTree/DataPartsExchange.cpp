@@ -287,17 +287,17 @@ void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack 
             writeBinary(ttl_infos_buffer.str(), out);
         }
 
-        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE) 
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         {
             writeStringBinary(part->getType().toString(), out);
             // WIDE
         }
-            
+
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
             writeUUIDText(part->uuid, out);
             // UUID
 
-        // Both not in the buffer when query is finished. 
+        // Both not in the buffer when query is finished.
 
         String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
 
