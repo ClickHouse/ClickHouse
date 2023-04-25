@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename Impl, typename Name>
@@ -55,7 +56,8 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
@@ -125,7 +127,8 @@ public:
     }
 };
 
-struct StringSimilarityModel {
+struct StringSimilarityModel
+{
     const String model_name;
     const String path_to_positive;
     const String path_to_negative;
@@ -139,25 +142,26 @@ class FunctionsStringCategorySimilarity : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    explicit FunctionsStringCategorySimilarity(StringSimilarityModels models) : string_similarity_models(models) {}
+    explicit FunctionsStringCategorySimilarity(StringSimilarityModels models) : string_similarity_models(models) { }
 
     static FunctionPtr create(ContextPtr context)
     {
-        const auto& config = context->getConfigRef();
+        const auto & config = context->getConfigRef();
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(string_similarity_models_config_key, keys);
         StringSimilarityModels models;
 
         for (const auto & key : keys)
         {
-            if (key.starts_with(string_similarity_model_config_key)) {
-                auto model_name = config.getString(
-                    fmt::format("{}.{}.{}", string_similarity_models_config_key, key, model_name_config_key));
-                auto path_to_positive = config.getString(
-                    fmt::format("{}.{}.{}", string_similarity_models_config_key, key, path_to_positive_config_key));
-                auto path_to_negative = config.getString(
-                    fmt::format("{}.{}.{}", string_similarity_models_config_key, key, path_to_negative_config_key));
-                StringSimilarityModel model {model_name, std::move(path_to_positive), std::move(path_to_negative)};
+            if (key.starts_with(string_similarity_model_config_key))
+            {
+                auto model_name
+                    = config.getString(fmt::format("{}.{}.{}", string_similarity_models_config_key, key, model_name_config_key));
+                auto path_to_positive
+                    = config.getString(fmt::format("{}.{}.{}", string_similarity_models_config_key, key, path_to_positive_config_key));
+                auto path_to_negative
+                    = config.getString(fmt::format("{}.{}.{}", string_similarity_models_config_key, key, path_to_negative_config_key));
+                StringSimilarityModel model{model_name, std::move(path_to_positive), std::move(path_to_negative)};
                 models.emplace(std::move(model_name), std::move(model));
             }
         }
@@ -184,7 +188,8 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         using ResultType = typename Impl::ResultType;
 
@@ -194,16 +199,18 @@ public:
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
 
-        if (!col_needle_const) {
+        if (!col_needle_const)
+        {
             throw Exception("Illegal search model " + arguments[1].column->getName(), ErrorCodes::BAD_ARGUMENTS);
         }
 
         const String & model_name = col_needle_const->getValue<String>();
-        const auto& model_it = string_similarity_models.find(model_name);
-        if (model_it == string_similarity_models.end()) {
+        const auto & model_it = string_similarity_models.find(model_name);
+        if (model_it == string_similarity_models.end())
+        {
             throw Exception("There is no " + model_name + " string similarity model", ErrorCodes::BAD_ARGUMENTS);
         }
-        const auto& model = model_it->second;
+        const auto & model = model_it->second;
 
         const String positive_needle = readModel(model.path_to_positive);
         const String negative_needle = readModel(model.path_to_negative);
@@ -211,12 +218,12 @@ public:
         if (positive_needle.size() > Impl::max_string_size || negative_needle.size() > Impl::max_string_size)
         {
             throw Exception(
-                "Size of model " + model.model_name + " is too big. Should be at most "
-                    + std::to_string(Impl::max_string_size),
+                "Size of model " + model.model_name + " is too big. Should be at most " + std::to_string(Impl::max_string_size),
                 ErrorCodes::TOO_LARGE_STRING_SIZE);
         }
 
-        if (col_haystack_const) {
+        if (col_haystack_const)
+        {
             ResultType res_positive{};
             Impl::constantConstant(col_haystack_const->getValue<String>(), positive_needle, res_positive);
 
@@ -224,7 +231,8 @@ public:
             Impl::constantConstant(col_haystack_const->getValue<String>(), negative_needle, res_negative);
 
             ResultType res{0};
-            if (res_positive + res_negative > 0) {
+            if (res_positive + res_negative > 0)
+            {
                 res = res_positive / (res_positive + res_negative);
             }
 
@@ -235,8 +243,8 @@ public:
         if (!col_haystack_vector)
         {
             throw Exception(
-                "Illegal columns " + arguments[0].column->getName() + " and "
-                    + arguments[1].column->getName() + " of arguments of function " + getName(),
+                "Illegal columns " + arguments[0].column->getName() + " and " + arguments[1].column->getName()
+                    + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }
 
@@ -247,15 +255,19 @@ public:
 
         vec_negative_res.resize(col_haystack_vector->size());
         Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), negative_needle, vec_negative_res);
-        
+
         auto col_res = ColumnVector<ResultType>::create();
         typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
         vec_res.resize(column_haystack->size());
 
-        for (size_t i = 0; i < column_haystack->size(); ++i) {
-            if (vec_positive_res[i] + vec_negative_res[i] > 0) {
+        for (size_t i = 0; i < column_haystack->size(); ++i)
+        {
+            if (vec_positive_res[i] + vec_negative_res[i] > 0)
+            {
                 vec_res[i] = vec_positive_res[i] / (vec_positive_res[i] + vec_negative_res[i]);
-            } else {
+            }
+            else
+            {
                 vec_res[i] = 0;
             }
         }
@@ -265,14 +277,15 @@ public:
 
 private:
     static constexpr auto string_similarity_models_config_key = "string_similarity_models";
-    static constexpr auto string_similarity_model_config_key  = "string_similarity_model";
-    static constexpr auto model_name_config_key               = "model_name";
-    static constexpr auto path_to_positive_config_key         = "path_to_positive";
-    static constexpr auto path_to_negative_config_key         = "path_to_negative";
+    static constexpr auto string_similarity_model_config_key = "string_similarity_model";
+    static constexpr auto model_name_config_key = "model_name";
+    static constexpr auto path_to_positive_config_key = "path_to_positive";
+    static constexpr auto path_to_negative_config_key = "path_to_negative";
 
     const StringSimilarityModels string_similarity_models;
 
-    String readModel(const String& path) const {
+    String readModel(const String & path) const
+    {
         ReadBufferFromFile in(path);
 
         String model;
