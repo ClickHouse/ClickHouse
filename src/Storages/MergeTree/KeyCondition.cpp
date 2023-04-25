@@ -1443,7 +1443,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
-        std::vector<size_t> key_column_num_vec;   /// Vector of key columns
+        std::vector<size_t> key_column_num_vec;   /// Vector of key column numbers
         MonotonicFunctionsChain chain;
         std::string func_name = func.getFunctionName();
 
@@ -1652,10 +1652,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         if (key_column_num_vec.empty())
         {
-            out.key_column.push_back(key_column_num);
+            out.key_columns.push_back(key_column_num);
         } else
         {
-            out.key_column = key_column_num_vec;
+            out.key_columns = key_column_num_vec;
         }
         out.monotonic_functions_chain = std::move(chain);
 
@@ -1882,7 +1882,7 @@ KeyCondition::Description KeyCondition::getDescription() const
         {
             case Node::Type::Leaf:
             {
-                for (size_t kc: node->element->key_column)
+                for (size_t kc: node->element->key_columns)
                 {
                     is_key_used[kc] = true;
                 }
@@ -1895,12 +1895,15 @@ KeyCondition::Description KeyCondition::getDescription() const
                     buf << "not(";
 
                 std::vector<std::string> keys_from_columns;
-                keys_from_columns.reserve(node->element->key_column.size());
-                for (size_t kc: node->element->key_column)
+                keys_from_columns.reserve(node->element->key_columns.size());
+                for (size_t kc: node->element->key_columns)
                 {
                     keys_from_columns.push_back(std::string(key_names[kc]));
                 }
-                std::string all_key_names = "(" + boost::algorithm::join(keys_from_columns, ", ") + ")";
+                std::string all_key_names = boost::algorithm::join(keys_from_columns, ", ");
+                if (keys_from_columns.size() > 1) {
+                    all_key_names = "(" + all_key_names + ")";
+                }
                 if (!all_key_names.empty())
                     buf << node->element->toString(all_key_names, true);
                 if (node->negate)
@@ -2193,7 +2196,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            column_constraints[element.key_column.at(0)] = Constraint::POINT;
+            column_constraints[element.key_column] = Constraint::POINT;
             continue;
         }
 
@@ -2201,11 +2204,11 @@ bool KeyCondition::matchesExactContinuousRange() const
         {
             if (element.range.left == element.range.right)
             {
-                column_constraints[element.key_column.at(0)] = Constraint::POINT;
+                column_constraints[element.key_column] = Constraint::POINT;
             }
-            if (column_constraints[element.key_column.at(0)] != Constraint::POINT)
+            if (column_constraints[element.key_column] != Constraint::POINT)
             {
-                column_constraints[element.key_column.at(0)] = Constraint::RANGE;
+                column_constraints[element.key_column] = Constraint::RANGE;
             }
             continue;
         }
@@ -2257,7 +2260,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
-            const Range * key_range = &hyperrectangle[element.key_column.at(0)];
+            const Range * key_range = &hyperrectangle[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range transformed_range = Range::createWholeUniverse();
@@ -2266,7 +2269,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range,
                     element.monotonic_functions_chain,
-                    data_types[element.key_column.at(0)],
+                    data_types[element.key_column],
                     single_point
                 );
 
@@ -2290,7 +2293,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
-            const Range * key_range = &hyperrectangle[element.key_column.at(0)];
+            const Range * key_range = &hyperrectangle[element.key_columns[0]];
 
             /// No need to apply monotonic functions as nulls are kept.
             bool intersects = element.range.intersectsRange(*key_range);
@@ -2364,13 +2367,13 @@ bool KeyCondition::mayBeTrueInRange(
 
 String KeyCondition::RPNElement::toString() const
 {
-    if (key_column.size() == 1)
+    if (key_columns.size() == 1)
     {
-        return toString("column " + std::to_string(key_column[0]), false);
-    } else if (key_column.size() > 1)
+        return toString("column " + std::to_string(key_columns[0]), false);
+    } else if (key_columns.size() > 1)
     {
         WriteBufferFromOwnString buf;
-        for (size_t i : key_column)
+        for (size_t i : key_columns)
         {
             buf << i << " ";
         }
