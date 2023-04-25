@@ -9,6 +9,7 @@ from github import Github
 from commit_status_helper import (
     CI_STATUS_NAME,
     NotSet,
+    create_ci_report,
     format_description,
     get_commit,
     post_commit_status,
@@ -288,16 +289,17 @@ def main():
         )
         sys.exit(1)
 
+    ci_report_url = create_ci_report(pr_info, [])
     if not can_run:
         print("::notice ::Cannot run")
         post_commit_status(
-            commit, labels_state, NotSet, description, CI_STATUS_NAME, pr_info
+            commit, labels_state, ci_report_url, description, CI_STATUS_NAME, pr_info
         )
         sys.exit(1)
     else:
         print("::notice ::Can run")
         post_commit_status(
-            commit, "pending", NotSet, description, CI_STATUS_NAME, pr_info
+            commit, "pending", ci_report_url, description, CI_STATUS_NAME, pr_info
         )
 
 

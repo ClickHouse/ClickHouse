@@ -408,6 +408,9 @@ class CheckDescription:
     description: str  # the check descriptions, will be put into the status table
     match_func: Callable[[str], bool]  # the function to check vs the commit status
 
+    def __hash__(self) -> int:
+        return hash(self.name + self.description)
+
 
 CHECK_DESCRIPTIONS = [
     CheckDescription(
