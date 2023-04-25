@@ -1,7 +1,7 @@
 (Expression)
-ExpressionTransform × 16
+ExpressionTransform
   (Join)
-  Resize × 2 16 → 1
+  Resize 16 → 1
     JoiningTransform × 16 2 → 1
       InnerShuffleGatherTransform × 16 16 → 1
         InnerShuffleScatterTransform × 16 1 → 16

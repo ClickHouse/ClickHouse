@@ -597,11 +597,15 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
 
+    // Too large parts will more slow
+    size_t default_max_shuffle_parts = 32;
+    size_t max_shuffle_parts = std::min(default_max_shuffle_parts, max_streams);
     size_t num_streams = left->getNumStreams();
-    if (num_streams < max_streams)
+    size_t pre_num_streams = num_streams;
+    if (num_streams < max_shuffle_parts)
     {
-        left->resize(max_streams);
-        num_streams = max_streams;
+        left->resize(max_shuffle_parts);
+        num_streams = max_shuffle_parts;
     }
     right->resize(num_streams);
 
@@ -746,7 +750,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     // FIXME, mess up the streams here, otherwise the executing graph will be hungup with MergingSortedTransform.
     left->resize(1);
-    left->resize(num_streams);
+    left->resize(pre_num_streams);
     return left;
 }
 
