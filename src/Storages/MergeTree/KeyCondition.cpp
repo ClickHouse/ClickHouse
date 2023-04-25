@@ -2362,7 +2362,8 @@ bool KeyCondition::mayBeTrueInRange(
     return checkInRange(used_key_size, left_keys, right_keys, data_types, BoolMask::consider_only_can_be_true).can_be_true;
 }
 
-String KeyCondition::RPNElement::toString() const {
+String KeyCondition::RPNElement::toString() const
+{
     if (key_column.size() == 1)
     {
         return toString("column " + std::to_string(key_column[0]), false);
