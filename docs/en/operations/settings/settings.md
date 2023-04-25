@@ -1512,6 +1512,26 @@ Possible values:
 
 Default value: `0`.
 
+## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
+
+The maximum amount of memory (in bytes) the current user may allocate in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
+
+## query_cache_max_entries {#query-cache-max-entries}
+
+The maximum number of query results the current user may store in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables the quorum writes.
