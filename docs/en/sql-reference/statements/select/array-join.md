@@ -23,8 +23,8 @@ You can specify only one `ARRAY JOIN` clause in a `SELECT` query.
 
 Supported types of `ARRAY JOIN` are listed below:
 
--   `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
--   `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
+- `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
+- `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
 ## Basic ARRAY JOIN Examples
 
@@ -185,7 +185,7 @@ SETTINGS enable_unaligned_array_join = 1;
 
 ## ARRAY JOIN with Nested Data Structure
 
-`ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/nested.md):
+`ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/index.md):
 
 ``` sql
 CREATE TABLE nested_test

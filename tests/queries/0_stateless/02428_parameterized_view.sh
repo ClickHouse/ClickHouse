@@ -23,6 +23,9 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_02428_Catalog"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}.pv1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}.Catalog"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}"
+$CLICKHOUSE_CLIENT -q "DROP VIEW IF EXISTS 02428_trace_view"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 02428_otel_traces_trace_id_ts"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 02428_otel_traces"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_02428_Catalog (Name String, Price UInt64, Quantity UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/parameterized_view', 'r1') ORDER BY Name"
 
@@ -95,6 +98,20 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM test_02428_pv11(price=10)"
 $CLICKHOUSE_CLIENT -q "CREATE VIEW test_02428_pv12 AS SELECT * from ( SELECT Price FROM test_02428_Catalog WHERE Price IN (SELECT number FROM numbers({price:UInt64})) )"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_02428_pv12(price=11)"
 
+$CLICKHOUSE_CLIENT -q "CREATE TABLE 02428_otel_traces (TraceId String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/otel_traces', 'r1') ORDER BY TraceId"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE 02428_otel_traces_trace_id_ts (TraceId String, Start Timestamp) ENGINE  = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/otel_traces_trace_id_ts', 'r1') ORDER BY TraceId"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO 02428_otel_traces(TraceId) VALUES ('1')"
+$CLICKHOUSE_CLIENT -q "INSERT INTO 02428_otel_traces_trace_id_ts(TraceId, Start) VALUES('1', now())"
+
+$CLICKHOUSE_CLIENT -q "CREATE VIEW 02428_trace_view AS WITH  {trace_id:String} AS trace_id,
+                              ( SELECT min(Start) FROM 02428_otel_traces_trace_id_ts WHERE TraceId = trace_id
+                               ) AS start SELECT
+                       TraceId AS traceID
+                       FROM 02428_otel_traces"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM 02428_trace_view(trace_id='1')"
+
+
 $CLICKHOUSE_CLIENT -q "DROP VIEW test_02428_pv1"
 $CLICKHOUSE_CLIENT -q "DROP VIEW test_02428_pv2"
 $CLICKHOUSE_CLIENT -q "DROP VIEW test_02428_pv3"
@@ -111,3 +128,6 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE test_02428_Catalog"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}.pv1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}.Catalog"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_TEST_UNIQUE_NAME}"
+$CLICKHOUSE_CLIENT -q "DROP VIEW 02428_trace_view"
+$CLICKHOUSE_CLIENT -q "DROP TABLE 02428_otel_traces_trace_id_ts"
+$CLICKHOUSE_CLIENT -q "DROP TABLE 02428_otel_traces"

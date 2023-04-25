@@ -9,9 +9,9 @@ description: How to build ClickHouse on Linux
 
 Supported platforms:
 
--   x86_64
--   AArch64
--   Power9 (experimental)
+- x86_64
+- AArch64
+- Power9 (experimental)
 
 ## Normal Build for Development on Ubuntu
 
@@ -82,13 +82,13 @@ This will create the `programs/clickhouse` executable, which can be used with `c
 
 The build requires the following components:
 
--   Git (is used only to checkout the sources, it’s not needed for the build)
--   CMake 3.15 or newer
--   Ninja
--   C++ compiler: clang-14 or newer
--   Linker: lld
--   Yasm
--   Gawk
+- Git (is used only to checkout the sources, it’s not needed for the build)
+- CMake 3.15 or newer
+- Ninja
+- C++ compiler: clang-15 or newer
+- Linker: lld
+- Yasm
+- Gawk
 
 If all the components are installed, you may build in the same way as the steps above.
 
@@ -118,7 +118,7 @@ sudo yum --nogpg install git cmake make clang python3 ccache yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
-make -j $(nproc)
+ninja
 ```
 
 Here is an example of how to build `clang` and all the llvm infrastructure from sources:

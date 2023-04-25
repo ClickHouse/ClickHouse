@@ -17,7 +17,6 @@ def start_cluster():
 
 
 def test_complexity_rules(start_cluster):
-
     error_message = "DB::Exception: Invalid password. The password should: be at least 12 characters long, contain at least 1 numeric character, contain at least 1 lowercase character, contain at least 1 uppercase character, contain at least 1 special character"
     assert error_message in node.query_and_get_error(
         "CREATE USER u_1 IDENTIFIED WITH plaintext_password BY ''"

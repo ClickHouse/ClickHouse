@@ -3,7 +3,7 @@
 #include <Processors/ISource.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
-#include "Core/UUID.h"
+#include <Core/UUID.h>
 #include <atomic>
 
 namespace DB
@@ -12,8 +12,6 @@ namespace DB
 class RemoteQueryExecutor;
 using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
 
-class RemoteQueryExecutorReadContext;
-
 /// Source from RemoteQueryExecutor. Executes remote query and returns query result chunks.
 class RemoteSource final : public ISource
 {
@@ -21,17 +19,13 @@ public:
     /// Flag add_aggregation_info tells if AggregatedChunkInfo should be added to result chunk.
     /// AggregatedChunkInfo stores the bucket number used for two-level aggregation.
     /// This flag should be typically enabled for queries with GROUP BY which are executed till WithMergeableState.
-    RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, UUID uuid = UUIDHelpers::Nil);
+    RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_);
     ~RemoteSource() override;
 
     Status prepare() override;
     String getName() const override { return "Remote"; }
 
-    void connectToScheduler(InputPort & input_port);
-
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
-
-    UUID getParallelReplicasGroupUUID();
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
 
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
@@ -51,13 +45,12 @@ private:
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeLimitCounterPtr rows_before_limit;
 
-    OutputPort * dependency_port{nullptr};
-
     const bool async_read;
+    const bool async_query_sending;
     bool is_async_state = false;
-    std::unique_ptr<RemoteQueryExecutorReadContext> read_context;
-    UUID uuid;
     int fd = -1;
+    size_t rows = 0;
+    bool manually_add_rows_before_limit_counter = false;
 };
 
 /// Totals source from RemoteQueryExecutor.
@@ -95,6 +88,6 @@ private:
 /// Create pipe with remote sources.
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, UUID uuid = UUIDHelpers::Nil);
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending);
 
 }

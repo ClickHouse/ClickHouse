@@ -165,9 +165,10 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
     if (decimal_type.getScale() != static_cast<UInt32>(logical_type.scale()) || decimal_type.getPrecision() != static_cast<UInt32>(logical_type.precision()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot insert Avro decimal with scale {} and precision {} to ClickHouse Decimal with scale {} and precision {}",
+            "Cannot insert Avro decimal with scale {} and precision {} to ClickHouse type {} with scale {} and precision {}",
             logical_type.scale(),
             logical_type.precision(),
+            target_type->getName(),
             decimal_type.getScale(),
             decimal_type.getPrecision());
 
@@ -205,6 +206,24 @@ static std::string nodeName(avro::NodePtr node)
         return node->name().simpleName();
     else
         return avro::toString(node->type());
+}
+
+static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t fixed_size)
+{
+    switch (target_type->getTypeId())
+    {
+        case TypeIndex::String:
+            return true;
+        case TypeIndex::FixedString: [[fallthrough]];
+        case TypeIndex::IPv6: [[fallthrough]];
+        case TypeIndex::Int128: [[fallthrough]];
+        case TypeIndex::UInt128: [[fallthrough]];
+        case TypeIndex::Int256: [[fallthrough]];
+        case TypeIndex::UInt256:
+            return target_type->getSizeOfValueInMemory() == fixed_size;
+        default:
+            return false;
+    }
 }
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
@@ -260,6 +279,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return createDecimalDeserializeFn<DataTypeDecimal128>(root_node, target_type);
             if (target.isDecimal256())
                 return createDecimalDeserializeFn<DataTypeDecimal256>(root_node, target_type);
+            if (target.isDateTime64())
+                return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type);
             break;
         case avro::AVRO_INT:
             if (target_type->isValueRepresentedByNumber())
@@ -464,16 +485,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         case avro::AVRO_FIXED:
         {
             size_t fixed_size = root_node->fixedSize();
-            if ((target.isFixedString() && target_type->getSizeOfValueInMemory() == fixed_size) || target.isString())
-            {
-                return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
-                {
-                    decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
-                    column.insertData(reinterpret_cast<const char *>(tmp_fixed.data()), tmp_fixed.size());
-                    return true;
-                };
-            }
-            else if (target.isIPv6() && fixed_size == sizeof(IPv6))
+            if (canBeDeserializedFromFixed(target_type, fixed_size))
             {
                 return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
                 {
@@ -525,7 +537,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 const auto & values_type = map_type.getValueType();
                 auto keys_source_type = root_node->leafAt(0);
                 auto values_source_type = root_node->leafAt(1);
-                auto keys_deserializer = createDeserializeFn(keys_source_type, keys_type);
+                auto keys_deserializer = [keys_type, this](IColumn & column, avro::Decoder & decoder)
+                {
+                    String key = decoder.decodeString();
+                    ReadBufferFromString buf(key);
+                    keys_type->getDefaultSerialization()->deserializeWholeText(column, buf, settings);
+                    return true;
+                };
+
                 auto values_deserializer = createDeserializeFn(values_source_type, values_type);
                 return [keys_deserializer, values_deserializer](IColumn & column, avro::Decoder & decoder)
                 {
@@ -810,8 +829,8 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_)
-    : null_as_default(null_as_default_)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
+    : null_as_default(null_as_default_), settings(settings_)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -857,7 +876,7 @@ void AvroRowInputFormat::readPrefix()
 {
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*in));
     deserializer_ptr = std::make_unique<AvroDeserializer>(
-        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default);
+        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
     file_reader_ptr->init();
 }
 
@@ -1048,7 +1067,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     {
         auto schema = schema_registry->getSchema(schema_id);
         AvroDeserializer deserializer(
-            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default);
+            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;
