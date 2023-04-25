@@ -5,3 +5,6 @@ t_async_inserts_logs	Values	8	1	1	Ok	1
 t_async_inserts_logs	JSONEachRow	6	0	0	ParsingError	1
 t_async_inserts_logs	Values	6	0	0	ParsingError	1
 t_async_inserts_logs	Values	8	1	0	FlushError	1
+AsyncInsertBytes	1
+AsyncInsertQuery	1
+AsyncInsertRows	1
