@@ -44,7 +44,7 @@ SELECT '--- do not rewrite alias ---';
 SELECT a as b FROM t1_00826 cross join t2_00826 where t1_00826.b = t2_00826.a AND b > 0;
 
 SELECT '--- comma ---';
-SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a ORDER BY t1_00826.a;
+SELECT * FROM t1_00826, t2_00826 where t1_00826.a = t2_00826.a ORDER BY t1_00826.a, t1_00826.b, t2_00826.b;
 SELECT '--- comma nullable ---';
 SELECT * FROM t1_00826, t2_00826 where t1_00826.b = t2_00826.b ORDER BY t1_00826.a;
 SELECT '--- comma and or ---';
