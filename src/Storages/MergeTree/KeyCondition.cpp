@@ -1650,9 +1650,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         const auto atom_it = atom_map.find(func_name);
 
-        if (key_column_num_vec.empty()) {
+        if (key_column_num_vec.empty())
+        {
             out.key_column.push_back(key_column_num);
-        } else {
+        } else
+        {
             out.key_column = key_column_num_vec;
         }
         out.monotonic_functions_chain = std::move(chain);
@@ -1880,7 +1882,8 @@ KeyCondition::Description KeyCondition::getDescription() const
         {
             case Node::Type::Leaf:
             {
-                for (size_t kc: node->element->key_column) {
+                for (size_t kc: node->element->key_column)
+                {
                     is_key_used[kc] = true;
                 }
 
@@ -1893,7 +1896,8 @@ KeyCondition::Description KeyCondition::getDescription() const
 
                 std::vector<std::string> keys_from_columns;
                 keys_from_columns.reserve(node->element->key_column.size());
-                for (size_t kc: node->element->key_column) {
+                for (size_t kc: node->element->key_column)
+                {
                     keys_from_columns.push_back(std::string(key_names[kc]));
                 }
                 std::string all_key_names = "(" + boost::algorithm::join(keys_from_columns, ", ") + ")";
@@ -2359,11 +2363,14 @@ bool KeyCondition::mayBeTrueInRange(
 }
 
 String KeyCondition::RPNElement::toString() const {
-    if (key_column.size() == 1) {
+    if (key_column.size() == 1)
+    {
         return toString("column " + std::to_string(key_column[0]), false);
-    } else if (key_column.size() > 1) {
+    } else if (key_column.size() > 1)
+    {
         WriteBufferFromOwnString buf;
-        for (size_t i : key_column) {
+        for (size_t i : key_column)
+        {
             buf << i << " ";
         }
     }
