@@ -11,7 +11,6 @@ namespace DB
 class BackupEntryFromAppendOnlyFile : public BackupEntryFromImmutableFile
 {
 public:
-
     /// The constructor is allowed to not set `file_size_` or `checksum_`, in that case it will be calculated from the data.
     BackupEntryFromAppendOnlyFile(
         const DiskPtr & disk_,
@@ -22,6 +21,8 @@ public:
 
     UInt64 getSize() const override { return limit; }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
+
+    bool isFromImmutableFile() const override { return false; }
 
 private:
     const UInt64 limit;

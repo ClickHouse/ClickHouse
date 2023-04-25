@@ -18,8 +18,11 @@ public:
     UInt64 getSize() const override { return entry->getSize(); }
     std::optional<UInt128> getChecksum() const override { return entry->getChecksum(); }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return entry->getReadBuffer(); }
+    bool isEncryptedByDisk() const override { return entry->isEncryptedByDisk(); }
+    bool isFromFile() const override { return entry->isFromFile(); }
+    bool isFromImmutableFile() const override { return entry->isFromImmutableFile(); }
     String getFilePath() const override { return entry->getFilePath(); }
-    DiskPtr tryGetDiskIfExists() const override { return entry->tryGetDiskIfExists(); }
+    DiskPtr getDisk() const override { return entry->getDisk(); }
     DataSourceDescription getDataSourceDescription() const override { return entry->getDataSourceDescription(); }
 
 private:

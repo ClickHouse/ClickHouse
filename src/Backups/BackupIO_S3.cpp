@@ -2,7 +2,6 @@
 
 #if USE_AWS_S3
 #include <Common/quoteString.h>
-#include <Disks/ObjectStorages/S3/copyS3FileToDisk.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -107,15 +106,10 @@ BackupReaderS3::BackupReaderS3(
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , read_settings(context_->getReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
+    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
 {
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
-
-DataSourceDescription BackupReaderS3::getDataSourceDescription() const
-{
-    return DataSourceDescription{DataSourceType::S3, s3_uri.endpoint, false, false};
-}
-
 
 BackupReaderS3::~BackupReaderS3() = default;
 
@@ -138,23 +132,45 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
 }
 
-void BackupReaderS3::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
-                                    WriteMode write_mode, const WriteSettings & write_settings)
+void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
+                                    DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, const WriteSettings & write_settings)
 {
-    copyS3FileToDisk(
-        client,
-        s3_uri.bucket,
-        fs::path(s3_uri.key) / file_name,
-        s3_uri.version_id,
-        0,
-        size,
-        destination_disk,
-        destination_path,
-        write_mode,
-        read_settings,
-        write_settings,
-        request_settings,
-        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3"));
+    auto destination_data_source_description = destination_disk->getDataSourceDescription();
+    if (destination_data_source_description.sameKind(data_source_description)
+        && (destination_data_source_description.is_encrypted == encrypted_in_backup))
+    {
+        /// Use native copy, the more optimal way.
+        LOG_TRACE(log, "Copying {} from S3 to disk {} using native copy", path_in_backup, destination_disk->getName());
+        auto write_blob_function = [&](const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes) -> size_t
+        {
+            /// Object storage always uses mode `Rewrite` because it simulates append using metadata and different files.
+            if (blob_path.size() != 2 || mode != WriteMode::Rewrite)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Blob writing function called with unexpected blob_path.size={} or mode={}",
+                                blob_path.size(), mode);
+
+            copyS3File(
+                client,
+                s3_uri.bucket,
+                fs::path(s3_uri.key) / path_in_backup,
+                0,
+                file_size,
+                /* dest_bucket= */ blob_path[0],
+                /* dest_key= */ blob_path[1],
+                request_settings,
+                object_attributes,
+                threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3"),
+                /* for_disk_s3= */ true);
+
+            return file_size;
+        };
+
+        destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
+        return;
+    }
+
+    /// Fallback to copy through buffers.
+    IBackupReader::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode, write_settings);
 }
 
 
@@ -164,27 +180,47 @@ BackupWriterS3::BackupWriterS3(
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
+    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
 {
     request_settings.updateFromSettings(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
 
-DataSourceDescription BackupWriterS3::getDataSourceDescription() const
+void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
+                                      bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
-    return DataSourceDescription{DataSourceType::S3, s3_uri.endpoint, false, false};
+    auto source_data_source_description = src_disk->getDataSourceDescription();
+    if (source_data_source_description.sameKind(data_source_description)
+        && (source_data_source_description.is_encrypted == copy_encrypted))
+    {
+        /// getBlobPath() can return std::nullopt if the file is stored as multiple objects in S3 bucket.
+        /// In this case we can't use native copy.
+        if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
+        {
+            /// Use native copy, the more optimal way.
+            LOG_TRACE(log, "Copying file {} from disk {} to S3 using native copy", src_path, src_disk->getName());
+            copyS3File(
+                client,
+                /* src_bucket */ blob_path[0],
+                /* src_key= */ blob_path[1],
+                start_pos,
+                length,
+                s3_uri.endpoint,
+                fs::path(s3_uri.key) / path_in_backup,
+                request_settings,
+                {},
+                threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
+            return;
+        }
+    }
+
+    /// Fallback to copy through buffers.
+    IBackupWriter::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
-void BackupWriterS3::copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
+void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
-    copyS3FileFromDisk(src_disk, src_file_name, src_offset, src_size,
-        client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, read_settings, request_settings,
-        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
-}
-
-void BackupWriterS3::copyDataToFile(
-    const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name)
-{
-    copyDataToS3File(create_read_buffer, offset, size, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, request_settings, {},
+    copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup, request_settings, {},
                      threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
 }
 

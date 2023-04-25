@@ -20,20 +20,12 @@ public:
     UInt64 getSize() const override { return getInternalBackupEntry()->getSize(); }
     std::optional<UInt128> getChecksum() const override { return getInternalBackupEntry()->getChecksum(); }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return getInternalBackupEntry()->getReadBuffer(); }
-    String getFilePath() const override
-    {
-        return getInternalBackupEntry()->getFilePath();
-    }
-
-    DiskPtr tryGetDiskIfExists() const override
-    {
-        return getInternalBackupEntry()->tryGetDiskIfExists();
-    }
-
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return getInternalBackupEntry()->getDataSourceDescription();
-    }
+    bool isEncryptedByDisk() const override { return getInternalBackupEntry()->isEncryptedByDisk(); }
+    DataSourceDescription getDataSourceDescription() const override { return getInternalBackupEntry()->getDataSourceDescription(); }
+    bool isFromFile() const override { return getInternalBackupEntry()->isFromFile(); }
+    bool isFromImmutableFile() const override { return getInternalBackupEntry()->isFromImmutableFile(); }
+    String getFilePath() const override { return getInternalBackupEntry()->getFilePath(); }
+    DiskPtr getDisk() const override { return getInternalBackupEntry()->getDisk(); }
 
 private:
     BackupEntryPtr getInternalBackupEntry() const

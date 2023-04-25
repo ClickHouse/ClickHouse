@@ -111,6 +111,7 @@ String BackupFileInfo::describe() const
     result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
+    result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
     return result;
 }
 
@@ -122,6 +123,7 @@ BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const Backu
     BackupFileInfo info;
     info.file_name = adjusted_path;
     info.size = backup_entry->getSize();
+    info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 
     /// We don't set `info.data_file_name` and `info.data_file_index` in this function because they're set during backup coordination
     /// (see the class BackupCoordinationFileInfos).

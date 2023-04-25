@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_File.h>
+#include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
@@ -15,7 +16,9 @@ namespace DB
 {
 
 BackupReaderFile::BackupReaderFile(const String & path_)
-    : IBackupReader(&Poco::Logger::get("BackupReaderFile")), path(path_)
+    : IBackupReader(&Poco::Logger::get("BackupReaderFile"))
+    , path(path_)
+    , data_source_description(DiskLocal::getLocalDataSourceDescription(path_))
 {
 }
 
@@ -36,25 +39,44 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
     return createReadBufferFromFileBase(path / file_name, {});
 }
 
-void BackupReaderFile::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
-                                      WriteMode write_mode, const WriteSettings & write_settings)
+void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
+                                      DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, const WriteSettings & write_settings)
 {
-    if (destination_disk->getDataSourceDescription() == getDataSourceDescription())
+    if (write_mode == WriteMode::Rewrite)
     {
-        /// Use more optimal way.
-        LOG_TRACE(log, "Copying file {} locally", file_name);
-        fs::copy(path / file_name, fullPath(destination_disk, destination_path), fs::copy_options::overwrite_existing);
-        return;
+        auto destination_data_source_description = destination_disk->getDataSourceDescription();
+        if (destination_data_source_description.sameKind(data_source_description)
+            && (destination_data_source_description.is_encrypted == encrypted_in_backup))
+        {
+            /// Use more optimal way.
+            LOG_TRACE(log, "Copying file {} to disk {} locally", path_in_backup, destination_disk->getName());
+
+            auto write_blob_function
+                = [abs_source_path = path / path_in_backup, file_size](
+                      const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> &) -> size_t
+            {
+                if (blob_path.size() != 1 || mode != WriteMode::Rewrite)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Blob writing function called with unexpected blob_path.size={} or mode={}",
+                                    blob_path.size(), mode);
+                fs::copy(abs_source_path, blob_path.at(0), fs::copy_options::overwrite_existing);
+                return file_size;
+            };
+
+            destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
+            return;
+        }
     }
 
     /// Fallback to copy through buffers.
-    IBackupReader::copyFileToDisk(path / file_name, size, destination_disk, destination_path, write_mode, write_settings);
+    IBackupReader::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode, write_settings);
 }
 
 
 BackupWriterFile::BackupWriterFile(const String & path_, const ContextPtr & context_)
     : IBackupWriter(context_, &Poco::Logger::get("BackupWriterFile"))
     , path(path_)
+    , data_source_description(DiskLocal::getLocalDataSourceDescription(path_))
     , has_throttling(static_cast<bool>(context_->getBackupsThrottler()))
 {
 }
@@ -112,59 +134,36 @@ void BackupWriterFile::removeFiles(const Strings & file_names)
         fs::remove(path);
 }
 
-DataSourceDescription BackupWriterFile::getDataSourceDescription() const
-{
-    DataSourceDescription data_source_description;
-
-    data_source_description.type = DataSourceType::Local;
-
-    if (auto block_device_id = tryGetBlockDeviceId(path); block_device_id.has_value())
-        data_source_description.description = *block_device_id;
-    else
-        data_source_description.description = path;
-    data_source_description.is_encrypted = false;
-    data_source_description.is_cached = false;
-
-    return data_source_description;
-}
-
-DataSourceDescription BackupReaderFile::getDataSourceDescription() const
-{
-    DataSourceDescription data_source_description;
-
-    data_source_description.type = DataSourceType::Local;
-
-    if (auto block_device_id = tryGetBlockDeviceId(path); block_device_id.has_value())
-        data_source_description.description = *block_device_id;
-    else
-        data_source_description.description = path;
-    data_source_description.is_encrypted = false;
-    data_source_description.is_cached = false;
-
-    return data_source_description;
-}
-
-
-void BackupWriterFile::copyFileFromDisk(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
+void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
+                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and it cannot do the throttling.
-    if (!has_throttling && (getDataSourceDescription() == src_disk->getDataSourceDescription()))
+    if (!has_throttling)
     {
-        std::string abs_source_path = fullPath(src_disk, src_file_name);
-        /// std::filesystem::copy() can copy a file as a whole only.
-        if ((src_offset == 0) && (src_size == fs::file_size(abs_source_path)))
+        auto source_data_source_description = src_disk->getDataSourceDescription();
+        if (source_data_source_description.sameKind(data_source_description)
+            && (source_data_source_description.is_encrypted == copy_encrypted))
         {
-            /// Use more optimal way.
-            LOG_TRACE(log, "Copying file {} locally", src_file_name);
-            auto abs_dest_path = path / dest_file_name;
-            fs::create_directories(abs_dest_path.parent_path());
-            fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
-            return;
+            if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 1)
+            {
+                auto abs_source_path = blob_path[0];
+
+                /// std::filesystem::copy() can copy a file as a whole only.
+                if ((start_pos == 0) && (length == fs::file_size(abs_source_path)))
+                {
+                    /// Use more optimal way.
+                    LOG_TRACE(log, "Copying file {} from disk {} locally", src_path, src_disk->getName());
+                    auto abs_dest_path = path / path_in_backup;
+                    fs::create_directories(abs_dest_path.parent_path());
+                    fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
+                    return;
+                }
+            }
         }
     }
 
     /// Fallback to copy through buffers.
-    IBackupWriter::copyFileFromDisk(src_disk, src_file_name, src_offset, src_size, dest_file_name);
+    IBackupWriter::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
 }

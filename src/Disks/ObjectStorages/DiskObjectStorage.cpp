@@ -579,12 +579,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
-std::optional<std::pair<String, String>> DiskObjectStorage::getBlobPath(const String & path) const
+Strings DiskObjectStorage::getBlobPath(const String & path) const
 {
     auto objects = getStorageObjects(path);
-    if (objects.size() != 1)
-        return {};
-    return std::make_pair(object_storage->getObjectsNamespace(), objects[0].absolute_path);
+    Strings res;
+    res.reserve(objects.size() + 1);
+    res.emplace_back(object_storage->getObjectsNamespace());
+    for (const auto & object : objects)
+        res.emplace_back(object.absolute_path);
+    return res;
 }
 
 void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
