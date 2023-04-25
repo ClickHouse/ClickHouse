@@ -444,7 +444,8 @@ try
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
-        total_rows += executor.execute(*buffer);
+        size_t num_rows = executor.execute(*buffer);
+        total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
 
         /// Keep buffer, because it still can be used
@@ -459,6 +460,7 @@ try
             elem.query = key.query;
             elem.query_id = entry->query_id;
             elem.bytes = entry->bytes.size();
+            elem.rows = num_rows;
             elem.exception = current_exception;
             current_exception.clear();
 
