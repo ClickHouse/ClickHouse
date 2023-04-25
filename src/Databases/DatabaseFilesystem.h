@@ -27,9 +27,13 @@ public:
 
     bool isTableExist(const String & name, ContextPtr context) const override;
 
+    StoragePtr getTable(const String & name, ContextPtr context) const override;
+
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
     bool empty() const override { return true; }
+
+    bool isReadOnly() const override { return true; }
 
     ASTPtr getCreateDatabaseQuery() const override;
 
@@ -39,8 +43,12 @@ public:
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &) const override;
 
 protected:
+    StoragePtr getTableImpl(const String & name, ContextPtr context) const;
+
     std::string getTablePath(const std::string & table_name) const;
+
     void addTable(const std::string & table_name, StoragePtr table_storage) const;
+
 
 private:
     String path;

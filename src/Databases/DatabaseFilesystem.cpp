@@ -21,8 +21,7 @@ namespace DB
 DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(&Poco::Logger::get("DatabaseFileSystem(" + name_ + ")"))
 {
-    if (path.empty())
-        path = fs::current_path();
+    path = fs::path(path).lexically_normal().string();
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string& table_name) const
@@ -48,7 +47,7 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr) const
     return fs::exists(table_file_path) && fs::is_regular_file(table_file_path);
 }
 
-StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const
+StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_) const
 {
     // Check if the table exists in the loaded tables map
     {
@@ -60,24 +59,31 @@ StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr conte
 
     auto table_path = getTablePath(name);
 
+    // If the file exists, create a new table using TableFunctionFile and return it.
+    auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
+
+    auto table_function = TableFunctionFactory::instance().get(args, context_);
+    if (!table_function)
+        return nullptr;
+
+    auto table_storage = table_function->execute(args, context_, name);
+    if (table_storage)
+        addTable(name, table_storage);
+
+    return table_storage;
+}
+
+StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_) const
+{
+    if (auto storage = getTableImpl(name, context_))
+        return storage;
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
+}
+
+StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const {
     try
     {
-        // If the table doesn't exist in the tables map, check if the corresponding file exists
-        if (!fs::exists(table_path) || !fs::is_regular_file(table_path))
-            return nullptr;
-
-        // If the file exists, create a new table using TableFunctionFile and return it.
-        auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
-
-        auto table_function = TableFunctionFactory::instance().get(args, context_);
-        if (!table_function)
-            return nullptr;
-
-        auto table_storage = table_function->execute(args, context_, name);
-        if (table_storage)
-            addTable(name, table_storage);
-
-        return table_storage;
+        return getTable(name, context_);
     }
     catch (...)
     {
@@ -90,7 +96,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem({})", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(path));
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
