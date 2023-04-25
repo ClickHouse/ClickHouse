@@ -133,6 +133,7 @@
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished.") \
     \
     M(HedgedRequestsChangeReplica, "Total count when timeout for changing replica expired in hedged requests.") \
+    M(SuspendSendingQueryToShard, "Total count when sending query to shard was suspended when async_query_sending_for_remote is enabled.") \
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
@@ -496,7 +497,16 @@ The server successfully detected this situation and will download merged part fr
     M(MergeTreeAllRangesAnnouncementsSent, "The number of announcement sent from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(ReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
     M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
+    M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
+    \
+    M(LogTest, "Number of log messages with level Test") \
+    M(LogTrace, "Number of log messages with level Trace") \
+    M(LogDebug, "Number of log messages with level Debug") \
+    M(LogInfo, "Number of log messages with level Info") \
+    M(LogWarning, "Number of log messages with level Warning") \
+    M(LogError, "Number of log messages with level Error") \
+    M(LogFatal, "Number of log messages with level Fatal") \
+
 
 namespace ProfileEvents
 {
@@ -609,6 +619,21 @@ void Counters::incrementNoTrace(Event event, Count amount)
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
         current = current->parent;
     } while (current != nullptr);
+}
+
+void incrementForLogMessage(Poco::Message::Priority priority)
+{
+    switch (priority)
+    {
+        case Poco::Message::PRIO_TEST: increment(LogTest); break;
+        case Poco::Message::PRIO_TRACE: increment(LogTrace); break;
+        case Poco::Message::PRIO_DEBUG: increment(LogDebug); break;
+        case Poco::Message::PRIO_INFORMATION: increment(LogInfo); break;
+        case Poco::Message::PRIO_WARNING: increment(LogWarning); break;
+        case Poco::Message::PRIO_ERROR: increment(LogError); break;
+        case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
+        default: break;
+    }
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
