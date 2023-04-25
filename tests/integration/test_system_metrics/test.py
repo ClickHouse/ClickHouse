@@ -166,7 +166,7 @@ def test_attach_without_zk_incr_readonly_metric(start_cluster):
     )
 
     node1.query(
-        "ATTACH TABLE test.test_no_zk UUID 'a50b7933-59b2-49ce-8db6-59da3c9b4413'(i Int8, d Date) ENGINE = ReplicatedMergeTree('no_zk', 'replica') ORDER BY tuple()"
+        "ATTACH TABLE test.test_no_zk UUID 'a50b7933-59b2-49ce-8db6-59da3c9b4413' (i Int8, d Date) ENGINE = ReplicatedMergeTree('no_zk', 'replica') ORDER BY tuple()"
     )
     assert_eq_with_retry(
         node1,
