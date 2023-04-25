@@ -6125,6 +6125,93 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_name);
     }
 
+    QueryTreeNodes result_table_function_arguments;
+
+    auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+
+    auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments.size();
+
+    for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+    {
+        auto & table_function_argument = table_function_arguments[table_function_argument_index];
+
+        auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(),
+            skip_analysis_arguments_indexes.end(),
+            table_function_argument_index);
+        if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
+        if (auto * identifier_node = table_function_argument->as<IdentifierNode>())
+        {
+            const auto & unresolved_identifier = identifier_node->getIdentifier();
+            auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
+
+            if (resolved_identifier && resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+                result_table_function_arguments.push_back(std::move(resolved_identifier));
+            else
+                result_table_function_arguments.push_back(table_function_argument);
+
+            continue;
+        }
+        else if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
+        {
+            const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
+            if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
+            {
+                auto table_function_node_to_resolve_typed = std::make_shared<TableFunctionNode>(table_function_argument_function_name);
+                table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
+
+                QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
+                resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+
+                result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
+                continue;
+            }
+        }
+
+        /** Table functions arguments can contain expressions with invalid identifiers.
+          * We cannot skip analysis for such arguments, because some table functions cannot provide
+          * information if analysis for argument should be skipped until other arguments will be resolved.
+          *
+          * Example: SELECT key from remote('127.0.0.{1,2}', view(select number AS key from numbers(2)), cityHash64(key));
+          * Example: SELECT id from remote('127.0.0.{1,2}', 'default', 'test_table', cityHash64(id));
+          */
+        try
+        {
+            resolveExpressionNode(table_function_argument, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        }
+        catch (const Exception & exception)
+        {
+            if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
+            {
+                result_table_function_arguments.push_back(table_function_argument);
+                continue;
+            }
+
+            throw;
+        }
+
+        if (auto * expression_list = table_function_argument->as<ListNode>())
+        {
+            for (auto & expression_list_node : expression_list->getNodes())
+                result_table_function_arguments.push_back(expression_list_node);
+        }
+        else
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+        }
+    }
+
+    table_function_node_typed.getArguments().getNodes() = std::move(result_table_function_arguments);
+
+    auto table_function_ast = table_function_node_typed.toAST();
+    table_function_ptr->parseArguments(table_function_ast, scope_context);
+
     uint64_t use_structure_from_insertion_table_in_table_functions = scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions;
     if (!nested_table_function &&
         use_structure_from_insertion_table_in_table_functions &&
@@ -6252,93 +6339,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
         }
     }
-
-    QueryTreeNodes result_table_function_arguments;
-
-    auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
-
-    auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments.size();
-
-    for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
-    {
-        auto & table_function_argument = table_function_arguments[table_function_argument_index];
-
-        auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(),
-            skip_analysis_arguments_indexes.end(),
-            table_function_argument_index);
-        if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
-        {
-            result_table_function_arguments.push_back(table_function_argument);
-            continue;
-        }
-
-        if (auto * identifier_node = table_function_argument->as<IdentifierNode>())
-        {
-            const auto & unresolved_identifier = identifier_node->getIdentifier();
-            auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
-            auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
-
-            if (resolved_identifier && resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-                result_table_function_arguments.push_back(std::move(resolved_identifier));
-            else
-                result_table_function_arguments.push_back(table_function_argument);
-
-            continue;
-        }
-        else if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
-        {
-            const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
-            if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
-            {
-                auto table_function_node_to_resolve_typed = std::make_shared<TableFunctionNode>(table_function_argument_function_name);
-                table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
-
-                QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
-
-                result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
-                continue;
-            }
-        }
-
-        /** Table functions arguments can contain expressions with invalid identifiers.
-          * We cannot skip analysis for such arguments, because some table functions cannot provide
-          * information if analysis for argument should be skipped until other arguments will be resolved.
-          *
-          * Example: SELECT key from remote('127.0.0.{1,2}', view(select number AS key from numbers(2)), cityHash64(key));
-          * Example: SELECT id from remote('127.0.0.{1,2}', 'default', 'test_table', cityHash64(id));
-          */
-        try
-        {
-            resolveExpressionNode(table_function_argument, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        }
-        catch (const Exception & exception)
-        {
-            if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
-            {
-                result_table_function_arguments.push_back(table_function_argument);
-                continue;
-            }
-
-            throw;
-        }
-
-        if (auto * expression_list = table_function_argument->as<ListNode>())
-        {
-            for (auto & expression_list_node : expression_list->getNodes())
-                result_table_function_arguments.push_back(expression_list_node);
-        }
-        else
-        {
-            result_table_function_arguments.push_back(table_function_argument);
-        }
-    }
-
-    table_function_node_typed.getArguments().getNodes() = std::move(result_table_function_arguments);
-
-    auto table_function_ast = table_function_node_typed.toAST();
-    table_function_ptr->parseArguments(table_function_ast, scope_context);
 
     auto table_function_storage = table_function_ptr->execute(table_function_ast, scope_context, table_function_ptr->getName());
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context);

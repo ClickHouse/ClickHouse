@@ -18,6 +18,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/IAST_fwd.h>
+#include <Formats/FormatFactory.h>
 
 #include "registerTableFunctions.h"
 
@@ -86,6 +87,11 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
         return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
 
     return parseColumnsListFromString(configuration.structure, context);
+}
+
+bool TableFunctionS3Cluster::supportsReadingSubsetOfColumns()
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
 StoragePtr TableFunctionS3Cluster::executeImpl(

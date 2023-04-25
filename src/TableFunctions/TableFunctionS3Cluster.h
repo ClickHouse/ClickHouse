@@ -36,6 +36,8 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
+    bool supportsReadingSubsetOfColumns() override;
+
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
