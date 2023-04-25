@@ -45,7 +45,7 @@ DeflateQplJobHWPool::DeflateQplJobHWPool()
         }
     }
 
-    if(hw_jobs_max_number == 0)
+    if (hw_jobs_max_number == 0)
     {
         job_pool_ready = false;
         LOG_WARNING(log, "Initialization of hardware-assisted DeflateQpl codec failed, falling back to software DeflateQpl codec. Please check if Intel In-Memory Analytics Accelerator (IAA) is properly set up. accfg_context_status: {} ,total_wq_size: {} , QPL Version: {}.", ctx_status, hw_jobs_max_number, qpl_version);
