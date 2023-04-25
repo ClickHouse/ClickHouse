@@ -21,7 +21,7 @@ class ColumnSet final : public COWHelper<IColumnDummy, ColumnSet>
 private:
     friend class COWHelper<IColumnDummy, ColumnSet>;
 
-    ColumnSet(size_t s_, FutureSet data_) : data(std::move(data_)) { s = s_; }
+    ColumnSet(size_t s_, FutureSetPtr data_) : data(std::move(data_)) { s = s_; }
     ColumnSet(const ColumnSet &) = default;
 
 public:
@@ -35,7 +35,7 @@ public:
     Field operator[](size_t) const override { return {}; }
 
 private:
-    FutureSet data;
+    FutureSetPtr data;
 };
 
 }

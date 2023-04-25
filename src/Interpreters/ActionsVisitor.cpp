@@ -422,9 +422,8 @@ Block createBlockForSet(
 }
 
 
-SetPtr makeExplicitSet(
-    const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
-    ContextPtr context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
+FutureSetPtr makeExplicitSet(
+    const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
 {
     const IAST & args = *node->arguments;
 
@@ -448,7 +447,7 @@ SetPtr makeExplicitSet(
             element_type = low_cardinality_type->getDictionaryType();
 
     auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
-    if (auto set = prepared_sets.get(set_key))
+    if (auto set = prepared_sets.getFuture(set_key))
         return set; /// Already prepared.
 
     Block block;
@@ -458,14 +457,7 @@ SetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    SetPtr set
-        = std::make_shared<Set>(size_limits, create_ordered_set, context->getSettingsRef().transform_null_in);
-    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
-    set->insertFromBlock(block.getColumnsWithTypeAndName());
-    set->finishInsert();
-
-    prepared_sets.set(set_key, set);
-    return set;
+    return prepared_sets.addFromTuple(set_key, block);
 }
 
 class ScopeStack::Index
@@ -952,7 +944,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    FutureSet prepared_set;
+    FutureSetPtr prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
@@ -961,7 +953,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
             prepared_set = makeSet(node, data, data.no_subqueries);
 
-        if (prepared_set.isValid())
+        if (prepared_set)
         {
             /// Transform tuple or subquery into a set.
         }
@@ -1174,14 +1166,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 num_arguments += columns.size() - 1;
                 arg += columns.size() - 1;
             }
-            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set.isValid())
+            else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
-                const bool is_constant_set = prepared_set.isCreated();
+                const bool is_constant_set = typeid_cast<const FutureSetFromSubquery *>(prepared_set.get()) == nullptr;
                 if (is_constant_set)
                     column.name = data.getUniqueName("__set");
                 else
@@ -1373,7 +1365,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     data.addColumn(std::move(column));
 }
 
-FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
+FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     if (!data.prepared_sets)
         return {};
@@ -1394,11 +1386,8 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
 
-        {
-            auto set = data.prepared_sets->getFuture(set_key);
-            if (set.isValid())
-                return set;
-        }
+        if (auto set = data.prepared_sets->getFuture(set_key))
+            return set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1409,20 +1398,16 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
 
             if (table)
             {
-                StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
-                if (storage_set)
-                {
-                    SetPtr set = storage_set->getSet();
-                    data.prepared_sets->set(set_key, set);
-                    return FutureSet(set);
-                }
+                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
+                    return data.prepared_sets->addFromStorage(set_key, storage_set->getSet());
             }
         }
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        String set_id = right_in_operand->getColumnName();
-        bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
-        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
+        // String set_id = right_in_operand->getColumnName();
+        //bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
+        SubqueryForSet subquery_for_set; // = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
+        subquery_for_set.key = right_in_operand->getColumnName();
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1432,13 +1417,13 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (data.create_source_for_in && !subquery_for_set.hasSource())
+        if (data.create_source_for_in)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
             subquery_for_set.createSource(*interpreter);
         }
 
-        return subquery_for_set.set;
+        return data.prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set));
     }
     else
     {
@@ -1446,8 +1431,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
         const auto & index = data.actions_stack.getLastActionsIndex();
         if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return FutureSet(
-                makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets));
+            return makeExplicitSet(&node, last_actions, data.getContext(), *data.prepared_sets);
         else
             return {};
     }

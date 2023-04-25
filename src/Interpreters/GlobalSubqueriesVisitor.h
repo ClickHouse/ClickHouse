@@ -167,19 +167,21 @@ public:
             {
                 /// Do not materialize external tables if it's explain statement.
             }
-            else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
-            {
-                auto external_table = external_storage_holder->getTable();
-                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
-                auto io = interpreter->execute();
-                io.pipeline.complete(std::move(table_out));
-                CompletedPipelineExecutor executor(io.pipeline);
-                executor.execute();
-            }
+            // else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
+            // {
+            //     auto external_table = external_storage_holder->getTable();
+            //     auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
+            //     auto io = interpreter->execute();
+            //     io.pipeline.complete(std::move(table_out));
+            //     CompletedPipelineExecutor executor(io.pipeline);
+            //     executor.execute();
+            // }
             else
             {
-                auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
-                subquery_for_set.createSource(*interpreter, external_storage);
+                // auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
+                // subquery_for_set.createSource(*interpreter, external_storage);
+                auto key = subquery_or_table_name->getColumnName();
+                prepared_sets->addStorageToSubquery(key, std::move(external_storage));
             }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
