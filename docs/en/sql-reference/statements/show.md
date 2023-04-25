@@ -98,22 +98,6 @@ Result:
 
 - [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
-## SHOW PROCESSLIST
-
-``` sql
-SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
-
-The `SELECT * FROM system.processes` query returns data about all the current queries.
-
-Tip (execute in the console):
-
-``` bash
-$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
-```
-
 ## SHOW TABLES
 
 Displays a list of tables.
@@ -275,6 +259,22 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ regions      │
 │ region_names │
 └──────────────┘
+```
+
+## SHOW PROCESSLIST
+
+``` sql
+SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
+```
+
+Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+
+The `SELECT * FROM system.processes` query returns data about all the current queries.
+
+Tip (execute in the console):
+
+``` bash
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
 ## SHOW GRANTS
