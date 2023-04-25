@@ -42,9 +42,13 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/S3Common.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -54,6 +58,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -76,6 +81,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <iomanip>
 #include <limits>
@@ -173,6 +179,19 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
+static void checkSuspiciousIndices(const ASTFunction * index_function)
+{
+    std::unordered_set<UInt64> unique_index_expression_hashes;
+    for (const auto & child : index_function->arguments->children)
+    {
+        IAST::Hash hash = child->getTreeHash();
+        UInt64 first_half_of_hash = hash.first;
+
+        if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Primary key or secondary index contains a duplicate expression. To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'");
+    }
+}
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
@@ -440,7 +459,10 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 void MergeTreeData::checkProperties(
-    const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach) const
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    bool attach,
+    ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -454,7 +476,13 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
             "{} is greater than the sorting key length: {}", primary_key_size, sorting_key_size);
 
-    NameSet primary_key_columns_set;
+    bool allow_suspicious_indices = getSettings()->allow_suspicious_indices;
+    if (local_context)
+        allow_suspicious_indices = local_context->getSettingsRef().allow_suspicious_indices;
+
+    if (!allow_suspicious_indices && !attach)
+        if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
+            checkSuspiciousIndices(index_function);
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
@@ -467,9 +495,6 @@ void MergeTreeData::checkProperties(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Primary key must be a prefix of the sorting key, "
                                 "but the column in the position {} is {}", i, sorting_key_column +", not " + pk_column);
-
-            if (!primary_key_columns_set.emplace(pk_column).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key contains duplicate columns");
 
         }
     }
@@ -531,6 +556,13 @@ void MergeTreeData::checkProperties(
 
         for (const auto & index : new_metadata.secondary_indices)
         {
+            if (!allow_suspicious_indices && !attach)
+            {
+                const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
+                if (const auto * index_function = typeid_cast<const ASTFunction *>(index_ast->expr))
+                    checkSuspiciousIndices(index_function);
+            }
+
             MergeTreeIndexFactory::instance().validate(index, attach);
 
             if (indices_names.find(index.name) != indices_names.end())
@@ -556,9 +588,13 @@ void MergeTreeData::checkProperties(
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach)
+void MergeTreeData::setProperties(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    bool attach,
+    ContextPtr local_context)
 {
-    checkProperties(new_metadata, old_metadata, attach);
+    checkProperties(new_metadata, old_metadata, attach, local_context);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -989,7 +1025,6 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     }
     return res;
 }
-
 
 String MergeTreeData::MergingParams::getModeName() const
 {
@@ -1870,8 +1905,7 @@ try
             if (outdated_unloaded_data_parts.empty())
                 break;
 
-            part = std::move(outdated_unloaded_data_parts.back());
-            outdated_unloaded_data_parts.pop_back();
+            part = outdated_unloaded_data_parts.back();
         }
 
         auto res = loadDataPartWithRetries(
@@ -1886,6 +1920,15 @@ try
             res.part->remove();
         else
             preparePartForRemoval(res.part);
+
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            chassert(part == outdated_unloaded_data_parts.back());
+            outdated_unloaded_data_parts.pop_back();
+
+            if (outdated_unloaded_data_parts.empty())
+                break;
+        }
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
@@ -3143,7 +3186,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    checkProperties(new_metadata, old_metadata);
+    checkProperties(new_metadata, old_metadata, false, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
