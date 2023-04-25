@@ -333,10 +333,7 @@ public:
         }
     }
 
-    uint64_t keyArenaSize() const
-    {
-        return arena.size();
-    }
+    uint64_t keyArenaSize() const { return arena.allocatedBytes(); }
 
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }

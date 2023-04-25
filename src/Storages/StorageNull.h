@@ -42,6 +42,8 @@ public:
             std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
     }
 
+    bool parallelizeOutputAfterReading() const override { return false; }
+
     bool supportsParallelInsert() const override { return true; }
 
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
