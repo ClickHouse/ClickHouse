@@ -77,6 +77,11 @@ public:
         UInt64 group,
         bool group_by_use_nulls);
 
+    const Processors & getProcessors() const override
+    {
+        return aggregating;
+    }
+
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override
