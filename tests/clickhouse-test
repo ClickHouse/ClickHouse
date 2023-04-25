@@ -581,9 +581,7 @@ class SettingsRandomizer:
     @staticmethod
     def get_random_settings(args):
         random_settings = []
-        is_debug = False
-        if BuildFlags.DEBUG in args.build_flags:
-            is_debug = True
+        is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
             if (
                 is_debug
