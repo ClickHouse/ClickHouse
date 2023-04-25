@@ -37,6 +37,7 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -562,6 +563,17 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto cache_log = getContext()->getFilesystemCacheLog()) cache_log->flush(true); },
                 [&] { if (auto asynchronous_insert_log = getContext()->getAsynchronousInsertLog()) asynchronous_insert_log->flush(true); }
             );
+            break;
+        }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
+            auto * queue = getContext()->getAsynchronousInsertQueue();
+            if (!queue)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot flush asynchronous insert queue because it is not initialized");
+
+            queue->flushAll();
             break;
         }
         case Type::STOP_LISTEN_QUERIES:
@@ -1154,6 +1166,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
+            break;
+        }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
             break;
         }
         case Type::RESTART_DISK:
