@@ -1,0 +1,19 @@
+---
+0	0
+1	0
+2	0
+3	1
+4	1
+5	1
+---
+Expression ((Projection + Before ORDER BY))
+  Filter (WHERE)
+    ReadFromMergeTree (default.tab)
+    Indexes:
+      PrimaryKey
+        Keys: 
+          x
+          y
+        Condition: ((x, y) in 2-element set)
+        Parts: 1/1
+        Granules: 3/6

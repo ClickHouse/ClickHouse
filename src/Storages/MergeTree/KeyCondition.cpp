@@ -28,9 +28,9 @@
 #include <IO/Operators.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
+#include <boost/algorithm/string/join.hpp>
 
 #include <base/defines.h>
-
 #include <algorithm>
 #include <cassert>
 #include <stack>
@@ -1877,9 +1877,12 @@ KeyCondition::Description KeyCondition::getDescription() const
                 if (node->negate)
                     buf << "not(";
 
-                std::string all_key_names;
-                for (size_t kc: node->element->key_column)
-                    all_key_names = all_key_names + std::string(key_names[kc]) + ", ";
+                std::vector<std::string> keys_from_columns;
+                keys_from_columns.reserve(node->element->key_column.size());
+                for (size_t kc: node->element->key_column) {
+                    keys_from_columns.push_back(std::string(key_names[kc]));
+                }
+                std::string all_key_names = "(" + boost::algorithm::join(keys_from_columns, ", ") + ")";
                 if (!all_key_names.empty())
                     buf << node->element->toString(all_key_names, true);
                 if (node->negate)
