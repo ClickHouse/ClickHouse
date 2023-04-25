@@ -438,19 +438,20 @@ void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_
         thread_trace_context = distributed_header.createTracingContextHolder(
             __PRETTY_FUNCTION__,
             storage.getContext()->getOpenTelemetrySpanLog());
+
         const Settings & settings_for_insert = is_flush_settings ? context_->getSettingsRef() : distributed_header.insert_settings;
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings_for_insert);
-        auto connection = pool->get(timeouts, &context_->getSettingsRef());
-        LOG_DEBUG(
-            log,
-            "Sending `{}` to {} ({} rows, {} bytes)",
-            file_path,
-            connection->getDescription(),
-            formatReadableQuantity(distributed_header.rows),
-            formatReadableSizeWithBinarySuffix(distributed_header.bytes));
+        auto connection = pool->get(timeouts, &settings_for_insert);
+        LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
+                  file_path,
+                  connection->getDescription(),
+                  formatReadableQuantity(distributed_header.rows),
+                  formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
-        RemoteInserter remote{
-            *connection, timeouts, distributed_header.insert_query, settings_for_insert, distributed_header.client_info};
+        RemoteInserter remote{*connection, timeouts,
+                              distributed_header.insert_query,
+                              settings_for_insert,
+                              distributed_header.client_info};
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
