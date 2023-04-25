@@ -61,12 +61,13 @@ IProcessor::Status InnerShuffleScatterTransform::prepare()
             all_output_finished = false;
             if (!part_chunks.empty())
             {
-               has_port_full = true;
-               if (outport.canPush())
-               {
+                // No matter can push or not, mark as port full.
+                has_port_full = true;
+                if (outport.canPush())
+                {
                     outport.push(std::move(part_chunks.front()));
                     part_chunks.pop_front();
-               }
+                }
             }
         }
         outport_it++;
