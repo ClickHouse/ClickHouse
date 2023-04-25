@@ -342,10 +342,15 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
     }
 }
 
-static void appendElementsToLogSafe(
+namespace
+{
+
+using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
+
+void appendElementsToLogSafe(
     AsynchronousInsertLog & log,
     std::vector<AsynchronousInsertLogElement> elements,
-    std::chrono::time_point<std::chrono::system_clock> flush_time,
+    TimePoint flush_time,
     const String & flush_query_id,
     const String & flush_exception)
 try
@@ -365,6 +370,8 @@ try
 catch (...)
 {
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
+}
+
 }
 
 // static
@@ -473,8 +480,26 @@ try
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
 
+    auto finish_entries = [&]
+    {
+        for (const auto & entry : data->entries)
+        {
+            if (!entry->isFinished())
+                entry->finish();
+        }
+
+        if (!log_elements.empty())
+        {
+            auto flush_time = std::chrono::system_clock::now();
+            appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
+        }
+    };
+
     if (total_rows == 0)
+    {
+        finish_entries();
         return;
+    }
 
     try
     {
@@ -502,17 +527,7 @@ try
         throw;
     }
 
-    for (const auto & entry : data->entries)
-    {
-        if (!entry->isFinished())
-            entry->finish();
-    }
-
-    if (!log_elements.empty())
-    {
-        auto flush_time = std::chrono::system_clock::now();
-        appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
-    }
+    finish_entries();
 }
 catch (const Exception & e)
 {

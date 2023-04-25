@@ -384,7 +384,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
       * TODO Too complex logic, you can do better.
       */
     size_t replicas_num = 0;
-    ZooKeeperRetriesControl quorum_retries_ctl("checkQuorumPrecondition", zookeeper_retries_info);
+    ZooKeeperRetriesControl quorum_retries_ctl("checkQuorumPrecondition", zookeeper_retries_info, context->getProcessListElement());
     quorum_retries_ctl.retryLoop(
         [&]()
         {
@@ -641,7 +641,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
     Coordination::Error write_part_info_keeper_error = Coordination::Error::ZOK;
     std::vector<String> conflict_block_ids;
 
-    ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info);
+    ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info, context->getProcessListElement());
     retries_ctl.retryLoop([&]()
     {
         zookeeper->setKeeper(storage.getZooKeeper());
@@ -1079,7 +1079,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
     if (isQuorumEnabled())
     {
-        ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info);
+        ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info, context->getProcessListElement());
         quorum_retries_ctl.retryLoop([&]()
         {
             if (storage.is_readonly)

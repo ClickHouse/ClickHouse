@@ -534,14 +534,6 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSetting
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
 }
 
-FileCachePtr DiskObjectStorage::getCache() const
-{
-    const auto * cached_object_storage = typeid_cast<CachedObjectStorage *>(object_storage.get());
-    if (!cached_object_storage)
-        return nullptr;
-    return cached_object_storage->getCache();
-}
-
 NameSet DiskObjectStorage::getCacheLayersNames() const
 {
     NameSet cache_layers;

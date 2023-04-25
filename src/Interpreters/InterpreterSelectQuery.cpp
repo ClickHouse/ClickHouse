@@ -150,7 +150,8 @@ FilterDAGInfoPtr generateFilterActions(
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
-        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
+        /// We should add back quotes around column name as it can contain dots.
+        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -458,6 +459,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (joined_tables.tablesCount() > 1 && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
     {
         LOG_WARNING(log, "Joins are not supported with parallel replicas. Query will be executed without using them.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+        context->setSetting("parallel_replicas_custom_key", String{""});
+    }
+
+    /// Try to execute query without parallel replicas if we find that there is a FINAL modifier there.
+    bool is_query_with_final = false;
+    if (query_info.table_expression_modifiers)
+        is_query_with_final = query_info.table_expression_modifiers->hasFinal();
+    else if (query_info.query)
+        is_query_with_final = query_info.query->as<ASTSelectQuery &>().final();
+
+    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    {
+        LOG_WARNING(log, "FINAL modifier is supported with parallel replicas. Will try to execute the query without using them.");
         context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
         context->setSetting("parallel_replicas_custom_key", String{""});
     }

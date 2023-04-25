@@ -1,6 +1,7 @@
 #include <Planner/Planner.h>
 
 #include <Core/ProtocolDefines.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -33,8 +34,11 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
@@ -886,11 +890,11 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
         for (const auto & node : actions_to_execute->getNodes())
         {
             const auto & set_key = node.result_name;
-            const auto * planner_set = planner_context->getSetOrNull(set_key);
+            auto * planner_set = planner_context->getSetOrNull(set_key);
             if (!planner_set)
                 continue;
 
-            if (planner_set->getSet()->isCreated() || !planner_set->getSubqueryNode())
+            if (planner_set->getSet().isCreated() || !planner_set->getSubqueryNode())
                 continue;
 
             auto subquery_options = select_query_options.subquery();
@@ -900,8 +904,16 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
                 planner_context->getGlobalPlannerContext());
             subquery_planner.buildQueryPlanIfNeeded();
 
+            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
+            bool tranform_null_in = settings.transform_null_in;
+            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
+
             SubqueryForSet subquery_for_set;
+            subquery_for_set.key = set_key;
+            subquery_for_set.set_in_progress = set;
             subquery_for_set.set = planner_set->getSet();
+            subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
             subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
             subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
@@ -909,6 +921,46 @@ void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
     }
 
     addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
+}
+
+/// Support for `additional_result_filter` setting
+void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
+    const QueryNode & query_node,
+    const SelectQueryOptions & select_query_options,
+    PlannerContextPtr & planner_context
+)
+{
+    if (select_query_options.subquery_depth != 0)
+        return;
+
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto additional_result_filter_ast = parseAdditionalResultFilter(settings);
+    if (!additional_result_filter_ast)
+        return;
+
+    ColumnsDescription fake_column_descriptions;
+    NameSet fake_name_set;
+    for (const auto & column : query_node.getProjectionColumns())
+    {
+        fake_column_descriptions.add(ColumnDescription(column.name, column.type));
+        fake_name_set.emplace(column.name);
+    }
+
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+    auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
+
+    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
+    if (!filter_info.actions || !query_plan.isInitialized())
+        return;
+
+    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
+        filter_info.actions,
+        filter_info.column_name,
+        filter_info.do_remove_column);
+    filter_step->setStepDescription("additional result filter");
+    query_plan.addStep(std::move(filter_step));
 }
 
 }
@@ -1409,6 +1461,9 @@ void Planner::buildPlanForQueryNode()
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", result_actions_to_execute);
         }
+
+        // For additional_result_filter setting
+        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
     if (!select_query_options.only_analyze)
