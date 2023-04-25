@@ -1477,7 +1477,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
 
-        getLockSharedDataOps(*part, zookeeper, false, hardlinked_files, ops);
+        getLockSharedDataOps(*part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), false, hardlinked_files, ops);
         size_t zero_copy_lock_ops_size = ops.size();
 
         /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
@@ -8158,6 +8158,8 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
     std::optional<HardlinkedFiles> hardlinked_files,
     Coordination::Requests & requests) const
 {
+    auto settings = getSettings();
+
     if (!part.isStoredOnDisk() || !settings->allow_remote_fs_zero_copy_replication)
         return;
 
@@ -8377,6 +8379,7 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
     /// all_0_0_0_1
     /// all_0_0_0
     std::sort(parts_infos.begin(), parts_infos.end());
+    std::string part_info_str = part_info.getPartNameV1();
 
     /// In reverse order to process from bigger to smaller
     for (const auto & [parent_candidate_info, part_candidate_info_str] : parts_infos | std::views::reverse)
@@ -8387,7 +8390,7 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
         /// We are mutation child of this parent
         if (part_info.isMutationChildOf(parent_candidate_info))
         {
-            LOG_TRACE(log, "Found mutation parent {} for part {}", part_candidate_info_str, part_info.getPartNameV1());
+            LOG_TRACE(log, "Found mutation parent {} for part {}", part_candidate_info_str, part_info_str);
             /// Get hardlinked files
             String files_not_to_remove_str;
             Coordination::Error code;
@@ -9035,6 +9038,7 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
         try
         {
             Coordination::Requests ops;
+            Coordination::Responses responses;
             getZeroCopyLockNodeCreaetOps(zookeeper, zookeeper_node, ops, mode, replace_existing_lock, path_to_set_hardlinked_files, hardlinked_files);
             auto error = zookeeper->tryMulti(ops, responses);
             if (error == Coordination::Error::ZOK)
