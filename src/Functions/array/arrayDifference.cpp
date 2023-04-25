@@ -21,9 +21,6 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
