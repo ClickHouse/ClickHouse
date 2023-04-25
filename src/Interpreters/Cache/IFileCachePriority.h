@@ -61,7 +61,7 @@ public:
         /// the iterator should automatically point to the next record.
         virtual void removeAndGetNext(std::lock_guard<std::mutex> &) = 0;
 
-        virtual void incrementSize(size_t, std::lock_guard<std::mutex> &) = 0;
+        virtual void updateSize(ssize_t, std::lock_guard<std::mutex> &) = 0;
     };
 
 public:
