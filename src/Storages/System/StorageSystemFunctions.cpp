@@ -29,8 +29,15 @@ std::string exampleMapToString( const std::map<std::string, std::string> &exampl
         std::string stringToReturn;
 
         for (auto iter = example.begin(); iter != example.end(); ++iter){
+           stringToReturn.append("### ");
            stringToReturn.append(iter->first);
+           stringToReturn.append("\n");
+           stringToReturn.append("```");
+           stringToReturn.append("\n");
            stringToReturn.append(iter->second);
+           stringToReturn.append("\n");
+           stringToReturn.append("```");
+           stringToReturn.append("\n");
         }
         return stringToReturn;
 }
