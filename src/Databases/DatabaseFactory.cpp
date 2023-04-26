@@ -192,7 +192,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, context))
         {
-            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, false);
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, context, false);
         }
         else
         {

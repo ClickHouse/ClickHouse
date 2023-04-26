@@ -11,6 +11,7 @@
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -544,7 +545,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
     if (!found && need_remove_from_zk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
-    notifySubscribers(queue_size, entry->znode_name);
+    notifySubscribers(queue_size, &(entry->znode_name));
 
     if (!need_remove_from_zk)
         return;
@@ -1134,19 +1135,23 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
         bool replace_range_covered = covering_entry && checkReplaceRangeCanBeRemoved(part_info, *it, *covering_entry);
         if (simple_op_covered || replace_range_covered)
         {
+            const String & znode_name = (*it)->znode_name;
+
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
 
-            auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / (*it)->znode_name);
+            auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / znode_name);
             if (code != Coordination::Error::ZOK)
-                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / (*it)->znode_name).string(), Coordination::errorMessage(code));
+                LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / znode_name).string(), Coordination::errorMessage(code));
 
             updateStateOnQueueEntryRemoval(
                 *it, /* is_successful = */ false,
                 min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
 
-            (*it)->removed_by_other_entry = true;
+            LogEntryPtr removing_entry = std::move(*it);   /// Make it live a bit longer
+            removing_entry->removed_by_other_entry = true;
             it = queue.erase(it);
+            notifySubscribers(queue.size(), &znode_name);
             ++removed_entries;
         }
         else
@@ -1522,7 +1527,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 }
 
 
-Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersionImpl(
+Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(
     const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const
 {
     auto in_partition = mutations_by_partition.find(partition_id);
@@ -1535,13 +1540,6 @@ Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersionImpl(
 
     --it;
     return it->first;
-}
-
-
-Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const String & partition_id, Int64 data_version) const
-{
-    std::lock_guard lock(state_mutex);
-    return getCurrentMutationVersionImpl(partition_id, data_version, lock);
 }
 
 
@@ -1754,19 +1752,40 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
-MutationCommands ReplicatedMergeTreeQueue::getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
-    std::lock_guard lock(state_mutex);
+    std::unique_lock lock(state_mutex);
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
-        return MutationCommands{};
+        return {};
 
-    Int64 part_version = part->info.getDataVersion();
-    for (auto [mutation_version, mutation_status] : in_partition->second)
-        if (mutation_version > part_version && mutation_status->entry->alter_version != -1)
-            return mutation_status->entry->commands;
+    Int64 part_metadata_version = part->getMetadataVersion();
+    std::map<int64_t, MutationCommands> result;
+    /// Here we return mutation commands for part which has bigger alter version than part metadata version.
+    /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
+    /// of part's metadata.
+    for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
+    {
+        int32_t alter_version = mutation_status->entry->alter_version;
+        if (alter_version != -1)
+        {
+            if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
+                continue;
 
-    return MutationCommands{};
+            /// we take commands with bigger metadata version
+            if (alter_version > part_metadata_version)
+            {
+                result[mutation_version] = mutation_status->entry->commands;
+            }
+            else
+            {
+                /// entries are ordered, we processing them in reverse order so we can break
+                break;
+            }
+        }
+    }
+
+    return result;
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
@@ -1808,7 +1827,10 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     MutationCommands commands;
     for (auto it = begin; it != end; ++it)
-        commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
+    {
+        const auto & commands_from_entry = it->second->entry->commands;
+        commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
+    }
 
     return commands;
 }
@@ -2274,10 +2296,10 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
         }
     }
 
-    Int64 left_mutation_ver = queue.getCurrentMutationVersionImpl(
+    Int64 left_mutation_ver = queue.getCurrentMutationVersion(
         left->info.partition_id, left->info.getDataVersion(), lock);
 
-    Int64 right_mutation_ver = queue.getCurrentMutationVersionImpl(
+    Int64 right_mutation_ver = queue.getCurrentMutationVersion(
         left->info.partition_id, right->info.getDataVersion(), lock);
 
     if (left_mutation_ver != right_mutation_ver)
@@ -2378,13 +2400,32 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     if (in_partition == queue.mutations_by_partition.end())
         return {};
 
-    Int64 current_version = queue.getCurrentMutationVersionImpl(part->info.partition_id, part->info.getDataVersion(), lock);
-    Int64 max_version = in_partition->second.rbegin()->first;
+    UInt64 mutations_limit = queue.storage.getSettings()->replicated_max_mutations_in_one_entry;
+    UInt64 mutations_count = 0;
+
+    Int64 current_version = queue.getCurrentMutationVersion(part->info.partition_id, part->info.getDataVersion(), lock);
+    Int64 max_version = in_partition->second.begin()->first;
 
     int alter_version = -1;
+    bool barrier_found = false;
     for (auto [mutation_version, mutation_status] : in_partition->second)
     {
+        /// Some commands cannot stick together with other commands
+        if (mutation_status->entry->commands.containBarrierCommand())
+        {
+            /// We already collected some mutation, we don't want to stick it with barrier
+            if (max_version != mutation_version && max_version > current_version)
+                break;
+
+            /// This mutations is fresh, but it's barrier, let's execute only it
+            if (mutation_version > current_version)
+                barrier_found = true;
+        }
+
         max_version = mutation_version;
+        if (current_version < max_version)
+            ++mutations_count;
+
         if (mutation_status->entry->isAlterMutation())
         {
             /// We want to assign mutations for part which version is bigger
@@ -2397,10 +2438,23 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
                 break;
             }
         }
+
+        if (mutations_limit && mutations_count == mutations_limit)
+        {
+            LOG_WARNING(queue.log, "Will apply only {} of {} mutations and mutate part {} to version {} (the last version is {})",
+                        mutations_count, in_partition->second.size(), part->name, max_version, in_partition->second.rbegin()->first);
+            break;
+        }
+
+        if (barrier_found == true)
+            break;
     }
 
     if (current_version >= max_version)
         return {};
+
+    LOG_TRACE(queue.log, "Will apply {} mutations and mutate part {} to version {} (the last version is {})",
+              mutations_count, part->name, max_version, in_partition->second.rbegin()->first);
 
     return std::make_pair(max_version, alter_version);
 }
@@ -2463,22 +2517,52 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 
 
 ReplicatedMergeTreeQueue::SubscriberHandler
-ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
+ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
+                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode)
 {
-    std::lock_guard lock(state_mutex);
-    std::unordered_set<String> result;
-    result.reserve(queue.size());
-    for (const auto & entry : queue)
-        result.insert(entry->znode_name);
-
+    std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
+
+    if (sync_mode != SyncReplicaMode::PULL)
+    {
+        /// We must get the list of entries to wait atomically with adding the callback
+        bool lightweight_entries_only = sync_mode == SyncReplicaMode::LIGHTWEIGHT;
+        static constexpr std::array lightweight_entries =
+        {
+            LogEntry::GET_PART,
+            LogEntry::ATTACH_PART,
+            LogEntry::DROP_RANGE,
+            LogEntry::REPLACE_RANGE,
+            LogEntry::DROP_PART
+        };
+        out_entry_names.reserve(queue.size());
+        for (const auto & entry : queue)
+        {
+            if (!lightweight_entries_only
+                || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
+                out_entry_names.insert(entry->znode_name);
+        }
+        LOG_TEST(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
+    }
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
-    /// Notify queue size & log entry ids to avoid waiting for removed entries
-    (*it)(result.size(), result, std::nullopt);
+    /// Atomically notify about current size
+    (*it)(queue.size(), nullptr);
 
     return SubscriberHandler(it, *this);
+}
+
+void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
+{
+    size_t queue_size;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        queue_size = queue.size();
+    }
+    std::lock_guard lock_subscribers(subscribers_mutex);
+    for (auto & subscriber_callback : subscribers)
+        subscriber_callback(queue_size, nullptr);
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
@@ -2487,16 +2571,11 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const String * removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size, {}, removed_log_entry_id);
-}
-
-ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
-{
-    notifySubscribers(0, std::nullopt);
+        subscriber_callback(new_queue_size, removed_log_entry_id);
 }
 
 String padIndex(Int64 index)

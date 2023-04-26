@@ -20,10 +20,7 @@
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    include <llvm/IR/IRBuilder.h>
-#    pragma GCC diagnostic pop
 #endif
 
 

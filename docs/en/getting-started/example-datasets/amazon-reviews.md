@@ -43,7 +43,7 @@ The rows look like:
 
 ```response
 ┌─marketplace─┬─customer_id─┬─review_id──────┬─product_id─┬─product_parent─┬─product_title──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─product_category─┬─star_rating─┬─helpful_votes─┬─total_votes─┬─vine──┬─verified_purchase─┬─review_headline───────────┬─review_body────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─review_date─┐
-│ US          │    16414143 │ R3W4P9UBGNGH1U │ B00YL0EKWE │      852431543 │ LG G4 Case Hard Transparent Slim Clear Cover for LG G4                                                                                                                                                                                                     │ Wireless         │           2 │             1 │           3 │ false │ true              │ Looks good, functions meh │ 2 issues  -  Once I turned on the circle apps and installed this case,  my battery drained twice as fast as usual.  I ended up turning off the circle apps, which kind of makes the case just a case...  with a hole in it.  Second,  the wireless charging doesn't work.  I have a Motorola 360 watch and a Qi charging pad. The watch charges fine but this case doesn't. But hey, it looks nice. │  2015-08-31 │
+│ US          │    16414143 │ R3W4P9UBGNGH1U │ B00YL0EKWE │      852431543 │ LG G4 Case Hard Transparent Slim Clear Cover for LG G4                                                                                                                                                                                                     │ Wireless         │           2 │             1 │           3 │ false │ true              │ Looks good, functions meh │ 2 issues  - Once I turned on the circle apps and installed this case,  my battery drained twice as fast as usual.  I ended up turning off the circle apps, which kind of makes the case just a case...  with a hole in it.  Second,  the wireless charging doesn't work.  I have a Motorola 360 watch and a Qi charging pad. The watch charges fine but this case doesn't. But hey, it looks nice. │  2015-08-31 │
 │ US          │    50800750 │ R15V54KBMTQWAY │ B00XK95RPQ │      516894650 │ Selfie Stick Fiblastiq&trade; Extendable Wireless Bluetooth Selfie Stick with built-in Bluetooth Adjustable Phone Holder                                                                                                                                   │ Wireless         │           4 │             0 │           0 │ false │ false             │ A fun little gadget       │ I’m embarrassed to admit that until recently, I have had a very negative opinion about “selfie sticks” aka “monopods” aka “narcissticks.” But having reviewed a number of them recently, they’re growing on me. This one is pretty nice and simple to set up and with easy instructions illustrated on the back of the box (not sure why some reviewers have stated that there are no instructions when they are clearly printed on the box unless they received different packaging than I did). Once assembled, the pairing via bluetooth and use of the stick are easy and intuitive. Nothing to it.<br /><br />The stick comes with a USB charging cable but arrived with a charge so you can use it immediately, though it’s probably a good idea to charge it right away so that you have no interruption of use out of the box. Make sure the stick is switched to on (it will light up) and extend your stick to the length you desire up to about a yard’s length and snap away.<br /><br />The phone clamp held the phone sturdily so I wasn’t worried about it slipping out. But the longer you extend the stick, the harder it is to maneuver.  But that will happen with any stick and is not specific to this one in particular.<br /><br />Two things that could improve this: 1) add the option to clamp this in portrait orientation instead of having to try and hold the stick at the portrait angle, which makes it feel unstable; 2) add the opening for a tripod so that this can be used to sit upright on a table for skyping and facetime eliminating the need to hold the phone up with your hand, causing fatigue.<br /><br />But other than that, this is a nice quality monopod for a variety of picture taking opportunities.<br /><br />I received a sample in exchange for my honest opinion. │  2015-08-31 │
 │ US          │    15184378 │ RY8I449HNXSVF  │ B00SXRXUKO │      984297154 │ Tribe AB40 Water Resistant Sports Armband with Key Holder for 4.7-Inch iPhone 6S/6/5/5S/5C, Galaxy S4 + Screen Protector - Dark Pink                                                                                                                       │ Wireless         │           5 │             0 │           0 │ false │ true              │ Five Stars                │ Fits iPhone 6 well                                                                                                                                                                                                                                         │  2015-08-31 │
 │ US          │    10203548 │ R18TLJYCKJFLSR │ B009V5X1CE │      279912704 │ RAVPower® Element 10400mAh External Battery USB Portable Charger (Dual USB Outputs, Ultra Compact Design), Travel Charger for iPhone 6,iPhone 6 plus,iPhone 5, 5S, 5C, 4S, 4, iPad Air, 4, 3, 2, Mini 2 (Apple adapters not included); Samsung Galaxy S5, S4, S3, S2, Note 3, Note 2; HTC One, EVO, Thunderbolt, Incredible, Droid DNA, Motorola ATRIX, Droid, Moto X, Google Glass, Nexus 4, Nexus 5, Nexus 7, │ Wireless         │           5 │             0 │           0 │ false │ true              │ Great charger             │ Great charger.  I easily get 3+ charges on a Samsung Galaxy 3.  Works perfectly for camping trips or long days on the boat.                                                                                                                                │  2015-08-31 │
@@ -76,8 +76,8 @@ CREATE TABLE amazon_reviews
     star_rating UInt8,
     helpful_votes UInt32,
     total_votes UInt32,
-    vine FixedString(1),
-    verified_purchase FixedString(1),
+    vine Bool,
+    verified_purchase Bool,
     review_headline String,
     review_body String
 )
@@ -91,8 +91,11 @@ ORDER BY (marketplace, review_date, product_category);
 
 ```sql
 INSERT INTO amazon_reviews
+WITH
+   transform(vine, ['Y','N'],[true, false]) AS vine,
+   transform(verified_purchase, ['Y','N'],[true, false]) AS verified_purchase
 SELECT
-   * REPLACE(vine = 'Y' AS vine, verified_purchase = 'Y' AS verified_purchase)
+   *
 FROM s3Cluster(
     'default',
     'https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_*.tsv.gz',
@@ -112,7 +115,8 @@ FROM s3Cluster(
     verified_purchase FixedString(1),
     review_headline String,
     review_body String'
-    );
+    )
+SETTINGS input_format_allow_errors_num = 1000000;
 ```
 
 :::tip
@@ -218,7 +222,7 @@ LIMIT 10;
 
 ```sql
 SELECT
-    toYYYYMM(review_date) AS month,
+    toStartOfMonth(review_date) AS month,
     any(product_title),
     avg(star_rating) AS avg_stars
 FROM amazon_reviews
@@ -234,30 +238,30 @@ LIMIT 20;
 It calculates all the monthly averages for each product, but we only returned 20 rows:
 
 ```response
-┌──month─┬─any(product_title)──────────────────────────────────────────────────────────────────────┬─avg_stars─┐
-│ 201508 │ Mystiqueshapes Girls Ballet Tutu Neon Lime Green                                        │         4 │
-│ 201508 │ Adult Ballet Tutu Yellow                                                                │         5 │
-│ 201508 │ The Way Things Work: An Illustrated Encyclopedia of Technology                          │         5 │
-│ 201508 │ Hilda Boswell's Treasury of Poetry                                                      │         5 │
-│ 201508 │ Treasury of Poetry                                                                      │         5 │
-│ 201508 │ Uncle Remus Stories                                                                     │         5 │
-│ 201508 │ The Book of Daniel                                                                      │         5 │
-│ 201508 │ Berenstains' B Book                                                                     │         5 │
-│ 201508 │ The High Hills (Brambly Hedge)                                                          │       4.5 │
-│ 201508 │ Fuzzypeg Goes to School (The Little Grey Rabbit library)                                │         5 │
-│ 201508 │ Dictionary in French: The Cat in the Hat (Beginner Series)                              │         5 │
-│ 201508 │ Windfallen                                                                              │         5 │
-│ 201508 │ The Monk Who Sold His Ferrari: A Remarkable Story About Living Your Dreams              │         5 │
-│ 201508 │ Illustrissimi: The Letters of Pope John Paul I                                          │         5 │
-│ 201508 │ Social Contract: A Personal Inquiry into the Evolutionary Sources of Order and Disorder │         5 │
-│ 201508 │ Mexico The Beautiful Cookbook: Authentic Recipes from the Regions of Mexico             │       4.5 │
-│ 201508 │ Alanbrooke                                                                              │         5 │
-│ 201508 │ Back to Cape Horn                                                                       │         4 │
-│ 201508 │ Ovett: An Autobiography (Willow books)                                                  │         5 │
-│ 201508 │ The Birds of West Africa (Collins Field Guides)                                         │         4 │
-└────────┴─────────────────────────────────────────────────────────────────────────────────────────┴───────────┘
+┌──────month─┬─any(product_title)──────────────────────────────────────────────────────────────────────┬─avg_stars─┐
+│ 2015-08-01 │ Mystiqueshapes Girls Ballet Tutu Neon Lime Green                                        │         4 │
+│ 2015-08-01 │ Adult Ballet Tutu Yellow                                                                │         5 │
+│ 2015-08-01 │ The Way Things Work: An Illustrated Encyclopedia of Technology                          │         5 │
+│ 2015-08-01 │ Hilda Boswell's Treasury of Poetry                                                      │         5 │
+│ 2015-08-01 │ Treasury of Poetry                                                                      │         5 │
+│ 2015-08-01 │ Uncle Remus Stories                                                                     │         5 │
+│ 2015-08-01 │ The Book of Daniel                                                                      │         5 │
+│ 2015-08-01 │ Berenstains' B Book                                                                     │         5 │
+│ 2015-08-01 │ The High Hills (Brambly Hedge)                                                          │       4.5 │
+│ 2015-08-01 │ Fuzzypeg Goes to School (The Little Grey Rabbit library)                                │         5 │
+│ 2015-08-01 │ Dictionary in French: The Cat in the Hat (Beginner Series)                              │         5 │
+│ 2015-08-01 │ Windfallen                                                                              │         5 │
+│ 2015-08-01 │ The Monk Who Sold His Ferrari: A Remarkable Story About Living Your Dreams              │         5 │
+│ 2015-08-01 │ Illustrissimi: The Letters of Pope John Paul I                                          │         5 │
+│ 2015-08-01 │ Social Contract: A Personal Inquiry into the Evolutionary Sources of Order and Disorder │         5 │
+│ 2015-08-01 │ Mexico The Beautiful Cookbook: Authentic Recipes from the Regions of Mexico             │       4.5 │
+│ 2015-08-01 │ Alanbrooke                                                                              │         5 │
+│ 2015-08-01 │ Back to Cape Horn                                                                       │         4 │
+│ 2015-08-01 │ Ovett: An Autobiography (Willow books)                                                  │         5 │
+│ 2015-08-01 │ The Birds of West Africa (Collins Field Guides)                                         │         4 │
+└────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴───────────┘
 
-20 rows in set. Elapsed: 55.529 sec. Processed 252.02 million rows, 35.58 GB (4.54 million rows/s., 640.79 MB/s.)
+20 rows in set. Elapsed: 52.827 sec. Processed 251.46 million rows, 35.26 GB (4.76 million rows/s., 667.55 MB/s.)
 ```
 
 10. Here are the total number of votes per product category. This query is fast because `product_category` is in the primary key:

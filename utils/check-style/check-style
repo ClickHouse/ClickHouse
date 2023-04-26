@@ -67,6 +67,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
+    ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
     ProfileEvents::Type
     ProfileEvents::TypeEnum
@@ -78,6 +79,7 @@ EXTERN_TYPES_EXCLUDES=(
 
     CurrentMetrics::add
     CurrentMetrics::sub
+    CurrentMetrics::get
     CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment

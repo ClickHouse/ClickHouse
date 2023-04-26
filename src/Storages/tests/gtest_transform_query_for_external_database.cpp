@@ -106,21 +106,8 @@ private:
                     StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
-        // DatabaseCatalog::instance().attachDatabase("system", mockSystemDatabase());
 
         context->setCurrentDatabase("test");
-    }
-
-    DatabasePtr mockSystemDatabase()
-    {
-        DatabasePtr database = std::make_shared<DatabaseMemory>("system", context);
-        auto tab = TableWithColumnNamesAndTypes(createDBAndTable("one", "system"), { {"dummy", std::make_shared<DataTypeUInt8>()} });
-        database->attachTable(context, tab.table.table,
-            std::make_shared<StorageMemory>(
-                StorageID(tab.table.database, tab.table.table),
-                ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}));
-
-        return database;
     }
 };
 

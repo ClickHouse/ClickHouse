@@ -8,16 +8,17 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
-#include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
@@ -38,6 +39,8 @@
 namespace CurrentMetrics
 {
     extern const Metric TablesToDropQueueSize;
+    extern const Metric DatabaseCatalogThreads;
+    extern const Metric DatabaseCatalogThreadsActive;
 }
 
 namespace DB
@@ -852,7 +855,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPool pool;
+    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive);
     for (const auto & elem : dropped_metadata)
     {
         pool.scheduleOrThrowOnError([&]()

@@ -27,7 +27,7 @@ bool ParserKQLSort :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     while (!new_pos->isEnd() && new_pos->type != TokenType::PipeMark && new_pos->type != TokenType::Semicolon)
     {
         String tmp(new_pos->begin, new_pos->end);
-        if (tmp == "desc" or tmp == "asc")
+        if (tmp == "desc" || tmp == "asc")
             has_dir = true;
 
         if (new_pos->type == TokenType::Comma)

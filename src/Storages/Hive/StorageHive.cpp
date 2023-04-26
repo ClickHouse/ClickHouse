@@ -7,6 +7,7 @@
 #include <fmt/core.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -40,6 +41,11 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric StorageHiveThreads;
+    extern const Metric StorageHiveThreadsActive;
+}
 
 namespace DB
 {
@@ -269,8 +275,8 @@ public:
                 else
                     read_buf = std::move(remote_read_buf);
 
-                auto input_format = FormatFactory::instance().getInputFormat(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
+                auto input_format = FormatFactory::instance().getInput(
+                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file), /* max_parsing_threads */ 1);
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -601,8 +607,14 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     writeString("\n", wb);
 
     ReadBufferFromString buffer(wb.str());
-    auto format = FormatFactory::instance().getInputFormat(
-        "CSV", buffer, partition_key_expr->getSampleBlock(), getContext(), getContext()->getSettingsRef().max_block_size);
+    auto format = FormatFactory::instance().getInput(
+        "CSV",
+        buffer,
+        partition_key_expr->getSampleBlock(),
+        getContext(),
+        getContext()->getSettingsRef().max_block_size,
+        std::nullopt,
+        /* max_parsing_threads */ 1);
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
@@ -844,7 +856,7 @@ HiveFiles StorageHive::collectHiveFiles(
     Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
-    ThreadPool pool{max_threads};
+    ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, max_threads};
     if (!partitions.empty())
     {
         for (const auto & partition : partitions)

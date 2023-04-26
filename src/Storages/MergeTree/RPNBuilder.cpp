@@ -288,7 +288,7 @@ ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
     {
         auto set = column_set->getData();
 
-        if (set->isCreated())
+        if (set && set->isCreated())
             return set;
     }
 
@@ -305,8 +305,8 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
     {
         auto prepared_sets_with_same_hash = prepared_sets->getByTreeHash(ast_node->getTreeHash());
         for (auto & set : prepared_sets_with_same_hash)
-            if (set->isCreated())
-                return set;
+            if (set.isCreated())
+                return set.get();
     }
     else if (dag_node)
     {
@@ -368,8 +368,8 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
         auto tree_hash = ast_node->getTreeHash();
         for (const auto & set : prepared_sets->getByTreeHash(tree_hash))
         {
-            if (types_match(set))
-                return set;
+            if (set.isCreated() && types_match(set.get()))
+                return set.get();
         }
     }
     else
