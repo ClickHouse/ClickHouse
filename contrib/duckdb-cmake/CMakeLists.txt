@@ -1,11 +1,5 @@
 option(ENABLE_DUCKDB "Enable duckdb" ${ENABLE_LIBRARIES})
 
-# Link stage fails with DuckDB under memory sanitizer due too large binary size 
-if (NOT ENABLE_DUCKDB OR SANITIZE STREQUAL "memory")
-    message(STATUS "Not using duckdb")
-    return()
-endif()
-
 set (DUCKDB_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/duckdb-amalgamation")
 
 set (SRCS

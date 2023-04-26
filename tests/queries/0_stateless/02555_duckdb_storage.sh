@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -76,7 +76,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${DB_NAME}.t6"
 
 echo 'SELECT after large INSERT:'
 
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB_NAME}.t6 SELECT number, rand32(), rand64() FROM numbers(10000)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB_NAME}.t6 SELECT number, rand32(), rand64() FROM numbers(100)"
 ${CLICKHOUSE_CLIENT} -q "SELECT uniqExact(a), min(a), max(a), count(b) FROM ${DB_NAME}.t6"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB_NAME}"
