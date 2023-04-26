@@ -160,7 +160,7 @@ def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
 
 
 def main(access_token: str, event: dict) -> Dict[str, List[str]]:
-    print("Got event", json.dumps(event, sort_keys=True, indent=4))
+    print("Got event", json.dumps(event, sort_keys=True).replace("\n", ""))
     to_kill_by_zone = how_many_instances_to_kill(event)
     instances_by_zone = get_candidates_to_be_killed(event)
 
@@ -177,7 +177,8 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
         total_to_kill += num_to_kill
         if num_to_kill > len(candidates):
             raise Exception(
-                f"Required to kill {num_to_kill}, but have only {len(candidates)} candidates in AV {zone}"
+                f"Required to kill {num_to_kill}, but have only {len(candidates)}"
+                f" candidates in AV {zone}"
             )
 
         delete_for_av = []  # type: RunnerDescriptions
@@ -207,7 +208,8 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
 
         if len(delete_for_av) < num_to_kill:
             print(
-                f"Checked all candidates for av {zone}, get to delete {len(delete_for_av)}, but still cannot get required {num_to_kill}"
+                f"Checked all candidates for av {zone}, get to delete "
+                f"{len(delete_for_av)}, but still cannot get required {num_to_kill}"
             )
 
         instances_to_kill += [runner.name for runner in delete_for_av]
