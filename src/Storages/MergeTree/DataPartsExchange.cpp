@@ -291,11 +291,18 @@ void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack 
         {
             writeStringBinary(part->getType().toString(), out);
             // WIDE
+            LOG_INFO(log, "ENET {}", std::string(out.buffer()));
         }
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+        {
             writeUUIDText(part->uuid, out);
+            LOG_INFO(log, "ENETO {}", std::string(out.buffer()));
             // UUID
+        }
+
+        out.next();
+        LOG_INFO(log, "ENETT {}", std::string(out.buffer()));
 
         // Both not in the buffer when query is finished.
 
@@ -313,6 +320,7 @@ void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack 
             const auto & projections = part->getProjectionParts();
             writeBinary(projections.size(), out);
         }
+        LOG_INFO(log, "ENET {}", std::string(out.buffer()));
 
         if (data_settings->allow_remote_fs_zero_copy_replication &&
             /// In memory data part does not have metadata yet.

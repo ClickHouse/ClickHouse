@@ -95,7 +95,11 @@ void ENetServer::run()
 
                         auto endpoint = ch_server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
 
-                        BufferWithOwnMemory<WriteBufferENet> out(DBMS_DEFAULT_BUFFER_SIZE);
+                        std::string data;
+                        std::stringbuf buf(data);
+                        std::ostream data_stream(&buf);
+
+                        WriteBufferENet out(data_stream);
 
                         std::shared_lock lock(endpoint->rwlock);
                         if (endpoint->blocker.isCancelled())
@@ -115,17 +119,16 @@ void ENetServer::run()
 
                         out.finalize();
 
-                        LOG_TRACE(logger, "\n{}", out.res());
-
                         //resp_pck.set("body", std::string(data));
 
                         //auto resp_str = resp_pck.serialize();
                         //auto resp_cstr = resp_str.c_str();
 
-                        auto str = std::string(out.res());
 
                         auto response_str = resp_pck.serialize();
-                        response_str += "\r" + str;
+                        response_str += "\r" + data;
+
+                        LOG_INFO(logger, "ENET RESULT {}", response_str);
 
                         auto response_cstr = response_str.c_str();
 

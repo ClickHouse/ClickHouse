@@ -1,15 +1,14 @@
 #pragma once
 
-#include <algorithm>
 #include <memory>
 #include <iostream>
-#include <cassert>
 #include <cstring>
 #include <mutex>
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromOStream.h>
 
 
 namespace DB
@@ -21,28 +20,31 @@ namespace DB
   *
   * Derived classes must implement the nextImpl() method.
   */
-class WriteBufferENet : public WriteBuffer
+class WriteBufferENet : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    WriteBufferENet(Position ptr, size_t size) : WriteBuffer(ptr, size) {}
-
-    char* res()
+    WriteBufferENet(std::ostream & _out) : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE), out_str(&_out)
     {
-      return st;
     }
 
 private:
+    std::ostream* out_str;
     std::mutex mutex;
-    char st[DBMS_DEFAULT_BUFFER_SIZE];
+    std::unique_ptr<WriteBufferFromOStream> out;
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
     void nextImpl() override
     {
         std::lock_guard lock(mutex);
-        std::strcat(st, working_buffer.begin());
-        std::memset(working_buffer.begin(), '\0', working_buffer.size());
-        return;
+
+        if (!out) {
+          out = std::make_unique<WriteBufferFromOStream>(*out_str, working_buffer.size(), working_buffer.begin());
+        }
+
+        out->buffer() = buffer();
+        out->position() = position();
+        out->next();
     }
 
 using WriteBufferENetPtr = std::shared_ptr<WriteBufferENet>;
