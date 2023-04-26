@@ -428,8 +428,8 @@ CHECK_DESCRIPTIONS = [
     ),
     CheckDescription(
         "CI running",
-        "A meta-check that indicates the running CI. Normally, it's in `success` or "
-        "`pending` state. The failed status indicates some problems with the PR",
+        "A meta-check that indicates the running CI. Normally, it's in <b>success</b> or "
+        "<b>pending</b> state. The failed status indicates some problems with the PR",
         lambda x: x == "CI running",
     ),
     CheckDescription(
@@ -437,14 +437,14 @@ CHECK_DESCRIPTIONS = [
         "Builds ClickHouse in various configurations for use in further steps. "
         "You have to fix the builds that fail. Build logs often has enough "
         "information to fix the error, but you might have to reproduce the failure "
-        "locally. The `cmake` options can be found in the build log, grepping for "
-        "`cmake`. Use these options and follow the [general build process]"
-        "(https://clickhouse.com/docs/en/development/build).",
+        "locally. The <b>cmake</b> options can be found in the build log, grepping for "
+        '<b>cmake</b>. Use these options and follow the <a href="'
+        'https://clickhouse.com/docs/en/development/build">general build process</a>.',
         lambda x: x.startswith("ClickHouse") and x.endswith("build check"),
     ),
     CheckDescription(
         "Compatibility check",
-        "Checks that `clickhouse` binary runs on distributions with old libc "
+        "Checks that <b>clickhouse</b> binary runs on distributions with old libc "
         "versions. If it fails, ask a maintainer for help.",
         lambda x: x.startswith("Compatibility check"),
     ),
@@ -460,12 +460,12 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         "Fast test",
         "Normally this is the first check that is ran for a PR. It builds ClickHouse "
-        "and runs most of [stateless functional tests]"
-        "(https://clickhouse.com/docs/en/development/tests#functional-tests), "
+        'and runs most of <a href="https://clickhouse.com/docs/en/development/tests'
+        '#functional-tests">stateless functional tests</a>, '
         "omitting some. If it fails, further checks are not started until it is fixed. "
         "Look at the report to see which tests fail, then reproduce the failure "
-        "locally as described [here]"
-        "(https://clickhouse.com/docs/en/development/tests#functional-test-locally).",
+        'locally as described <a href="https://clickhouse.com/docs/en/development/'
+        'tests#functional-test-locally">here</a>.',
         lambda x: x == "Fast test",
     ),
     CheckDescription(
@@ -492,8 +492,8 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         "Performance Comparison",
         "Measure changes in query performance. The performance test report is "
-        "described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/"
-        "master/docker/test/performance-comparison#how-to-read-the-report). "
+        'described in detail <a href="https://github.com/ClickHouse/ClickHouse/tree'
+        '/master/docker/test/performance-comparison#how-to-read-the-report">here</a>. '
         "In square brackets are the optional part/total tests",
         lambda x: x.startswith("Performance Comparison"),
     ),
@@ -504,14 +504,15 @@ CHECK_DESCRIPTIONS = [
     ),
     CheckDescription(
         "Sqllogic",
-        "Run clickhouse on the [sqllogic](https://www.sqlite.org/sqllogictest) "
+        "Run clickhouse on the "
+        '<a href="https://www.sqlite.org/sqllogictest">sqllogic</a> '
         "test set against sqlite and checks that all statements are passed.",
         lambda x: x.startswith("Sqllogic test"),
     ),
     CheckDescription(
         "SQLancer",
         "Fuzzing tests that detect logical bugs with "
-        "[SQLancer](https://github.com/sqlancer/sqlancer) tool.",
+        '<a href="https://github.com/sqlancer/sqlancer">SQLancer</a> tool.',
         lambda x: x.startswith("SQLancer"),
     ),
     CheckDescription(
