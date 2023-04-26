@@ -142,6 +142,7 @@ if __name__ == "__main__":
         .replace("(", "_")
         .replace(")", "_")
         .replace(",", "_")
+        .replace("/", "_")
     )
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
