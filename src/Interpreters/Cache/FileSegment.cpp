@@ -11,6 +11,8 @@
 
 #include <magic_enum.hpp>
 
+namespace fs = std::filesystem;
+
 namespace CurrentMetrics
 {
 extern const Metric CacheDetachedFileSegments;
@@ -63,7 +65,7 @@ FileSegment::FileSegment(
         {
             reserved_size = downloaded_size = size_;
             is_downloaded = true;
-            chassert(std::filesystem::file_size(getPathInLocalCache()) == size_);
+            chassert(fs::file_size(getPathInLocalCache()) == size_);
             break;
         }
         case (State::SKIP_CACHE):
@@ -228,7 +230,7 @@ void FileSegment::assertIsDownloaderUnlocked(const std::string & operation, std:
 {
     auto caller = getCallerId();
     auto current_downloader = getDownloaderUnlocked(segment_lock);
-    LOG_TEST(log, "Downloader id: {}, caller id: {}", current_downloader, caller);
+    LOG_TEST(log, "Downloader id: {}, caller id: {}, operation: {}", current_downloader, caller, operation);
 
     if (caller != current_downloader)
     {
@@ -288,9 +290,6 @@ void FileSegment::resetRemoteFileReader()
 {
     std::unique_lock segment_lock(mutex);
     assertIsDownloaderUnlocked("resetRemoteFileReader", segment_lock);
-
-    if (!remote_file_reader)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote file reader does not exist");
 
     remote_file_reader.reset();
 }
@@ -358,7 +357,21 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer was detached");
 
             auto download_path = getPathInLocalCache();
-            cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
+
+            try
+            {
+                cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
+            }
+            catch (Exception & e)
+            {
+                wrapWithCacheInfo(e, "while opening file in local cache", segment_lock);
+
+                setDownloadFailedUnlocked(segment_lock);
+
+                cv.notify_all();
+
+                throw;
+            }
         }
     }
 
@@ -374,6 +387,28 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
         chassert(std::filesystem::file_size(getPathInLocalCache()) == downloaded_size);
     }
+    catch (ErrnoException & e)
+    {
+        std::unique_lock segment_lock(mutex);
+
+        wrapWithCacheInfo(e, "while writing into cache", segment_lock);
+
+        int code = e.getErrno();
+        if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+        {
+            const auto file_size = fs::file_size(getPathInLocalCache());
+            chassert(downloaded_size <= file_size);
+            chassert(reserved_size >= file_size);
+            if (downloaded_size != file_size)
+                downloaded_size = file_size;
+        }
+
+        setDownloadFailedUnlocked(segment_lock);
+
+        cv.notify_all();
+        throw;
+
+    }
     catch (Exception & e)
     {
         std::unique_lock segment_lock(mutex);
@@ -383,7 +418,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         setDownloadFailedUnlocked(segment_lock);
 
         cv.notify_all();
-
         throw;
     }
 
@@ -493,12 +527,12 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] std::unique_lock<std::m
     is_downloaded = true;
 
     assert(getDownloadedSizeUnlocked(segment_lock) > 0);
-    assert(std::filesystem::file_size(getPathInLocalCache()) > 0);
+    assert(fs::file_size(getPathInLocalCache()) > 0);
 }
 
 void FileSegment::setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock)
 {
-    LOG_INFO(log, "Settings download as failed: {}", getInfoForLogUnlocked(segment_lock));
+    LOG_INFO(log, "Setting download as failed: {}", getInfoForLogUnlocked(segment_lock));
 
     setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
     resetDownloaderUnlocked(segment_lock);
@@ -507,8 +541,9 @@ void FileSegment::setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segme
     {
         cache_writer->finalize();
         cache_writer.reset();
-        remote_file_reader.reset();
     }
+
+    remote_file_reader.reset();
 }
 
 void FileSegment::completePartAndResetDownloader()
@@ -591,10 +626,13 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         resetDownloaderUnlocked(segment_lock);
     }
 
-    if (cache_writer && (is_downloader || is_last_holder))
+    if (is_downloader || is_last_holder)
     {
-        cache_writer->finalize();
-        cache_writer.reset();
+        if (cache_writer)
+        {
+            cache_writer->finalize();
+            cache_writer.reset();
+        }
         remote_file_reader.reset();
     }
 
@@ -618,7 +656,7 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         case State::DOWNLOADED:
         {
             chassert(getDownloadedSizeUnlocked(segment_lock) == range().size());
-            chassert(getDownloadedSizeUnlocked(segment_lock) == std::filesystem::file_size(getPathInLocalCache()));
+            chassert(getDownloadedSizeUnlocked(segment_lock) == fs::file_size(getPathInLocalCache()));
             chassert(is_downloaded);
             chassert(!cache_writer);
             break;
@@ -731,7 +769,7 @@ void FileSegment::assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segme
     auto current_downloader = getDownloaderUnlocked(segment_lock);
     chassert(current_downloader.empty() == (download_state != FileSegment::State::DOWNLOADING));
     chassert(!current_downloader.empty() == (download_state == FileSegment::State::DOWNLOADING));
-    chassert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(getPathInLocalCache()) > 0);
+    chassert(download_state != FileSegment::State::DOWNLOADED || fs::file_size(getPathInLocalCache()) > 0);
 }
 
 void FileSegment::throwIfDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const
