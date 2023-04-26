@@ -1,9 +1,11 @@
 #include "KeeperClient.h"
+#include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/EventNotifier.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Parsers/parseQuery.h>
 #include <boost/program_options.hpp>
 
 
@@ -12,13 +14,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-static const NameSet four_letter_word_commands
-{
-    "ruok", "mntr", "srvr", "stat", "srst", "conf",
-    "cons", "crst", "envi", "dirs", "isro", "wchs",
-    "wchc", "wchp", "dump", "csnp", "lgif", "rqld",
-};
 
 namespace ErrorCodes
 {
@@ -54,7 +49,7 @@ void KeeperClient::askConfirmation(const String & prompt, std::function<void()> 
     confirmation_callback = callback;
 }
 
-String KeeperClient::getAbsolutePath(const String & relative)
+String KeeperClient::getAbsolutePath(const String & relative) const
 {
     String result;
     if (relative.starts_with('/'))
@@ -68,16 +63,20 @@ String KeeperClient::getAbsolutePath(const String & relative)
     return result;
 }
 
-void KeeperClient::loadCommands(std::vector<std::tuple<String, size_t, Callback>> && new_commands)
+void KeeperClient::loadCommands(std::vector<Command> && new_commands)
 {
-    for (const auto & [name, args_count, callback] : new_commands)
+    std::vector<String> suggestions;
+    for (const auto & command : new_commands)
     {
-        commands.insert({{name, args_count}, callback});
-        suggest.addWords({name});
+        String name = command->getName();
+        commands.insert({name, command});
+        suggestions.push_back(std::move(name));
     }
 
     for (const auto & command : four_letter_word_commands)
-        suggest.addWords({command});
+        suggestions.push_back(command);
+
+    suggest.addWords(std::move(suggestions));
 }
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
@@ -132,61 +131,15 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
 {
     loadCommands({
-        {"set", 2, [](KeeperClient * client, const std::vector<String> & args)
-         {
-             client->zookeeper->set(client->getAbsolutePath(args[1]), args[2]);
-         }},
-
-        {"create", 2, [](KeeperClient * client, const std::vector<String> & args)
-         {
-             client->zookeeper->create(client->getAbsolutePath(args[1]), args[2], zkutil::CreateMode::Persistent);
-         }},
-
-        {"get", 1, [](KeeperClient * client, const std::vector<String> & args)
-         {
-             std::cout << client->zookeeper->get(client->getAbsolutePath(args[1])) << "\n";
-         }},
-
-        {"ls", 0, [](KeeperClient * client, const std::vector<String> & /* args */)
-         {
-             auto children = client->zookeeper->getChildren(client->cwd);
-             for (auto & child : children)
-                 std::cout << child << " ";
-             std::cout << "\n";
-         }},
-
-        {"ls", 1, [](KeeperClient * client, const std::vector<String> & args)
-         {
-             auto children = client->zookeeper->getChildren(client->getAbsolutePath(args[1]));
-             for (auto & child : children)
-                 std::cout << child << " ";
-             std::cout << "\n";
-         }},
-
-        {"cd", 0, [](KeeperClient * /* client */, const std::vector<String> & /* args */)
-         {
-         }},
-
-        {"cd", 1, [](KeeperClient * client, const std::vector<String> & args)
-         {
-             auto new_path = client->getAbsolutePath(args[1]);
-             if (!client->zookeeper->exists(new_path))
-                 std::cerr << "Path " << new_path << " does not exists\n";
-             else
-                client->cwd = new_path;
-         }},
-
-        {"rm", 1, [](KeeperClient * client, const std::vector<String> & args)
-         {
-             client->zookeeper->remove(client->getAbsolutePath(args[1]));
-         }},
-
-        {"rmr", 1, [](KeeperClient * client, const std::vector<String> & args)
-         {
-             String path = client->getAbsolutePath(args[1]);
-             client->askConfirmation("You are going to recursively delete path " + path,
-                                     [client, path]{ client->zookeeper->removeRecursive(path); });
-         }},
+        std::make_shared<LSCommand>(),
+        std::make_shared<CDCommand>(),
+        std::make_shared<SetCommand>(),
+        std::make_shared<CreateCommand>(),
+        std::make_shared<GetCommand>(),
+        std::make_shared<RMCommand>(),
+        std::make_shared<RMRCommand>(),
+        std::make_shared<HelpCommand>(),
+        std::make_shared<FourLetterWordCommand>(),
     });
 
     String home_path;
@@ -234,32 +187,31 @@ bool KeeperClient::processQueryText(const String & text)
     if (exit_strings.find(text) != exit_strings.end())
         return false;
 
-    std::vector<String> tokens;
-    boost::algorithm::split(tokens, text, boost::is_any_of(" "));
-
     try
     {
         if (need_confirmation)
         {
             need_confirmation = false;
-            if (tokens.size() == 1 && (tokens[0] == "y" || tokens[0] == "Y"))
+            if (text.size() == 1 && (text == "y" || text == "Y"))
                 confirmation_callback();
+            return true;
         }
-        else if (tokens.size() == 1 && tokens[0].size() == 4 && four_letter_word_commands.find(tokens[0]) != four_letter_word_commands.end())
-            std::cout << executeFourLetterCommand(tokens[0]) << "\n";
-        else
+
+        KeeperParser parser;
+        String message;
+        const char * begin = text.data();
+        ASTPtr res = tryParseQuery(parser, begin, begin + text.size(), message, true, "", false, 0, 0, false);
+
+        if (!res)
         {
-            auto callback = commands.find({tokens[0], tokens.size() - 1});
-            if (callback == commands.end())
-            {
-                if (tokens[0].size() == 4 && tokens.size() == 1)  /// Treat it like unrecognized four-letter command
-                    std::cout << executeFourLetterCommand(tokens[0]) << "\n";
-                else
-                    std::cerr << "No command found with name " << tokens[0] << " and args count " << tokens.size() - 1 << "\n";
-            }
-            else
-                callback->second(this, tokens);
+            std::cerr << message << "\n";
+            return true;
         }
+
+        auto * query = res->as<ASTKeeperQuery>();
+
+        auto command = KeeperClient::commands.find(query->command);
+        command->second->execute(query, this);
     }
     catch (Coordination::Exception & err)
     {
