@@ -97,8 +97,8 @@ struct Documentation
             return "";
 
         std::string res = categories[0];
-        for (const auto & category : categories)
-            res += ", " + category;
+        for (size_t i = 1; i < categories.size(); ++i)
+            res += ", " + categories[i];
         return res;
     }
 };
