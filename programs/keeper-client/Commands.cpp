@@ -42,7 +42,7 @@ bool CDCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node
 
 void CDCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
-    if (!query->args.empty())
+    if (query->args.empty())
         return;
 
     auto new_path = client->getAbsolutePath(query->args[0].safeGet<String>());
@@ -158,7 +158,7 @@ bool HelpCommand::parse(IParser::Pos & /* pos */, std::shared_ptr<ASTKeeperQuery
 void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClient * /* client */) const
 {
     for (const auto & pair : KeeperClient::commands)
-        std::cout << pair.second->getHelpMessage() << '\n';
+        std::cout << pair.second->getHelpMessage() << "\n";
 }
 
 bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
