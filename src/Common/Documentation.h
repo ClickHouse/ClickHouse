@@ -42,27 +42,65 @@ namespace DB
   *
   * Documentation does not support multiple languages.
   * The only available language is English.
+  *
+  * TODO: Allow to specify Syntax, Argument(s) and a Returned Value.
+  * TODO: Organize Examples as a struct of ExampleName, ExampleQuery and ExampleResult.
   */
 struct Documentation
 {
     using Description = std::string;
+
+    using Syntax = std::string;
+
+    using Argument = std::string;
+    using Arguments = std::vector<Argument>;
+
+    using ReturnedValue = std::string;
+
     using ExampleName = std::string;
     using ExampleQuery = std::string;
     using Examples = std::map<ExampleName, ExampleQuery>;
+
     using Category = std::string;
     using Categories = std::vector<Category>;
+
+    using Related = std::string;
 
     Description description;
     Examples examples;
     Categories categories;
 
-    Documentation(Description description_) : description(std::move(description_)) {}
+    Documentation(Description description_) : description(std::move(description_)) {} /// NOLINT
     Documentation(Description description_, Examples examples_) : description(std::move(description_)), examples(std::move(examples_)) {}
     Documentation(Description description_, Examples examples_, Categories categories_)
         : description(std::move(description_)), examples(std::move(examples_)), categories(std::move(categories_)) {}
 
     /// TODO: Please remove this constructor. Documentation should always be non-empty.
-    Documentation() {}
+    Documentation() = default;
+
+    std::string examplesAsString() const
+    {
+        std::string res;
+        for (const auto & [example_name, example_query] : examples)
+        {
+            res += example_name + ":\n\n";
+            res += "```sql\n";
+            res += example_query + "\n";
+            res += "```\n";
+        }
+        return res;
+    }
+
+    std::string categoriesAsString() const
+    {
+        if (categories.empty())
+            return "";
+
+        std::string res = categories[0];
+        for (const auto & category : categories)
+            res += ", " + category;
+        return res;
+    }
 };
 
 }

@@ -22,26 +22,6 @@ enum class FunctionOrigin : Int8
     EXECUTABLE_USER_DEFINED = 2
 };
 
-std::string exampleMapToString( const std::map<std::string, std::string> &example )
-  // in the source, examples for functions are stored in a map. To
-  // create the documentation, we need to convert the map to a string.
-{
-        std::string stringToReturn;
-
-        for (auto iter = example.begin(); iter != example.end(); ++iter){
-           stringToReturn.append("### ");
-           stringToReturn.append(iter->first);
-           stringToReturn.append("\n");
-           stringToReturn.append("```");
-           stringToReturn.append("\n");
-           stringToReturn.append(iter->second);
-           stringToReturn.append("\n");
-           stringToReturn.append("```");
-           stringToReturn.append("\n");
-        }
-        return stringToReturn;
-}
-
 namespace
 {
     template <typename Factory>
@@ -79,19 +59,32 @@ namespace
             if (factory.isAlias(name))
             {
                 res_columns[6]->insertDefault();
-                res_columns[7]->insert(false);
+                res_columns[7]->insertDefault();
+                res_columns[8]->insertDefault();
+                res_columns[9]->insertDefault();
+                res_columns[10]->insertDefault();
+                res_columns[11]->insertDefault();
             }
             else
             {
-                res_columns[6]->insert(factory.getDocumentation(name).description);
-                res_columns[7]->insert(exampleMapToString((factory.getDocumentation(name).examples)));
+                auto documentation = factory.getDocumentation(name);
+                res_columns[6]->insert(documentation.description);
+                res_columns[7]->insertDefault();
+                res_columns[8]->insertDefault();
+                res_columns[9]->insertDefault();
+                res_columns[10]->insert(documentation.examplesAsString());
+                res_columns[11]->insert(documentation.categoriesAsString());
             }
         }
         else
-          {
+        {
             res_columns[6]->insertDefault();
-            res_columns[7]->insert(false);
-          }
+            res_columns[7]->insertDefault();
+            res_columns[8]->insertDefault();
+            res_columns[9]->insertDefault();
+            res_columns[10]->insertDefault();
+            res_columns[11]->insertDefault();
+        }
     }
 }
 
@@ -115,7 +108,11 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
         {"create_query", std::make_shared<DataTypeString>()},
         {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
         {"description", std::make_shared<DataTypeString>()},
-        {"example", std::make_shared<DataTypeString>()},
+        {"syntax", std::make_shared<DataTypeString>()},
+        {"arguments", std::make_shared<DataTypeString>()},
+        {"returned_value", std::make_shared<DataTypeString>()},
+        {"examples", std::make_shared<DataTypeString>()},
+        {"categories", std::make_shared<DataTypeString>()}
     };
 }
 
