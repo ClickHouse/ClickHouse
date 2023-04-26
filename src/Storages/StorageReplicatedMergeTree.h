@@ -267,7 +267,7 @@ public:
     static std::pair<bool, NameSet> unlockSharedDataByID(
         String part_id,
         const String & table_uuid,
-        const String & part_name,
+        const MergeTreePartInfo & part_info,
         const String & replica_name_,
         const std::string & disk_type,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
