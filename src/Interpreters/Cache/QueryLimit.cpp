@@ -72,7 +72,7 @@ void FileCacheQueryLimit::QueryContext::add(
     const auto offset = file_segment.offset();
 
     auto it = getPriority().add(
-        key, offset, file_segment.range().size(), file_segment.getKeyMetadata(), lock);
+        file_segment.getKeyMetadata(), offset, file_segment.range().size(), lock);
 
     auto [_, inserted] = records.emplace(FileCacheKeyAndOffset{key, offset}, it);
     if (!inserted)

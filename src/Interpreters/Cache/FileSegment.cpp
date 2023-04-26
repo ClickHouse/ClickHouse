@@ -728,7 +728,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         if (!it)
             return;
 
-        const auto entry = it->getEntry();
+        const auto & entry = it->getEntry();
         UNUSED(entry);
         chassert(entry.size == reserved_size);
         chassert(entry.key == key());

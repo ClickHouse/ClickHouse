@@ -476,7 +476,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
             auto & stash_records = stash->records;
 
             stash_records.emplace(
-                stash_key, stash->queue->add(key, offset, 0, locked_key.getKeyMetadata(), *lock));
+                stash_key, stash->queue->add(locked_key.getKeyMetadata(), offset, 0, *lock));
 
             if (stash->queue->getElementsCount(*lock) > stash->queue->getElementsLimit())
                 stash->queue->pop(*lock);
@@ -498,7 +498,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     PriorityIterator cache_it;
     if (state == FileSegment::State::DOWNLOADED)
     {
-        cache_it = main_priority->add(key, offset, size, locked_key.getKeyMetadata(), *lock);
+        cache_it = main_priority->add(locked_key.getKeyMetadata(), offset, size, *lock);
     }
 
     try
@@ -559,6 +559,30 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         queue_size += 1;
 
     size_t removed_size = 0;
+
+    class EvictionCandidates final : public std::vector<FileSegmentMetadataPtr>
+    {
+    public:
+        explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(key_metadata_) {}
+
+        KeyMetadata & getMetadata() { return *key_metadata; }
+
+        void add(FileSegmentMetadataPtr candidate)
+        {
+            candidate->removal_candidate = true;
+            push_back(candidate);
+        }
+
+        ~EvictionCandidates()
+        {
+            for (const auto & candidate : *this)
+                candidate->removal_candidate = false;
+        }
+
+    private:
+        KeyMetadataPtr key_metadata;
+    };
+
     std::unordered_map<Key, EvictionCandidates> to_delete;
 
     auto iterate_func = [&](LockedKey & locked_key, FileSegmentMetadataPtr segment_metadata)
@@ -654,7 +678,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
         /// and getQueueIterator() is assigned on first space reservation attempt.
         file_segment.setQueueIterator(main_priority->add(
-            file_segment.key(), file_segment.offset(), size, file_segment.getKeyMetadata(), cache_lock));
+            file_segment.getKeyMetadata(), file_segment.offset(), size, cache_lock));
     }
 
     if (query_context)

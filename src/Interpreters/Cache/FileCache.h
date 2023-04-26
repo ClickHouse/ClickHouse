@@ -208,30 +208,6 @@ private:
         const CacheGuard::Lock *);
 
     void cleanupThreadFunc();
-
-    class EvictionCandidates : public std::vector<FileSegmentMetadataPtr>
-    {
-    public:
-        explicit EvictionCandidates(KeyMetadataPtr key_metadata_) : key_metadata(key_metadata_) {}
-
-        KeyMetadata & getMetadata() { return *key_metadata; }
-
-        void add(FileSegmentMetadataPtr candidate)
-        {
-            candidate->removal_candidate = true;
-            push_back(candidate);
-        }
-
-        ~EvictionCandidates()
-        {
-            for (const auto & candidate : *this)
-                candidate->removal_candidate = false;
-        }
-
-    private:
-        KeyMetadataPtr key_metadata;
-};
-
 };
 
 }

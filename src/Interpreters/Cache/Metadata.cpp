@@ -91,7 +91,7 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
 }
 
 
-struct CleanupQueue
+class CleanupQueue
 {
     friend struct CacheMetadata;
 public:
