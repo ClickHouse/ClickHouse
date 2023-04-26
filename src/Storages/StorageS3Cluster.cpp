@@ -159,7 +159,7 @@ Pipe StorageS3Cluster::read(
                     extension);
 
             remote_query_executor->setLogger(log);
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
         }
     }
 
