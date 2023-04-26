@@ -906,7 +906,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
     }
 
     if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
-        updateCgroupMemoryMetrics(cgroupmem_limit_in_bytes, cgroupmem_usage_in_bytes);
+        updateCgroupMemoryMetrics(*cgroupmem_limit_in_bytes, *cgroupmem_usage_in_bytes);
 
     if (meminfo)
     {
@@ -1478,18 +1478,18 @@ void AsynchronousMetrics::update(TimePoint update_time)
     values = new_values;
 }
 
-void AsynchronousMetrics::updateCgroupMemoryMetrics(std::optional<ReadBufferFromFilePRead> memory_limit_in, std::optional<ReadBufferFromFilePRead> memory_usage_in)
+void AsynchronousMetrics::updateCgroupMemoryMetrics(ReadBufferFromFilePRead & memory_limit_in, ReadBufferFromFilePRead & memory_usage_in)
 {
         try
         {
-            memory_limit_in->rewind();
-            memory_usage_in->rewind();
+            memory_limit_in.rewind();
+            memory_usage_in.rewind();
 
             uint64_t cgroup_mem_limit_in_bytes = 0;
             uint64_t cgroup_mem_usage_in_bytes = 0;
 
-            tryReadText(cgroup_mem_limit_in_bytes, *memory_limit_in);
-            tryReadText(cgroup_mem_usage_in_bytes, *memory_usage_in);
+            tryReadText(cgroup_mem_limit_in_bytes, memory_limit_in);
+            tryReadText(cgroup_mem_usage_in_bytes, memory_usage_in);
 
             new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
             new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
