@@ -725,8 +725,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                        context->getUserName(), /*dummy for is_shared*/ false,
+                        /*dummy value for expires_at*/ std::chrono::system_clock::from_time_t(1),
+                        /*dummy value for is_compressed*/ false);
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -747,14 +748,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        settings.query_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                        context->getUserName(), settings.query_cache_share_between_users,
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
+                        settings.query_cache_compress_entries);
 
                     const size_t num_query_runs = query_cache->recordQueryRun(key);
                     if (num_query_runs > settings.query_cache_min_query_runs)
                     {
-                        auto stream_in_query_cache_transform = std::make_shared<StreamInQueryCacheTransform>(res.pipeline.getHeader(), query_cache, key,
-                                std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()));
+                        auto stream_in_query_cache_transform =
+                                    std::make_shared<StreamInQueryCacheTransform>(
+                                        res.pipeline.getHeader(), query_cache, key,
+                                        std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()),
+                                        context->getSettings().query_cache_squash_partial_results,
+                                        context->getSettings().max_block_size,
+                                        context->getSettings().query_cache_max_size_in_bytes,
+                                        context->getSettings().query_cache_max_entries);
                         res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
                     }
                 }
