@@ -19,12 +19,12 @@ namespace ErrorCodes
 }
 
 IFileCachePriority::Iterator LRUFileCachePriority::add(
-    const Key & key,
+    KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    KeyMetadataPtr key_metadata,
     const CacheGuard::Lock &)
 {
+    const auto & key = key_metadata->key;
 #ifndef NDEBUG
     for (const auto & entry : queue)
     {

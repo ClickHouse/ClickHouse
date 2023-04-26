@@ -24,7 +24,7 @@ public:
 
     size_t getElementsCount(const CacheGuard::Lock &) const override { return queue.size(); }
 
-    Iterator add(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata, const CacheGuard::Lock &) override;
+    Iterator add(KeyMetadataPtr key_metadata, size_t offset, size_t size, const CacheGuard::Lock &) override;
 
     void pop(const CacheGuard::Lock &) override;
 

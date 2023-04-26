@@ -8,7 +8,7 @@
 
 namespace DB
 {
-struct CleanupQueue;
+class CleanupQueue;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 
 
