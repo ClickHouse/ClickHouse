@@ -58,7 +58,7 @@ struct CompareHelper
             end = start + sizeof(tmp_b);
             std::reverse(start, end);
 
-            return tmp_a > tmp_b ? 1 : (tmp_a < tmp_b ? -1 : 0);
+            return memcmp(&tmp_a, &tmp_b, sizeof(UUID));
         }
         else
             return a > b ? 1 : (a < b ? -1 : 0);
