@@ -62,7 +62,6 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     CurrentMetrics::Metric metric_,
     CurrentMetrics::Metric max_tasks_metric_,
     std::string_view policy)
-    requires requires(Queue queue) { queue.updatePolicy(policy); } // Because we use explicit template instantiation
     : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_, max_tasks_metric_)
 {
     pending.updatePolicy(policy);
