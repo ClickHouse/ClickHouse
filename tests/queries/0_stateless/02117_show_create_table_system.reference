@@ -850,6 +850,7 @@ CREATE TABLE system.replicas
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,
+    `zookeeper_name` String,
     `zookeeper_path` String,
     `replica_name` String,
     `replica_path` String,
