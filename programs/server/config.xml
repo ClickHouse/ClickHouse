@@ -346,6 +346,7 @@
     <background_schedule_pool_size>128</background_schedule_pool_size>
     <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    <async_loader_pool_size>16</async_loader_pool_size>
     -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.

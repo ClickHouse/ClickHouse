@@ -1166,6 +1166,17 @@ Possible values:
 Default value: 128.
 
 
+## async_loader_pool_size {#async_loader_pool_size}
+
+Sets the number of threads performing asynchronous load jobs after server startup. Note that before server startup all available CPUs are used for load jobs.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+
 ## merge_tree {#server_configuration_parameters-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).

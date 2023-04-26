@@ -1299,6 +1299,8 @@ try
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
 
+            global_context->getAsyncLoader().setMaxThreads(global_context->getAsyncLoaderPoolSize());
+
             if (config->has("resources"))
             {
                 global_context->getResourceManager()->updateConfiguration(*config);
