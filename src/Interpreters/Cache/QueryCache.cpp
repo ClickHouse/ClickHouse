@@ -122,12 +122,16 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
 
 QueryCache::Key::Key(
     ASTPtr ast_,
-    Block header_, const std::optional<String> & username_,
-    std::chrono::time_point<std::chrono::system_clock> expires_at_)
+    Block header_,
+    const String & user_name_, bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_)
     : ast(removeQueryCacheSettings(ast_))
     , header(header_)
-    , username(username_)
+    , user_name(user_name_)
+    , is_shared(is_shared_)
     , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
 {
 }
 
@@ -153,7 +157,7 @@ size_t QueryCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
-size_t QueryCache::QueryResultWeight::operator()(const QueryResult & chunks) const
+size_t QueryCache::QueryResultWeight::operator()(const Chunks & chunks) const
 {
     size_t res = 0;
     for (const auto & chunk : chunks)
@@ -166,14 +170,19 @@ bool QueryCache::IsStale::operator()(const Key & key) const
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
-QueryCache::Writer::Writer(Cache & cache_, const Key & key_,
+QueryCache::Writer::Writer(
+    Cache & cache_, const Key & key_,
     size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
-    std::chrono::milliseconds min_query_runtime_)
+    std::chrono::milliseconds min_query_runtime_,
+    bool squash_partial_results_,
+    size_t max_block_size_)
     : cache(cache_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
     , min_query_runtime(min_query_runtime_)
+    , squash_partial_results(squash_partial_results_)
+    , max_block_size(max_block_size_)
 {
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
@@ -211,6 +220,8 @@ void QueryCache::Writer::finalizeWrite()
 
     std::lock_guard lock(mutex);
 
+    chassert(!was_finalized);
+
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
     {
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query not expensive enough), query: {}", key.queryStringFromAst());
@@ -224,7 +235,68 @@ void QueryCache::Writer::finalizeWrite()
         return;
     }
 
+    if (squash_partial_results)
+    {
+        // Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
+        // compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
+        // served later on from the query cache.
+
+        Chunks squashed_chunks;
+        size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
+
+        for (auto & chunk : *query_result)
+        {
+            convertToFullIfSparse(chunk);
+
+            const size_t rows_chunk = chunk.getNumRows();
+            if (rows_chunk == 0)
+                continue;
+
+            size_t rows_chunk_processed = 0;
+            while (true)
+            {
+                if (rows_remaining_in_squashed == 0)
+                {
+                    Chunk empty_chunk = Chunk(chunk.cloneEmptyColumns(), 0);
+                    squashed_chunks.push_back(std::move(empty_chunk));
+                    rows_remaining_in_squashed = max_block_size;
+                }
+
+                const size_t rows_to_append = std::min(rows_chunk - rows_chunk_processed, rows_remaining_in_squashed);
+                squashed_chunks.back().append(chunk, rows_chunk_processed, rows_to_append);
+                rows_chunk_processed += rows_to_append;
+                rows_remaining_in_squashed -= rows_to_append;
+
+                if (rows_chunk_processed == rows_chunk)
+                    break;
+            }
+        }
+
+        *query_result = std::move(squashed_chunks);
+    }
+
+    if (key.is_compressed)
+    {
+        Chunks compressed_chunks;
+        const Chunks & decompressed_chunks = *query_result;
+        for (const auto & decompressed_chunk : decompressed_chunks)
+        {
+            const Columns & decompressed_columns = decompressed_chunk.getColumns();
+            Columns compressed_columns;
+            for (const auto & decompressed_column : decompressed_columns)
+            {
+                auto compressed_column = decompressed_column->compress();
+                compressed_columns.push_back(compressed_column);
+            }
+            Chunk compressed_chunk(compressed_columns, decompressed_chunk.getNumRows());
+            compressed_chunks.push_back(std::move(compressed_chunk));
+        }
+        *query_result = std::move(compressed_chunks);
+    }
+
     cache.set(key, query_result);
+
+    was_finalized = true;
 }
 
 QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &)
@@ -237,7 +309,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         return;
     }
 
-    if (entry->key.username.has_value() && entry->key.username != key.username)
+    if (!entry->key.is_shared && entry->key.user_name != key.user_name)
     {
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
         return;
@@ -249,7 +321,28 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         return;
     }
 
-    pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, entry->mapped));
+    if (!entry->key.is_compressed)
+        pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, entry->mapped));
+    else
+    {
+        auto decompressed_chunks = std::make_shared<Chunks>();
+        const Chunks & compressed_chunks = *entry->mapped;
+        for (const auto & compressed_chunk : compressed_chunks)
+        {
+            const Columns & compressed_chunk_columns = compressed_chunk.getColumns();
+            Columns decompressed_columns;
+            for (const auto & compressed_column : compressed_chunk_columns)
+            {
+                auto column = compressed_column->decompress();
+                decompressed_columns.push_back(column);
+            }
+            Chunk decompressed_chunk(decompressed_columns, compressed_chunk.getNumRows());
+            decompressed_chunks->push_back(std::move(decompressed_chunk));
+        }
+
+        pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, decompressed_chunks));
+    }
+
     LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
 }
 
@@ -277,10 +370,15 @@ QueryCache::Reader QueryCache::createReader(const Key & key)
     return Reader(cache, key, lock);
 }
 
-QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime)
+QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota)
 {
+    /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
+    /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
+    /// users.xml change.
+    cache.setQuotaForUser(key.user_name, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
+
     std::lock_guard lock(mutex);
-    return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime);
+    return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
 void QueryCache::reset()
@@ -308,7 +406,7 @@ std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
 }
 
 QueryCache::QueryCache()
-    : cache(std::make_unique<TTLCachePolicy<Key, QueryResult, KeyHasher, QueryResultWeight, IsStale>>())
+    : cache(std::make_unique<TTLCachePolicy<Key, Chunks, KeyHasher, QueryResultWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
 }
 
@@ -316,14 +414,14 @@ void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & c
 {
     std::lock_guard lock(mutex);
 
-    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size", 1_GiB);
+    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", 1_GiB);
     cache.setMaxSize(max_size_in_bytes);
 
     size_t max_entries = config.getUInt64("query_cache.max_entries", 1024);
     cache.setMaxCount(max_entries);
 
-    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size", 1_MiB);
-    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows", 30'000'000);
+    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", 1_MiB);
+    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", 30'000'000);
 }
 
 }

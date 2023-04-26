@@ -3,6 +3,7 @@
 #include <cassert>
 #include <sys/stat.h>
 
+#include <Common/Throttler.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -20,6 +21,8 @@ namespace ProfileEvents
     extern const Event DiskWriteElapsedMicroseconds;
     extern const Event FileSync;
     extern const Event FileSyncElapsedMicroseconds;
+    extern const Event LocalWriteThrottlerBytes;
+    extern const Event LocalWriteThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -71,7 +74,11 @@ void WriteBufferFromFileDescriptor::nextImpl()
         }
 
         if (res > 0)
+        {
             bytes_written += res;
+            if (throttler)
+                throttler->add(res, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::DiskWriteElapsedMicroseconds, watch.elapsedMicroseconds());
@@ -85,10 +92,12 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     int fd_,
     size_t buf_size,
     char * existing_memory,
+    ThrottlerPtr throttler_,
     size_t alignment,
     std::string file_name_)
     : WriteBufferFromFileBase(buf_size, existing_memory, alignment)
     , fd(fd_)
+    , throttler(throttler_)
     , file_name(std::move(file_name_))
 {
 }
