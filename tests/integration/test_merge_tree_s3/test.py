@@ -312,14 +312,14 @@ def test_attach_detach_partition(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
     assert (
         len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 - FILES_OVERHEAD_METADATA_VERSION
     )
 
     node.query("ALTER TABLE s3_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert (
         len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 - FILES_OVERHEAD_METADATA_VERSION
     )
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
@@ -337,7 +337,7 @@ def test_attach_detach_partition(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert (
         len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1 - FILES_OVERHEAD_METADATA_VERSION
     )
     node.query(
         "ALTER TABLE s3_test DROP DETACHED PARTITION '2020-01-04'",
@@ -460,7 +460,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     # Number of objects in S3 should be unchanged.
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
+        == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -474,7 +474,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6
+        == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6 - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     node.query("ALTER TABLE s3_test REPLACE PARTITION '2020-01-03' FROM s3_clone")
@@ -486,7 +486,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
 
     # Wait for outdated partitions deletion.
     wait_for_delete_s3_objects(
-        cluster, FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
+        cluster, FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     node.query("DROP TABLE s3_clone NO DELAY")
@@ -495,20 +495,20 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     # Data should remain in S3
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     node.query("ALTER TABLE s3_test FREEZE")
     # Number S3 objects should be unchanged.
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
+        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     node.query("DROP TABLE s3_test NO DELAY")
     # Backup data should remain in S3.
 
-    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE * 4)
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 4)
 
     for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
@@ -534,7 +534,7 @@ def test_freeze_unfreeze(cluster, node_name):
     wait_for_delete_inactive_parts(node, "s3_test")
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+        == FILES_OVERHEAD + (FILES_OVERHEAD_PER_PART_WIDE - FILES_OVERHEAD_METADATA_VERSION) * 2
     )
 
     # Unfreeze single partition from backup1.
@@ -575,7 +575,7 @@ def test_freeze_system_unfreeze(cluster, node_name):
     node.query("DROP TABLE s3_test_removed NO DELAY")
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+        == FILES_OVERHEAD + (FILES_OVERHEAD_PER_PART_WIDE - FILES_OVERHEAD_METADATA_VERSION) * 2
     )
 
     # Unfreeze all data from backup3.
