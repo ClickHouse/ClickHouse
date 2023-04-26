@@ -102,11 +102,12 @@ private:
 
     struct TaskHolder
     {
-        explicit TaskHolder(MergeTreeReadTask * task_) : task(task_) {}
+        explicit TaskHolder(MergeTreeReadTask * task_, size_t thread_id_) : task(task_), thread_id(thread_id_) {}
         MergeTreeReadTask * task;
+        size_t thread_id;
         bool operator <(const TaskHolder & other) const;
     };
-    mutable boost::heap::priority_queue<TaskHolder> prefetch_queue;
+    mutable std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
 
     /// A struct which allows to track max number of tasks which were in the

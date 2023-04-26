@@ -1,4 +1,4 @@
-# system.processors_profile_log {#system-processors_profile_log}
+# processors_profile_log
 
 This table contains profiling on processors level (that you can find in [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)).
 
