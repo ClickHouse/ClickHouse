@@ -86,7 +86,7 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
         {"create_query", std::make_shared<DataTypeString>()},
         {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
         {"description", std::make_shared<DataTypeString>()},
-        {"examples", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {"example", std::make_shared<DataTypeString>()},
     };
 }
 
