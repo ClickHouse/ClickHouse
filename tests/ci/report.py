@@ -196,7 +196,7 @@ class TestResult:
             )
         for log_path in log_paths:
             file = Path(log_path)
-            assert file.exists()
+            assert file.exists(), file
             self.log_files.append(file)
 
 
@@ -473,7 +473,7 @@ def create_build_html_report(
     commit_url: str,
 ) -> str:
     rows = ""
-    for (build_result, build_log_url, artifact_urls) in zip(
+    for build_result, build_log_url, artifact_urls in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"

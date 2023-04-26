@@ -26,24 +26,24 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static String getRootNodeName(UserDefinedSQLObjectType object_type)
+namespace
 {
-    switch (object_type)
+    std::string_view getNodePrefix(UserDefinedSQLObjectType object_type)
     {
-        case UserDefinedSQLObjectType::Function:
-            return "functions";
+        switch (object_type)
+        {
+            case UserDefinedSQLObjectType::Function:
+                return "function_";
+        }
+        UNREACHABLE();
     }
-    UNREACHABLE();
-}
 
-static String getRootNodePath(const String & root_path, UserDefinedSQLObjectType object_type)
-{
-    return root_path + "/" + getRootNodeName(object_type);
-}
+    constexpr std::string_view sql_extension = ".sql";
 
-static String getNodePath(const String & root_path, UserDefinedSQLObjectType object_type, const String & object_name)
-{
-    return getRootNodePath(root_path, object_type) + "/" + escapeForFileName(object_name);
+    String getNodePath(const String & root_path, UserDefinedSQLObjectType object_type, const String & object_name)
+    {
+        return root_path + "/" + String{getNodePrefix(object_type)} + escapeForFileName(object_name) + String{sql_extension};
+    }
 }
 
 
@@ -119,10 +119,20 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::resetAfterError()
 
 void UserDefinedSQLObjectsLoaderFromZooKeeper::loadObjects()
 {
+    /// loadObjects() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
+    /// However the watching thread must be started anyway in case the connection will be established later.
     if (!objects_loaded)
     {
-        reloadObjects();
+        try
+        {
+            reloadObjects();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to load user-defined objects");
+        }
     }
+    startWatchingThread();
 }
 
 
@@ -188,7 +198,6 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::createRootNodes(const zkutil::Zoo
 {
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
-    zookeeper->createIfNotExists(zookeeper_path + "/functions", "");
 }
 
 bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
@@ -344,17 +353,19 @@ Strings UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectNamesAndSetWatch(
     };
 
     Coordination::Stat stat;
-    const auto path = getRootNodePath(zookeeper_path, object_type);
-    const auto node_names = zookeeper->getChildrenWatch(path, &stat, object_list_watcher);
+    const auto node_names = zookeeper->getChildrenWatch(zookeeper_path, &stat, object_list_watcher);
+    const auto prefix = getNodePrefix(object_type);
 
     Strings object_names;
     object_names.reserve(node_names.size());
     for (const auto & node_name : node_names)
     {
-        String object_name = unescapeForFileName(node_name);
-
-        if (!object_name.empty())
-            object_names.push_back(std::move(object_name));
+        if (node_name.starts_with(prefix) && node_name.ends_with(sql_extension))
+        {
+            String object_name = unescapeForFileName(node_name.substr(prefix.length(), node_name.length() - prefix.length() - sql_extension.length()));
+            if (!object_name.empty())
+                object_names.push_back(std::move(object_name));
+        }
     }
 
     return object_names;

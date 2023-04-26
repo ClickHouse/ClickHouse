@@ -10,6 +10,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include <future>
 #include <chrono>
@@ -73,6 +74,7 @@ void KeeperDispatcher::requestThread()
         auto coordination_settings = configuration_and_settings->coordination_settings;
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
+        uint64_t max_batch_bytes_size = coordination_settings->max_requests_batch_bytes_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -89,6 +91,7 @@ void KeeperDispatcher::requestThread()
                     break;
 
                 KeeperStorage::RequestsForSessions current_batch;
+                size_t current_batch_bytes_size = 0;
 
                 bool has_read_request = false;
 
@@ -96,6 +99,7 @@ void KeeperDispatcher::requestThread()
                 /// Otherwise we will process it locally.
                 if (coordination_settings->quorum_reads || !request.request->isReadRequest())
                 {
+                    current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
 
                     const auto try_get_request = [&]
@@ -106,9 +110,16 @@ void KeeperDispatcher::requestThread()
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
-                                has_read_request = true;
+                            {
+                                const auto & last_request = current_batch.back();
+                                std::lock_guard lock(read_request_queue_mutex);
+                                read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
+                            }
                             else
+                            {
+                                current_batch_bytes_size += request.request->bytesSize();
                                 current_batch.emplace_back(request);
+                            }
 
                             return true;
                         }
@@ -116,9 +127,11 @@ void KeeperDispatcher::requestThread()
                         return false;
                     };
 
-                    /// If we have enough requests in queue, we will try to batch at least max_quick_batch_size of them.
+                    /// TODO: Deprecate max_requests_quick_batch_size and use only max_requests_batch_size and max_requests_batch_bytes_size
                     size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
-                    while (!shutdown_called && !has_read_request && current_batch.size() < max_quick_batch_size && try_get_request())
+                    while (!shutdown_called && !has_read_request &&
+                        current_batch.size() < max_quick_batch_size && current_batch_bytes_size < max_batch_bytes_size &&
+                        try_get_request())
                         ;
 
                     const auto prev_result_done = [&]
@@ -129,7 +142,8 @@ void KeeperDispatcher::requestThread()
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_read_request && !prev_result_done() && current_batch.size() <= max_batch_size)
+                    while (!shutdown_called && !has_read_request && !prev_result_done() &&
+                        current_batch.size() <= max_batch_size && current_batch_bytes_size < max_batch_bytes_size)
                     {
                         try_get_request();
                     }
@@ -147,6 +161,8 @@ void KeeperDispatcher::requestThread()
                 /// Process collected write requests batch
                 if (!current_batch.empty())
                 {
+                    LOG_TRACE(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+
                     auto result = server->putRequestBatch(current_batch);
 
                     if (result)
@@ -158,6 +174,7 @@ void KeeperDispatcher::requestThread()
                     {
                         addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
                         current_batch.clear();
+                        current_batch_bytes_size = 0;
                     }
 
                     prev_batch = std::move(current_batch);
@@ -319,7 +336,28 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config, macros);
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3);
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3, [this](const KeeperStorage::RequestForSession & request_for_session)
+    {
+        /// check if we have queue of read requests depending on this request to be committed
+        std::lock_guard lock(read_request_queue_mutex);
+        if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
+        {
+            auto & xid_to_request_queue = it->second;
+
+            if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid); request_queue_it != xid_to_request_queue.end())
+            {
+                for (const auto & read_request : request_queue_it->second)
+                {
+                    if (server->isLeaderAlive())
+                        server->putLocalReadRequest(read_request);
+                    else
+                        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                }
+
+                xid_to_request_queue.erase(request_queue_it);
+            }
+        }
+    });
 
     try
     {
@@ -532,12 +570,18 @@ void KeeperDispatcher::sessionCleanerTask()
 
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
-    std::lock_guard lock(session_to_response_callback_mutex);
-    auto session_it = session_to_response_callback.find(session_id);
-    if (session_it != session_to_response_callback.end())
     {
-        session_to_response_callback.erase(session_it);
-        CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+        std::lock_guard lock(session_to_response_callback_mutex);
+        auto session_it = session_to_response_callback.find(session_id);
+        if (session_it != session_to_response_callback.end())
+        {
+            session_to_response_callback.erase(session_it);
+            CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+        }
+    }
+    {
+        std::lock_guard lock(read_request_queue_mutex);
+        read_request_queue.erase(session_id);
     }
 }
 

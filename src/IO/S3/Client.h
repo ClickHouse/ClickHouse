@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 
-#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
@@ -12,6 +11,7 @@
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/ProviderType.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
@@ -161,6 +161,8 @@ public:
 
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
+
+    ProviderType getProviderType() const;
 private:
     Client(size_t max_redirects_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
@@ -207,6 +209,8 @@ private:
     std::string explicit_region;
     mutable bool detect_region = true;
 
+    ProviderType provider_type{ProviderType::UNKNOWN};
+
     mutable std::shared_ptr<ClientCache> cache;
 
     const size_t max_redirects;
@@ -228,9 +232,7 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HTTPHeaderEntries headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request,
-        uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS);
+        CredentialsConfiguration credentials_configuration);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,

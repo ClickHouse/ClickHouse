@@ -109,7 +109,7 @@ MySQL中的Time 类型，会被ClickHouse转换成微秒来存储
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
+MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
 
 
 ### 数据复制 {#data-replication}

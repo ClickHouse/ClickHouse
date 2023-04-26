@@ -16,12 +16,16 @@
 namespace DB
 {
 
-enum class CoordinationMode
+/// This enum is being serialized and transferred over a network
+/// You can't reorder it or add another value in the middle
+enum class CoordinationMode : uint8_t
 {
-    Default,
+    Default = 0,
     /// For reading in order
-    WithOrder,
-    ReverseOrder
+    WithOrder = 1,
+    ReverseOrder = 2,
+
+    MAX = ReverseOrder,
 };
 
 /// Represents a segment [left; right]
@@ -64,6 +68,7 @@ struct ParallelReadResponse
 
 struct InitialAllRangesAnnouncement
 {
+    CoordinationMode mode;
     RangesInDataPartsDescription description;
     size_t replica_num;
 

@@ -23,22 +23,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(
-    const String & cache_base_path_,
-    const FileCacheSettings & cache_settings_)
-    : cache_base_path(cache_base_path_)
-    , max_size(cache_settings_.max_size)
-    , max_element_size(cache_settings_.max_elements)
-    , max_file_segment_size(cache_settings_.max_file_segment_size)
-    , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
-    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
-    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
-    , enable_bypass_cache_with_threashold(cache_settings_.enable_bypass_cache_with_threashold)
-    , bypass_cache_threashold(cache_settings_.bypass_cache_threashold)
+FileCache::FileCache(const FileCacheSettings & settings)
+    : cache_base_path(settings.base_path)
+    , max_size(settings.max_size)
+    , max_element_size(settings.max_elements)
+    , max_file_segment_size(settings.max_file_segment_size)
+    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
+    , enable_cache_hits_threshold(settings.enable_cache_hits_threshold)
+    , enable_filesystem_query_cache_limit(settings.enable_filesystem_query_cache_limit)
+    , enable_bypass_cache_with_threashold(settings.enable_bypass_cache_with_threashold)
+    , bypass_cache_threashold(settings.bypass_cache_threashold)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
-    , max_stash_element_size(cache_settings_.max_elements)
+    , max_stash_element_size(settings.max_elements)
 {
 }
 
@@ -721,7 +719,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         {
             auto queue_iterator = cell_for_reserve->queue_iterator;
             if (queue_iterator)
-                queue_iterator->incrementSize(size, cache_lock);
+                queue_iterator->updateSize(size, cache_lock);
             else
                 cell_for_reserve->queue_iterator = main_priority->add(key, offset, size, cache_lock);
         }
@@ -838,7 +836,7 @@ bool FileCache::tryReserveForMainList(
         /// If queue iterator already exists, we need to update the size after each space reservation.
         auto queue_iterator = cell_for_reserve->queue_iterator;
         if (queue_iterator)
-            queue_iterator->incrementSize(size, cache_lock);
+            queue_iterator->updateSize(size, cache_lock);
         else
             cell_for_reserve->queue_iterator = main_priority->add(key, offset, size, cache_lock);
     }
@@ -1154,7 +1152,14 @@ void FileCache::reduceSizeToDownloaded(
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, create_settings);
 
-    assert(file_segment->reserved_size == downloaded_size);
+    chassert(cell->queue_iterator);
+    chassert(cell->queue_iterator->size() >= downloaded_size);
+    const ssize_t diff = cell->queue_iterator->size() - downloaded_size;
+    if (diff > 0)
+        cell->queue_iterator->updateSize(-diff, cache_lock);
+
+    chassert(file_segment->reserved_size == downloaded_size);
+    chassert(file_segment->reserved_size == cell->queue_iterator->size());
 }
 
 bool FileCache::isLastFileSegmentHolder(
@@ -1452,7 +1457,7 @@ void FileCache::QueryContext::reserve(const Key & key, size_t offset, size_t siz
             auto queue_iter = priority->add(key, offset, 0, cache_lock);
             record = records.insert({{key, offset}, queue_iter}).first;
         }
-        record->second->incrementSize(size, cache_lock);
+        record->second->updateSize(size, cache_lock);
     }
     cache_size += size;
 }

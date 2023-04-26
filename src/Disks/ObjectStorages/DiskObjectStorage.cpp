@@ -10,12 +10,20 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/CurrentMetrics.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskObjectStorageAsyncThreads;
+    extern const Metric DiskObjectStorageAsyncThreadsActive;
+}
+
 
 namespace DB
 {
@@ -38,7 +46,8 @@ class AsyncThreadPoolExecutor : public Executor
 public:
     AsyncThreadPoolExecutor(const String & name_, int thread_pool_size)
         : name(name_)
-        , pool(ThreadPool(thread_pool_size)) {}
+        , pool(CurrentMetrics::DiskObjectStorageAsyncThreads, CurrentMetrics::DiskObjectStorageAsyncThreadsActive, thread_pool_size)
+    {}
 
     std::future<void> execute(std::function<void()> task) override
     {
@@ -523,14 +532,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
 {
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
-}
-
-FileCachePtr DiskObjectStorage::getCache() const
-{
-    const auto * cached_object_storage = typeid_cast<CachedObjectStorage *>(object_storage.get());
-    if (!cached_object_storage)
-        return nullptr;
-    return cached_object_storage->getCache();
 }
 
 NameSet DiskObjectStorage::getCacheLayersNames() const

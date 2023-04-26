@@ -40,7 +40,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression);
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
 
 /// Extract table, table function, query, union from join tree
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);

@@ -58,7 +58,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     set (RLIMIT_CPU 1000)
 
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
-    if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
+    if (SANITIZE STREQUAL "memory")
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
@@ -178,9 +178,8 @@ endif ()
 
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # Can be lld or ld-lld or lld-13 or /path/to/lld.
-    if (LINKER_NAME MATCHES "lld" AND OS_LINUX)
+    if (LINKER_NAME MATCHES "lld")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
     endif ()
 endif()
@@ -213,7 +212,7 @@ endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
-if (LINKER_NAME MATCHES "lld" AND OS_LINUX)
+if (LINKER_NAME MATCHES "lld")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
@@ -287,48 +286,31 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-if (COMPILER_GCC OR COMPILER_CLANG)
-    # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
-    # See https://reviews.llvm.org/D112921
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
-endif ()
-
-# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-# benchmarks.
-if (COMPILER_GCC OR COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
-endif ()
-
-if (ARCH_AMD64)
-    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
-    # which makes benchmark results more stable.
-    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
-    if (COMPILER_GCC)
-        # gcc is in assembler, need to add "-Wa," prefix
-        set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
-
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
-endif()
-
-if (COMPILER_GCC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
-endif ()
-
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
-if (WITH_COVERAGE AND COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-    # If we want to disable coverage for specific translation units
-    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-endif()
+if (COMPILER_CLANG)
+    # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
+    # See https://reviews.llvm.org/D112921
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-if (WITH_COVERAGE AND COMPILER_GCC)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
-    set(COVERAGE_OPTION "-lgcov")
-    set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
-endif()
+    # falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+    # benchmarks.
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+
+    if (ARCH_AMD64)
+        # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
+        # which makes benchmark results more stable.
+        set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+
+    if (WITH_COVERAGE)
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+        # If we want to disable coverage for specific translation units
+        set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
+    endif()
+endif ()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
@@ -350,17 +332,7 @@ set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O0 ${DEBUG_I
 if (COMPILER_CLANG)
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-U,_inside_main")
-
-        # The LLVM MachO linker (ld64.lld, used in native builds) generates by default unwind info in 'compact' format which the internal
-        # unwinder doesn't support and the server will not come up ('invalid compact unwind encoding'). Disable it. You will see warning
-        # during the build "ld64.lld: warning: Option `-no_compact_unwind' is undocumented. Should lld implement it?". Yes, ld64.lld does
-        # not document the option, likely for compat with Apple's system ld after which ld64.lld is modeled after and which also does not
-        # document it.
-        if (NOT CMAKE_CROSSCOMPILING)
-            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_compact_unwind")
-        endif ()
     endif()
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
@@ -421,7 +393,11 @@ else()
 endif ()
 
 option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
-if (NOT OS_LINUX AND NOT OS_ANDROID)
+# We use mmap for allocations more heavily in debug builds, 
+# but GWP-ASan also wants to use mmap frequently, 
+# and due to a large number of memory mappings, 
+# it does not work together well.
+if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
     set(ENABLE_GWP_ASAN OFF)
 endif ()
 
@@ -579,7 +555,7 @@ if (NATIVE_BUILD_TARGETS
         COMMAND ${CMAKE_COMMAND}
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DENABLE_CCACHE=${ENABLE_CCACHE}"
+            "-DCOMPILER_CACHE=${COMPILER_CACHE}"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
