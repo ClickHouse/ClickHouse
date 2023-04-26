@@ -144,7 +144,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     }
     else
     {
-        // Connect with host/port/user/etc.
+        // Connect with host/port/user/etc through constructing 
         std::string uri_constructed("mongodb://" + host + ":" + std::to_string(port) + "/" + db + "?" + options);
         connection->connect(uri_constructed, socket_factory);
 
@@ -160,7 +160,9 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
     : MongoDBDictionarySource{
-        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db, other.collection,other.options, other.sample_block}
+        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db,
+        other.collection, other.options, other.sample_block
+    }
 {
 }
 
