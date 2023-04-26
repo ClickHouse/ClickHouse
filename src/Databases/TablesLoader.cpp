@@ -95,6 +95,10 @@ void TablesLoader::createTasks(LoadJobSet load_after)
     /// Remove tables that do not exist
     removeUnresolvableDependencies();
 
+    /// Compatibility setting which should be enabled by default on attach
+    /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types of columns
+    ContextMutablePtr load_context = Context::createCopy(global_context);
+    load_context->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
 
     std::unordered_map<UUID, LoadTaskPtr> load_table; /// table uuid -> load task
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
@@ -119,7 +123,7 @@ void TablesLoader::createTasks(LoadJobSet load_after)
 
         // Make startup table task
         auto startup_task = databases[table_name.database]->startupTableAsync(async_loader, load_task->goals(), table_name, strictness_mode);
-        startup_database[table_name.database] = startup_task;
+        startup_database[table_name.database].push_back(startup_task);
         startup_tables.push_back(startup_task);
 
         // TODO(serxa): we should report progress, a job should be attached to task.goals() here to report it. But what task should contain that job is unclear yet
@@ -138,7 +142,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     return load_tables;
 }
 
-LoadTaskPtr TablesLoader::startupTablesAsync()
+LoadTaskPtrs TablesLoader::startupTablesAsync()
 {
     return startup_tables;
 }

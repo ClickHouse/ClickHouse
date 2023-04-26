@@ -57,8 +57,8 @@ public:
     TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_);
     TablesLoader() = delete;
 
-    LoadTaskPtr loadTablesAsync(LoadJobSet load_after = {});
-    LoadTaskPtr startupTablesAsync();
+    LoadTaskPtrs loadTablesAsync(LoadJobSet load_after = {});
+    LoadTaskPtrs startupTablesAsync();
     void loadTables();
     void startupTables();
 
