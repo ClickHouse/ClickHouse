@@ -12,12 +12,14 @@ node1 = cluster.add_instance(
     main_configs=["configs/zookeeper_config.xml", "configs/remote_servers.xml"],
     with_zookeeper=True,
     use_keeper=False,
+    stay_alive=True
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/zookeeper_config.xml", "configs/remote_servers.xml"],
     with_zookeeper=True,
     use_keeper=False,
+    stay_alive=True
 )
 
 
