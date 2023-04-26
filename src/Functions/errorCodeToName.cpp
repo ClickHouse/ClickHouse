@@ -45,8 +45,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const Int64 error_code = input_column.getInt(i);
-            std::string_view error_name =
-                ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(error_code));
+            std::string_view error_name = ErrorCodes::getName(error_code);
             col_res->insertData(error_name.data(), error_name.size());
         }
 

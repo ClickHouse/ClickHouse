@@ -13,7 +13,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionSvg : public IFunction
@@ -47,13 +48,17 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
+        if (arguments.size() > 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments: expected 1 or 2 arguments");
+            throw Exception("Too many arguments", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
+        }
+        else if (arguments.empty())
+        {
+            throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
         }
         else if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
+            throw Exception("Second argument should be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return std::make_shared<DataTypeString>();

@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/sqlite
 sidebar_position: 55
 sidebar_label: sqlite
 ---

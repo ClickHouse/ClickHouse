@@ -90,7 +90,7 @@ namespace
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace = StackTrace(signal_context);
 
-        auto query_id = CurrentThread::getQueryId();
+        std::string_view query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size(), max_query_id_size);
         if (!query_id.empty())
             memcpy(query_id_data, query_id.data(), query_id_size);
@@ -151,7 +151,7 @@ namespace
                     continue;   /// Drain delayed notifications.
             }
 
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
+            throw Exception("Logical error: read wrong number of bytes from pipe", ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -258,7 +258,7 @@ Pipe StorageSystemStackTrace::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -324,7 +324,7 @@ Pipe StorageSystemStackTrace::read(
             sigval sig_value{};
 
             sig_value.sival_int = sequence_num.load(std::memory_order_acquire);
-            if (0 != ::sigqueue(static_cast<int>(tid), sig, sig_value))
+            if (0 != ::sigqueue(tid, sig, sig_value))
             {
                 /// The thread may has been already finished.
                 if (ESRCH == errno)

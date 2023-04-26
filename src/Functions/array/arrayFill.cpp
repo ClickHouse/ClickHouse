@@ -20,6 +20,9 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArrayFillImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -89,7 +92,7 @@ struct ArrayFillImpl
             const auto * column_fill_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_fill_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of cut column");
+                throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_fill_const->getValue<UInt8>())
                 return ColumnArray::create(

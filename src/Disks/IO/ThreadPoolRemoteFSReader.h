@@ -2,8 +2,7 @@
 
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBuffer.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -15,21 +14,19 @@ public:
 
     std::future<IAsynchronousReader::Result> submit(Request request) override;
 
-    void wait() override;
-
 private:
-    std::unique_ptr<ThreadPool> pool;
+    ThreadPool pool;
 };
 
 class RemoteFSFileDescriptor : public IAsynchronousReader::IFileDescriptor
 {
 public:
-    explicit RemoteFSFileDescriptor(ReadBuffer & reader_) : reader(reader_) { }
+    explicit RemoteFSFileDescriptor(ReadBufferPtr reader_) : reader(std::move(reader_)) { }
 
     IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
 private:
-    ReadBuffer & reader;
+    ReadBufferPtr reader;
 };
 
 }

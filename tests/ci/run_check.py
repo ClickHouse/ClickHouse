@@ -13,7 +13,6 @@ from commit_status_helper import (
     remove_labels,
     set_mergeable_check,
 )
-from docs_check import NAME as DOCS_NAME
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
@@ -22,24 +21,22 @@ from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 NAME = "Run Check"
 
 TRUSTED_ORG_IDS = {
+    7409213,  # yandex
+    28471076,  # altinity
     54801242,  # clickhouse
 }
 
 OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
-FEATURE_LABEL = "pr-feature"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 # They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
 # updated accordingly
-# The following lists are append only, try to avoid editing them
-# They atill could be cleaned out after the decent time though.
 LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
-        "Bug Fix (user-visible misbehavior in an official stable release)",
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
@@ -93,11 +90,9 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
     if FORCE_TESTS_LABEL in pr_info.labels:
-        print(f"Label '{FORCE_TESTS_LABEL}' set, forcing remaining checks")
         return True, f"Labeled '{FORCE_TESTS_LABEL}'", "pending"
 
     if DO_NOT_TEST_LABEL in pr_info.labels:
-        print(f"Label '{DO_NOT_TEST_LABEL}' set, skipping remaining checks")
         return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
@@ -110,15 +105,12 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
-        print(
-            f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
-        )
         return False, "Needs 'can be tested' label", "failure"
 
     return True, "No special conditions apply", "pending"
 
 
-def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
+def check_pr_description(pr_info) -> Tuple[str, str]:
     lines = list(
         map(lambda x: x.strip(), pr_info.body.split("\n") if pr_info.body else [])
     )
@@ -134,7 +126,6 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
 
     category = ""
     entry = ""
-    description_error = ""
 
     i = 0
     while i < len(lines):
@@ -182,25 +173,23 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
             entry = " ".join(entry_lines)
             # Don't accept changelog entries like '...'.
             entry = re.sub(r"[#>*_.\- ]", "", entry)
-            # Don't accept changelog entries like 'Close #12345'.
-            entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
         else:
             i += 1
 
     if not category:
-        description_error = "Changelog category is empty"
+        return "Changelog category is empty", category
+
     # Filter out the PR categories that are not for changelog.
-    elif re.match(
+    if re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        pass  # to not check the rest of the conditions
-    elif category not in CATEGORY_TO_LABEL:
-        description_error, category = f"Category '{category}' is not valid", ""
-    elif not entry:
-        description_error = f"Changelog entry required for category '{category}'"
+        return "", category
 
-    return description_error, category
+    if not entry:
+        return f"Changelog entry required for category '{category}'", category
+
+    return "", category
 
 
 if __name__ == "__main__":
@@ -244,22 +233,14 @@ if __name__ == "__main__":
     elif SUBMODULE_CHANGED_LABEL in pr_info.labels:
         pr_labels_to_remove.append(SUBMODULE_CHANGED_LABEL)
 
-    print(f"Change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
+    print(f"change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
     if pr_labels_to_add:
         post_labels(gh, pr_info, pr_labels_to_add)
 
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    if FEATURE_LABEL in pr_info.labels:
-        print(f"The '{FEATURE_LABEL}' in the labels, expect the 'Docs Check' status")
-        commit.create_status(
-            context=DOCS_NAME,
-            description=f"expect adding docs for {FEATURE_LABEL}",
-            state="pending",
-        )
-    else:
-        set_mergeable_check(commit, "skipped")
+    set_mergeable_check(commit, "skipped")
 
     if description_error:
         print(

@@ -27,8 +27,9 @@ VolumeJBOD::VolumeJBOD(
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
     if (has_max_bytes && has_max_ratio)
     {
-        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-                        "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.");
+        throw Exception(
+            "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.",
+            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
     }
 
     if (has_max_bytes)
@@ -39,7 +40,7 @@ VolumeJBOD::VolumeJBOD(
     {
         auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
         if (ratio < 0)
-            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'max_data_part_size_ratio' have to be not less then 0.");
+            throw Exception("'max_data_part_size_ratio' have to be not less then 0.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         UInt64 sum_size = 0;
         std::vector<UInt64> sizes;
         for (const auto & disk : disks)
@@ -96,7 +97,7 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
             return disks_by_size.top().disk;
         }
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
@@ -136,7 +137,7 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             return reservation;
         }
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 bool VolumeJBOD::areMergesAvoided() const

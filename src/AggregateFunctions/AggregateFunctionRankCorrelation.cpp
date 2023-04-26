@@ -23,7 +23,7 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(
     assertNoParameters(name, parameters);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} only supports numerical types", name);
+        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::NOT_IMPLEMENTED);
 
     return std::make_shared<AggregateFunctionRankCorrelation>(argument_types);
 }

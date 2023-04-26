@@ -49,8 +49,6 @@
     #include <cxxabi.h>
 #endif
 
-// NOLINTBEGIN(readability-identifier-naming, modernize-use-using, bugprone-macro-parentheses, google-explicit-constructor)
-
 /*
  * Abstractions for compiler-specific directives
  */
@@ -91,6 +89,8 @@
             pcg128_t(high,low)
     #define PCG_EMULATED_128BIT_MATH 1
 #endif
+
+// NOLINTBEGIN(*)
 
 namespace pcg_extras {
 
@@ -455,7 +455,7 @@ auto bounded_rand(RngType& rng, typename RngType::result_type upper_bound)
     typedef typename RngType::result_type rtype;
     rtype threshold = (RngType::max() - RngType::min() + rtype(1) - upper_bound)
                     % upper_bound;
-    for (;;) {
+    for (;;) { //-V1044
         rtype r = rng() - RngType::min();
         if (r >= threshold)
             return r % upper_bound;
@@ -553,6 +553,6 @@ std::ostream& operator<<(std::ostream& out, printable_typename<T>) {
 
 } // namespace pcg_extras
 
-// NOLINTEND(readability-identifier-naming, modernize-use-using, bugprone-macro-parentheses, google-explicit-constructor)
+// NOLINTEND(*)
 
 #endif // PCG_EXTRAS_HPP_INCLUDED

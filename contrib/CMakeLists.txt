@@ -9,6 +9,8 @@ if (WITH_COVERAGE)
   # disable coverage for contib files and build with optimisations
   if (COMPILER_CLANG)
       add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  else()
+      add_compile_options(-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE_LIST})
   endif()
 endif()
 
@@ -46,14 +48,9 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
-    add_contrib (openssl-cmake openssl)
-else ()
-    add_contrib (boringssl-cmake boringssl)
-endif ()
+
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
-add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (magic-enum-cmake magic_enum)
@@ -77,6 +74,8 @@ add_contrib (re2-cmake re2)
 add_contrib (xz-cmake xz)
 add_contrib (brotli-cmake brotli)
 add_contrib (double-conversion-cmake double-conversion)
+add_contrib (boringssl-cmake boringssl)
+add_contrib (poco-cmake poco)
 add_contrib (croaring-cmake croaring)
 add_contrib (zstd-cmake zstd)
 add_contrib (zlib-ng-cmake zlib-ng)
@@ -93,8 +92,6 @@ add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 
-add_contrib (corrosion-cmake corrosion)
-
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
@@ -110,35 +107,19 @@ if (ENABLE_TESTS)
     add_contrib (googletest-cmake googletest)
 endif()
 
-add_contrib (llvm-project-cmake llvm-project)
-add_contrib (libfuzzer-cmake llvm-project)
-add_contrib (gwpasan-cmake llvm-project)
+add_contrib (llvm-cmake llvm)
 add_contrib (libxml2-cmake libxml2)
-
-add_contrib (aws-cmake
+add_contrib (aws-s3-cmake
     aws
-    aws-c-auth
-    aws-c-cal
     aws-c-common
-    aws-c-compression
     aws-c-event-stream
-    aws-c-http
-    aws-c-io
-    aws-c-mqtt
-    aws-c-s3
-    aws-c-sdkutils
-    aws-s2n-tls
     aws-checksums
-    aws-crt-cpp
-    aws-cmake
 )
-
 add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
-add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 
@@ -177,19 +158,6 @@ add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
-add_contrib (morton-nd-cmake morton-nd)
-
-if (ARCH_S390X)
-    add_contrib(crc32-s390x-cmake crc32-s390x)
-endif()
-
-add_contrib (annoy-cmake annoy)
-
-add_contrib (xxHash-cmake xxHash)
-
-add_contrib (google-benchmark-cmake google-benchmark)
-
-add_contrib (ulid-c-cmake ulid-c)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

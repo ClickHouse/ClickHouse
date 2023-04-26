@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <vector>
@@ -11,7 +11,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -108,11 +107,6 @@ void MySQLWithFailoverSource::onStart()
                 throw;
             }
         }
-        catch (const mysqlxx::BadQuery & e)
-        {
-            LOG_ERROR(log, "Error processing query '{}': {}", query_str, e.displayText());
-            throw;
-        }
     }
 
     initPositionMappingFromQueryResultStructure();
@@ -147,7 +141,7 @@ namespace
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
-                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.getUInt()));
+                assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
                 read_bytes_size += 4;
                 break;
             case ValueType::vtUInt64:
@@ -177,7 +171,7 @@ namespace
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
-                assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value.getInt()));
+                assert_cast<ColumnInt32 &>(column).insertValue(value.getInt());
                 read_bytes_size += 4;
                 break;
             case ValueType::vtInt64:
@@ -190,12 +184,12 @@ namespace
                     std::vector<String> hhmmss;
                     boost::split(hhmmss, time_str, [](char c) { return c == ':'; });
                     Int64 v = 0;
-
                     if (hhmmss.size() == 3)
-                        v = static_cast<Int64>((std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000);
+                    {
+                        v = (std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000;
+                    }
                     else
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value format");
-
+                        throw Exception("Unsupported value format", ErrorCodes::NOT_IMPLEMENTED);
                     if (negative) v = -v;
                     assert_cast<ColumnInt64 &>(column).insertValue(v);
                     read_bytes_size += value.size();
@@ -208,7 +202,7 @@ namespace
                 break;
             }
             case ValueType::vtFloat32:
-                assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value.getDouble()));
+                assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
                 read_bytes_size += 4;
                 break;
             case ValueType::vtFloat64:
@@ -242,7 +236,7 @@ namespace
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
                 if (time < 0)
                     time = 0;
-                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+                assert_cast<ColumnUInt32 &>(column).insertValue(time);
                 read_bytes_size += 4;
                 break;
             }
@@ -266,7 +260,7 @@ namespace
                 read_bytes_size += column.sizeOfValueIfFixed();
                 break;
             default:
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
+                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 

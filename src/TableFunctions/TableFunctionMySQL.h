@@ -1,9 +1,9 @@
 #pragma once
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageMySQL.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/Pool.h>
 
 
@@ -30,7 +30,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     mutable std::optional<mysqlxx::PoolWithFailover> pool;
-    std::optional<StorageMySQL::Configuration> configuration;
+    std::optional<StorageMySQLConfiguration> configuration;
 };
 
 }

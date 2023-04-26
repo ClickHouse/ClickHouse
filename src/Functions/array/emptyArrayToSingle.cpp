@@ -40,7 +40,8 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
+            throw Exception("Argument for function " + getName() + " must be array.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0];
     }
@@ -145,7 +146,7 @@ namespace
 
                 auto * concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
                 if (!concrete_res_data)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error");
+                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
                 ColumnFixedString::Chars & res_data = concrete_res_data->getChars();
                 size_t size = src_offsets.size();
@@ -211,14 +212,14 @@ namespace
 
                 auto * concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_string_offsets)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error");
+                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
                 const ColumnString::Chars & src_data_vec = src_data_concrete->getChars();
 
                 auto * concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_data)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error");
+                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Chars & res_data = concrete_res_data->getChars();
 
                 size_t size = src_array_offsets.size();
@@ -374,8 +375,8 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
 
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-            arguments[0].column->getName(), getName());
+        throw Exception("Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+            ErrorCodes::ILLEGAL_COLUMN);
 
     MutableColumnPtr res_ptr = array->cloneEmpty();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);

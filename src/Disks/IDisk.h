@@ -28,7 +28,6 @@ namespace Poco
 {
     namespace Util
     {
-        /// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
         class AbstractConfiguration;
     }
 }
@@ -72,12 +71,7 @@ public:
     virtual const String & getName() const = 0;
 
     /// Reserve the specified number of bytes.
-    /// Returns valid reservation or nullptr when failure.
     virtual ReservationPtr reserve(UInt64 bytes) = 0;
-
-    /// Whether this is a disk or a volume.
-    virtual bool isDisk() const { return false; }
-    virtual bool isVolume() const { return false; }
 
     virtual ~Space() = default;
 };
@@ -108,23 +102,16 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(const String & name_, std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
-        : name(name_)
-        , executor(executor_)
+    explicit IDisk(std::shared_ptr<Executor> executor_ = std::make_shared<SyncExecutor>())
+        : executor(executor_)
     {
     }
-
-    /// This is a disk.
-    bool isDisk() const override { return true; }
 
     virtual DiskTransactionPtr createTransaction();
 
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
     virtual const String & getPath() const = 0;
-
-    /// Return disk name.
-    const String & getName() const override { return name; }
 
     /// Total available space on the disk.
     virtual UInt64 getTotalSpace() const = 0;
@@ -209,15 +196,6 @@ public:
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
 
-    /// Write a file using a custom function to write an object to the disk's object storage.
-    /// This method is alternative to writeFile(), the difference is that writeFile() calls IObjectStorage::writeObject()
-    /// to write an object to the object storage while this method allows to specify a callback for that.
-    virtual void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function);
-
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
     virtual void removeFile(const String & path) = 0;
@@ -247,15 +225,13 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-    virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
+    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
     virtual bool supportsCache() const { return false; }
 
     virtual NameSet getCacheLayersNames() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getCacheLayersNames()` is not implemented for disk: {}",
-            toString(getDataSourceDescription().type));
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getType());
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -263,28 +239,15 @@ public:
     /// be multiple files in remote fs for single clickhouse file.
     virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getStorageObjects()` not implemented for disk: {}",
-            toString(getDataSourceDescription().type));
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getType());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    struct LocalPathWithObjectStoragePaths
-    {
-        std::string local_path;
-        std::string common_prefix_for_objects;
-        StoredObjects objects;
-
-        LocalPathWithObjectStoragePaths(
-            const std::string & local_path_, const std::string & common_prefix_for_objects_, StoredObjects && objects_)
-            : local_path(local_path_), common_prefix_for_objects(common_prefix_for_objects_), objects(std::move(objects_)) {}
-    };
+    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getRemotePathsRecursive() not implemented for disk: {}`",
-            toString(getDataSourceDescription().type));
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
     }
 
     /// Batch request to remove multiple files.
@@ -312,8 +275,8 @@ public:
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
-    /// Return data source description
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
+    /// Return disk type - "local", "s3", etc.
+    virtual DiskType getType() const = 0;
 
     /// Involves network interaction.
     virtual bool isRemote() const = 0;
@@ -328,19 +291,14 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
-    virtual bool isWriteOnce() const { return false; }
-
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
-    /// Performs access check and custom action on disk startup.
-    void startup(ContextPtr context, bool skip_access_check);
-
-    /// Performs custom action on disk startup.
-    virtual void startupImpl(ContextPtr) {}
+    /// Performs action on disk startup.
+    virtual void startup(ContextPtr) {}
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
@@ -367,7 +325,7 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual MetadataStoragePtr getMetadataStorage() = 0;
+    virtual MetadataStoragePtr getMetadataStorage();
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
@@ -395,14 +353,6 @@ public:
     /// Return current disk revision.
     virtual UInt64 getRevision() const { return 0; }
 
-    virtual ObjectStoragePtr getObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
-    }
-
     /// Create disk object storage according to disk type.
     /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
     /// for DiskObjectStorage create just a copy.
@@ -411,7 +361,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
+            getType());
     }
 
     virtual bool supportsStat() const { return false; }
@@ -420,17 +370,8 @@ public:
     virtual bool supportsChmod() const { return false; }
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
-    /// Was disk created to be used without storage configuration?
-    bool isCustomDisk() const { return is_custom_disk; }
-
-    void markDiskAsCustom() { is_custom_disk = true; }
-
-    virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
-
 protected:
     friend class DiskDecorator;
-
-    const String name;
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
@@ -440,14 +381,8 @@ protected:
     /// A derived class may override copy() to provide a faster implementation.
     void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir = true);
 
-    virtual void checkAccessImpl(const String & path);
-
 private:
     std::shared_ptr<Executor> executor;
-    bool is_custom_disk = false;
-
-    /// Check access to the disk.
-    void checkAccess();
 };
 
 using Disks = std::vector<DiskPtr>;
@@ -487,8 +422,6 @@ inline String fullPath(const DiskPtr & disk, const String & path)
 /// Return parent path for the specified path.
 inline String parentPath(const String & path)
 {
-    if (path == "/")
-        return "/";
     if (path.ends_with('/'))
         return fs::path(path).parent_path().parent_path() / "";
     return fs::path(path).parent_path() / "";
@@ -507,13 +440,3 @@ inline String directoryPath(const String & path)
 }
 
 }
-
-template <>
-struct fmt::formatter<fs::path> : fmt::formatter<std::string>
-{
-    template <typename FormatCtx>
-    auto format(const fs::path & path, FormatCtx & ctx) const
-    {
-        return fmt::formatter<std::string>::format(path.string(), ctx);
-    }
-};

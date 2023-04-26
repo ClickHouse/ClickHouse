@@ -43,12 +43,10 @@ public:
 
 private:
     SubqueryForSet subquery;
-    std::optional<std::promise<SetPtr>> promise_to_build;
 
     QueryPipeline table_out;
     std::unique_ptr<PushingPipelineExecutor> executor;
     UInt64 read_rows = 0;
-    bool set_from_cache = false;
     Stopwatch watch;
 
     bool done_with_set = true;

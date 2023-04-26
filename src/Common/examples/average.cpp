@@ -10,6 +10,9 @@
 #include <Common/Arena.h>
 #include <Common/Stopwatch.h>
 
+#pragma GCC diagnostic ignored "-Wframe-larger-than="
+
+
 /** This test program evaluates different solutions for a simple degenerate task:
   * Aggregate data by UInt8 key, calculate "avg" function on Float values.
   *
@@ -422,7 +425,7 @@ Float NO_INLINE microsort(const PODArray<UInt8> & keys, const PODArray<Float> & 
     for (size_t i = 1; i < HISTOGRAM_SIZE; ++i)
         positions[i] = positions[i - 1] + count[i - 1];
 
-    for (UInt32 i = 0; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
         *positions[keys[i]]++ = i;
 
     /// Update states.

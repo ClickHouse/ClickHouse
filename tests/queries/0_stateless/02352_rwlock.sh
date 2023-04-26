@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel -- to avoid running it in parallel, this will avoid possible issues due to high pressure
 
 # Test that ensures that WRITE lock failure notifies READ.

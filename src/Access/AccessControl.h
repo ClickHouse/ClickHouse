@@ -99,8 +99,8 @@ public:
                                    const String & config_path,
                                    const zkutil::GetZooKeeper & get_zookeeper_function);
 
-    /// Reloads and updates all access entities.
-    void reload(ReloadMode reload_mode) override;
+    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
+    void reload() override;
 
     using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
 
@@ -134,11 +134,6 @@ public:
     bool isSettingNameAllowed(const std::string_view name) const;
     void checkSettingNameIsAllowed(const std::string_view name) const;
 
-    /// Allows implicit user creation without password (by default it's allowed).
-    /// In other words, allow 'CREATE USER' queries without 'IDENTIFIED WITH' clause.
-    void setImplicitNoPasswordAllowed(const bool allow_implicit_no_password_);
-    bool isImplicitNoPasswordAllowed() const;
-
     /// Allows users without password (by default it's allowed).
     void setNoPasswordAllowed(const bool allow_no_password_);
     bool isNoPasswordAllowed() const;
@@ -146,13 +141,6 @@ public:
     /// Allows users with plaintext password (by default it's allowed).
     void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;
-
-    /// Check complexity requirements for plaintext passwords
-
-    void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_);
-    void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_);
-    void checkPasswordComplexityRules(const String & password_) const;
-    std::vector<std::pair<String, String>> getPasswordComplexityRules() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there two users A, B and a row policy is defined only for A, then
@@ -169,9 +157,6 @@ public:
 
     void setSelectFromInformationSchemaRequiresGrant(bool enable) { select_from_information_schema_requires_grant = enable; }
     bool doesSelectFromInformationSchemaRequireGrant() const { return select_from_information_schema_requires_grant; }
-
-    void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
-    bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
@@ -219,7 +204,6 @@ public:
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
-    class PasswordComplexityRules;
 
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
@@ -233,15 +217,12 @@ private:
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
-    std::unique_ptr<PasswordComplexityRules> password_rules;
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
-    std::atomic_bool allow_implicit_no_password = true;
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
-    std::atomic_bool settings_constraints_replace_previous = false;
 };
 
 }

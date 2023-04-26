@@ -118,6 +118,7 @@ function clone_submodules
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
+            contrib/poco
             contrib/libunwind
             contrib/fmtlib
             contrib/base64
@@ -125,7 +126,8 @@ function clone_submodules
             contrib/libcpuid
             contrib/libdivide
             contrib/double-conversion
-            contrib/llvm-project
+            contrib/libcxx
+            contrib/libcxxabi
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -143,10 +145,6 @@ function clone_submodules
             contrib/wyhash
             contrib/hashidsxx
             contrib/c-ares
-            contrib/morton-nd
-            contrib/xxHash
-            contrib/simdjson
-            contrib/liburing
         )
 
         git submodule sync
@@ -167,9 +165,8 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
-        "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
-        "-DENABLE_LIBURING=1"
+        "-DENABLE_REPLXX=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
@@ -194,17 +191,12 @@ function build
 {
     (
         cd "$FASTTEST_BUILD"
-        TIMEFORMAT=$'\nreal\t%3R\nuser\t%3U\nsys\t%3S'
-        ( time ninja clickhouse-bundle) |& ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
-        BUILD_SECONDS_ELAPSED=$(awk '/^....-..-.. ..:..:.. real\t[0-9]/ {print $4}' < "$FASTTEST_OUTPUT/build_log.txt")
-        echo "build_clickhouse_fasttest_binary: [ OK ] $BUILD_SECONDS_ELAPSED sec." \
-          | ts '%Y-%m-%d %H:%M:%S' \
-          | tee "$FASTTEST_OUTPUT/test_result.txt"
+        time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
 
             strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
+            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache_status
         ccache --evict-older-than 1d ||:
@@ -243,7 +235,6 @@ function run_tests
         --hung-check
         --fast-tests-only
         --no-random-settings
-        --no-random-merge-tree-settings
         --no-long
         --testname
         --shard
@@ -251,12 +242,11 @@ function run_tests
         --check-zookeeper-session
         --order random
         --print-time
-        --report-logs-stats
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a "$FASTTEST_OUTPUT/test_result.txt"
+        | tee "$FASTTEST_OUTPUT/test_result.txt"
     set -e
 
     clickhouse stop --pid-path "$FASTTEST_DATA"

@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/other-functions
----
 # 其他函数 {#qi-ta-han-shu}
 
 ## 主机名() {#hostname}
@@ -33,7 +30,7 @@ slug: /zh/sql-reference/functions/other-functions
 SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
 
-```response
+``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
@@ -43,7 +40,7 @@ SELECT 'some/long/path/to/file' AS a, basename(a)
 SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
 
-```response
+``` text
 ┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
 │ some\long\path\to\file │ file                                   │
 └────────────────────────┴────────────────────────────────────────┘
@@ -53,7 +50,7 @@ SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 SELECT 'some-file-name' AS a, basename(a)
 ```
 
-```response
+``` text
 ┌─a──────────────┬─basename('some-file-name')─┐
 │ some-file-name │ some-file-name             │
 └────────────────┴────────────────────────────┘
@@ -237,7 +234,7 @@ ORDER BY c DESC
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -398,25 +395,23 @@ FROM
 
 **`toTypeName ' 与 ' toColumnTypeName`的区别示例**
 
-```sql
-SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
-```
+    :) select toTypeName(cast('2018-01-01 01:02:03' AS DateTime))
 
-```response
-┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
-│ DateTime                                            │
-└─────────────────────────────────────────────────────┘
-```
+    SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 
-```sql
-SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
-```
+    ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+    │ DateTime                                            │
+    └─────────────────────────────────────────────────────┘
 
-```response
-┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
-│ Const(UInt32)                                             │
-└───────────────────────────────────────────────────────────┘
-```
+    1 rows in set. Elapsed: 0.008 sec.
+
+    :) select toColumnTypeName(cast('2018-01-01 01:02:03' AS DateTime))
+
+    SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
+
+    ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+    │ Const(UInt32)                                             │
+    └───────────────────────────────────────────────────────────┘
 
 该示例显示`DateTime`数据类型作为`Const(UInt32)`存储在内存中。
 
@@ -462,25 +457,26 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 
 **示例**
 
-```sql
-SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
-```
+    :) SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 
-```response
-┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
-│                                           0 │
-└─────────────────────────────────────────────┘
-```
+    SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
 
-```sql
-SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
-```
+    ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
+    │                                           0 │
+    └─────────────────────────────────────────────┘
 
-```response
-┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
-│                                                  ᴺᵁᴸᴸ │
-└───────────────────────────────────────────────────────┘
-```
+    1 rows in set. Elapsed: 0.002 sec.
+
+    :) SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
+
+    SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
+
+    ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
+    │                                                  ᴺᵁᴸᴸ │
+    └───────────────────────────────────────────────────────┘
+
+    1 rows in set. Elapsed: 0.002 sec.
+
 
 ## indexHint  {#indexhint}
 输出符合索引选择范围内的所有数据，同时不实用参数中的表达式进行过滤。
@@ -497,8 +493,7 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
 ```
 SELECT count() FROM ontime
-```
-```response
+
 ┌─count()─┐
 │ 4276457 │
 └─────────┘
@@ -508,11 +503,9 @@ SELECT count() FROM ontime
 
 对该表进行如下的查询：
 
-```sql
-SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 ```
+:) SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
 
-```response
 SELECT
     FlightDate AS k,
     count()
@@ -534,11 +527,9 @@ ORDER BY k ASC
 
 在这个查询中，由于没有使用索引，所以ClickHouse将处理整个表的所有数据(`Processed 4.28 million rows`)。使用下面的查询尝试使用索引进行查询：
 
-```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 ```
+:) SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
 
-```response
 SELECT
     FlightDate AS k,
     count()
@@ -558,11 +549,9 @@ ORDER BY k ASC
 
 现在将表达式`k = '2017-09-15'`传递给`indexHint`函数：
 
-```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
 ```
+:) SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
 
-```response
 SELECT
     FlightDate AS k,
     count()
@@ -633,6 +622,13 @@ ORDER BY k ASC
 
 使用指定的连接键从Join类型引擎的表中获取数据。
 
+## modelEvaluate(model_name, …) {#function-modelevaluate}
+
+使用外部模型计算。
+接受模型的名称以及模型的参数。返回Float64类型的值。
+
 ## throwIf(x) {#throwifx}
 
 如果参数不为零则抛出异常。
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/other_functions/) <!--hide-->

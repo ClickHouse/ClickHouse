@@ -21,6 +21,7 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -60,7 +61,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         settings.out << "Set: ";
 
     settings.out << description << '\n';
@@ -68,7 +69,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         map.add("Set", description);
 }
 
@@ -76,7 +77,7 @@ void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 {
     if (input_streams_.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
+        throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
 
     input_streams = std::move(input_streams_);
     output_stream = input_streams.front();
@@ -90,7 +91,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
+        throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
 
     auto main_pipeline = std::move(pipelines.front());
     if (pipelines.size() == 1)
@@ -121,8 +122,11 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
+    if (!prepared_sets || prepared_sets->empty())
+        return;
+
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
 
@@ -130,7 +134,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, subquery_for_set] : subqueries_for_sets)
+    for (auto & [description, subquery_for_set] : prepared_sets->detachSubqueries())
     {
         if (!subquery_for_set.hasSource())
             continue;
@@ -160,14 +164,6 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
     creating_sets->setStepDescription("Create sets before main query execution");
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
-}
-
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
-{
-    if (!prepared_sets || prepared_sets->empty())
-        return;
-
-    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(), context);
 }
 
 }

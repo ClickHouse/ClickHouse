@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/covarsamp
 sidebar_position: 37
 ---
 

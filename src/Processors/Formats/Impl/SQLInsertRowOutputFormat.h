@@ -16,6 +16,7 @@ public:
     SQLInsertRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
+        const RowOutputFormatParams & params_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "SQLInsertRowOutputFormat"; }
@@ -25,12 +26,11 @@ public:
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
-    void writeFieldDelimiter() override;
-    void writeRowStartDelimiter() override;
-    void writeRowEndDelimiter() override;
-    void writeRowBetweenDelimiter() override;
-    void writeSuffix() override;
-    void resetFormatterImpl() override;
+    virtual void writeFieldDelimiter() override;
+    virtual void writeRowStartDelimiter() override;
+    virtual void writeRowEndDelimiter() override;
+    virtual void writeRowBetweenDelimiter() override;
+    virtual void writeSuffix() override;
 
     void printLineStart();
     void printColumnNames();

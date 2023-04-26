@@ -1,6 +1,3 @@
----
-slug: /zh/operations/tips
----
 # 使用建议 {#usage-recommendations}
 
 ## CPU频率调节器 {#cpu-scaling-governor}
@@ -256,3 +253,5 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
             -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
             -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
     end script
+
+[原始文章](https://clickhouse.com/docs/en/operations/tips/) <!--hide-->

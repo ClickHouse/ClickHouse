@@ -37,13 +37,6 @@ def test_system_settings(started_cluster):
         == "readonly\t0\t\\N\t\\N\t0\n"
     )
 
-    assert (
-        instance.query(
-            "SELECT name, value, min, max, readonly from system.settings WHERE name = 'alter_sync'"
-        )
-        == "alter_sync\t2\t\\N\t\\N\t1\n"
-    )
-
 
 def test_system_constraints(started_cluster):
     assert_query_settings(
@@ -79,24 +72,6 @@ def test_read_only_constraint(started_cluster):
         settings={"force_index_by_date": 1},
         result=None,
         exception="Setting force_index_by_date should not be changed",
-    )
-
-    # Invalid value
-    assert_query_settings(
-        instance,
-        "SELECT value FROM system.settings WHERE name= 'replication_alter_partitions_sync'",
-        settings={"replication_alter_partitions_sync": 1},
-        result=None,
-        exception="Setting alter_sync should not be changed",
-    )
-
-    # Invalid value
-    assert_query_settings(
-        instance,
-        "SELECT value FROM system.settings WHERE name= 'alter_sync'",
-        settings={"alter_sync": 1},
-        result=None,
-        exception="Setting alter_sync should not be changed",
     )
 
 

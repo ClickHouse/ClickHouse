@@ -141,7 +141,7 @@ void TableJoin::addDisjunct()
     clauses.emplace_back();
 
     if (getStorageJoin() && clauses.size() > 1)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
+        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
@@ -458,6 +458,16 @@ TableJoin::createConvertingActions(
                 LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: empty", side);
                 return;
             }
+            auto format_cols = [](const auto & cols) -> std::string
+            {
+                std::vector<std::string> str_cols;
+                str_cols.reserve(cols.size());
+                for (const auto & col : cols)
+                    str_cols.push_back(fmt::format("'{}': {}", col.name, col.type->getName()));
+                return fmt::format("[{}]", fmt::join(str_cols, ", "));
+            };
+            LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: {} -> {}",
+                side, format_cols(dag->getRequiredColumns()), format_cols(dag->getResultColumns()));
         };
         log_actions("Left", left_converting_actions);
         log_actions("Right", right_converting_actions);
@@ -490,11 +500,11 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     if (strictness() == JoinStrictness::Asof)
     {
         if (clauses.size() != 1)
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join over multiple keys is not supported");
+            throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         auto asof_key_type = right_types.find(clauses.back().key_names_right.back());
         if (asof_key_type != right_types.end() && asof_key_type->second->isNullable())
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join over right table Nullable column is not implemented");
+            throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
@@ -660,11 +670,6 @@ String TableJoin::renamedRightColumnName(const String & name) const
     if (const auto it = renames.find(name); it != renames.end())
         return it->second;
     return name;
-}
-
-void TableJoin::setRename(const String & from, const String & to)
-{
-    renames[from] = to;
 }
 
 void TableJoin::addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast)

@@ -1,6 +1,5 @@
 #pragma once
 #include <base/extended_types.h>
-#include <base/Decimal_fwd.h>
 
 #if !defined(NO_SANITIZE_UNDEFINED)
 #if defined(__clang__)
@@ -20,6 +19,23 @@ using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 using Decimal256 = Decimal<Int256>;
 
+template <class T>
+concept is_decimal =
+    std::is_same_v<T, Decimal32>
+    || std::is_same_v<T, Decimal64>
+    || std::is_same_v<T, Decimal128>
+    || std::is_same_v<T, Decimal256>
+    || std::is_same_v<T, DateTime64>;
+
+template <class T>
+concept is_over_big_int =
+    std::is_same_v<T, Int128>
+    || std::is_same_v<T, UInt128>
+    || std::is_same_v<T, Int256>
+    || std::is_same_v<T, UInt256>
+    || std::is_same_v<T, Decimal128>
+    || std::is_same_v<T, Decimal256>;
+
 template <class T> struct NativeTypeT { using Type = T; };
 template <is_decimal T> struct NativeTypeT<T> { using Type = typename T::NativeType; };
 template <class T> using NativeType = typename NativeTypeT<T>::Type;
@@ -36,15 +52,15 @@ struct Decimal
     constexpr Decimal(Decimal<T> &&) noexcept = default;
     constexpr Decimal(const Decimal<T> &) = default;
 
-    constexpr Decimal(const T & value_): value(value_) {} // NOLINT(google-explicit-constructor)
+    constexpr Decimal(const T & value_): value(value_) {}
 
     template <typename U>
-    constexpr Decimal(const Decimal<U> & x): value(x.value) {} // NOLINT(google-explicit-constructor)
+    constexpr Decimal(const Decimal<U> & x): value(x.value) {}
 
     constexpr Decimal<T> & operator=(Decimal<T> &&) noexcept = default;
     constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
 
-    constexpr operator T () const { return value; } // NOLINT(google-explicit-constructor)
+    constexpr operator T () const { return value; }
 
     template <typename U>
     constexpr U convertTo() const
@@ -95,7 +111,7 @@ public:
     using Base::Base;
     using NativeType = Base::NativeType;
 
-    constexpr DateTime64(const Base & v): Base(v) {} // NOLINT(google-explicit-constructor)
+    constexpr DateTime64(const Base & v): Base(v) {}
 };
 }
 

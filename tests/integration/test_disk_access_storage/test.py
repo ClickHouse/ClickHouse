@@ -93,7 +93,7 @@ def test_alter():
     instance.query("GRANT SELECT ON mydb.mytable TO u1")
     instance.query("GRANT SELECT ON mydb.* TO rx WITH GRANT OPTION")
     instance.query(
-        "ALTER SETTINGS PROFILE s1 SETTINGS max_memory_usage = 987654321 CONST"
+        "ALTER SETTINGS PROFILE s1 SETTINGS max_memory_usage = 987654321 READONLY"
     )
 
     def check():
@@ -124,7 +124,7 @@ def test_alter():
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s1")
-            == "CREATE SETTINGS PROFILE s1 SETTINGS max_memory_usage = 987654321 CONST\n"
+            == "CREATE SETTINGS PROFILE s1 SETTINGS max_memory_usage = 987654321 READONLY\n"
         )
         assert (
             instance.query("SHOW CREATE SETTINGS PROFILE s2")

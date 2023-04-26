@@ -1,4 +1,3 @@
-#include "Storages/MergeTree/IDataPartStorage.h"
 #include <Storages/MergeTree/MergeTask.h>
 
 #include <memory>
@@ -7,7 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Storages/LightweightDeleteDescription.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -66,10 +65,7 @@ static void extractMergingAndGatheringColumns(
 
     /// Force version column for Replacing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
-    {
-        key_columns.emplace(merging_params.is_deleted_column);
         key_columns.emplace(merging_params.version_column);
-    }
 
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -96,58 +92,27 @@ static void extractMergingAndGatheringColumns(
     }
 }
 
-static void addMissedColumnsToSerializationInfos(
-    size_t num_rows_in_parts,
-    const Names & part_columns,
-    const ColumnsDescription & storage_columns,
-    const SerializationInfo::Settings & info_settings,
-    SerializationInfoByName & new_infos)
-{
-    NameSet part_columns_set(part_columns.begin(), part_columns.end());
-
-    for (const auto & column : storage_columns)
-    {
-        if (part_columns_set.contains(column.name))
-            continue;
-
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            continue;
-
-        if (column.default_desc.expression)
-            continue;
-
-        auto new_info = column.type->createSerializationInfo(info_settings);
-        new_info->addDefaults(num_rows_in_parts);
-        new_infos.emplace(column.name, std::move(new_info));
-    }
-}
-
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
-    String local_tmp_prefix;
-    if (global_ctx->need_prefix)
-    {
-        // projection parts have different prefix and suffix compared to normal parts.
-        // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-        local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
-    }
+    // projection parts have different prefix and suffix compared to normal parts.
+    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+    const String local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
     const String local_tmp_suffix = global_ctx->parent_part ? ctx->suffix : "";
 
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     /// We don't want to perform merge assigned with TTL as normal merge, so
     /// throw exception
     if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
+        throw Exception("Cancelled merging parts with TTL", ErrorCodes::ABORTED);
 
-    LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
+    LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {}",
         global_ctx->future_part->parts.size(),
         global_ctx->future_part->parts.front()->name,
         global_ctx->future_part->parts.back()->name,
-        global_ctx->future_part->part_format.part_type.toString(),
-        global_ctx->future_part->part_format.storage_type.toString());
+        global_ctx->future_part->type.toString());
 
     if (global_ctx->deduplicate)
     {
@@ -158,41 +123,33 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     }
 
     ctx->disk = global_ctx->space_reservation->getDisk();
-    auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
 
-    std::optional<MergeTreeDataPartBuilder> builder;
-    if (global_ctx->parent_part)
+    String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
+
+    if (global_ctx->parent_path_storage_builder)
     {
-        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename);
-        builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage);
-        builder->withParentPart(global_ctx->parent_part);
+        global_ctx->data_part_storage_builder = global_ctx->parent_path_storage_builder->getProjection(local_tmp_part_basename);
     }
     else
     {
         auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
-        builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename));
-        builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
+
+        global_ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
+            local_single_disk_volume,
+            global_ctx->data->relative_data_path,
+            local_tmp_part_basename);
     }
 
-    builder->withPartInfo(global_ctx->future_part->part_info);
-    builder->withPartType(global_ctx->future_part->part_format.part_type);
-
-    global_ctx->new_data_part = std::move(*builder).build();
-    auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
-
-    if (data_part_storage->exists())
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
+    if (global_ctx->data_part_storage_builder->exists())
+        throw Exception("Directory " + global_ctx->data_part_storage_builder->getFullPath() + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     if (!global_ctx->parent_part)
-    {
-        data_part_storage->beginTransaction();
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
-    }
 
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
 
-    auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
+    auto object_columns = MergeTreeData::getObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, object_columns);
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
 
@@ -205,6 +162,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->gathering_column_names,
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
+
+    auto data_part_storage = global_ctx->data_part_storage_builder->getStorage();
+
+    global_ctx->new_data_part = global_ctx->data->createPart(
+        global_ctx->future_part->name,
+        global_ctx->future_part->type,
+        global_ctx->future_part->part_info,
+        data_part_storage,
+        global_ctx->parent_part);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
@@ -231,22 +197,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             ctx->force_ttl = true;
         }
 
-        if (!info_settings.isAlwaysDefault())
-        {
-            auto part_infos = part->getSerializationInfos();
-
-            addMissedColumnsToSerializationInfos(
-                part->rows_count,
-                part->getColumns().getNames(),
-                global_ctx->metadata_snapshot->getColumns(),
-                info_settings,
-                part_infos);
-
-            infos.add(part_infos);
-        }
+        infos.add(part->getSerializationInfos());
     }
 
-    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
+    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos);
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
@@ -273,7 +227,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
 
-    ctx->tmp_disk = global_ctx->context->getGlobalTemporaryVolume()->getDisk();
+    ctx->tmp_disk = global_ctx->context->getTemporaryVolume()->getDisk();
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -303,7 +257,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             break;
         }
         default :
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge algorithm must be chosen");
+            throw Exception("Merge algorithm must be chosen", ErrorCodes::LOGICAL_ERROR);
     }
 
     assert(global_ctx->gathering_columns.size() == global_ctx->gathering_column_names.size());
@@ -348,6 +302,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
+        global_ctx->data_part_storage_builder,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
@@ -452,10 +407,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     global_ctx->merged_pipeline.reset();
 
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
+        throw Exception("Cancelled merging parts with expired TTL", ErrorCodes::ABORTED);
 
     const auto data_settings = global_ctx->data->getSettings();
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -487,10 +442,9 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     /// number of input rows.
     if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
         throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
-                        "of bytes written to rows_sources file ({}). It is a bug.",
-                        sum_input_rows_exact, input_rows_filtered, rows_sources_count);
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number of bytes written to rows_sources file ({}). It is a bug.",
+            sum_input_rows_exact, input_rows_filtered, rows_sources_count);
 
     ctx->rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(ctx->tmp_disk->readFile(fileName(ctx->rows_sources_file->path())));
 
@@ -501,7 +455,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     const auto & settings = global_ctx->context->getSettingsRef();
     size_t max_delayed_streams = 0;
-    if (global_ctx->new_data_part->getDataPartStorage().supportParallelWrite())
+    if (global_ctx->new_data_part->data_part_storage->supportParallelWrite())
     {
         if (settings.max_insert_delayed_streams_for_parallel_write.changed)
             max_delayed_streams = settings.max_insert_delayed_streams_for_parallel_write;
@@ -558,6 +512,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
+        global_ctx->data_part_storage_builder,
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         ctx->executor->getHeader(),
@@ -593,7 +548,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
     const String & column_name = ctx->it_name_and_type->name;
     if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+        throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     ctx->executor.reset();
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
@@ -609,8 +564,8 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
     if (global_ctx->rows_written != ctx->column_elems_written)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Written {} elements of column {}, but {} rows of PK columns",
-                        toString(ctx->column_elems_written), column_name, toString(global_ctx->rows_written));
+        throw Exception("Written " + toString(ctx->column_elems_written) + " elements of column " + column_name +
+                        ", but " + toString(global_ctx->rows_written) + " rows of PK columns", ErrorCodes::LOGICAL_ERROR);
     }
 
     UInt64 rows = 0;
@@ -702,20 +657,21 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         if (projection.type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
+        const Settings & settings = global_ctx->context->getSettingsRef();
+
         ctx->tasks_for_projections.emplace_back(std::make_shared<MergeTask>(
             projection_future_part,
             projection.metadata,
             global_ctx->merge_entry,
-            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context),
+            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, settings),
             global_ctx->time_of_merge,
             global_ctx->context,
             global_ctx->space_reservation,
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
-            global_ctx->cleanup,
             projection_merging_params,
-            global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
+            global_ctx->data_part_storage_builder.get(),
             ".proj",
             NO_TRANSACTION_PTR,
             global_ctx->data,
@@ -755,9 +711,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync);
     else
-        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns);
+        global_ctx->to->finalizePart(
+            global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns);
 
-    global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(global_ctx->new_data_part);
 
     return false;
@@ -875,6 +831,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     global_ctx->horizontal_stage_progress = std::make_unique<MergeStageProgress>(
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
+
     for (const auto & part : global_ctx->future_part->parts)
     {
         Pipe pipe = createMergeTreeSequentialSource(
@@ -927,16 +884,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_shared<MergingSortedTransform>(
-                header,
-                pipes.size(),
-                sort_description,
-                merge_block_size,
-                SortingQueueStrategy::Default,
-                /* limit_= */0,
-                /* always_read_till_end_= */false,
-                ctx->rows_sources_write_buf.get(),
-                true,
-                ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, SortingQueueStrategy::Default, 0, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
@@ -956,9 +904,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
         case MergeTreeData::MergingParams::Replacing:
             merged_transform = std::make_shared<ReplacingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
-                merge_block_size, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
-                (data_settings->clean_deleted_rows != CleanDeletedRows::Never) || global_ctx->cleanup);
+                header, pipes.size(), sort_description, ctx->merging_params.version_column,
+                merge_block_size, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -1020,16 +967,14 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
-    if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
-        return MergeAlgorithm::Horizontal;
-    if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
+    if (global_ctx->future_part->type != MergeTreeDataPartType::Wide)
         return MergeAlgorithm::Horizontal;
 
     if (!data_settings->allow_vertical_merges_from_compact_to_wide_parts)
     {
         for (const auto & part : global_ctx->future_part->parts)
         {
-            if (!isWidePart(part))
+            if (part->getType() != MergeTreeDataPartType::Wide)
                 return MergeAlgorithm::Horizontal;
         }
     }

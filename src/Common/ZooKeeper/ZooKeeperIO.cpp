@@ -1,12 +1,46 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 
-
 namespace Coordination
 {
+
+void write(size_t x, WriteBuffer & out)
+{
+    x = __builtin_bswap64(x);
+    writeBinary(x, out);
+}
+
+#ifdef OS_DARWIN
+void write(uint64_t x, WriteBuffer & out)
+{
+    x = __builtin_bswap64(x);
+    writeBinary(x, out);
+}
+#endif
+
+void write(int64_t x, WriteBuffer & out)
+{
+    x = __builtin_bswap64(x);
+    writeBinary(x, out);
+}
+void write(int32_t x, WriteBuffer & out)
+{
+    x = __builtin_bswap32(x);
+    writeBinary(x, out);
+}
+
+void write(uint8_t x, WriteBuffer & out)
+{
+    writeBinary(x, out);
+}
 
 void write(OpNum x, WriteBuffer & out)
 {
     write(static_cast<int32_t>(x), out);
+}
+
+void write(bool x, WriteBuffer & out)
+{
+    writeBinary(x, out);
 }
 
 void write(const std::string & s, WriteBuffer & out)
@@ -42,11 +76,52 @@ void write(const Error & x, WriteBuffer & out)
     write(static_cast<int32_t>(x), out);
 }
 
+#ifdef OS_DARWIN
+void read(uint64_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+    x = __builtin_bswap64(x);
+}
+#endif
+
+void read(size_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+    x = __builtin_bswap64(x);
+}
+
+void read(int64_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+    x = __builtin_bswap64(x);
+}
+
+void read(uint8_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+}
+
+void read(int32_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+    x = __builtin_bswap32(x);
+}
+
 void read(OpNum & x, ReadBuffer & in)
 {
     int32_t raw_op_num;
     read(raw_op_num, in);
     x = getOpNum(raw_op_num);
+}
+
+void read(bool & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+}
+
+void read(int8_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
 }
 
 void read(std::string & s, ReadBuffer & in)
@@ -71,7 +146,8 @@ void read(std::string & s, ReadBuffer & in)
     size_t read_bytes = in.read(s.data(), size);
     if (read_bytes != static_cast<size_t>(size))
         throw Exception(
-            Error::ZMARSHALLINGERROR, "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}", size, read_bytes);
+	    fmt::format("Buffer size read from Zookeeper is not big enough. Expected {}. Got {}", size, read_bytes),
+            Error::ZMARSHALLINGERROR);
 }
 
 void read(ACL & acl, ReadBuffer & in)

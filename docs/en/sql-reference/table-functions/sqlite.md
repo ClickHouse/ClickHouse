@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/table-functions/sqlite
 sidebar_position: 55
 sidebar_label: sqlite
-title: sqlite
 ---
+
+## sqlite
 
 Allows to perform queries on a data stored in an [SQLite](../../engines/database-engines/sqlite.md) database.
 
@@ -15,12 +15,12 @@ Allows to perform queries on a data stored in an [SQLite](../../engines/database
 
 **Arguments** 
 
-- `db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
-- `table_name` — Name of a table in the SQLite database. [String](../../sql-reference/data-types/string.md).
+-   `db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
+-   `table_name` — Name of a table in the SQLite database. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- A table object with the same columns as in the original `SQLite` table.
+-   A table object with the same columns as in the original `SQLite` table.
 
 **Example**
 
@@ -42,4 +42,4 @@ Result:
 
 **See Also** 
 
-- [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine
+-   [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine

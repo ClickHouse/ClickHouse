@@ -8,7 +8,7 @@ namespace DB
 
 class ASTStorage;
 
-#define LIST_OF_EXECUTABLE_SETTINGS(M, ALIAS) \
+#define LIST_OF_EXECUTABLE_SETTINGS(M) \
     M(Bool, send_chunk_header, false, "Send number_of_rows\n before sending chunk to process.", 0) \
     M(UInt64, pool_size, 16, "Processes pool size. If size == 0, then there is no size restrictions.", 0) \
     M(UInt64, max_command_execution_time, 10, "Max command execution time in seconds.", 0) \

@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <https_port>8443</https_port>
     <openSSL>

@@ -18,11 +18,8 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/StreamInQueryCacheTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-
 
 namespace DB
 {
@@ -32,11 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-QueryPipeline::QueryPipeline()
-    : processors(std::make_shared<Processors>())
-{
-}
-
+QueryPipeline::QueryPipeline() = default;
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
 QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
 QueryPipeline::~QueryPipeline() = default;
@@ -130,79 +123,50 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
-    std::vector<IProcessor *> processors;
-    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
+
+    /// TODO: add setRowsBeforeLimitCounter as virtual method to IProcessor.
+    std::vector<LimitTransform *> limits;
+    std::vector<RemoteSource *> remote_sources;
+
     std::unordered_set<IProcessor *> visited;
-    bool has_limit = false;
 
     struct QueuedEntry
     {
         IProcessor * processor;
-        LimitTransform * limit_processor;
-        ssize_t limit_input_port;
+        bool visited_limit;
     };
 
     std::queue<QueuedEntry> queue;
 
-    queue.push({ output_format, nullptr, -1 });
+    queue.push({ output_format, false });
     visited.emplace(output_format);
 
     while (!queue.empty())
     {
         auto * processor = queue.front().processor;
-        auto * limit_processor = queue.front().limit_processor;
-        auto limit_input_port = queue.front().limit_input_port;
+        auto visited_limit = queue.front().visited_limit;
         queue.pop();
 
-        /// Set counter based on the following cases:
-        ///   1. Remote: Set counter on Remote
-        ///   2. Limit ... PartialSorting: Set counter on PartialSorting
-        ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
-        ///   4. Limit ... Remote: Set counter on Remote
-        ///   5. Limit ... : Set counter on the input port of Limit
-
-        /// Case 1.
-        if (typeid_cast<RemoteSource *>(processor) && !limit_processor)
+        if (!visited_limit)
         {
-            processors.emplace_back(processor);
+            if (auto * limit = typeid_cast<LimitTransform *>(processor))
+            {
+                visited_limit = true;
+                limits.emplace_back(limit);
+            }
+
+            if (auto * source = typeid_cast<RemoteSource *>(processor))
+                remote_sources.emplace_back(source);
+        }
+        else if (auto * sorting = typeid_cast<PartialSortingTransform *>(processor))
+        {
+            if (!rows_before_limit_at_least)
+                rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
+
+            sorting->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+
+            /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
             continue;
-        }
-
-        if (auto * limit = typeid_cast<LimitTransform *>(processor))
-        {
-            has_limit = true;
-
-            /// Ignore child limits
-            if (limit_processor)
-                continue;
-
-            limit_processor = limit;
-            limit_candidates[limit_processor] = {};
-        }
-        else if (limit_processor)
-        {
-            /// Case 2.
-            if (typeid_cast<PartialSortingTransform *>(processor))
-            {
-                processors.emplace_back(processor);
-                limit_candidates[limit_processor].push_back(limit_input_port);
-                continue;
-            }
-
-            /// Case 3.
-            if (auto * having = typeid_cast<TotalsHavingTransform *>(processor))
-            {
-                if (having->hasFilter())
-                    continue;
-            }
-
-            /// Case 4.
-            if (typeid_cast<RemoteSource *>(processor))
-            {
-                processors.emplace_back(processor);
-                limit_candidates[limit_processor].push_back(limit_input_port);
-                continue;
-            }
         }
 
         /// Skip totals and extremes port for output format.
@@ -210,73 +174,52 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
             if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, limit_processor, limit_input_port });
+                queue.push({ child_processor, visited_limit });
 
             continue;
         }
 
-        if (limit_processor == processor)
+        for (auto & child_port : processor->getInputs())
         {
-            ssize_t i = 0;
-            for (auto & child_port : processor->getInputs())
-            {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
-                if (visited.emplace(child_processor).second)
-                    queue.push({ child_processor, limit_processor, i });
-                ++i;
-            }
-        }
-        else
-        {
-            for (auto & child_port : processor->getInputs())
-            {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
-                if (visited.emplace(child_processor).second)
-                    queue.push({ child_processor, limit_processor, limit_input_port });
-            }
+            auto * child_processor = &child_port.getOutputPort().getProcessor();
+            if (visited.emplace(child_processor).second)
+                queue.push({ child_processor, visited_limit });
         }
     }
 
-    /// Case 5.
-    for (auto && [limit, ports] : limit_candidates)
-    {
-        /// If there are some input ports which don't have the counter, add it to LimitTransform.
-        if (ports.size() < limit->getInputs().size())
-        {
-            processors.push_back(limit);
-            for (auto port : ports)
-                limit->setInputPortHasCounter(port);
-        }
-    }
-
-    if (!processors.empty())
+    if (!rows_before_limit_at_least && (!limits.empty() || !remote_sources.empty()))
     {
         rows_before_limit_at_least = std::make_shared<RowsBeforeLimitCounter>();
-        for (auto & processor : processors)
-            processor->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
-        /// If there is a limit, then enable rows_before_limit_at_least
-        /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
-        if (has_limit)
-            rows_before_limit_at_least->add(0);
+        for (auto & limit : limits)
+            limit->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 
-        output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
+        for (auto & source : remote_sources)
+            source->setRowsBeforeLimitCounter(rows_before_limit_at_least);
     }
+
+    /// If there is a limit, then enable rows_before_limit_at_least
+    /// It is needed when zero rows is read, but we still want rows_before_limit_at_least in result.
+    if (!limits.empty())
+        rows_before_limit_at_least->add(0);
+
+    if (rows_before_limit_at_least)
+        output_format->setRowsBeforeLimitCounter(rows_before_limit_at_least);
 }
 
 
 QueryPipeline::QueryPipeline(
     QueryPlanResourceHolder resources_,
-    std::shared_ptr<Processors> processors_)
+    Processors processors_)
     : resources(std::move(resources_))
     , processors(std::move(processors_))
 {
-    checkCompleted(*processors);
+    checkCompleted(processors);
 }
 
 QueryPipeline::QueryPipeline(
     QueryPlanResourceHolder resources_,
-    std::shared_ptr<Processors> processors_,
+    Processors processors_,
     InputPort * input_)
     : resources(std::move(resources_))
     , processors(std::move(processors_))
@@ -288,7 +231,7 @@ QueryPipeline::QueryPipeline(
             "Cannot create pushing QueryPipeline because its input port is connected or null");
 
     bool found_input = false;
-    for (const auto & processor : *processors)
+    for (const auto & processor : processors)
     {
         for (const auto & in : processor->getInputs())
         {
@@ -312,7 +255,7 @@ QueryPipeline::QueryPipeline(std::shared_ptr<ISource> source) : QueryPipeline(Pi
 
 QueryPipeline::QueryPipeline(
     QueryPlanResourceHolder resources_,
-    std::shared_ptr<Processors> processors_,
+    Processors processors_,
     OutputPort * output_,
     OutputPort * totals_,
     OutputPort * extremes_)
@@ -322,7 +265,7 @@ QueryPipeline::QueryPipeline(
     , totals(totals_)
     , extremes(extremes_)
 {
-    checkPulling(*processors, output, totals, extremes);
+    checkPulling(processors, output, totals, extremes);
 }
 
 QueryPipeline::QueryPipeline(Pipe pipe)
@@ -335,34 +278,32 @@ QueryPipeline::QueryPipeline(Pipe pipe)
         extremes = pipe.getExtremesPort();
 
         processors = std::move(pipe.processors);
-        checkPulling(*processors, output, totals, extremes);
+        checkPulling(processors, output, totals, extremes);
     }
     else
     {
         processors = std::move(pipe.processors);
-        checkCompleted(*processors);
+        checkCompleted(processors);
     }
 }
 
 QueryPipeline::QueryPipeline(Chain chain)
     : resources(chain.detachResources())
-    , processors(std::make_shared<Processors>())
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
 {
-    processors->reserve(chain.getProcessors().size() + 1);
+    processors.reserve(chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
-        processors->emplace_back(std::move(processor));
+        processors.emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(chain.getOutputPort(), sink->getPort());
-    processors->emplace_back(std::move(sink));
+    processors.emplace_back(std::move(sink));
 
     input = &chain.getInputPort();
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
-    : processors(std::make_shared<Processors>())
 {
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
     auto & format_totals = format->getPort(IOutputFormat::PortKind::Totals);
@@ -372,14 +313,14 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     {
         auto source = std::make_shared<NullSource>(format_totals.getHeader());
         totals = &source->getPort();
-        processors->emplace_back(std::move(source));
+        processors.emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getHeader());
         extremes = &source->getPort();
-        processors->emplace_back(std::move(source));
+        processors.emplace_back(std::move(source));
     }
 
     connect(*totals, format_totals);
@@ -391,7 +332,7 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
 
     output_format = format.get();
 
-    processors->emplace_back(std::move(format));
+    processors.emplace_back(std::move(format));
 }
 
 static void drop(OutputPort *& port, Processors & processors)
@@ -413,11 +354,11 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with sink");
 
-    drop(totals, *processors);
-    drop(extremes, *processors);
+    drop(totals, processors);
+    drop(extremes, processors);
 
     connect(*output, sink->getPort());
-    processors->emplace_back(std::move(sink));
+    processors.emplace_back(std::move(sink));
     output = nullptr;
 }
 
@@ -428,17 +369,17 @@ void QueryPipeline::complete(Chain chain)
 
     resources = chain.detachResources();
 
-    drop(totals, *processors);
-    drop(extremes, *processors);
+    drop(totals, processors);
+    drop(extremes, processors);
 
-    processors->reserve(processors->size() + chain.getProcessors().size() + 1);
+    processors.reserve(processors.size() + chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
-        processors->emplace_back(std::move(processor));
+        processors.emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(*output, chain.getInputPort());
     connect(chain.getOutputPort(), sink->getPort());
-    processors->emplace_back(std::move(sink));
+    processors.emplace_back(std::move(sink));
     output = nullptr;
 }
 
@@ -459,7 +400,7 @@ void QueryPipeline::complete(Pipe pipe)
     input = nullptr;
 
     auto pipe_processors = Pipe::detachProcessors(std::move(pipe));
-    processors->insert(processors->end(), pipe_processors.begin(), pipe_processors.end());
+    processors.insert(processors.end(), pipe_processors.begin(), pipe_processors.end());
 }
 
 static void addMaterializing(OutputPort *& output, Processors & processors)
@@ -480,9 +421,9 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     if (format->expectMaterializedColumns())
     {
-        addMaterializing(output, *processors);
-        addMaterializing(totals, *processors);
-        addMaterializing(extremes, *processors);
+        addMaterializing(output, processors);
+        addMaterializing(totals, processors);
+        addMaterializing(extremes, processors);
     }
 
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
@@ -493,14 +434,14 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     {
         auto source = std::make_shared<NullSource>(format_totals.getHeader());
         totals = &source->getPort();
-        processors->emplace_back(std::move(source));
+        processors.emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
         auto source = std::make_shared<NullSource>(format_extremes.getHeader());
         extremes = &source->getPort();
-        processors->emplace_back(std::move(source));
+        processors.emplace_back(std::move(source));
     }
 
     connect(*output, format_main);
@@ -514,7 +455,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     initRowsBeforeLimit(format.get());
     output_format = format.get();
 
-    processors->emplace_back(std::move(format));
+    processors.emplace_back(std::move(format));
 }
 
 Block QueryPipeline::getHeader() const
@@ -534,7 +475,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
     progress_callback = callback;
 }
 
-void QueryPipeline::setProcessListElement(QueryStatusPtr elem)
+void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
     process_list_element = elem;
 
@@ -563,8 +504,9 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
     transform->setQuota(quota_);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
-    processors->emplace_back(std::move(transform));
+    processors.emplace_back(std::move(transform));
 }
+
 
 bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
 {
@@ -574,27 +516,6 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
-}
-
-void QueryPipeline::streamIntoQueryCache(std::shared_ptr<StreamInQueryCacheTransform> transform)
-{
-    assert(pulling());
-
-    connect(*output, transform->getInputPort());
-    output = &transform->getOutputPort();
-    processors->emplace_back(transform);
-}
-
-void QueryPipeline::finalizeWriteInQueryCache()
-{
-    auto it = std::find_if(
-        processors->begin(), processors->end(),
-        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryCacheTransform *>(&*processor); });
-
-    /// the pipeline should theoretically contain just one StreamInQueryCacheTransform
-
-    if (it != processors->end())
-        dynamic_cast<StreamInQueryCacheTransform &>(**it).finalizeWriteInQueryCache();
 }
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)
@@ -608,7 +529,7 @@ void QueryPipeline::addCompletedPipeline(QueryPipeline other)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
 
     resources = std::move(other.resources);
-    processors->insert(processors->end(), other.processors->begin(), other.processors->end());
+    processors.insert(processors.end(), other.processors.begin(), other.processors.end());
 }
 
 void QueryPipeline::reset()
@@ -639,9 +560,9 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
         ActionsDAG::MatchColumnsMode::Position);
 
     auto actions = std::make_shared<ExpressionActions>(std::move(converting));
-    addExpression(output, actions, *processors);
-    addExpression(totals, actions, *processors);
-    addExpression(extremes, actions, *processors);
+    addExpression(output, actions, processors);
+    addExpression(totals, actions, processors);
+    addExpression(extremes, actions, processors);
 }
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const

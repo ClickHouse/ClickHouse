@@ -18,7 +18,6 @@ public:
         size_t max_block_size,
         SortingQueueStrategy sorting_queue_strategy,
         UInt64 limit_ = 0,
-        bool always_read_till_end_ = false,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool quiet_ = false,
         bool use_average_block_sizes = false,

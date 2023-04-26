@@ -6,9 +6,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <filesystem>
-#include <queue>
 
 
 namespace DB
@@ -97,9 +95,6 @@ private:
     std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds consistent_metadata_snapshot_timeout;
     Poco::Logger * log;
-    /// Unfortunately we can use ZooKeeper for collecting information for backup
-    /// and we need to retry...
-    ZooKeeperRetriesInfo global_zookeeper_retries_info;
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;

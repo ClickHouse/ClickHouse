@@ -7,31 +7,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+TMP_PATH=${CLICKHOUSE_TEST_UNIQUE_NAME}
+QUERIES_FILE=02313_filesystem_cache_seeks.queries
+TEST_FILE=$CUR_DIR/filesystem_cache_queries/$QUERIES_FILE
 
-for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi'; do
-    echo "Using storage policy: $STORAGE_POLICY"
-    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
-
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_02313"
-
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE test_02313 (id Int32, val String)
-    ENGINE = MergeTree()
-    ORDER BY tuple()
-    SETTINGS storage_policy = '$STORAGE_POLICY'"
-
-    $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 -n --query "INSERT INTO test_02313
-    SELECT * FROM
-        generateRandom('id Int32, val String')
-    LIMIT 100000"
-
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
-
-    $CLICKHOUSE_CLIENT --query "DROP TABLE test_02313"
-
+for storagePolicy in 's3_cache' 'local_cache' 's3_cache_multi'; do
+    echo "Using storage policy: $storagePolicy"
+    cat $TEST_FILE | sed -e "s/_storagePolicy/${storagePolicy}/"  > $TMP_PATH
+    ${CLICKHOUSE_CLIENT} --queries-file $TMP_PATH
+    rm $TMP_PATH
+    echo
 done
