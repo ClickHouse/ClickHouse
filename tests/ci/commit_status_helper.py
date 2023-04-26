@@ -163,9 +163,10 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         worst_state = f"The overall status of the commit is {beauty_state(worst_state)}"
 
     comment_body = (
-        f"<!-- commit {pr_info.sha} automatic status comment -->\n"
-        f"This is an automated comment for commit `{pr_info.sha}` with "
-        f"description of existing statuses\n"
+        f"<!-- automatic status comment for PR #{pr_info.number} "
+        f"from {pr_info.head_name}:{pr_info.head_ref} -->\n"
+        f"This is an automated comment for commit {pr_info.sha} with "
+        f"description of existing statuses. It's updated for the latest CI running\n"
         f"The full report is available [here]({report_url})\n"
         f"{worst_state}\n\n<table>"
         "<thead><tr><th>Check name</th><th>Description</th><th>Status</th></tr></thead>\n"
