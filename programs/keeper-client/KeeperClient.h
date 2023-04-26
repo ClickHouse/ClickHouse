@@ -1,10 +1,12 @@
 #pragma once
 
-
+#include "Parser.h"
+#include "Commands.h"
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Client/LineReader.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Parsers/ASTLiteral.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Util/Application.h>
 #include <filesystem>
@@ -13,13 +15,16 @@
 namespace DB
 {
 
-class KeeperClient;
+static const NameSet four_letter_word_commands
+    {
+        "ruok", "mntr", "srvr", "stat", "srst", "conf",
+        "cons", "crst", "envi", "dirs", "isro", "wchs",
+        "wchc", "wchp", "dump", "csnp", "lgif", "rqld",
+    };
 
 class KeeperClient: public Poco::Util::Application
 {
 public:
-    using Callback = std::function<void(KeeperClient *, const std::vector<String> &)>;
-
     KeeperClient() = default;
 
     void initialize(Poco::Util::Application & self) override;
@@ -28,29 +33,31 @@ public:
 
     void defineOptions(Poco::Util::OptionSet & options) override;
 
-protected:
-    void runInteractive();
-    void loadCommands(std::vector<std::tuple<String, size_t, Callback>> && new_commands);
-    bool processQueryText(const String & text);
-    void executeQuery(const String & query);
+    String getAbsolutePath(const String & relative) const;
+
+    void askConfirmation(const String & prompt, std::function<void()> && callback);
 
     String executeFourLetterCommand(const String & command);
 
-    String getAbsolutePath(const String & relative);
-    void askConfirmation(const String & prompt, std::function<void()> && callback);
+    zkutil::ZooKeeperPtr zookeeper;
+    std::filesystem::path cwd = "/";
+    std::function<void()> confirmation_callback;
 
-    std::map<std::pair<String, size_t>, Callback> commands;
+    inline static std::map<String, Command> commands;
+
+protected:
+    void runInteractive();
+    bool processQueryText(const String & text);
+    void executeQuery(const String & query);
+
+    void loadCommands(std::vector<Command> && new_commands);
 
     String history_file;
     LineReader::Suggest suggest;
 
-    zkutil::ZooKeeperPtr zookeeper;
     zkutil::ZooKeeperArgs zk_args;
 
-    std::filesystem::path cwd = "/";
-
     bool need_confirmation = false;
-    std::function<void()> confirmation_callback;
 };
 
 }
