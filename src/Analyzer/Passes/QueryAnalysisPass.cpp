@@ -4081,11 +4081,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                replace_transformer_was_used = true;
-
                 auto replace_expression = replace_transformer->findReplacementExpression(column_name);
                 if (!replace_expression)
                     continue;
+
+                replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
