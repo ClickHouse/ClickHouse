@@ -890,7 +890,7 @@ Write time that processor spent during execution/waiting for data to `system.pro
 
 See also:
 
-- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md)
 - [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
