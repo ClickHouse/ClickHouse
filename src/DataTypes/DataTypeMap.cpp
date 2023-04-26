@@ -128,6 +128,13 @@ bool DataTypeMap::checkKeyType(DataTypePtr key_type)
     return true;
 }
 
+DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
+{
+    const auto & from_array = assert_cast<const DataTypeArray &>(*nested);
+    const auto & from_tuple = assert_cast<const DataTypeTuple &>(*from_array.getNestedType());
+    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
