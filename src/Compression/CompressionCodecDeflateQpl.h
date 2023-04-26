@@ -34,7 +34,7 @@ private:
     /// size of each job objects
     UInt32 per_job_size;
     /// Maximum jobs running in parallel supported by IAA hardware
-    UInt32 hw_jobs_max_number;
+    UInt32 max_hw_jobs;
     /// Entire buffer for storing all job objects
     std::unique_ptr<uint8_t[]> hw_jobs_buffer;
     /// Locks for accessing each job object pointers
