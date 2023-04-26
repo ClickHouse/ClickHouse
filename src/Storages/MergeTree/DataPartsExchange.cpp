@@ -938,7 +938,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     if (to_remote_disk)
     {
-        data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
         LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.", part_name, part_id, disk->getName());
     }
     else
