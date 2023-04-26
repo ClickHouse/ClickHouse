@@ -176,18 +176,23 @@ public:
                     size_t size = offsets_from.size();
                     auto & vec_res = col_res->getData();
                     vec_res.resize_fill(size);
+                    size_t copy_size = 0;
+                    size_t offset_to = 0;
 
                     size_t offset = 0;
                     for (size_t i = 0; i < size; ++i)
                     {
+                        copy_size = std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1);
+                        offset_to = sizeof(ToFieldType) > copy_size ? sizeof(ToFieldType) - copy_size : 0;
                         if constexpr (std::endian::native == std::endian::little)
                             memcpy(&vec_res[i],
                                 &data_from[offset],
-                                std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
+                                copy_size);
                         else
-                            reverseMemcpy(&vec_res[i],
+                            reverseMemcpy(
+                                reinterpret_cast<char*>(&vec_res[i]) + offset_to,
                                 &data_from[offset],
-                                std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
+                                copy_size);
                         offset = offsets_from[i];
                     }
 
@@ -242,9 +247,15 @@ public:
                     to.resize_fill(size);
 
                     static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+                    size_t offset_to = sizeof(To) > sizeof(From) ? sizeof(To) - sizeof(From):0;
 
                     for (size_t i = 0; i < size; ++i)
-                        memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
+                    {
+                        if constexpr (std::endian::native == std::endian::little)
+                            memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
+                        else
+                            memcpy(reinterpret_cast<char*>(&to[i]) + offset_to, static_cast<const void*>(&from[i]), copy_size);
+                    }
 
                     result = std::move(column_to);
 
@@ -322,11 +333,21 @@ private:
             StringRef data = src.getDataAt(i);
 
             /// Cut trailing zero bytes.
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            size_t index = 0;
+            while (index < data.size && data.data[index] == 0)
+                    index++;
+            data.size -= index;
+#else
             while (data.size && data.data[data.size - 1] == 0)
                 --data.size;
-
+#endif
             data_to.resize(offset + data.size + 1);
-            memcpy(&data_to[offset], data.data, data.size);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+            reverseMemcpy(&data_to[offset], data.data+index, data.size);
+#else
+            memcpy(&data_to[offset],data.data, data.size);
+#endif
             offset += data.size;
             data_to[offset] = 0;
             ++offset;
