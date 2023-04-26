@@ -421,8 +421,11 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X))
+if (NOT SANITIZE)
+    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+endif()
+
+if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
     # Slightly more efficient code can be generated
     # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
