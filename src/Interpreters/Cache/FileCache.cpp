@@ -1154,7 +1154,7 @@ void FileCache::reduceSizeToDownloaded(
 
     chassert(cell->queue_iterator);
     chassert(cell->queue_iterator->size() >= downloaded_size);
-    const ssize_t diff = cell->queue_iterator->size() - downloaded_size;
+    const int64_t diff = cell->queue_iterator->size() - downloaded_size;
     if (diff > 0)
         cell->queue_iterator->updateSize(-diff, cache_lock);
 
