@@ -161,7 +161,6 @@ class SourceMySQL(ExternalSource):
 
 
 class SourceMongo(ExternalSource):
-
     def __init__(
         self,
         name,
@@ -171,7 +170,7 @@ class SourceMongo(ExternalSource):
         docker_port,
         user,
         password,
-        secure = False
+        secure=False,
     ):
         ExternalSource.__init__(
             self,
@@ -202,7 +201,7 @@ class SourceMongo(ExternalSource):
             user=self.user,
             password=self.password,
             tbl=table_name,
-            options= "<options>ssl=true</options>" if self.secure else ""
+            options="<options>ssl=true</options>" if self.secure else "",
         )
 
     def prepare(self, structure, table_name, cluster):
@@ -265,7 +264,7 @@ class SourceMongoURI(SourceMongo):
             user=self.user,
             password=self.password,
             tbl=table_name,
-            options = '?ssl=true' if self.secure else "", 
+            options="?ssl=true" if self.secure else "",
         )
 
 
