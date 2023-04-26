@@ -51,6 +51,18 @@ ln -sf $SRC_PATH/config.d/system_unfreeze.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_zero_copy_replication.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_keeper_map.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/custom_disks_base_path.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/display_name.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/reverse_dns_query_function.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/compressed_marks_and_index.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/disable_s3_env_credentials.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
+
+# Not supported with fasttest.
+if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
+then
+   ln -sf $SRC_PATH/config.d/legacy_geobase.xml $DEST_SERVER_PATH/config.d/
+fi
 
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
@@ -64,6 +76,12 @@ ln -sf $SRC_PATH/users.d/no_fsync_metadata.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/filelog.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/enable_blobs_check.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
+
+if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
+    ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
+fi
 
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
 # when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),
@@ -78,6 +96,8 @@ ln -sf $SRC_PATH/executable_pool_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/test_function.xml $DEST_SERVER_PATH/
 
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/regions_hierarchy.txt $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/regions_names_en.txt $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/
@@ -92,8 +112,10 @@ ln -sf --backup=simple --suffix=_original.xml \
    $SRC_PATH/config.d/query_masking_rules.xml $DEST_SERVER_PATH/config.d/
 
 if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
+    rm -f $DEST_SERVER_PATH/config.d/zookeeper.xml ||:
     ln -sf $SRC_PATH/config.d/zookeeper_fault_injection.xml $DEST_SERVER_PATH/config.d/
 else
+    rm -f $DEST_SERVER_PATH/config.d/zookeeper_fault_injection.xml ||:
     ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 fi
 
@@ -110,9 +132,6 @@ fi
 
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
-    # Too verbose logging in S3 tests
-    rm -f $DEST_SERVER_PATH/config.d/logger_test.xml
-    ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 fi
 
 ARM="aarch64"

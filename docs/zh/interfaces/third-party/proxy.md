@@ -41,5 +41,3 @@ sidebar_label: 第三方代理
 -   基本身份验证。
 
 使用go语言实现。
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/proxy/) <!--hide-->

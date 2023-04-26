@@ -5,7 +5,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/TemporaryFileLazySource.h>
-#include <Formats/TemporaryFileStream.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
@@ -39,7 +39,7 @@ namespace
 TemporaryFileOnDiskHolder flushToFile(const DiskPtr & disk, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
 {
     auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, CurrentMetrics::TemporaryFilesForJoin);
-    auto write_stat = TemporaryFileStream::write(tmp_file->getPath(), header, std::move(pipeline), codec);
+    auto write_stat = TemporaryFileStreamLegacy::write(tmp_file->getPath(), header, std::move(pipeline), codec);
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, write_stat.compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, write_stat.uncompressed_bytes);
@@ -264,7 +264,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
 Pipe SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
 {
-    return Pipe(std::make_shared<TemporaryFileLazySource>(file->path(), materializeBlock(sample_block)));
+    return Pipe(std::make_shared<TemporaryFileLazySource>(file->getPath(), materializeBlock(sample_block)));
 }
 
 

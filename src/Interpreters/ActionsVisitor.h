@@ -134,13 +134,14 @@ public:
         ScopeStack actions_stack;
         AggregationKeysInfo aggregation_keys_info;
         bool build_expression_with_window_functions;
+        bool is_create_parameterized_view;
 
         /*
          * Remember the last unique column suffix to avoid quadratic behavior
          * when we add lots of column with same prefix. One counter for all
          * prefixes is good enough.
          */
-        int next_unique_suffix;
+        size_t next_unique_suffix;
 
         Data(
             ContextPtr context_,
@@ -154,7 +155,8 @@ public:
             bool only_consts_,
             bool create_source_for_in_,
             AggregationKeysInfo aggregation_keys_info_,
-            bool build_expression_with_window_functions_ = false);
+            bool build_expression_with_window_functions_ = false,
+            bool is_create_parameterized_view_ = false);
 
         /// Does result of the calculation already exists in the block.
         bool hasColumn(const String & column_name) const;
@@ -217,7 +219,7 @@ private:
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
     static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
-    static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static FutureSet makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
     static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
     static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };

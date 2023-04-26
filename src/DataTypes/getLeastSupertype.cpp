@@ -15,11 +15,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -40,7 +38,6 @@ template <typename DataTypes>
 String getExceptionMessagePrefix(const DataTypes & types)
 {
     WriteBufferFromOwnString res;
-    res << "There is no supertype for types ";
 
     bool first = true;
     for (const auto & type : types)
@@ -65,9 +62,9 @@ DataTypePtr throwOrReturn(const DataTypes & types, std::string_view message_suff
         return nullptr;
 
     if (message_suffix.empty())
-        throw Exception(error_code, getExceptionMessagePrefix(types));
+        throw Exception(error_code, "There is no supertype for types {}", getExceptionMessagePrefix(types));
 
-    throw Exception(error_code, "{} {}", getExceptionMessagePrefix(types), message_suffix);
+    throw Exception(error_code, "There is no supertype for types {} {}", getExceptionMessagePrefix(types), message_suffix);
 }
 
 template <LeastSupertypeOnError on_error>
@@ -91,7 +88,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             maximize(max_bits_of_unsigned_integer, 8);
         else if (type == TypeIndex::UInt16)
             maximize(max_bits_of_unsigned_integer, 16);
-        else if (type == TypeIndex::UInt32)
+        else if (type == TypeIndex::UInt32 || type == TypeIndex::IPv4)
             maximize(max_bits_of_unsigned_integer, 32);
         else if (type == TypeIndex::UInt64)
             maximize(max_bits_of_unsigned_integer, 64);
@@ -130,7 +127,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
         size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
 
         /// If unsigned is not covered by signed.
-        if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
+        if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
         {
             // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
             // But if we already have wide numbers, promotion is necessary.
@@ -447,8 +444,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     /// For String and FixedString, or for different FixedStrings, the common type is String.
     /// No other types are compatible with Strings. TODO Enums?
     {
-        UInt32 have_string = type_ids.count(TypeIndex::String);
-        UInt32 have_fixed_string = type_ids.count(TypeIndex::FixedString);
+        size_t have_string = type_ids.count(TypeIndex::String);
+        size_t have_fixed_string = type_ids.count(TypeIndex::FixedString);
 
         if (have_string || have_fixed_string)
         {
@@ -462,10 +459,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For Date and DateTime/DateTime64, the common type is DateTime/DateTime64. No other types are compatible.
     {
-        UInt32 have_date = type_ids.count(TypeIndex::Date);
-        UInt32 have_date32 = type_ids.count(TypeIndex::Date32);
-        UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
-        UInt32 have_datetime64 = type_ids.count(TypeIndex::DateTime64);
+        size_t have_date = type_ids.count(TypeIndex::Date);
+        size_t have_date32 = type_ids.count(TypeIndex::Date32);
+        size_t have_datetime = type_ids.count(TypeIndex::DateTime);
+        size_t have_datetime64 = type_ids.count(TypeIndex::DateTime64);
 
         if (have_date || have_date32 || have_datetime || have_datetime64)
         {
@@ -526,26 +523,25 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// Decimals
     {
-        UInt32 have_decimal32 = type_ids.count(TypeIndex::Decimal32);
-        UInt32 have_decimal64 = type_ids.count(TypeIndex::Decimal64);
-        UInt32 have_decimal128 = type_ids.count(TypeIndex::Decimal128);
+        size_t have_decimal32 = type_ids.count(TypeIndex::Decimal32);
+        size_t have_decimal64 = type_ids.count(TypeIndex::Decimal64);
+        size_t have_decimal128 = type_ids.count(TypeIndex::Decimal128);
+        size_t have_decimal256 = type_ids.count(TypeIndex::Decimal256);
 
-        if (have_decimal32 || have_decimal64 || have_decimal128)
+        if (have_decimal32 || have_decimal64 || have_decimal128 || have_decimal256)
         {
-            UInt32 num_supported = have_decimal32 + have_decimal64 + have_decimal128;
+            size_t num_supported = have_decimal32 + have_decimal64 + have_decimal128 + have_decimal256;
 
-            std::vector<TypeIndex> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
-                                            TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
-            std::vector<UInt32> num_ints(int_ids.size(), 0);
+            std::array<TypeIndex, 8> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
+                                                TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
 
             TypeIndex max_int = TypeIndex::Nothing;
-            for (size_t i = 0; i < int_ids.size(); ++i)
+            for (auto int_id : int_ids)
             {
-                UInt32 num = type_ids.count(int_ids[i]);
-                num_ints[i] = num;
+                size_t num = type_ids.count(int_id);
                 num_supported += num;
                 if (num)
-                    max_int = int_ids[i];
+                    max_int = int_id;
             }
 
             if (num_supported != type_ids.size())
@@ -555,8 +551,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             for (const auto & type : types)
             {
                 auto type_id = type->getTypeId();
-                if (type_id != TypeIndex::Decimal32 && type_id != TypeIndex::Decimal64 && type_id != TypeIndex::Decimal128)
+                if (type_id != TypeIndex::Decimal32
+                    && type_id != TypeIndex::Decimal64
+                    && type_id != TypeIndex::Decimal128
+                    && type_id != TypeIndex::Decimal256)
+                {
                     continue;
+                }
 
                 UInt32 scale = getDecimalScale(*type);
                 if (scale > max_scale)
@@ -574,11 +575,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     min_precision = DataTypeDecimal<Decimal64>::maxPrecision();
             }
 
-            if (min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
+            if (min_precision > DataTypeDecimal<Decimal256>::maxPrecision())
                 return throwOrReturn<on_error>(types, "because the least supertype is Decimal("
                                 + toString(min_precision) + ',' + toString(max_scale) + ')',
                                 ErrorCodes::NO_COMMON_TYPE);
 
+            if (have_decimal256 || min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
+                return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), max_scale);
             if (have_decimal128 || min_precision > DataTypeDecimal<Decimal64>::maxPrecision())
                 return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), max_scale);
             if (have_decimal64 || min_precision > DataTypeDecimal<Decimal32>::maxPrecision())

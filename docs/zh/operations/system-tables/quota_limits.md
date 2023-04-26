@@ -20,5 +20,3 @@ slug: /zh/operations/system-tables/quota_limits
 - `max_read_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — 从参与查询的所有表和表函数中读取的最大行数.
 - `max_read_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — 从参与查询的所有表和表函数中读取的最大字节数.
 - `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — 查询执行时间的最大值, 单位为秒.
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/quota_limits) <!--hide-->

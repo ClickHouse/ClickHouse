@@ -30,7 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -180,10 +180,24 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             columns.emplace_back(column_name, std::move(column_type));
         }
 
+        /// Usually this should not happen, since in case of table does not
+        /// exists, the call should be succeeded.
+        /// However it is possible sometimes because internally there are two
+        /// queries in ClickHouse ODBC bridge:
+        /// - system.tables
+        /// - system.columns
+        /// And if between this two queries the table will be removed, them
+        /// there will be no columns
+        ///
+        /// Also sometimes system.columns can return empty result because of
+        /// the cached value of total tables to scan.
         if (columns.empty())
-            throw Exception("Columns definition was not returned", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Columns definition was not returned");
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(
+            response,
+            request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
+            keep_alive_timeout);
         try
         {
             writeStringBinary(columns.toString(), out);

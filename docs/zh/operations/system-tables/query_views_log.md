@@ -85,5 +85,3 @@ stack_trace:
 
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — 包含查询执行的常用信息的 `query_log`系统表的描述.
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — 包含关于每个查询执行线程的信息.
-
-[原始文章](https://clickhouse.com/docs/en/operations/system_tables/query_thread_log) <!--hide-->

@@ -27,6 +27,23 @@ total_start_seconds = time.perf_counter()
 stage_start_seconds = total_start_seconds
 
 
+# Thread executor that does not hides exception that happens during function
+# execution, and rethrows it after join()
+class SafeThread(Thread):
+    run_exception = None
+
+    def run(self):
+        try:
+            super().run()
+        except:
+            self.run_exception = sys.exc_info()
+
+    def join(self):
+        super().join()
+        if self.run_exception:
+            raise self.run_exception[1]
+
+
 def reportStageEnd(stage):
     global stage_start_seconds, total_start_seconds
 
@@ -141,6 +158,7 @@ for e in subst_elems:
         raise Exception(f"No values given for substitution {{{name}}}")
 
     available_parameters[name] = values
+
 
 # Takes parallel lists of templates, substitutes them with all combos of
 # parameters. The set of parameters is determined based on the first list.
@@ -283,7 +301,7 @@ if not args.use_existing_tables:
             print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
 
     threads = [
-        Thread(target=do_create, args=(connection, index, create_queries))
+        SafeThread(target=do_create, args=(connection, index, create_queries))
         for index, connection in enumerate(all_connections)
     ]
 
@@ -294,6 +312,10 @@ if not args.use_existing_tables:
         t.join()
 
     reportStageEnd("create")
+
+# Let's sync the data to avoid writeback affects performance
+os.system("sync")
+reportStageEnd("sync")
 
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))
@@ -346,6 +368,7 @@ for query_index in queries_to_run:
                     settings={
                         "max_execution_time": args.prewarm_max_query_seconds,
                         "query_profiler_real_time_period_ns": 10000000,
+                        "query_profiler_cpu_time_period_ns": 10000000,
                         "memory_profiler_step": "4Mi",
                     },
                 )
@@ -477,7 +500,10 @@ for query_index in queries_to_run:
                 res = c.execute(
                     q,
                     query_id=run_id,
-                    settings={"query_profiler_real_time_period_ns": 10000000},
+                    settings={
+                        "query_profiler_real_time_period_ns": 10000000,
+                        "query_profiler_cpu_time_period_ns": 10000000,
+                    },
                 )
                 print(
                     f"profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}"

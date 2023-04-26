@@ -111,7 +111,7 @@ void NATSConnectionManager::connectImpl()
         {
             servers[i] = configuration.servers[i].c_str();
         }
-        natsOptions_SetServers(options, servers, configuration.servers.size());
+        natsOptions_SetServers(options, servers, static_cast<int>(configuration.servers.size()));
     }
     natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);

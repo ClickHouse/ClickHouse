@@ -122,17 +122,17 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
-    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    bool traverseASTEquals(
+    bool traverseTreeEquals(
         const String & function_name,
-        const ASTPtr & key_ast,
+        const RPNBuilderTreeNode & key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
 
-    bool getKey(const std::string & key_column_name, size_t & key_column_num);
-    bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
+    std::optional<size_t> getKeyIndex(const std::string & key_column_name);
+    bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor);

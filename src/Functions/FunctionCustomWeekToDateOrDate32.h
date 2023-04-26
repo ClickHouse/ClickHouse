@@ -10,19 +10,19 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionCustomWeekToDateOrDate32 : public IFunctionCustomWeek<Transform>, WithContext
+class FunctionCustomWeekToDateOrDate32 : public IFunctionCustomWeek<Transform>
 {
-public:
+private:
     const bool enable_extended_results_for_datetime_functions = false;
 
+public:
     static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionCustomWeekToDateOrDate32>(context_);
     }
 
     explicit FunctionCustomWeekToDateOrDate32(ContextPtr context_)
-        : WithContext(context_)
-        , enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
     {
     }
 
@@ -47,12 +47,14 @@ public:
             return CustomWeekTransformImpl<DataTypeDate, DataTypeDate>::execute(
                 arguments, result_type, input_rows_count, Transform{});
         else if (which.isDate32())
+        {
             if (enable_extended_results_for_datetime_functions)
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, /*is_extended_result*/ true>::execute(
                     arguments, result_type, input_rows_count, Transform{});
             else
                 return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(
                     arguments, result_type, input_rows_count, Transform{});
+        }
         else if (which.isDateTime())
             return CustomWeekTransformImpl<DataTypeDateTime, DataTypeDate>::execute(
                 arguments, result_type, input_rows_count, Transform{});
@@ -68,9 +70,9 @@ public:
                     TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
         else
-            throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of argument of function " + this->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(), this->getName());
     }
 
 };

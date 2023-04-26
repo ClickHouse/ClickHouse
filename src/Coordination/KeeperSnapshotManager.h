@@ -87,7 +87,7 @@ public:
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<void(KeeperStorageSnapshotPtr &&)>;
+using CreateSnapshotCallback = std::function<std::string(KeeperStorageSnapshotPtr &&)>;
 
 
 using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;

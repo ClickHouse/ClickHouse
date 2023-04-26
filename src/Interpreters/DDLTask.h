@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
 
@@ -69,12 +70,18 @@ struct DDLLogEntry
     static constexpr const UInt64 OLDEST_VERSION = 1;
     static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
     static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
+    static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
+    /// Add new version here
+
+    /// Remember to update the value below once new version is added
+    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 4;
 
     UInt64 version = 1;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
     std::optional<SettingsChanges> settings;
+    OpenTelemetry::TracingContext tracing_context;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
@@ -92,6 +99,9 @@ struct DDLTaskBase
     String host_id_str;
     ASTPtr query;
 
+    String query_str;
+    String query_for_logging;
+
     bool is_initial_query = false;
     bool is_circular_replicated = false;
     bool execute_on_leader = false;
@@ -107,6 +117,7 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
+    void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
 

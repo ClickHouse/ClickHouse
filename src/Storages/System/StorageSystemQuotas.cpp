@@ -96,7 +96,10 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
         column_key_types_offsets.push_back(column_key_types.size());
 
         for (const auto & limits : all_limits)
-            column_durations.push_back(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count());
+        {
+            column_durations.push_back(
+                static_cast<UInt32>(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count()));
+        }
         column_durations_offsets.push_back(column_durations.size());
 
         auto apply_to_ast = apply_to.toASTWithNames(access_control);

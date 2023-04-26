@@ -4,15 +4,16 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
-#include "Storages/MergeTree/DataPartStorageOnDisk.h"
 #include <sys/time.h>
 
 namespace DB
@@ -138,7 +139,8 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    std::unique_lock<std::mutex> & parts_lock)
+    std::unique_lock<std::mutex> & parts_lock,
+    bool readonly)
 {
     std::unique_lock lock(write_mutex);
 
@@ -150,7 +152,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     while (!in->eof())
     {
         MergeTreeData::MutableDataPartPtr part;
-        DataPartStorageBuilderPtr data_part_storage_builder;
         UInt8 version;
         String part_name;
         Block block;
@@ -176,17 +177,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             else if (action_type == ActionType::ADD_PART)
             {
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
-                auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
-                data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
 
-                part = storage.createPart(
-                    part_name,
-                    MergeTreeDataPartType::InMemory,
-                    MergeTreePartInfo::fromPartName(part_name, storage.format_version),
-                    data_part_storage);
+                part = storage.getDataPartBuilder(part_name, single_disk_volume, part_name)
+                    .withPartType(MergeTreeDataPartType::InMemory)
+                    .withPartStorageType(MergeTreeDataPartStorageType::Full)
+                    .build();
 
                 part->uuid = metadata.part_uuid;
-
                 block = block_in.read();
 
                 if (storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock))
@@ -194,7 +191,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             }
             else
             {
-                throw Exception("Unknown action type: " + toString(static_cast<UInt8>(action_type)), ErrorCodes::CORRUPTED_DATA);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown action type: {}", toString(static_cast<UInt8>(action_type)));
             }
         }
         catch (const Exception & e)
@@ -209,7 +206,10 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
                 if (max_block_number == -1)
-                    disk->removeFile(path);
+                {
+                    if (!readonly)
+                        disk->removeFile(path);
+                }
                 else if (name == DEFAULT_WAL_FILE_NAME)
                     rotate(lock);
 
@@ -222,7 +222,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
         {
             MergedBlockOutputStream part_out(
                 part,
-                data_part_storage_builder,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
                 {},
@@ -231,7 +230,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
 
             part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
-            part->setColumns(block.getNamesAndTypesList(), {});
+            part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
@@ -240,11 +239,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             for (const auto & projection : metadata_snapshot->getProjections())
             {
                 auto projection_block = projection.calculate(block, context);
-                auto temp_part = MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, data_part_storage_builder, part.get());
+                auto temp_part = MergeTreeDataWriter::writeProjectionPart(storage, log, projection_block, projection, part.get());
                 temp_part.finalize();
                 if (projection_block.rows())
                     part->addProjectionPart(projection.name, std::move(temp_part.part));
             }
+
             part_out.finalizePart(part, false);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
@@ -258,7 +258,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
         [&dropped_parts](const auto & part) { return dropped_parts.count(part->name) == 0; });
 
     /// All parts in WAL had been already committed into the disk -> clear the WAL
-    if (result.empty())
+    if (!readonly && result.empty())
     {
         LOG_DEBUG(log, "WAL file '{}' had been completely processed. Removing.", path);
         disk->removeFile(path);
@@ -354,8 +354,9 @@ void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
 {
     readIntBinary(min_compatible_version, meta_in);
     if (min_compatible_version > WAL_VERSION)
-        throw Exception("WAL metadata version " + toString(min_compatible_version)
-                        + " is not compatible with this ClickHouse version", ErrorCodes::UNKNOWN_FORMAT_VERSION);
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+                        "WAL metadata version {} is not compatible with this ClickHouse version",
+                        toString(min_compatible_version));
 
     size_t metadata_size;
     readVarUInt(metadata_size, meta_in);

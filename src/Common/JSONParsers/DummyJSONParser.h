@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <base/types.h>
 #include <base/defines.h>
+#include "ElementTypes.h"
 
 
 namespace DB
@@ -25,6 +26,7 @@ struct DummyJSONParser
     {
     public:
         Element() = default;
+        static ElementType type() { return ElementType::NULL_VALUE; }
         static bool isInt64() { return false; }
         static bool isUInt64() { return false; }
         static bool isDouble() { return false; }
@@ -93,7 +95,7 @@ struct DummyJSONParser
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(std::string_view, Element &) { throw Exception{"Functions JSON* are not supported", ErrorCodes::NOT_IMPLEMENTED}; } /// NOLINT
+    bool parse(std::string_view, Element &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Functions JSON* are not supported"); } /// NOLINT
 
 #if 0
     /// Optional: Allocates memory to parse JSON documents faster.

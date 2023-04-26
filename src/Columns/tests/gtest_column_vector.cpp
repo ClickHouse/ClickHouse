@@ -1,4 +1,5 @@
 #include <limits>
+#include <type_traits>
 #include <typeinfo>
 #include <vector>
 #include <Columns/ColumnsNumber.h>
@@ -14,6 +15,12 @@ static constexpr size_t MAX_ROWS = 10000;
 static const std::vector<size_t> filter_ratios = {1, 2, 5, 11, 32, 64, 100, 1000};
 static const size_t K = filter_ratios.size();
 
+template <typename, typename = void >
+struct HasUnderlyingType : std::false_type {};
+
+template <typename T>
+struct HasUnderlyingType<T, std::void_t<typename T::UnderlyingType>> : std::true_type {};
+
 template <typename T>
 static MutableColumnPtr createColumn(size_t n)
 {
@@ -21,9 +28,10 @@ static MutableColumnPtr createColumn(size_t n)
     auto & values = column->getData();
 
     for (size_t i = 0; i < n; ++i)
-    {
-        values.push_back(i);
-    }
+        if constexpr (HasUnderlyingType<T>::value)
+            values.push_back(static_cast<typename T::UnderlyingType>(i));
+        else
+            values.push_back(static_cast<T>(i));
 
     return column;
 }
@@ -87,6 +95,8 @@ TEST(ColumnVector, Filter)
     testFilter<Float32>();
     testFilter<Float64>();
     testFilter<UUID>();
+    testFilter<IPv4>();
+    testFilter<IPv6>();
 }
 
 template <typename T>
@@ -132,6 +142,7 @@ static void testIndex()
 
     try
     {
+        test_case(0, 0, 0);   /// test for zero length index
         for (size_t i = 0; i < TEST_RUNS; ++i)
         {
             /// make sure rows distribute in (column_sizes[r-1], colulmn_sizes[r]]
@@ -141,7 +152,7 @@ static void testIndex()
             size_t index_rows = rng() % MAX_ROWS + 1;
 
             test_case(rows, index_rows, 0);
-            test_case(rows, index_rows, 0.5 * index_rows);
+            test_case(rows, index_rows, static_cast<size_t>(0.5 * index_rows));
         }
     }
     catch (const Exception & e)

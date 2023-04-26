@@ -22,11 +22,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// The regex-based code style check script in CI complains when it sees "ErrorCodes:: ErrorCode" (space added to avoid another match).
-/// Because this expression is only used in this file, don't add some suppression mechanism to the already complex style checker, instead
-/// work around by creating a namespace alias.
-namespace ErrorCodeAlias = ErrorCodes;
-
 /// Throw an exception if the argument is non zero.
 class FunctionThrowIf : public IFunction
 {
@@ -48,7 +43,7 @@ public:
         if (number_of_arguments < 1 || number_of_arguments > (allow_custom_error_code_argument ? 3 : 2))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be {}",
-                getName(), toString(number_of_arguments), allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
+                getName(), number_of_arguments, allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
 
         if (!isNativeNumber(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -93,7 +88,7 @@ public:
             custom_message = message_column->getValue<String>();
         }
 
-        std::optional<ErrorCodeAlias::ErrorCode> custom_error_code;
+        std::optional<ErrorCodes::ErrorCode> custom_error_code;
         if (allow_custom_error_code_argument && arguments.size() == 3)
         {
             if (!isColumnConst(*(arguments[2].column)))
@@ -125,7 +120,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr execute(const IColumn * in_untyped, const std::optional<String> & message, const std::optional<ErrorCodeAlias::ErrorCode> & error_code) const
+    ColumnPtr execute(const IColumn * in_untyped, const std::optional<String> & message, const std::optional<ErrorCodes::ErrorCode> & error_code) const
     {
         const auto * in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
 
@@ -137,9 +132,14 @@ private:
             const auto & in_data = in->getData();
             if (!memoryIsZero(in_data.data(), 0, in_data.size() * sizeof(in_data[0])))
             {
-                throw Exception(
-                    error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
-                    message.value_or("Value passed to '" + getName() + "' function is non-zero"));
+                if (message.has_value())
+                    throw Exception::createRuntime(
+                        error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
+                        *message);
+                else
+                    throw Exception(
+                        error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
+                        "Value passed to '{}' function is non-zero", getName());
             }
 
             size_t result_size = in_untyped->size();

@@ -40,4 +40,4 @@ def started_cluster():
 
 def test_connection(started_cluster):
     # just nothrow
-    node2.query("SELECT * FROM system.zookeeper WHERE path = '/'")
+    node2.query_with_retry("SELECT * FROM system.zookeeper WHERE path = '/'")

@@ -7,7 +7,7 @@ SET enable_filesystem_cache_on_write_operations=0;
 SYSTEM DROP FILESYSTEM CACHE;
 
 DROP TABLE IF EXISTS nopers;
-CREATE TABLE nopers (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760;
+CREATE TABLE nopers (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false;
 SYSTEM STOP MERGES nopers;
 
 INSERT INTO nopers SELECT number, toString(number) FROM numbers(10);
@@ -26,7 +26,7 @@ ON data_paths.cache_path = caches.cache_path
 ORDER BY file, cache, size;
 
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_small', min_bytes_for_wide_part = 10485760;
+CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_small', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false;
 SYSTEM STOP MERGES test;
 
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
@@ -49,7 +49,7 @@ ON data_paths.cache_path = caches.cache_path
 ORDER BY file, cache, size;
 
 DROP TABLE IF EXISTS test2;
-CREATE TABLE test2 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_small', min_bytes_for_wide_part = 10485760;
+CREATE TABLE test2 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache_small', min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false;
 SYSTEM STOP MERGES test2;
 
 INSERT INTO test2 SELECT number, toString(number) FROM numbers(100000);

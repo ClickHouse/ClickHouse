@@ -11,7 +11,7 @@
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MULTITARGET_CODE
 #    include <immintrin.h>
@@ -358,6 +358,11 @@ public:
         return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return this->template getNumberOfDefaultRowsImpl<Self>();
+    }
+
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
     {
         return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
@@ -416,6 +421,9 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
     auto data_pos = reinterpret_cast<const UInt8 *>(data.data());
     auto indexes_pos = reinterpret_cast<const UInt8 *>(indexes.data());
     auto res_pos = reinterpret_cast<UInt8 *>(res_data.data());
+
+    if (limit == 0)
+        return;   /// nothing to do, just return
 
     if (data_size <= 64)
     {
@@ -554,5 +562,7 @@ extern template class ColumnVector<Int256>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
 extern template class ColumnVector<UUID>;
+extern template class ColumnVector<IPv4>;
+extern template class ColumnVector<IPv6>;
 
 }

@@ -204,7 +204,7 @@ JUST_WRONG_CONFIG = """
 """
 
 
-def test_duplicate_endpoint(started_cluster):
+def test_invalid_configs(started_cluster):
     node1.stop_clickhouse()
 
     def assert_config_fails(config):

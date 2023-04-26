@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -37,8 +37,6 @@ public:
     String getFileName() const override { return path; }
 
     void setReadUntilPosition(size_t position) override;
-
-    Range getRemainingReadRange() const override;
 
     bool supportsRightBoundedReads() const override { return true; }
 

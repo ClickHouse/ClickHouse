@@ -6,11 +6,15 @@ sidebar_label: JSON
 
 # JSON
 
+:::note
+This feature is experimental and is not production ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead.
+:::
+
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 `JSON` is an alias for `Object('json')`.
 
-:::warning
+:::note
 The JSON data type is an experimental feature. To use it, set `allow_experimental_object_type = 1`.
 :::
 
@@ -75,3 +79,7 @@ SELECT * FROM json FORMAT JSONEachRow
 ```text
 {"o":{"a":1,"b":{"c":2,"d":[1,2,3]}}}
 ```
+
+## Related Content
+
+- [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)

@@ -21,6 +21,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <base/IPv4andIPv6.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -139,7 +140,7 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    int result = 0;
+    Int64 result = 0;
 
     if constexpr (std::is_same_v<T, double>)
     {
@@ -160,7 +161,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     }
 
     if (result <= 0)
-        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
     return result;
 }
 
@@ -624,9 +625,6 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
-template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
-void formatUUID(const UInt8 * src16, UInt8 * dst36);
 void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
@@ -635,6 +633,9 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), reinterpret_cast<UInt8 *>(s));
     buf.write(s, sizeof(s));
 }
+
+void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);
+void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf);
 
 template <typename DecimalType>
 inline void writeDateTime64FractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
@@ -839,7 +840,7 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     auto components = DecimalUtils::split(datetime64, scale);
     writeIntText(components.whole, buf);
 
-    if (scale > 0) //-V547
+    if (scale > 0)
     {
         buf.write('.');
         writeDateTime64FractionalText<DateTime64>(components.fractional, scale, buf);
@@ -861,6 +862,8 @@ inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 
@@ -884,28 +887,30 @@ inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(Local
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
+inline void writeText(const IPv4 & x, WriteBuffer & buf) { writeIPv4Text(x, buf); }
+inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf); }
 
 template <typename T>
-void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
+                            bool fixed_fractional_length, UInt32 fractional_length)
 {
     /// If it's big integer, but the number of digits is small,
     /// use the implementation for smaller integers for more efficient arithmetic.
-
     if constexpr (std::is_same_v<T, Int256>)
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt128>::max())
         {
-            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
     }
@@ -913,24 +918,36 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
     assert(scale <= max_digits);
+    assert(fractional_length <= max_digits);
+
     char buf[max_digits];
-    memset(buf, '0', scale);
+    memset(buf, '0', std::max(scale, fractional_length));
 
     T value = x;
     Int32 last_nonzero_pos = 0;
-    for (Int32 pos = scale - 1; pos >= 0; --pos)
+
+    if (fixed_fractional_length && fractional_length < scale)
+    {
+        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1);
+        auto round_carry = new_value % 10;
+        value = new_value / 10;
+        if (round_carry >= 5)
+            value += 1;
+    }
+
+    for (Int32 pos = fixed_fractional_length ? std::min(scale - 1, fractional_length - 1) : scale - 1; pos >= 0; --pos)
     {
         auto remainder = value % 10;
         value /= 10;
@@ -942,11 +959,12 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     writeChar('.', ostr);
-    ostr.write(buf, trailing_zeros ? scale : last_nonzero_pos + 1);
+    ostr.write(buf, fixed_fractional_length ? fractional_length : (trailing_zeros ? scale : last_nonzero_pos + 1));
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
+               bool fixed_fractional_length = false, UInt32 fractional_length = 0)
 {
     T part = DecimalUtils::getWholePart(x, scale);
 
@@ -957,7 +975,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
     writeIntText(part, ostr);
 
-    if (scale)
+    if (scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(x, scale);
         if (part || trailing_zeros)
@@ -965,7 +983,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
             if (part < 0)
                 part *= T(-1);
 
-            writeDecimalFractional(part, scale, ostr, trailing_zeros);
+            writeDecimalFractional(part, scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
         }
     }
 }
@@ -1002,6 +1020,19 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+inline void writeQuoted(const IPv4 & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
+
+inline void writeQuoted(const IPv6 & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
@@ -1035,6 +1066,19 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('"', buf);
 }
 
+inline void writeDoubleQuoted(const IPv4 & x, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    writeText(x, buf);
+    writeChar('"', buf);
+}
+
+inline void writeDoubleQuoted(const IPv6 & x, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    writeText(x, buf);
+    writeChar('"', buf);
+}
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
@@ -1045,6 +1089,8 @@ inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, 
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
 template <typename T>
 void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
@@ -1101,38 +1147,69 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+template <typename T>
+inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep)
+{
+    WriteBufferFromOwnString buf;
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+        {
+            if (std::next(it) == x.end())
+                writeString(final_sep, buf);
+            else
+                writeString(", ", buf);
+        }
+        writeQuoted(*it, buf);
+    }
+
+    return buf.str();
+}
+
 inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 {
     /// c_str is guaranteed to return zero-terminated string
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-template <typename T>
+
+template <std::endian endian, typename T>
 requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        if constexpr (sizeof(x) == 2)
-            x = __builtin_bswap16(x);
-        else if constexpr (sizeof(x) == 4)
-            x = __builtin_bswap32(x);
-        else if constexpr (sizeof(x) == 8)
-            x = __builtin_bswap64(x);
-    }
+    if constexpr (std::endian::native != endian)
+        x = std::byteswap(x);
     writePODBinary(x, buf);
 }
 
-template <typename T>
+template <std::endian endian, typename T>
 requires is_big_int_v<T>
-inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryEndian(const T & x, WriteBuffer & buf)
 {
-    for (size_t i = 0; i != std::size(x.items); ++i)
+    if constexpr (std::endian::native == endian)
     {
-        const auto & item = x.items[std::size(x.items) - i - 1];
-        writeBinaryBigEndian(item, buf);
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[i], buf);
+    }
+    else
+    {
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
     }
 }
+
+template <typename T>
+inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
+{
+    writeBinaryEndian<std::endian::little>(x, buf);
+}
+
+template <typename T>
+inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
+{
+    writeBinaryEndian<std::endian::big>(x, buf);
+}
+
 
 struct PcgSerializer
 {

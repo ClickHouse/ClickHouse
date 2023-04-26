@@ -45,8 +45,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     SelectUnionModesSet current_set_of_modes;
     bool distinct_found = false;
 
-    int i;
-    for (i = union_modes.size() - 1; i >= 0; --i)
+    for (Int64 i = union_modes.size() - 1; i >= 0; --i)
     {
         current_set_of_modes.insert(union_modes[i]);
         if (const auto * union_ast = typeid_cast<const ASTSelectWithUnionQuery *>(select_list[i + 1].get()))
@@ -66,9 +65,8 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
             else if (data.union_default_mode == SetOperationMode::DISTINCT)
                 union_modes[i] = SelectUnionMode::UNION_DISTINCT;
             else
-                throw Exception(
-                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
-                    DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
+                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty");
         }
 
         if (union_modes[i] == SelectUnionMode::UNION_ALL)

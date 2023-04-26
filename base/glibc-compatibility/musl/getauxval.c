@@ -8,6 +8,14 @@
 #include <link.h> // ElfW
 #include <errno.h>
 
+#include "syscall.h"
+
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+#include <sanitizer/msan_interface.h>
+#endif
+#endif
+
 #define ARRAY_SIZE(a) sizeof((a))/sizeof((a[0]))
 
 /// Suppress TSan since it is possible for this code to be called from multiple threads,
@@ -39,7 +47,9 @@ ssize_t __retry_read(int fd, void * buf, size_t count)
 {
     for (;;)
     {
-        ssize_t ret = read(fd, buf, count);
+        // We cannot use the read syscall as it will be intercept by sanitizers, which aren't
+        // initialized yet. Emit syscall directly.
+        ssize_t ret = __syscall_ret(__syscall(SYS_read, fd, buf, count));
         if (ret == -1)
         {
             if (errno == EINTR)
@@ -90,6 +100,11 @@ static unsigned long NO_SANITIZE_THREAD __auxv_init_procfs(unsigned long type)
     _Static_assert(sizeof(aux) < 4096, "Unexpected sizeof(aux)");
     while (__retry_read(fd, &aux, sizeof(aux)) == sizeof(aux))
     {
+#if defined(__has_feature)
+#if __has_feature(memory_sanitizer)
+        __msan_unpoison(&aux, sizeof(aux));
+#endif
+#endif
         if (aux.a_type == AT_NULL)
         {
             break;

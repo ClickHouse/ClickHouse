@@ -320,11 +320,11 @@ def check_tables_are_synchronized(
     )
     result = instance.query(result_query)
 
-    for _ in range(30):
+    for _ in range(50):
         if result == expected:
             break
         else:
-            time.sleep(0.5)
+            time.sleep(1)
         result = instance.query(result_query)
 
     assert result == expected

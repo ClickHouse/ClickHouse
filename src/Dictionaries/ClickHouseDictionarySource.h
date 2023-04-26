@@ -46,8 +46,6 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    QueryPipeline loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
-
     QueryPipeline loadAll() override;
 
     QueryPipeline loadUpdatedAll() override;
@@ -72,7 +70,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    QueryPipeline createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
+    QueryPipeline createStreamForQuery(const String & query);
 
     std::string doInvalidateQuery(const std::string & request) const;
 
@@ -86,6 +84,10 @@ private:
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
+
+    /// RegExpTreeDictionary is the only dictionary whose structure of attributions differ from the input block.
+    /// For now we need to modify sample_block in the ctor of RegExpTreeDictionary.
+    friend class RegExpTreeDictionary;
 };
 
 }

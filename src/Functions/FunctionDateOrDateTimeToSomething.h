@@ -28,9 +28,9 @@ public:
             /// only validate the time_zone part if the number of arguments is 2. This is mainly
             /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
             if (arguments.size() == 2 && time_zone.empty())
-                throw Exception(
-                    "Function " + this->getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
+                    this->getName());
             return std::make_shared<ToDataType>(time_zone);
         }
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
@@ -78,8 +78,9 @@ public:
             return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
         else
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + this->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(), this->getName());
     }
 
 };

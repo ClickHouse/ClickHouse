@@ -8,12 +8,12 @@ TRANSFER_ENCODING_HEADER = "Transfer-Encoding"
 
 
 def main():
-    host = os.environ['CLICKHOUSE_HOST']
-    port = int(os.environ['CLICKHOUSE_PORT_HTTP'])
+    host = os.environ["CLICKHOUSE_HOST"]
+    port = int(os.environ["CLICKHOUSE_PORT_HTTP"])
 
     sock = socket(AF_INET, SOCK_STREAM)
     sock.connect((host, port))
-    sock.settimeout(5)
+    sock.settimeout(60)
     s = "POST /play HTTP/1.1\r\n"
     s += "Host: %s\r\n" % host
     s += "Content-type: multipart/form-data\r\n"
@@ -47,4 +47,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

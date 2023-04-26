@@ -8,7 +8,7 @@ namespace DB
 class PartMetadataManagerOrdinary : public IPartMetadataManager
 {
 public:
-    explicit PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_);
+    explicit PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_) : IPartMetadataManager(part_) {}
 
     ~PartMetadataManagerOrdinary() override = default;
 

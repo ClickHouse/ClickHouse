@@ -40,14 +40,14 @@ DatabaseSQLite::DatabaseSQLite(
 
 bool DatabaseSQLite::empty() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return fetchTablesList().empty();
 }
 
 
 DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     Tables tables;
     auto table_names = fetchTablesList();
@@ -58,7 +58,7 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
 }
 
 
-std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
+NameSet DatabaseSQLite::fetchTablesList() const
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
@@ -120,14 +120,14 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 
 bool DatabaseSQLite::isTableExist(const String & table_name, ContextPtr) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return checkSQLiteTable(table_name);
 }
 
 
 StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return fetchTable(table_name, local_context, false);
 }
 
@@ -175,7 +175,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 {
     StoragePtr storage;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         storage = fetchTable(table_name, local_context, false);
     }
     if (!storage)
@@ -192,8 +192,10 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     /// Add table_name to engine arguments
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
 
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+                                                            max_parser_depth,
+                                                            throw_on_error);
 
     return create_table_query;
 }

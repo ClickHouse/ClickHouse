@@ -14,3 +14,13 @@
 1	[0,0,10]
 5	[0,0,10.2]
 4	[0,0,9.7]
+        Name: annoy_index
+            Name: annoy_index
+1	[0,0,10]
+2	[0.2,0,10]
+3	[-0.3,0,10]
+1	[0,0,10]
+2	[0.2,0,10]
+3	[-0.3,0,10]
+        Name: annoy_index
+            Name: annoy_index

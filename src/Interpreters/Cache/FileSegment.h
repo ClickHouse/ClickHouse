@@ -30,9 +30,39 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 
 
+/*
+ * FileSegmentKind is used to specify the eviction policy for file segments.
+ */
+enum class FileSegmentKind
+{
+    /* `Regular` file segment is still in cache after usage, and can be evicted
+     * (unless there're some holders).
+     */
+    Regular,
+
+    /* `Persistent` file segment can't be evicted from cache,
+     * it should be removed manually.
+     */
+    Persistent,
+
+    /* `Temporary` file segment is removed right after releasing.
+     * Also corresponding files are removed during cache loading (if any).
+     */
+    Temporary,
+};
+
+String toString(FileSegmentKind kind);
+
 struct CreateFileSegmentSettings
 {
-    bool is_persistent = false;
+    FileSegmentKind kind = FileSegmentKind::Regular;
+    bool unbounded = false;
+
+    CreateFileSegmentSettings() = default;
+
+    explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool unbounded_ = false)
+        : kind(kind_), unbounded(unbounded_)
+    {}
 };
 
 class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
@@ -66,10 +96,10 @@ public:
          */
         DOWNLOADING,
         /**
-         * Space reservation for a file segment is incremental, i.e. downaloder reads buffer_size bytes
+         * Space reservation for a file segment is incremental, i.e. downloader reads buffer_size bytes
          * from remote fs -> tries to reserve buffer_size bytes to put them to cache -> writes to cache
          * on successful reservation and stops cache write otherwise. Those, who waited for the same file
-         * file segment, will read downloaded part from cache and remaining part directly from remote fs.
+         * segment, will read downloaded part from cache and remaining part directly from remote fs.
          */
         PARTIALLY_DOWNLOADED_NO_CONTINUATION,
         /**
@@ -127,7 +157,9 @@ public:
 
     size_t offset() const { return range().left; }
 
-    bool isPersistent() const { return is_persistent; }
+    FileSegmentKind getKind() const { return segment_kind; }
+    bool isPersistent() const { return segment_kind == FileSegmentKind::Persistent; }
+    bool isUnbound() const { return is_unbound; }
 
     using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
@@ -181,20 +213,22 @@ public:
 
     bool isDetached() const;
 
+    bool isCompleted() const;
+
     void assertCorrectness() const;
-
-    /**
-     * ========== Methods for _only_ file segment's `writer` ======================
-     */
-
-    void synchronousWrite(const char * from, size_t size, size_t offset);
 
     /**
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
-    /// Try to reserve exactly `size` bytes.
+    /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
+    /// Returns true if reservation was successful, false otherwise.
     bool reserve(size_t size_to_reserve);
+
+    /// Try to reserve at max `size_to_reserve` bytes.
+    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
+    /// In strict mode throws an error on attempt to reserve space too much space.
+    size_t tryReserve(size_t size_to_reserve, bool strict = false);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -209,6 +243,11 @@ public:
 
     void resetDownloader();
 
+    // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
+    // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
+    //
+    // The reader typically requires its internal_buffer to be assigned from the outside before
+    // calling next().
     RemoteFileReaderPtr getRemoteFileReader();
 
     RemoteFileReaderPtr extractRemoteFileReader();
@@ -216,6 +255,10 @@ public:
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
     void resetRemoteFileReader();
+
+    void setDownloadedSize(size_t delta);
+
+    LocalCacheWriterPtr detachWriter();
 
 private:
     size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
@@ -232,6 +275,7 @@ private:
 
     void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
     void setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void setDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* download_lock */, size_t delta);
 
     bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
@@ -247,9 +291,9 @@ private:
     void assertIsDownloaderUnlocked(const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
     void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    /// complete() without any completion state is called from destructor of
-    /// FileSegmentsHolder. complete() might check if the caller of the method
-    /// is the last alive holder of the segment. Therefore, complete() and destruction
+    /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
+    /// Function might check if the caller of the method
+    /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void completeWithoutStateUnlocked(std::lock_guard<std::mutex> & cache_lock);
     void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
@@ -267,7 +311,9 @@ private:
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;
+    bool detached_writer = false;
 
+    /// downloaded_size should always be less or equal to reserved_size
     size_t downloaded_size = 0;
     size_t reserved_size = 0;
 
@@ -294,13 +340,17 @@ private:
     /// "detached" file segment means that it is not owned by cache ("detached" from cache).
     /// In general case, all file segments are owned by cache.
     bool is_detached = false;
+    bool is_completed = false;
 
-    bool is_downloaded{false};
+    bool is_downloaded = false;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    bool is_persistent;
+    FileSegmentKind segment_kind;
+
+    /// Size of the segment is not known until it is downloaded and can be bigger than max_file_segment_size.
+    bool is_unbound = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
@@ -313,14 +363,12 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
+    void reset();
+    bool empty() const { return file_segments.empty(); }
+
     ~FileSegmentsHolder();
 
     String toString();
-
-    FileSegments::iterator add(FileSegmentPtr && file_segment)
-    {
-        return file_segments.insert(file_segments.end(), file_segment);
-    }
 
     FileSegments file_segments{};
 };

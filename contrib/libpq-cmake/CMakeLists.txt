@@ -59,6 +59,12 @@ set(SRCS
 
 add_library(_libpq ${SRCS})
 
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
+    add_definitions(-DHAVE_BIO_METH_NEW)
+    add_definitions(-DHAVE_HMAC_CTX_NEW)
+    add_definitions(-DHAVE_HMAC_CTX_FREE)
+endif ()
+
 target_include_directories (_libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
 target_include_directories (_libpq SYSTEM PUBLIC "${LIBPQ_SOURCE_DIR}/include")
 target_include_directories (_libpq SYSTEM PRIVATE "${LIBPQ_SOURCE_DIR}/configs")

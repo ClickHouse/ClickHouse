@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Cache/FileCache.h>
-#include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -127,7 +126,7 @@ private:
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
                 return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     size_t first_offset = 0;

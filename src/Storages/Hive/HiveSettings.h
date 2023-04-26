@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 
@@ -12,15 +12,15 @@ namespace DB
 {
 class ASTStorage;
 
-#define HIVE_RELATED_SETTINGS(M) \
+#define HIVE_RELATED_SETTINGS(M, ALIAS) \
     M(Char, hive_text_field_delimeter, '\x01', "How to split one row of hive data with format text", 0) \
     M(Bool, enable_orc_stripe_minmax_index, false, "Enable using ORC stripe level minmax index.", 0) \
     M(Bool, enable_parquet_rowgroup_minmax_index, false, "Enable using Parquet row-group level minmax index.", 0) \
     M(Bool, enable_orc_file_minmax_index, true, "Enable using ORC file level minmax index.", 0)
 
-#define LIST_OF_HIVE_SETTINGS(M) \
-    HIVE_RELATED_SETTINGS(M) \
-    FORMAT_FACTORY_SETTINGS(M)
+#define LIST_OF_HIVE_SETTINGS(M, ALIAS) \
+    HIVE_RELATED_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS)
 

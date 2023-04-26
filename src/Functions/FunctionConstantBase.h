@@ -34,7 +34,6 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     /// Some functions may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
