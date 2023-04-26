@@ -6,6 +6,7 @@
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/Application.h>
+#include <Common/AsyncLoader.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/EventNotifier.h>
@@ -16,6 +17,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -152,6 +154,8 @@ namespace CurrentMetrics
     extern const Metric IOPrefetchThreadsActive;
     extern const Metric IOWriterThreads;
     extern const Metric IOWriterThreadsActive;
+    extern const Metric AsyncLoaderThreads;
+    extern const Metric AsyncLoaderThreadsActive;
 }
 
 namespace DB
@@ -227,6 +231,9 @@ struct ContextSharedPart : boost::noncopyable
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
     TemporaryDataOnDiskScopePtr root_temp_data_on_disk;
+
+    mutable LoadJobPtr server_start_job;
+    mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -1911,6 +1918,32 @@ const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 {
     return getEmbeddedDictionariesImpl(false);
+}
+
+size_t Context::getAsyncLoaderPoolSize() const
+{
+    auto lock = getLock();
+    // We use all CPU cores before server is started, due to:
+    // 1) no other work to do - no reason to waste CPU resources;
+    // 2) backward-compatibility - we do not want to change behaviour in the case every table is loaded synchronously
+    //    before server start (port listen).
+    // After server is started incoming queries can compete for resources with loading of the rest of the tables.
+    // Thus it can be advantageous to lower number of threads after start using server setting `async_loader_pool_size`.
+    // TODO(serxa): set async_loader max threads during server_start_job
+    return shared->server_start_job && shared->server_start_job->status() == LoadStatus::OK ?
+        shared->server_settings.async_loader_pool_size : getNumberOfPhysicalCPUCores();
+}
+
+AsyncLoader & Context::getAsyncLoader() const
+{
+    auto lock = getLock();
+    if (!shared->async_loader)
+        shared->async_loader = std::make_unique<AsyncLoader>(
+            CurrentMetrics::AsyncLoaderThreads,
+            CurrentMetrics::AsyncLoaderThreadsActive,
+            getAsyncLoaderPoolSize(),
+            /* log_failures = */ true);
+    return *shared->async_loader;
 }
 
 

@@ -698,7 +698,7 @@ std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() cons
     return res;
 }
 
-
+// TODO(serxa): get rid of getTablesSortedByDependencyForParallel()
 std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDependencyForParallel() const
 {
     std::vector<std::vector<StorageID>> res;

@@ -10,7 +10,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <Common/AsyncLoader.h>
 
 namespace Poco
 {
@@ -57,10 +57,15 @@ public:
     TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_);
     TablesLoader() = delete;
 
+    LoadTaskPtr loadTablesAsync(LoadJobSet load_after = {});
+    LoadTaskPtr startupTablesAsync();
     void loadTables();
     void startupTables();
 
 private:
+    LoadTaskPtrs load_tables; // Tasks to load all tables
+    LoadTaskPtrs startup_tables; // Tasks to startup all tables after loading
+
     ContextMutablePtr global_context;
     Databases databases;
     LoadingStrictnessLevel strictness_mode;
@@ -74,12 +79,14 @@ private:
     std::atomic<size_t> tables_processed{0};
     AtomicStopwatch stopwatch;
 
-    ThreadPool pool;
+    AsyncLoader & async_loader;
+    ThreadPool pool; // TODO(serxa): get rid of it
 
+    void createTasks(LoadJobSet load_after);
     void buildDependencyGraph();
     void removeUnresolvableDependencies();
-    void loadTablesInTopologicalOrder(ThreadPool & pool);
-    void startLoadingTables(ThreadPool & pool, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level);
+    void loadTablesInTopologicalOrder();
+    void startLoadingTables(ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level);
 };
 
 }

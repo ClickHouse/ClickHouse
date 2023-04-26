@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
+#include <Common/AsyncLoader.h>
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
@@ -705,6 +706,9 @@ public:
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
+
+    size_t getAsyncLoaderPoolSize() const;
+    AsyncLoader & getAsyncLoader() const;
 
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();

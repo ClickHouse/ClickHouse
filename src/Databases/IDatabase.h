@@ -7,6 +7,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/AsyncLoader.h>
 #include <Common/ThreadPool_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
@@ -139,6 +140,20 @@ public:
     {
     }
 
+    // TODO(serxa): do we really need loadStoredObjectsAsync()? better to always do it sync.
+    /// Create a task to load existing tables after specified dependencies `load_after` using `async_loader`.
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    /// You can call it only once, right after the object is created.
+    virtual LoadTaskPtr loadStoredObjectsAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*load_after*/,
+        ContextMutablePtr /*context*/,
+        LoadingStrictnessLevel /*mode*/,
+        bool /* skip_startup_tables */)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
     virtual bool supportsLoadingInTopologicalOrder() const { return false; }
 
     virtual void beforeLoadingMetadata(
@@ -151,13 +166,57 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/,
+    virtual void loadTableFromMetadata(
+        ContextMutablePtr /*local_context*/,
+        const String & /*file_path*/,
+        const QualifiedTableName & /*name*/,
+        const ASTPtr & /*ast*/,
         LoadingStrictnessLevel /*mode*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
+    /// Create a task to load table `name` after specified dependencies `startup_after` using `async_loader`.
+    /// `load_after` must contain the tasks returned by `loadTableFromMetadataAsync()` for dependent tables (see TablesLoader).
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    virtual LoadTaskPtr loadTableFromMetadataAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*load_after*/,
+        ContextMutablePtr /*local_context*/,
+        const String & /*file_path*/,
+        const QualifiedTableName & /*name*/,
+        const ASTPtr & /*ast*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    /// Start all tables and the database itself
     virtual void startupTables(ThreadPool & /*thread_pool*/, LoadingStrictnessLevel /*mode*/) {}
+
+    /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
+    /// `startup_after` must contain the task returned by `loadTableFromMetadataAsync()` for this table (see TablesLoader).
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    virtual LoadTaskPtr startupTableAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*startup_after*/,
+        const QualifiedTableName & /*name*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); // TODO: should return empty task instead because startupTables default implementation do no throw?
+    }
+
+    /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
+    /// `startup_after` must contain all the tasks returned by `startupTableAsync()` for every table (see TablesLoader).
+    /// The returned task is also stored inside the database for cancellation on destruction.
+    virtual LoadTaskPtr startupDatabaseAsync(
+        AsyncLoader & /*async_loader*/,
+        LoadJobSet /*startup_after*/,
+        const QualifiedTableName & /*name*/,
+        LoadingStrictnessLevel /*mode*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); // TODO: should return empty task instead because startupTables default implementation do no throw?
+    }
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;

@@ -21,6 +21,7 @@ using LoadJobPtr = std::shared_ptr<LoadJob>;
 using LoadJobSet = std::unordered_set<LoadJobPtr>;
 class LoadTask;
 using LoadTaskPtr = std::shared_ptr<LoadTask>;
+using LoadTaskPtrs = std::vector<LoadTaskPtr>;
 class AsyncLoader;
 
 // Execution status of a load job.
@@ -253,7 +254,7 @@ public:
     void schedule(const LoadTaskPtr & task);
 
     // Schedule all tasks atomically. To ensure only highest priority jobs among all tasks are run first.
-    void schedule(const std::vector<LoadTaskPtr> & tasks);
+    void schedule(const LoadTaskPtrs & tasks);
 
     // Increase priority of a job and all its dependencies recursively.
     void prioritize(const LoadJobPtr & job, ssize_t new_priority);
