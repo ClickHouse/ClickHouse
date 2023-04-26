@@ -6,7 +6,7 @@ namespace DB
 {
 
 /** Parses queries of the form
- * SHOW [EXTENDED] INDEX|INDEXES|KEYS (FROM|IN) tbl [(FROM|IN) db] (WHERE expr)
+ * SHOW [EXTENDED] INDEX|INDEXES|KEYS FROM|IN tbl [FROM|IN db] [WHERE expr]
  */
 class ParserShowIndexesQuery : public IParserBase
 {

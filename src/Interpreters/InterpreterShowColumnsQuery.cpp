@@ -5,8 +5,8 @@
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/parseDatabaseAndTableName.h>
 #include <IO/Operators.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -42,33 +42,8 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 
     rewritten_query << "FROM system.columns WHERE ";
 
-    String database;
-    String table;
-    if (query.from_table.contains("."))
-    {
-        /// FROM <db>.<table> (abbreviated form)
-        chassert(query.from_database.empty());
-        std::vector<String> split;
-        boost::split(split, query.from_table, boost::is_any_of("."));
-        chassert(split.size() == 2);
-        database = split[0];
-        table = split[1];
-    }
-    else if (query.from_database.empty())
-    {
-        /// FROM <table>
-        chassert(!query.from_table.empty());
-        database = getContext()->getCurrentDatabase();
-        table = query.from_table;
-    }
-    else
-    {
-        /// FROM <database> FROM <table>
-        chassert(!query.from_database.empty());
-        chassert(!query.from_table.empty());
-        database = query.from_database;
-        table = query.from_table;
-    }
+    auto [database, table] = parseDatabaseAndTableName(query, getContext()->getCurrentDatabase());
+
     rewritten_query << "database = " << DB::quote << database;
     rewritten_query << " AND table = " << DB::quote << table;
 

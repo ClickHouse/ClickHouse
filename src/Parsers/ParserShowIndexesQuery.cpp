@@ -1,6 +1,5 @@
 #include <Parsers/ParserShowIndexesQuery.h>
 
-// TODO
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTShowIndexesQuery.h>
