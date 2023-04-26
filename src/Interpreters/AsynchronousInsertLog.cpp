@@ -36,6 +36,7 @@ NamesAndTypesList AsynchronousInsertLogElement::getNamesAndTypes()
         {"format", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"query_id", std::make_shared<DataTypeString>()},
         {"bytes", std::make_shared<DataTypeUInt64>()},
+        {"rows", std::make_shared<DataTypeUInt64>()},
         {"exception", std::make_shared<DataTypeString>()},
         {"status", type_status},
 
@@ -71,6 +72,7 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(insert_query.format);
     columns[i++]->insert(query_id);
     columns[i++]->insert(bytes);
+    columns[i++]->insert(rows);
     columns[i++]->insert(exception);
     columns[i++]->insert(status);
 
