@@ -117,18 +117,29 @@ def wait_for_delete_s3_objects(cluster, expected, timeout=30):
     assert len(list_objects(cluster, "data/")) == expected
 
 
-@pytest.fixture(autouse=True, scope="function")
-def clear_minio(cluster):
-    # CH do some writes to the S3 at start. For example, file data/clickhouse_access_check_{server_uuid}.
-    # Set the timeout there as 10 sec in order to resolve the race with that file exists.
-    wait_for_delete_s3_objects(cluster, 0, timeout=10)
-
-    yield
-
-    # Remove extra objects to prevent tests cascade failing
+def remove_all_s3_objects(cluster):
     minio = cluster.minio_client
     for obj in list_objects(cluster, "data/"):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
+
+
+@pytest.fixture(autouse=True, scope="function")
+def clear_minio(cluster):
+    try:
+        # CH do some writes to the S3 at start. For example, file data/clickhouse_access_check_{server_uuid}.
+        # Set the timeout there as 10 sec in order to resolve the race with that file exists.
+        wait_for_delete_s3_objects(cluster, 0, timeout=10)
+    except:
+        # Remove extra objects to prevent tests cascade failing
+        remove_all_s3_objects(cluster)
+
+    yield
+
+
+def check_no_objects_after_drop(cluster, table_name="s3_test", node_name="node"):
+    node = cluster.instances[node_name]
+    node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
+    wait_for_delete_s3_objects(cluster, 0, timeout=0)
 
 
 @pytest.mark.parametrize(
@@ -162,6 +173,8 @@ def test_simple_insert_select(
         node.query("SELECT count(*) FROM s3_test where id = 1 FORMAT Values") == "(2)"
     )
 
+    check_no_objects_after_drop(cluster)
+
 
 @pytest.mark.parametrize("merge_vertical,node_name", [(True, "node"), (False, "node")])
 def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
@@ -172,7 +185,6 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
 
     node = cluster.instances[node_name]
     create_table(node, "s3_test", **settings)
-    minio = cluster.minio_client
 
     node.query("SYSTEM STOP MERGES s3_test")
     node.query(
@@ -226,6 +238,8 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
         cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD, timeout=45
     )
 
+    check_no_objects_after_drop(cluster)
+
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_alter_table_columns(cluster, node_name):
@@ -270,6 +284,8 @@ def test_alter_table_columns(cluster, node_name):
     wait_for_delete_s3_objects(
         cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
     )
+
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -338,6 +354,8 @@ def test_attach_detach_partition(cluster, node_name):
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 0
     )
 
+    check_no_objects_after_drop(cluster)
+
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_move_partition_to_another_disk(cluster, node_name):
@@ -369,6 +387,8 @@ def test_move_partition_to_another_disk(cluster, node_name):
         len(list_objects(cluster, "data/"))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
+
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -407,6 +427,8 @@ def test_table_manipulations(cluster, node_name):
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD
+
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -513,9 +535,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster, FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 4
     )
 
-    minio = cluster.minio_client
-    for obj in list_objects(cluster, "data/"):
-        minio.remove_object(cluster.minio_bucket, obj.object_name)
+    remove_all_s3_objects(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -548,10 +568,10 @@ def test_freeze_unfreeze(cluster, node_name):
     # Unfreeze all partitions from backup2.
     node.query("ALTER TABLE s3_test UNFREEZE WITH NAME 'backup2'")
 
+    # Data should be removed from S3.
     wait_for_delete_s3_objects(cluster, FILES_OVERHEAD)
 
-    # Data should be removed from S3.
-    assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -582,10 +602,10 @@ def test_freeze_system_unfreeze(cluster, node_name):
     # Unfreeze all data from backup3.
     node.query("SYSTEM UNFREEZE WITH NAME 'backup3'")
 
+    # Data should be removed from S3.
     wait_for_delete_s3_objects(cluster, FILES_OVERHEAD)
 
-    # Data should be removed from S3.
-    assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -631,6 +651,8 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
     assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
 
+    check_no_objects_after_drop(cluster)
+
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_no_delete_objects(cluster, node_name):
@@ -639,6 +661,7 @@ def test_s3_no_delete_objects(cluster, node_name):
         node, "s3_test_no_delete_objects", storage_policy="no_delete_objects_s3"
     )
     node.query("DROP TABLE s3_test_no_delete_objects SYNC")
+    remove_all_s3_objects(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -653,6 +676,7 @@ def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
         assert node.query("SELECT sum(id) FROM s3_test").splitlines() == [
             "40499995500000"
         ]
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -666,10 +690,8 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
         "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000000"
     )
     node.query("SELECT * FROM s3_test WHERE value LIKE '%abc%' ORDER BY value LIMIT 10")
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
-    minio = cluster.minio_client
-    for obj in list_objects(cluster, "data/"):
-        minio.remove_object(cluster.minio_bucket, obj.object_name)
+
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node_with_limited_disk"])
@@ -697,7 +719,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
     assert node.contains_in_log(
         "Insert into cache is skipped due to insufficient disk space"
     )
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    check_no_objects_after_drop(cluster, node_name=node_name)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -722,6 +744,7 @@ def test_store_cleanup_disk_s3(cluster, node_name):
         "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
     )
     node.query("INSERT INTO s3_test SELECT 1")
+    check_no_objects_after_drop(cluster)
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -798,3 +821,5 @@ def test_cache_setting_compatibility(cluster, node_name):
     node.query("SELECT * FROM s3_test FORMAT Null")
 
     assert not node.contains_in_log("No such file or directory: Cache info:")
+
+    check_no_objects_after_drop(cluster)
