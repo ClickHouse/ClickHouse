@@ -460,7 +460,7 @@ AS
 
 ```  
 To use those functions,we need to specify two parameter at least.
-For example, if there 4000 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
+For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
   
 
 ```sql
