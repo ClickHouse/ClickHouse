@@ -327,6 +327,17 @@ def test_predefined_connection_configuration(started_cluster):
         node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
         == "100"
     )
+    node1.query(
+        """
+        DROP DATABASE postgres_database;
+        CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1, use_tables_cache=1);
+        """
+    )
+    assert (
+        node1.query(f"SELECT count() FROM postgres_database.test_table").rstrip()
+        == "100"
+    )
+    assert node1.contains_in_log("Cached table `test_table`")
 
     node1.query("DROP DATABASE postgres_database")
     cursor.execute(f"DROP TABLE test_table ")
