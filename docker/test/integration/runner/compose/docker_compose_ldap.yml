@@ -1,0 +1,25 @@
+version: '2.3'
+
+services:
+  ldap:
+    image: zvonand/ldap:${DOCKER_LDAP_TAG:-latest}
+    command: "--copy-service --loglevel debug"
+    hostname: ldap
+    environment:
+      LDAP_ORGANIZATION: "company"
+      LDAP_DOMAIN: "company.com"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_TLS: "false"
+    volumes:
+      - "${LDAP_DIR}/secrets:/container/service/slapd/assets/config/bootstrap/ldif/custom"
+    expose:
+      - "389"
+      - "636"
+    healthcheck:
+      test: ldapsearch -x -H ldap://localhost:$${LDAP_PORT:-389} -b "dc=company,dc=com" -D "cn=admin,dc=company,dc=com" -w admin
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    security_opt:
+      - label:disable

@@ -112,6 +112,11 @@
         "name": "clickhouse/kerberos-kdc",
         "dependent": []
     },
+    "docker/test/integration/ldap": {
+        "only_amd64": true,
+        "name": "zvonand/ldap",
+        "dependent": []
+    },
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [

@@ -1,0 +1,11 @@
+<clickhouse>
+    <ldap_servers>
+        <my_ldap_server>
+            <host>ldap</host>
+            <port>389</port>
+            <bind_dn>uid={user_name},dc=company,dc=com</bind_dn>
+            <enable_tls>no</enable_tls>
+            <tls_require_cert>never</tls_require_cert>
+        </my_ldap_server>
+    </ldap_servers>
+</clickhouse>

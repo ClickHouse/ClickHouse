@@ -1,0 +1,14 @@
+<clickhouse>
+    <user_directories>
+        <ldap>
+            <server>my_ldap_server</server>
+            <!-- <role_mapping>
+                <base_dn>ou=groups,dc=company,dc=com</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>clickhouse_</prefix>
+            </role_mapping> -->
+        </ldap>
+    </user_directories>
+</clickhouse>

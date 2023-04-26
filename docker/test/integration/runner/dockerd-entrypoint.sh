@@ -23,7 +23,7 @@ reties=0
 while true; do
     docker info &>/dev/null && break
     reties=$((reties+1))
-    if [[ $reties -ge 100 ]]; then # 10 sec max
+    if [[ $reties -ge 300 ]]; then # 10 sec max
         echo "Can't start docker daemon, timeout exceeded." >&2
         exit 1;
     fi
@@ -51,6 +51,7 @@ export DOCKER_MYSQL_JS_CLIENT_TAG=${DOCKER_MYSQL_JS_CLIENT_TAG:=latest}
 export DOCKER_MYSQL_PHP_CLIENT_TAG=${DOCKER_MYSQL_PHP_CLIENT_TAG:=latest}
 export DOCKER_POSTGRESQL_JAVA_CLIENT_TAG=${DOCKER_POSTGRESQL_JAVA_CLIENT_TAG:=latest}
 export DOCKER_KERBEROS_KDC_TAG=${DOCKER_KERBEROS_KDC_TAG:=latest}
+export DOCKER_LDAP_TAG=${DOCKER_LDAP_TAG:-latest}
 export DOCKER_KERBERIZED_HADOOP_TAG=${DOCKER_KERBERIZED_HADOOP_TAG:=latest}
 
 cd /ClickHouse/tests/integration

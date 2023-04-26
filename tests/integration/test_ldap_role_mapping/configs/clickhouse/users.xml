@@ -1,0 +1,13 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+    <!-- <users>
+        <myuser>
+            <ldap>
+                <server>ldap</server>
+            </ldap>
+        </myuser>
+    </users> -->
+</clickhouse>
