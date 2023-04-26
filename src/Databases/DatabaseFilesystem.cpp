@@ -18,18 +18,23 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TABLE;
+}
+
 DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(&Poco::Logger::get("DatabaseFileSystem(" + name_ + ")"))
 {
     path = fs::path(path).lexically_normal().string();
 }
 
-std::string DatabaseFilesystem::getTablePath(const std::string& table_name) const
+std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
 {
     return fs::path(path) / table_name;
 }
 
-void DatabaseFilesystem::addTable(const std::string& table_name, StoragePtr table_storage) const
+void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
     loaded_tables.emplace(table_name, table_storage);
@@ -80,7 +85,8 @@ StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
 }
 
-StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const {
+StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const
+{
     try
     {
         return getTable(name, context_);
@@ -127,9 +133,9 @@ void DatabaseFilesystem::shutdown()
 }
 
 /**
- * Returns an empty vector because the database is read-only and no tables can be backed up.
+ * Returns an empty vector because the database is read-only and no tables can be backed up
  */
-std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFilesystem::getTablesForBackup(const FilterByNameFunction&, const ContextPtr&) const
+std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFilesystem::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
 {
     return {};
 }
@@ -137,9 +143,9 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFilesystem::getTablesForBacku
 /**
  *
  * Returns an empty iterator because the database does not have its own tables
- * But only caches them for quick access.
+ * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction&) const
+DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
