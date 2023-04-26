@@ -11,6 +11,7 @@
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Credentials.h>
+#include <IO/S3/ProviderType.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
@@ -160,6 +161,8 @@ public:
 
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
+
+    ProviderType getProviderType() const;
 private:
     Client(size_t max_redirects_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
@@ -205,6 +208,8 @@ private:
 
     std::string explicit_region;
     mutable bool detect_region = true;
+
+    ProviderType provider_type{ProviderType::UNKNOWN};
 
     mutable std::shared_ptr<ClientCache> cache;
 

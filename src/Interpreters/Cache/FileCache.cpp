@@ -719,7 +719,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         {
             auto queue_iterator = cell_for_reserve->queue_iterator;
             if (queue_iterator)
-                queue_iterator->incrementSize(size, cache_lock);
+                queue_iterator->updateSize(size, cache_lock);
             else
                 cell_for_reserve->queue_iterator = main_priority->add(key, offset, size, cache_lock);
         }
@@ -836,7 +836,7 @@ bool FileCache::tryReserveForMainList(
         /// If queue iterator already exists, we need to update the size after each space reservation.
         auto queue_iterator = cell_for_reserve->queue_iterator;
         if (queue_iterator)
-            queue_iterator->incrementSize(size, cache_lock);
+            queue_iterator->updateSize(size, cache_lock);
         else
             cell_for_reserve->queue_iterator = main_priority->add(key, offset, size, cache_lock);
     }
@@ -1152,7 +1152,14 @@ void FileCache::reduceSizeToDownloaded(
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, create_settings);
 
-    assert(file_segment->reserved_size == downloaded_size);
+    chassert(cell->queue_iterator);
+    chassert(cell->queue_iterator->size() >= downloaded_size);
+    const int64_t diff = cell->queue_iterator->size() - downloaded_size;
+    if (diff > 0)
+        cell->queue_iterator->updateSize(-diff, cache_lock);
+
+    chassert(file_segment->reserved_size == downloaded_size);
+    chassert(file_segment->reserved_size == cell->queue_iterator->size());
 }
 
 bool FileCache::isLastFileSegmentHolder(
@@ -1450,7 +1457,7 @@ void FileCache::QueryContext::reserve(const Key & key, size_t offset, size_t siz
             auto queue_iter = priority->add(key, offset, 0, cache_lock);
             record = records.insert({{key, offset}, queue_iter}).first;
         }
-        record->second->incrementSize(size, cache_lock);
+        record->second->updateSize(size, cache_lock);
     }
     cache_size += size;
 }
