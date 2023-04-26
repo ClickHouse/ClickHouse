@@ -1679,13 +1679,13 @@ SOURCE(MONGODB(
 
 Setting fields:
 
--   `host` – The MongoDB host.
--   `port` – The port on the MongoDB server.
--   `user` – Name of the MongoDB user.
--   `password` – Password of the MongoDB user.
--   `db` – Name of the database.
--   `collection` – Name of the collection.
--   `options` -  MongoDB connection string options (optional parameter).
+- `host` – The MongoDB host.
+- `port` – The port on the MongoDB server.
+- `user` – Name of the MongoDB user.
+- `password` – Password of the MongoDB user.
+- `db` – Name of the database.
+- `collection` – Name of the collection.
+- `options` -  MongoDB connection string options (optional parameter).
 
 ### Redis
 
