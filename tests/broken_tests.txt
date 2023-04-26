@@ -124,7 +124,6 @@
 02707_skip_index_with_in
 02707_complex_query_fails_analyzer
 02680_mysql_ast_logical_err
-02540_duplicate_primary_key2
 02516_join_with_totals_and_subquery_bug
 02324_map_combinator_bug
 02241_join_rocksdb_bs
