@@ -71,7 +71,7 @@ Creates a [DateTime](../../sql-reference/data-types/datetime.md) from a year, mo
 **Syntax**
 
 ``` sql
-makeDate(year, month, day, hour, minute, second[, timezone])
+makeDateTime(year, month, day, hour, minute, second[, timezone])
 ```
 
 **Arguments**
