@@ -24,6 +24,7 @@ struct AsynchronousInsertLogElement
     ASTPtr query;
     String query_id;
     UInt64 bytes{};
+    UInt64 rows{};
     String exception;
     Status status{};
 
