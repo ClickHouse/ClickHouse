@@ -94,7 +94,7 @@ void LRUFileCachePriority::LRUFileCacheIterator::removeAndGetNext(std::lock_guar
     queue_iter = cache_priority->queue.erase(queue_iter);
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::updateSize(ssize_t size, std::lock_guard<std::mutex> &)
+void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size, std::lock_guard<std::mutex> &)
 {
     cache_priority->cache_size += size;
 
