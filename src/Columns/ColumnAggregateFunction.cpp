@@ -385,8 +385,7 @@ void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 /// threads, so we can't know the size of these data.
 size_t ColumnAggregateFunction::byteSize() const
 {
-    return data.size() * sizeof(data[0])
-            + (my_arena ? my_arena->size() : 0);
+    return data.size() * sizeof(data[0]) + (my_arena ? my_arena->usedBytes() : 0);
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const
@@ -395,11 +394,11 @@ size_t ColumnAggregateFunction::byteSizeAt(size_t) const
     return sizeof(data[0]) + func->sizeOfData();
 }
 
-/// Like in byteSize(), the size is underestimated.
+/// Similar to byteSize() the size is underestimated.
+/// In this case it's also overestimated at the same time as it counts all the bytes allocated by the arena, used or not
 size_t ColumnAggregateFunction::allocatedBytes() const
 {
-    return data.allocated_bytes()
-            + (my_arena ? my_arena->size() : 0);
+    return data.allocated_bytes() + (my_arena ? my_arena->allocatedBytes() : 0);
 }
 
 void ColumnAggregateFunction::protect()
