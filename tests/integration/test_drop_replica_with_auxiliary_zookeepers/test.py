@@ -62,4 +62,7 @@ def test_drop_replica_in_auxiliary_zookeeper(started_cluster):
 
     zk = cluster.get_kazoo_client("zoo1")
     assert zk.exists("/clickhouse/tables/test/test_auxiliary_zookeeper")
-    assert zk.exists("/clickhouse/tables/test/test_auxiliary_zookeeper/replicas/node2") is None
+    assert (
+        zk.exists("/clickhouse/tables/test/test_auxiliary_zookeeper/replicas/node2")
+        is None
+    )
