@@ -52,7 +52,7 @@ public:
 
         virtual void annul() = 0;
 
-        virtual void updateSize(ssize_t size) = 0;
+        virtual void updateSize(int64_t size) = 0;
     };
 
     using Iterator = std::shared_ptr<IIterator>;
