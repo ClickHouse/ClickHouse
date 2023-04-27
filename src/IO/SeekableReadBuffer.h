@@ -61,6 +61,23 @@ public:
     ///  * Sometimes when we create such buffer we don't know in advance whether we'll need it to be
     ///    seekable or not. So we don't want to pay the price for this check in advance.
     virtual bool checkIfActuallySeekable() { return true; }
+
+    /// Unbuffered positional read.
+    /// Doesn't affect the buffer state (position, working_buffer, etc).
+    ///
+    /// Caller needs to be careful:
+    ///  * supportsReadAt() must be checked (called and return true) before calling readBigAt().
+    ///    Otherwise readBigAt() may crash.
+    ///  * Thread safety: multiple readBigAt() calls may be performed in parallel.
+    ///    But readBigAt() may not be called in parallel with any other methods
+    ///    (e.g. next() or supportsReadAt()).
+    ///  * Performance: there's no buffering. Each readBigAt() call typically translates into actual
+    ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
+    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/)
+        { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented"); }
+
+    /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
+    virtual bool supportsReadAt() { return false; }
 };
 
 /// Useful for reading in parallel.

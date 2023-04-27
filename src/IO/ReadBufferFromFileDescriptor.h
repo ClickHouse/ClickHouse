@@ -30,6 +30,12 @@ protected:
     /// Name or some description of file.
     std::string getFileName() const override;
 
+    /// Does the read()/pread(), with all the metric increments, error handling, throttling, etc.
+    /// Doesn't seek (`offset` must match fd's position if !use_pread).
+    /// Stops after min_bytes or eof. Returns 0 if eof.
+    /// Thread safe.
+    size_t readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset);
+
 public:
     explicit ReadBufferFromFileDescriptor(
         int fd_,
@@ -64,6 +70,11 @@ public:
     void rewind();
 
     size_t getFileSize() override;
+
+    bool checkIfActuallySeekable() override;
+
+    size_t readBigAt(char * to, size_t n, size_t offset) override;
+    bool supportsReadAt() override { return use_pread; }
 
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.

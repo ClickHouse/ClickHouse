@@ -77,11 +77,21 @@ public:
 
     String getFileName() const override { return bucket + "/" + key; }
 
+    size_t readBigAt(char * to, size_t n, size_t range_begin) override;
+
+    bool supportsReadAt() override { return true; }
+
 private:
     std::unique_ptr<ReadBuffer> initialize();
 
-    // If true, if we destroy impl now, no work was wasted. Just for metrics.
+    /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
+
+    /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
+    /// Returns true if the error looks retriable.
+    bool processException(Exception & e, size_t read_offset, size_t attempt) const;
+
+    Aws::S3::Model::GetObjectResult sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const;
 
     ReadSettings read_settings;
 

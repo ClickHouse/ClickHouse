@@ -90,15 +90,11 @@ private:
             const FormatSettings & settings)>;
 
     // Incompatible with FileSegmentationEngine.
-    // When created using SeekableReadBufferFactoryPtr, the IInputFormat doesn't support
-    // resetParser() and setReadBuffer().
     //
     // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
     // and get some information about projections (min/max/count per column per row group).
     using RandomAccessInputCreator = std::function<InputFormatPtr(
-            // exactly one of these two is nullptr
-            ReadBuffer * buf,
-            SeekableReadBufferFactoryPtr buf_factory,
+            ReadBuffer & buf,
             const Block & header,
             const FormatSettings & settings,
             const ReadSettings& read_settings,
@@ -152,8 +148,11 @@ private:
 public:
     static FormatFactory & instance();
 
-    // Format parser from a single ReadBuffer.
-    // Parallelizes parsing (when possible) but not reading.
+    /// Format parser from a single ReadBuffer.
+    /// Parallelizes parsing (when possible) but not reading (except for formats that use readBigAt(),
+    /// like Parquet).
+    /// When possible, `buf` should be a SeekableReadBuffer, preferably implementing readBigAt() -
+    /// that makes Parquet format much faster.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -163,9 +162,9 @@ public:
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
-    // Format parser from a random-access source (factory of seekable read buffers).
-    // Parallelizes both parsing and reading when possible.
-    // Prefer this over getInput() when reading from random-access source like file or HTTP.
+    /// Format parser from a random-access source (factory of seekable read buffers).
+    /// Parallelizes both parsing and reading when possible.
+    /// Prefer this over getInput() when reading from network.
     InputFormatPtr getInputRandomAccess(
         const String & name,
         SeekableReadBufferFactoryPtr buf_factory,
@@ -282,7 +281,6 @@ private:
         std::optional<size_t> max_parsing_threads) const;
 
     // Creates a ReadBuffer to give to an input format.
-    // Returns nullptr if we should give it the whole factory.
     std::unique_ptr<ReadBuffer> prepareReadBuffer(
         SeekableReadBufferFactoryPtr & buf_factory,
         CompressionMethod compression,

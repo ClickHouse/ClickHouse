@@ -86,7 +86,6 @@ namespace
 
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
-        /// doesn't work properly without patch
         session->setKeepAlive(keep_alive);
         return session;
     }

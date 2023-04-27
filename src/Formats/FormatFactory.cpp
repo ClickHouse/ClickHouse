@@ -346,8 +346,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf,
-            std::move(buf_factory),
+            *buf,
             sample,
             format_settings,
             context->getReadSettings(),
@@ -427,7 +426,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
         res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings.zstd_window_log_max));
     }
 
-    if (!creators.random_access_input_creator && !res)
+    if (!res)
         res = buf_factory->getReader();
 
     return res;

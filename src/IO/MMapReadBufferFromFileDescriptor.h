@@ -39,6 +39,9 @@ public:
     int getFD() const;
 
     size_t getFileSize() override;
+
+    size_t readBigAt(char * to, size_t n, size_t offset) override;
+    bool supportsReadAt() override { return true; }
 };
 
 }
