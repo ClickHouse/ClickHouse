@@ -1272,7 +1272,7 @@
 
     <!-- Session log. Stores http requests issued from ClickHouse.
     -->
-    <!-- <httpclient_log>
+    <httpclient_log>
         <engine>
             engine MergeTree
             partition by event_date
@@ -1282,7 +1282,7 @@
         <database>system</database>
         <table>httpclient_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </httpclient_log> -->
+    </httpclient_log>
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
