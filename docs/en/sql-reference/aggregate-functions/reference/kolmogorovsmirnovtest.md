@@ -115,5 +115,4 @@ P-value is less than 0.05 (for confidence level of 95%), so null hypothesis is r
 
 **See Also**
 
-- [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [welchTTest function](welchttest.md#welchttest)
+- [Kolmogorov-Smirnov'test](https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test)
