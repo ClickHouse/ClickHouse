@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -nm -q """
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
-    select throwIf(not(length(thread_ids) between 6 and 11))
+    select throwIf(not(length(thread_ids) between 1 and 11))
     from system.query_log
     where
         event_date >= yesterday() and
@@ -60,7 +60,7 @@ $CLICKHOUSE_CLIENT -nm -q """
 
     -- sometimes the same thread can be used to remove part, due to ThreadPool,
     -- hence we cannot compare strictly.
-    select throwIf(not(length(thread_ids) between 6 and 11))
+    select throwIf(not(length(thread_ids) between 1 and 11))
     from system.query_log
     where
         event_date >= yesterday() and

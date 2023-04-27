@@ -8,7 +8,6 @@
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Throttler_fwd.h>
-#include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
 
@@ -21,67 +20,82 @@ namespace DB
 {
 
 struct Settings;
+class NamedCollection;
 
 struct S3Settings
 {
     struct RequestSettings
     {
-        size_t max_single_read_retries = 0;
-        size_t min_upload_part_size = 0;
-        size_t max_upload_part_size = 0;
-        size_t upload_part_size_multiply_factor = 0;
-        size_t upload_part_size_multiply_parts_count_threshold = 0;
-        size_t max_part_number = 0;
-        size_t max_single_part_upload_size = 0;
-        size_t max_single_operation_copy_size = 0;
-        size_t max_connections = 0;
+        struct PartUploadSettings
+        {
+            size_t min_upload_part_size = 16 * 1024 * 1024;
+            size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
+            size_t upload_part_size_multiply_factor = 2;
+            size_t upload_part_size_multiply_parts_count_threshold = 500;
+            size_t max_part_number = 10000;
+            size_t max_single_part_upload_size = 32 * 1024 * 1024;
+            size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
+            String storage_class_name;
+
+            void updateFromSettings(const Settings & settings) { updateFromSettingsImpl(settings, true); }
+            void validate();
+
+        private:
+            PartUploadSettings() = default;
+            explicit PartUploadSettings(const Settings & settings);
+            explicit PartUploadSettings(const NamedCollection & collection);
+            PartUploadSettings(
+                const Poco::Util::AbstractConfiguration & config,
+                const String & config_prefix,
+                const Settings & settings,
+                String setting_name_prefix = {});
+
+            void updateFromSettingsImpl(const Settings & settings, bool if_changed);
+
+            friend struct RequestSettings;
+        };
+
+    private:
+        PartUploadSettings upload_settings = {};
+
+    public:
+        size_t max_single_read_retries = 4;
+        size_t max_connections = 1024;
         bool check_objects_after_upload = false;
-        size_t max_unexpected_write_error_retries = 0;
+        size_t max_unexpected_write_error_retries = 4;
+        size_t list_object_keys_size = 1000;
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
 
+        bool throw_on_zero_files_match = false;
+
+        const PartUploadSettings & getUploadSettings() const { return upload_settings; }
+
         RequestSettings() = default;
         explicit RequestSettings(const Settings & settings);
+        explicit RequestSettings(const NamedCollection & collection);
 
-        inline bool operator==(const RequestSettings & other) const
-        {
-            return max_single_read_retries == other.max_single_read_retries
-                && min_upload_part_size == other.min_upload_part_size
-                && max_upload_part_size == other.max_upload_part_size
-                && upload_part_size_multiply_factor == other.upload_part_size_multiply_factor
-                && upload_part_size_multiply_parts_count_threshold == other.upload_part_size_multiply_parts_count_threshold
-                && max_part_number == other.max_part_number
-                && max_single_part_upload_size == other.max_single_part_upload_size
-                && max_single_operation_copy_size == other.max_single_operation_copy_size
-                && max_connections == other.max_connections
-                && check_objects_after_upload == other.check_objects_after_upload
-                && max_unexpected_write_error_retries == other.max_unexpected_write_error_retries
-                && get_request_throttler == other.get_request_throttler
-                && put_request_throttler == other.put_request_throttler;
-        }
+        /// What's the setting_name_prefix, and why do we need it?
+        /// There are (at least) two config sections where s3 settings can be specified:
+        /// * settings for s3 disk (clickhouse/storage_configuration/disks)
+        /// * settings for s3 storage (clickhouse/s3), which are also used for backups
+        /// Even though settings are the same, in case of s3 disk they are prefixed with "s3_"
+        /// ("s3_max_single_part_upload_size"), but in case of s3 storage they are not
+        /// (   "max_single_part_upload_size"). Why this happened is a complete mystery to me.
+        RequestSettings(
+            const Poco::Util::AbstractConfiguration & config,
+            const String & config_prefix,
+            const Settings & settings,
+            String setting_name_prefix = {});
 
-        static const constexpr UInt64 DEFAULT_SINGLE_READ_RETRIES = 4;
-        static const constexpr UInt64 DEFAULT_MIN_UPLOAD_PART_SIZE = 16 * 1024 * 1024;
-        static const constexpr UInt64 DEFAULT_MAX_UPLOAD_PART_SIZE = 5ULL * 1024 * 1024 * 1024;
-        static const constexpr UInt64 DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_FACTOR = 2;
-        static const constexpr UInt64 DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_PARTS_COUNT_THRESHOLD = 500;
-        static const constexpr UInt64 DEFAULT_MAX_PART_NUMBER = 10000;
-        static const constexpr UInt64 DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE = 32 * 1024 * 1024;
-        static const constexpr UInt64 DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE = 5ULL * 1024 * 1024 * 1024;
-        static const constexpr UInt64 DEFAULT_MAX_CONNECTIONS = 1024;
-        static const constexpr UInt64 DEFAULT_MAX_UNEXPECTED_WRITE_ERRORS_RETRIES = 4;
+        void updateFromSettings(const Settings & settings);
 
-        void setEmptyFieldsByDefault();
-        void updateFromSettingsIfEmpty(const Settings & settings);
+    private:
+        void updateFromSettingsImpl(const Settings & settings, bool if_changed);
     };
 
     S3::AuthSettings auth_settings;
     RequestSettings request_settings;
-
-    inline bool operator==(const S3Settings & other) const
-    {
-        return auth_settings == other.auth_settings && request_settings == other.request_settings;
-    }
 };
 
 /// Settings for the StorageS3.
@@ -96,29 +110,5 @@ private:
     mutable std::mutex mutex;
     std::map<const String, const S3Settings> s3_settings;
 };
-
-inline void S3Settings::RequestSettings::setEmptyFieldsByDefault()
-{
-    if (!max_single_read_retries)
-        max_single_read_retries = DEFAULT_SINGLE_READ_RETRIES;
-    if (!min_upload_part_size)
-        min_upload_part_size = DEFAULT_MIN_UPLOAD_PART_SIZE;
-    if (!max_upload_part_size)
-        max_upload_part_size = DEFAULT_MAX_UPLOAD_PART_SIZE;
-    if (!upload_part_size_multiply_factor)
-        upload_part_size_multiply_factor = DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_FACTOR;
-    if (!upload_part_size_multiply_parts_count_threshold)
-        upload_part_size_multiply_parts_count_threshold = DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_PARTS_COUNT_THRESHOLD;
-    if (!max_part_number)
-        max_part_number = DEFAULT_MAX_PART_NUMBER;
-    if (!max_single_part_upload_size)
-        max_single_part_upload_size = DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE;
-    if (!max_single_operation_copy_size)
-        max_single_operation_copy_size = DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE;
-    if (!max_connections)
-        max_connections = DEFAULT_MAX_CONNECTIONS;
-    if (!max_unexpected_write_error_retries)
-        max_unexpected_write_error_retries = DEFAULT_MAX_UNEXPECTED_WRITE_ERRORS_RETRIES;
-}
 
 }

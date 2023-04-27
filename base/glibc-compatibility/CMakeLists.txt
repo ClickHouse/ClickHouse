@@ -37,7 +37,7 @@ if (GLIBC_COMPATIBILITY)
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
-    if (( NOT USE_STATIC_LIBRARIES AND NOT USE_STATIC_LIBRARIES ) OR ENABLE_OPENSSL_DYNAMIC)
+    if (ENABLE_OPENSSL_DYNAMIC)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 

@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Types.h>
-#include <Common/hex.h>
+#include <base/hex.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -14,6 +15,8 @@ struct FileCacheKey
     FileCacheKey() = default;
 
     explicit FileCacheKey(const UInt128 & key_) : key(key_) { }
+
+    static FileCacheKey random() { return FileCacheKey(UUIDHelpers::generateV4().toUnderType()); }
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
 };

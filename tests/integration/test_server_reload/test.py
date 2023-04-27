@@ -12,6 +12,7 @@ import pymysql.connections
 import pymysql.err
 import pytest
 import sys
+import os
 import time
 import logging
 from helpers.cluster import ClickHouseCluster, run_and_check
@@ -33,6 +34,10 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/default_passwd.xml"],
     with_zookeeper=True,
+    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    env_variables={
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS")
+    },
 )
 
 
@@ -150,7 +155,7 @@ def configure_from_zk(zk, querier=None):
             zk.create(path=path, value=value, makepath=True)
             has_changed = True
         except NodeExistsError:
-            if zk.get(path) != value:
+            if zk.get(path)[0] != value:
                 zk.set(path=path, value=value)
                 has_changed = True
         if has_changed and querier is not None:

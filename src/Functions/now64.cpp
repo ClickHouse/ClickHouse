@@ -124,17 +124,14 @@ public:
 
         if (arguments.size() > 2)
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0, or 1, or 2", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0, or 1, or 2", getName());
         }
         if (!arguments.empty())
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
-                throw Exception("Illegal type " + argument.type->getName() +
-                                " of 0" +
-                                " argument of function " + getName() +
-                                ". Expected const integer.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 0 argument of function {}. "
+                                "Expected const integer.", argument.type->getName(), getName());
 
             scale = static_cast<UInt32>(argument.column->get64(0));
         }

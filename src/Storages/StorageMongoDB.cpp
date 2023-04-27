@@ -2,20 +2,22 @@
 #include <Storages/StorageMongoDBSocketFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
-#include <Poco/Version.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/parseAddress.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Transforms/MongoDBSource.h>
+#include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -24,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
-    extern const int BAD_ARGUMENTS;
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -72,16 +73,14 @@ void StorageMongoDB::connectIfNotConnected()
         auto auth_db = database_name;
         if (auth_source != query_params.end())
             auth_db = auth_source->second;
-#if POCO_VERSION >= 0x01070800
+
         if (!username.empty() && !password.empty())
         {
             Poco::MongoDB::Database poco_db(auth_db);
             if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+                throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
         }
-#else
-        authenticate(*connection, database_name, username, password);
-#endif
+
         authenticated = true;
     }
 }
@@ -172,31 +171,31 @@ SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const Storage
     return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
 }
 
-StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    StorageMongoDBConfiguration configuration;
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
-    {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
-        configuration.set(common_configuration);
+    Configuration configuration;
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "options")
-                configuration.options = checkAndGetLiteralArgument<String>(arg_value, "options");
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected one of:"
-                        "host, port, username, password, database, table, options.", arg_name);
-        }
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    {
+        validateNamedCollection(
+            *named_collection,
+            ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
+            {"options"});
+
+        configuration.host = named_collection->getAny<String>({"host", "hostname"});
+        configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+        configuration.username = named_collection->getAny<String>({"user", "username"});
+        configuration.password = named_collection->get<String>("password");
+        configuration.database = named_collection->getAny<String>({"database", "db"});
+        configuration.table = named_collection->getAny<String>({"collection", "table"});
+        configuration.options = named_collection->getOrDefault<String>("options", "");
     }
     else
     {
         if (engine_args.size() < 5 || engine_args.size() > 6)
-            throw Exception(
-                "Storage MongoDB requires from 5 to 6 parameters: MongoDB('host:port', database, collection, 'user', 'password' [, 'options']).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage MongoDB requires from 5 to 6 parameters: "
+                            "MongoDB('host:port', database, collection, 'user', 'password' [, 'options']).");
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
@@ -213,7 +212,6 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
 
         if (engine_args.size() >= 6)
             configuration.options = checkAndGetLiteralArgument<String>(engine_args[5], "database");
-
     }
 
     context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));

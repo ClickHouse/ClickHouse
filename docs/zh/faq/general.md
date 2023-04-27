@@ -1,5 +1,5 @@
 ---
-slug: /zh/faq/general
+slug: /zh/faq/general/overview
 ---
 # 常见问题 {#chang-jian-wen-ti}
 
@@ -18,5 +18,3 @@ slug: /zh/faq/general
 **示例**
 
     NLS_LANG=CHINESE_CHINA.ZHS16GBK
-
-[来源文章](https://clickhouse.com/docs/zh/faq/general/) <!--hide-->

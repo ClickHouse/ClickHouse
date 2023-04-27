@@ -117,7 +117,7 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
-            columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
+            columns[desc.column_number] = recursiveLowCardinalityTypeConversion(columns[desc.column_number], from_type, to_type);
         }
     }
 
@@ -168,7 +168,7 @@ AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     if (def.allocates_memory_in_arena)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 }
 
@@ -194,10 +194,10 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::startGroup(const ColumnR
     /// To avoid this, reset arena if and only if:
     /// - arena is required (i.e. SimpleAggregateFunction(any, String) in PK),
     /// - arena was used in the previous groups.
-    if (def.allocates_memory_in_arena && arena->size() > arena_size)
+    if (def.allocates_memory_in_arena && arena->allocatedBytes() > arena_size)
     {
         arena = std::make_unique<Arena>();
-        arena_size = arena->size();
+        arena_size = arena->allocatedBytes();
     }
 
     is_group_started = true;
@@ -221,7 +221,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
 void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & cursor)
 {
     if (!is_group_started)
-        throw Exception("Can't add a row to the group because it was not started.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't add a row to the group because it was not started.");
 
     for (auto & desc : def.columns_to_aggregate)
         desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->getRow());
@@ -236,7 +236,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & curs
 Chunk AggregatingSortedAlgorithm::AggregatingMergedData::pull()
 {
     if (is_group_started)
-        throw Exception("Can't pull chunk because group was not finished.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pull chunk because group was not finished.");
 
     auto chunk = MergedData::pull();
     postprocessChunk(chunk, def);

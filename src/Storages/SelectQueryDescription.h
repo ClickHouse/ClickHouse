@@ -23,6 +23,8 @@ struct SelectQueryDescription
     SelectQueryDescription() = default;
     SelectQueryDescription(const SelectQueryDescription & other);
     SelectQueryDescription & operator=(const SelectQueryDescription & other);
+    SelectQueryDescription(SelectQueryDescription && other) noexcept = default;
+    SelectQueryDescription & operator=(SelectQueryDescription && other) noexcept = default;
 };
 
 }

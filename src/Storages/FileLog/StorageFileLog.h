@@ -82,6 +82,7 @@ public:
         String file_name;
         UInt64 last_writen_position = 0;
         UInt64 last_open_end = 0;
+        bool operator!() const { return file_name.empty(); }
     };
 
     using InodeToFileMeta = std::unordered_map<UInt64, FileMeta>;
@@ -202,7 +203,14 @@ private:
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
 
     void deserialize();
-    void checkOffsetIsValid(const String & full_name, UInt64 offset) const;
+    void checkOffsetIsValid(const String & filename, UInt64 offset) const;
+
+    struct ReadMetadataResult
+    {
+        FileMeta metadata;
+        UInt64 inode = 0;
+    };
+    ReadMetadataResult readMetadata(const String & filename) const;
 };
 
 }

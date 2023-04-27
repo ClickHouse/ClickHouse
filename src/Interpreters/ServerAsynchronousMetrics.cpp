@@ -218,7 +218,11 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 
         size_t max_part_count_for_partition = 0;
 
-        size_t number_of_databases = databases.size();
+        size_t number_of_databases = 0;
+        for (auto [db_name, _] : databases)
+            if (db_name != DatabaseCatalog::TEMPORARY_DATABASE)
+                ++number_of_databases; /// filter out the internal database for temporary tables, system table "system.databases" behaves the same way
+
         size_t total_number_of_tables = 0;
 
         size_t total_number_of_bytes = 0;
@@ -245,12 +249,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
                     total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_merge_tree->getPartsCount();
+                    total_number_of_parts += table_merge_tree->getActivePartsCount();
                 }
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
-                    StorageReplicatedMergeTree::Status status;
+                    ReplicatedTableStatus status;
                     table_replicated_merge_tree->getStatus(status, false);
 
                     calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);
@@ -358,11 +362,14 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
     const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
 
+    Stopwatch watch;
     if (update_heavy_metric)
     {
         heavy_metric_previous_update_time = update_time;
-
-        Stopwatch watch;
+        if (first_run)
+            heavy_update_interval = heavy_metric_update_period.count();
+        else
+            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateDetachedPartsStats();
@@ -386,7 +393,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  watch.elapsedSeconds());
 
     }
+    new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };
 
+    new_values["AsynchronousHeavyMetricsUpdateInterval"] = { heavy_update_interval, "Heavy (tables related) metrics update interval" };
 
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };

@@ -22,7 +22,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
     if (!source_part)
     {
-        LOG_DEBUG(log, "Source part {} for {} is not ready; will try to fetch it instead", source_part_name, entry.new_part_name);
+        LOG_DEBUG(log, "Source part {} for {} is missing; will try to fetch it instead. "
+            "Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
+            source_part_name, entry.new_part_name);
         return PrepareResult{
             .prepared_successfully = false,
             .need_to_check_missing_part_in_fetch = true,
@@ -106,7 +108,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     future_mutated_part->parts.push_back(source_part);
     future_mutated_part->part_info = new_part_info;
     future_mutated_part->updatePath(storage, reserved_space.get());
-    future_mutated_part->type = source_part->getType();
+    future_mutated_part->part_format = source_part->getFormat();
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
@@ -125,9 +127,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
-            if (!zero_copy_lock)
+            if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
+                storage.watchZeroCopyLock(entry.new_part_name, disk);
                 LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and mutated merged part", entry.new_part_name);
+
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
@@ -160,22 +164,20 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
+    task_context = Context::createCopy(storage.getContext());
+    task_context->makeQueryContext();
+    task_context->setCurrentQueryId("");
 
-    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
-        settings);
+        task_context);
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    fake_query_context = Context::createCopy(storage.getContext());
-    fake_query_context->makeQueryContext();
-    fake_query_context->setCurrentQueryId("");
-
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
-            entry.create_time, fake_query_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
+            entry.create_time, task_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)
@@ -183,9 +185,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     return {true, true, [this] (const ExecutionStatus & execution_status)
     {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get());
+            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
     }};
 }
 
@@ -193,6 +196,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
+    auto & data_part_storage = new_part->getDataPartStorage();
+    if (data_part_storage.hasActiveTransaction())
+        data_part_storage.precommitTransaction();
+
     storage.renameTempPartAndReplace(new_part, *transaction_ptr);
 
     try
@@ -210,7 +217,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
                            "We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
-            write_part_log(ExecutionStatus::fromCurrentException());
+            write_part_log(ExecutionStatus::fromCurrentException("", true));
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
                 storage.forcefullyMovePartToDetachedAndRemoveFromMemory(std::move(new_part), "mutate-not-byte-identical");

@@ -44,6 +44,8 @@ struct SettingsProfileElement
     std::shared_ptr<ASTSettingsProfileElement> toAST() const;
     std::shared_ptr<ASTSettingsProfileElement> toASTWithNames(const AccessControl & access_control) const;
 
+    bool isConstraint() const;
+
 private:
     void init(const ASTSettingsProfileElement & ast, const AccessControl * access_control);
 };

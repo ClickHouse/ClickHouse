@@ -23,7 +23,7 @@ struct BitRotateLeftImpl
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
-            throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bit rotate is not implemented for big integers");
         else
             return (static_cast<Result>(a) << static_cast<Result>(b))
                 | (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));
@@ -35,7 +35,7 @@ struct BitRotateLeftImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception("BitRotateLeftImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitRotateLeftImpl expected an integral type");
         auto * size = llvm::ConstantInt::get(left->getType(), left->getType()->getPrimitiveSizeInBits());
         /// XXX how is this supposed to behave in signed mode?
         return b.CreateOr(b.CreateShl(left, right), b.CreateLShr(left, b.CreateSub(size, right)));

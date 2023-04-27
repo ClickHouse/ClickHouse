@@ -45,7 +45,7 @@ public:
                                                         const MergeTreeTransaction *,
                                                         String *)>;
 
-    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
+    explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -111,8 +111,10 @@ public:
         ReservationSharedPtr space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
+        bool need_prefix = true,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
@@ -126,7 +128,8 @@ public:
         ContextPtr context,
         const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
-        TableLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder,
+        bool need_prefix = true);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
@@ -155,7 +158,6 @@ public :
 
 private:
     MergeTreeData & data;
-    const size_t max_tasks_count;
 
     Poco::Logger * log;
 

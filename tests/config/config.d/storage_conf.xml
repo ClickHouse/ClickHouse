@@ -100,7 +100,7 @@
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
                 <enable_bypass_cache_with_threashold>1</enable_bypass_cache_with_threashold>
-				<bypass_cache_threashold>100</bypass_cache_threashold>
+                <bypass_cache_threashold>100</bypass_cache_threashold>
             </s3_cache_6>
             <s3_cache_small>
                 <type>cache</type>
@@ -109,6 +109,15 @@
                 <max_size>1000</max_size>
                 <do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>
             </s3_cache_small>
+            <s3_cache_small_segment_size>
+                <type>cache</type>
+                <disk>s3_disk_6</disk>
+                <path>s3_cache_small_segment_size/</path>
+                <max_size>22548578304</max_size>
+                <max_file_segment_size>10Ki</max_file_segment_size>
+                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </s3_cache_small_segment_size>
             <!-- local disks -->
             <local_disk>
                 <type>local</type>
@@ -234,6 +243,13 @@
                     </main>
                 </volumes>
             </local_cache_3>
+            <s3_cache_small_segment_size>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_small_segment_size</disk>
+                    </main>
+                </volumes>
+            </s3_cache_small_segment_size>
         </policies>
     </storage_configuration>
 </clickhouse>

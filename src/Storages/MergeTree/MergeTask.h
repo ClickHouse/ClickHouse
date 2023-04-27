@@ -58,7 +58,9 @@ public:
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
+        bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
+        bool need_prefix,
         IMergeTreeDataPart * parent_part_,
         String suffix_,
         MergeTreeTransactionPtr txn,
@@ -80,12 +82,14 @@ public:
             global_ctx->space_reservation = std::move(space_reservation_);
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
+            global_ctx->cleanup = std::move(cleanup_);
             global_ctx->parent_part = std::move(parent_part_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
+            global_ctx->need_prefix = need_prefix;
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
@@ -120,7 +124,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
+    struct GlobalRuntimeContext : public IStageRuntimeContext
     {
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
@@ -140,6 +144,7 @@ private:
         ReservationSharedPtr space_reservation{nullptr};
         bool deduplicate{false};
         Names deduplicate_by_columns{};
+        bool cleanup{false};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
@@ -171,6 +176,7 @@ private:
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
 
         MergeTreeTransactionPtr txn;
+        bool need_prefix;
 
         scope_guard temporary_directory_lock;
     };
@@ -180,10 +186,11 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
+    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
         /// Dependencies
         String suffix;
+        bool need_prefix;
         MergeTreeData::MergingParams merging_params{};
 
         DiskPtr tmp_disk{nullptr};
@@ -192,7 +199,7 @@ private:
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
-        std::unique_ptr<TemporaryFile> rows_sources_file{nullptr};
+        std::unique_ptr<PocoTemporaryFile> rows_sources_file{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
@@ -252,12 +259,12 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
+    struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
+        std::unique_ptr<PocoTemporaryFile> rows_sources_file;
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
-        std::unique_ptr<TemporaryFile> rows_sources_file;
+        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
         DiskPtr tmp_disk{nullptr};
@@ -277,7 +284,8 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::vector<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
+        size_t max_delayed_streams = 0;
+        std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
@@ -323,7 +331,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext //-V730
+    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
     {
         /// Only one dependency
         bool need_sync{false};

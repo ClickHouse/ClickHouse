@@ -39,7 +39,7 @@ namespace
                 return false;
             if (boost::iequals(str, "true"))
                 return true;
-            throw Exception("Cannot parse bool from string '" + str + "'", ErrorCodes::CANNOT_PARSE_BOOL);
+            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
             return parseWithSizeSuffix<T>(str);
@@ -54,7 +54,6 @@ namespace
             return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
-#ifndef KEEPER_STANDALONE_BUILD
     Map stringToMap(const String & str)
     {
         /// Allow empty string as an empty map
@@ -71,7 +70,7 @@ namespace
         return (*column)[0].safeGet<Map>();
     }
 
-    Map fieldToMap(const Field & f)
+    [[maybe_unused]] Map fieldToMap(const Field & f)
     {
         if (f.getType() == Field::Types::String)
         {
@@ -82,7 +81,6 @@ namespace
 
         return f.safeGet<const Map &>();
     }
-#endif
 
 }
 
@@ -152,10 +150,16 @@ template struct SettingFieldNumber<UInt64>;
 template struct SettingFieldNumber<Int64>;
 template struct SettingFieldNumber<float>;
 template struct SettingFieldNumber<bool>;
+template struct SettingFieldNumber<Int32>;
+template struct SettingFieldNumber<UInt32>;
+template struct SettingFieldNumber<double>;
 
 template struct SettingAutoWrapper<SettingFieldNumber<UInt64>>;
 template struct SettingAutoWrapper<SettingFieldNumber<Int64>>;
 template struct SettingAutoWrapper<SettingFieldNumber<float>>;
+template struct SettingAutoWrapper<SettingFieldNumber<UInt32>>;
+template struct SettingAutoWrapper<SettingFieldNumber<Int32>>;
+template struct SettingAutoWrapper<SettingFieldNumber<double>>;
 
 namespace
 {
@@ -327,6 +331,13 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+/// Unbeautiful workaround for clickhouse-keeper standalone build ("-DBUILD_STANDALONE_KEEPER=1").
+/// In this build, we don't build and link library dbms (to which SettingsField.cpp belongs) but
+/// only build SettingsField.cpp. Further dependencies, e.g. DataTypeString and DataTypeMap below,
+/// require building of further files for clickhouse-keeper. To keep dependencies slim, we don't do
+/// that. The linker does not complain only because clickhouse-keeper does not call any of below
+/// functions. A cleaner alternative would be more modular libraries, e.g. one for data types, which
+/// could then be linked by the server and the linker.
 #ifndef KEEPER_STANDALONE_BUILD
 
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
@@ -375,7 +386,7 @@ namespace
     char stringToChar(const String & str)
     {
         if (str.size() > 1)
-            throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "A setting's value string has to be an exactly one character long");
         if (str.empty())
             return '\0';
         return str[0];

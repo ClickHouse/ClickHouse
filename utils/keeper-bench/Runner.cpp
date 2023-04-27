@@ -159,9 +159,9 @@ void Runner::runBenchmark()
     std::cerr << "Prepared\n";
     try
     {
+        auto connections = getConnections();
         for (size_t i = 0; i < concurrency; ++i)
         {
-            auto connections = getConnections();
             pool.scheduleOrThrowOnError([this, connections]() mutable { thread(connections); });
         }
     }

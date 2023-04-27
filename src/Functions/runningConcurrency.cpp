@@ -37,8 +37,7 @@ namespace DB
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
             const ColVecArg * col_end   = checkAndGetColumn<ColVecArg>(arguments[1].column.get());
             if (!col_begin || !col_end)
-                throw Exception("Constant columns are not supported at the moment",
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Constant columns are not supported at the moment");
             const typename ColVecArg::Container & vec_begin = col_begin->getData();
             const typename ColVecArg::Container & vec_end   = col_end->getData();
 
@@ -61,9 +60,7 @@ namespace DB
                     WriteBufferFromOwnString buf_begin, buf_end;
                     begin_serializaion->serializeTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
                     end_serialization->serializeTextQuoted(*(arguments[1].column), i, buf_end, default_format);
-                    throw Exception(
-                        "Incorrect order of events: " + buf_begin.str() + " > " + buf_end.str(),
-                        ErrorCodes::INCORRECT_DATA);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect order of events: {} > {}", buf_begin.str(), buf_end.str());
                 }
 
                 ongoing_until.insert(end);
@@ -148,9 +145,7 @@ namespace DB
             case TypeIndex::DateTime:   f(TypeTag<DataTypeDateTime>());   break;
             case TypeIndex::DateTime64: f(TypeTag<DataTypeDateTime64>()); break;
             default:
-                throw Exception(
-                    "Arguments for function " + getName() + " must be Date, DateTime, or DateTime64.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be Date, DateTime, or DateTime64.", getName());
             }
         }
 
@@ -172,9 +167,7 @@ namespace DB
             // The type of the second argument must match with that of the first one.
             if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
             {
-                throw Exception(
-                    "Function " + getName() + " must be called with two arguments having the same type.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
             }
 
             DataTypes argument_types = { arguments[0].type, arguments[1].type };

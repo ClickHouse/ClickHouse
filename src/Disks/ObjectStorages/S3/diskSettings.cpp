@@ -13,6 +13,7 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
+#include <IO/S3/Credentials.h>
 
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
@@ -20,8 +21,8 @@
 #include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
 #include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
+#include <Common/Macros.h>
 
 namespace DB
 {
@@ -34,24 +35,7 @@ namespace ErrorCodes
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    S3Settings::RequestSettings request_settings;
-    request_settings.max_single_read_retries = config.getUInt64(config_prefix + ".s3_max_single_read_retries", settings.s3_max_single_read_retries);
-    request_settings.min_upload_part_size = config.getUInt64(config_prefix + ".s3_min_upload_part_size", settings.s3_min_upload_part_size);
-    request_settings.max_upload_part_size = config.getUInt64(config_prefix + ".s3_max_upload_part_size", S3Settings::RequestSettings::DEFAULT_MAX_UPLOAD_PART_SIZE);
-    request_settings.upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_factor", settings.s3_upload_part_size_multiply_factor);
-    request_settings.upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".s3_upload_part_size_multiply_parts_count_threshold", settings.s3_upload_part_size_multiply_parts_count_threshold);
-    request_settings.max_part_number = config.getUInt64(config_prefix + ".s3_max_part_number", S3Settings::RequestSettings::DEFAULT_MAX_PART_NUMBER);
-    request_settings.max_single_part_upload_size = config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", settings.s3_max_single_part_upload_size);
-    request_settings.check_objects_after_upload = config.getUInt64(config_prefix + ".s3_check_objects_after_upload", settings.s3_check_objects_after_upload);
-    request_settings.max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".s3_max_unexpected_write_error_retries", settings.s3_max_unexpected_write_error_retries);
-
-    // NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload, which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
-    if (UInt64 max_get_rps = config.getUInt64(config_prefix + ".s3_max_get_rps", settings.s3_max_get_rps))
-        request_settings.get_request_throttler = std::make_shared<Throttler>(
-            max_get_rps, config.getUInt64(config_prefix + ".s3_max_get_burst", settings.s3_max_get_burst ? settings.s3_max_get_burst : Throttler::default_burst_seconds * max_get_rps));
-    if (UInt64 max_put_rps = config.getUInt64(config_prefix + ".s3_max_put_rps", settings.s3_max_put_rps))
-        request_settings.put_request_throttler = std::make_shared<Throttler>(
-            max_put_rps, config.getUInt64(config_prefix + ".s3_max_put_burst", settings.s3_max_put_burst ? settings.s3_max_put_burst : Throttler::default_burst_seconds * max_put_rps));
+    S3Settings::RequestSettings request_settings(config, config_prefix, settings, "s3_");
 
     return std::make_unique<S3ObjectStorageSettings>(
         request_settings,
@@ -66,7 +50,7 @@ std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
     auto endpoint = Poco::URI(proxy_resolver_config.getString(prefix + ".endpoint"));
     auto proxy_scheme = proxy_resolver_config.getString(prefix + ".proxy_scheme");
     if (proxy_scheme != "http" && proxy_scheme != "https")
-        throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy resolver config: {}", proxy_scheme);
     auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
     auto cache_ttl = proxy_resolver_config.getUInt(prefix + ".proxy_cache_time", 10);
 
@@ -89,9 +73,9 @@ std::shared_ptr<S3::ProxyListConfiguration> getProxyListConfiguration(
             Poco::URI proxy_uri(proxy_config.getString(prefix + "." + key));
 
             if (proxy_uri.getScheme() != "http" && proxy_uri.getScheme() != "https")
-                throw Exception("Only HTTP/HTTPS schemas allowed in proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy uri: {}", proxy_uri.toString());
             if (proxy_uri.getHost().empty())
-                throw Exception("Empty host in proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host in proxy uri: {}", proxy_uri.toString());
 
             proxies.push_back(proxy_uri);
 
@@ -115,7 +99,7 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
     if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
     {
         if (resolver_configs > 1)
-            throw Exception("Multiple proxy resolver configurations aren't allowed", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
 
         return getProxyResolverConfiguration(prefix + ".proxy.resolver", config);
     }
@@ -124,7 +108,7 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 
-std::unique_ptr<Aws::S3::S3Client> getClient(
+std::unique_ptr<S3::Client> getClient(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,
@@ -139,11 +123,12 @@ std::unique_ptr<Aws::S3::S3Client> getClient(
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler);
 
-    S3::URI uri(config.getString(config_prefix + ".endpoint"));
+    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    S3::URI uri(endpoint);
     if (uri.key.back() != '/')
-        throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 
-    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
+    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 1000);
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
     client_configuration.endpointOverride = uri.endpoint;
@@ -167,8 +152,13 @@ std::unique_ptr<Aws::S3::S3Client> getClient(
         config.getString(config_prefix + ".secret_access_key", ""),
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
         {},
-        config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-        config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
+        S3::CredentialsConfiguration
+        {
+            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", true)),
+            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)),
+            config.getUInt64(config_prefix + ".expiration_window_seconds", config.getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
+            config.getBool(config_prefix + ".no_sign_request", config.getBool("s3.no_sign_request", false))
+        });
 }
 
 }

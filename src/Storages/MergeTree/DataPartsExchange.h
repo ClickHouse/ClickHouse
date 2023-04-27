@@ -1,13 +1,12 @@
 #pragma once
 
-#include "Storages/MergeTree/MergeTreePartInfo.h"
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/Throttler.h>
 
 
@@ -21,6 +20,7 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
+class PooledReadWriteBufferFromHTTP;
 
 namespace DataPartsExchange
 {
@@ -49,12 +49,7 @@ private:
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
-        bool send_projections);
-
-    void sendPartFromDiskRemoteMeta(
-        const MergeTreeData::DataPartPtr & part,
-        WriteBuffer & out,
-        bool send_part_id,
+        bool from_remote_disk,
         bool send_projections);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -93,32 +88,29 @@ public:
     ActionBlocker blocker;
 
 private:
+    using OutputBufferGetter = std::function<std::unique_ptr<WriteBufferFromFileBase>(IDataPartStorage &, const String &, size_t)>;
+
     void downloadBaseOrProjectionPartToDisk(
         const String & replica_path,
         const MutableDataPartStoragePtr & data_part_storage,
-        bool sync,
         PooledReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
         MergeTreeData::DataPart::Checksums & checksums,
-        ThrottlerPtr throttler) const;
-
-    void downloadBasePartOrProjectionPartToDiskRemoteMeta(
-        const String & replica_path,
-        const MutableDataPartStoragePtr & data_part_storage,
-        PooledReadWriteBufferFromHTTP & in,
-        MergeTreeData::DataPart::Checksums & checksums,
-        ThrottlerPtr throttler) const;
+        ThrottlerPtr throttler,
+        bool sync) const;
 
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
         const String & part_name,
         const String & replica_path,
         bool to_detached,
         const String & tmp_prefix_,
-        bool sync,
         DiskPtr disk,
+        bool to_remote_disk,
         PooledReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
         size_t projections,
-        MergeTreeData::DataPart::Checksums & checksums,
-        ThrottlerPtr throttler);
+        ThrottlerPtr throttler,
+        bool sync);
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
        MutableDataPartStoragePtr data_part_storage,

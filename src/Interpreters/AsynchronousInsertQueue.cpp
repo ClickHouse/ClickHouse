@@ -13,6 +13,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
@@ -31,12 +32,15 @@
 namespace CurrentMetrics
 {
     extern const Metric PendingAsyncInsert;
+    extern const Metric AsynchronousInsertThreads;
+    extern const Metric AsynchronousInsertThreadsActive;
 }
 
 namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
+    extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -129,7 +133,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     : WithContext(context_)
     , pool_size(pool_size_)
     , queue_shards(pool_size)
-    , pool(pool_size)
+    , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, pool_size)
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
@@ -181,7 +185,8 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
     });
 }
 
-std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
+AsynchronousInsertQueue::PushResult
+AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 {
     query = query->clone();
     const auto & settings = query_context->getSettingsRef();
@@ -201,9 +206,32 @@ std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_c
 
     String bytes;
     {
+        /// Read at most 'async_insert_max_data_size' bytes of data.
+        /// If limit is exceeded we will fallback to synchronous insert
+        /// to avoid buffering of huge amount of data in memory.
+
         auto read_buf = getReadBufferFromASTInsertQuery(query);
+        LimitReadBuffer limit_buf(*read_buf, settings.async_insert_max_data_size, /* trow_exception */ false, /* exact_limit */ {});
+
         WriteBufferFromString write_buf(bytes);
-        copyData(*read_buf, write_buf);
+        copyData(limit_buf, write_buf);
+
+        if (!read_buf->eof())
+        {
+            write_buf.finalize();
+
+            /// Concat read buffer with already extracted from insert
+            /// query data and with the rest data from insert query.
+            std::vector<std::unique_ptr<ReadBuffer>> buffers;
+            buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
+            buffers.emplace_back(std::move(read_buf));
+
+            return PushResult
+            {
+                .status = PushResult::TOO_MUCH_DATA,
+                .insert_data_buffer = std::make_unique<ConcatReadBuffer>(std::move(buffers)),
+            };
+        }
     }
 
     if (auto quota = query_context->getQuota())
@@ -245,7 +273,8 @@ std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_c
         /// Here we check whether we hit the limit on maximum data size in the buffer.
         /// And use setting from query context.
         /// It works, because queries with the same set of settings are already grouped together.
-        if (data->size_in_bytes > key.settings.async_insert_max_data_size || data->query_number > key.settings.async_insert_max_query_number)
+        if (data->size_in_bytes >= key.settings.async_insert_max_data_size
+            || (data->query_number >= key.settings.async_insert_max_query_number && key.settings.async_insert_deduplicate))
         {
             data_to_process = std::move(data);
             shard.iterators.erase(it);
@@ -262,7 +291,11 @@ std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_c
     else
         shard.are_tasks_available.notify_one();
 
-    return insert_future;
+    return PushResult
+    {
+        .status = PushResult::OK,
+        .future = std::move(insert_future),
+    };
 }
 
 void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
@@ -310,10 +343,15 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
     }
 }
 
-static void appendElementsToLogSafe(
+namespace
+{
+
+using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
+
+void appendElementsToLogSafe(
     AsynchronousInsertLog & log,
     std::vector<AsynchronousInsertLogElement> elements,
-    std::chrono::time_point<std::chrono::system_clock> flush_time,
+    TimePoint flush_time,
     const String & flush_query_id,
     const String & flush_exception)
 try
@@ -333,6 +371,8 @@ try
 catch (...)
 {
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
+}
+
 }
 
 // static
@@ -405,7 +445,8 @@ try
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
-        total_rows += executor.execute(*buffer);
+        size_t num_rows = executor.execute(*buffer);
+        total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
 
         /// Keep buffer, because it still can be used
@@ -420,6 +461,7 @@ try
             elem.query = key.query;
             elem.query_id = entry->query_id;
             elem.bytes = entry->bytes.size();
+            elem.rows = num_rows;
             elem.exception = current_exception;
             current_exception.clear();
 
@@ -440,9 +482,28 @@ try
 
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
+    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
+
+    auto finish_entries = [&]
+    {
+        for (const auto & entry : data->entries)
+        {
+            if (!entry->isFinished())
+                entry->finish();
+        }
+
+        if (!log_elements.empty())
+        {
+            auto flush_time = std::chrono::system_clock::now();
+            appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
+        }
+    };
 
     if (total_rows == 0)
+    {
+        finish_entries();
         return;
+    }
 
     try
     {
@@ -470,17 +531,7 @@ try
         throw;
     }
 
-    for (const auto & entry : data->entries)
-    {
-        if (!entry->isFinished())
-            entry->finish();
-    }
-
-    if (!log_elements.empty())
-    {
-        auto flush_time = std::chrono::system_clock::now();
-        appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
-    }
+    finish_entries();
 }
 catch (const Exception & e)
 {

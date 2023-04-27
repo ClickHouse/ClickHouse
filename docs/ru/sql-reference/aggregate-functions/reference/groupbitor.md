@@ -45,4 +45,3 @@ SELECT groupBitOr(num) FROM t
 binary     decimal
 01111101 = 125
 ```
-

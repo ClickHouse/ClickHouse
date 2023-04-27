@@ -48,6 +48,7 @@ RUN apt-get update \
         gdb \
         git \
         gperf \
+        libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
@@ -90,5 +91,18 @@ RUN mkdir /tmp/ccache \
     && make install -C build \
     && cd / \
     && rm -rf /tmp/ccache
+
+ARG TARGETARCH
+ARG SCCACHE_VERSION=v0.4.1
+RUN arch=${TARGETARCH:-amd64} \
+  && case $arch in \
+    amd64) rarch=x86_64 ;; \
+    arm64) rarch=aarch64 ;; \
+  esac \
+  && curl -Ls "https://github.com/mozilla/sccache/releases/download/$SCCACHE_VERSION/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl.tar.gz" | \
+    tar xz -C /tmp \
+  && mv "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl/sccache" /usr/bin \
+  && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
+
 
 COPY process_functional_tests_result.py /

@@ -21,6 +21,18 @@ public:
         Poco::Net::HTTPServerParams::Ptr params,
         HTTPRequestHandlerFactoryPtr factory);
 
+    HTTPServerConnection(
+        HTTPContextPtr context_,
+        TCPServer & tcp_server_,
+        const Poco::Net::StreamSocket & socket_,
+        Poco::Net::HTTPServerParams::Ptr params_,
+        HTTPRequestHandlerFactoryPtr factory_,
+        const String & forwarded_for_)
+    : HTTPServerConnection(context_, tcp_server_, socket_, params_, factory_)
+    {
+        forwarded_for = forwarded_for_;
+    }
+
     void run() override;
 
 protected:
@@ -31,6 +43,7 @@ private:
     TCPServer & tcp_server;
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;
+    String forwarded_for;
     bool stopped;
     std::mutex mutex;  // guards the |factory| with assumption that creating handlers is not thread-safe.
 };

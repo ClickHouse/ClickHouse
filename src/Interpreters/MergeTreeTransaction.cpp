@@ -168,6 +168,8 @@ void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & 
 bool MergeTreeTransaction::isReadOnly() const
 {
     std::lock_guard lock{mutex};
+    if (finalized)
+        return is_read_only;
     chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
 }
@@ -303,7 +305,6 @@ bool MergeTreeTransaction::rollback() noexcept
         part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-
     assert([&]()
     {
         std::lock_guard lock{mutex};
@@ -314,6 +315,20 @@ bool MergeTreeTransaction::rollback() noexcept
     }());
 
     return true;
+}
+
+void MergeTreeTransaction::afterFinalize()
+{
+    std::lock_guard lock{mutex};
+    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
+
+    /// Remember if it was read-only transaction before we clear storages
+    is_read_only = storages.empty();
+
+    /// Release shared pointers just in case
+    storages.clear();
+    mutations.clear();
+    finalized = true;
 }
 
 void MergeTreeTransaction::onException()
@@ -332,6 +347,11 @@ String MergeTreeTransaction::dumpDescription() const
     }
 
     std::lock_guard lock{mutex};
+    if (finalized)
+    {
+        res += ", cannot dump detailed description, transaction is finalized";
+        return res;
+    }
 
     res += fmt::format(", affects {} tables:", storages.size());
 

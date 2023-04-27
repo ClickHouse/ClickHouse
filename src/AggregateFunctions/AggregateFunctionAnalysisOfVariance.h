@@ -14,17 +14,11 @@
 #include <Common/assert_cast.h>
 #include <Core/Types.h>
 
+
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-class AggregateFunctionAnalysisOfVarianceData final : public AnalysisOfVarianceMoments<Float64>
-{
-};
+using AggregateFunctionAnalysisOfVarianceData = AnalysisOfVarianceMoments<Float64>;
 
 
 /// One way analysis of variance
@@ -37,10 +31,10 @@ class AggregateFunctionAnalysisOfVariance final : public IAggregateFunctionDataH
 {
 public:
     explicit AggregateFunctionAnalysisOfVariance(const DataTypes & arguments, const Array & params)
-    : IAggregateFunctionDataHelper(arguments, params)
+        : IAggregateFunctionDataHelper(arguments, params, createResultType())
     {}
 
-    DataTypePtr getReturnType() const override
+    DataTypePtr createResultType() const
     {
         DataTypes types {std::make_shared<DataTypeNumber<Float64>>(), std::make_shared<DataTypeNumber<Float64>>() };
         Strings names {"f_statistic", "p_value"};
@@ -77,17 +71,22 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto f_stat = data(place).getFStatistic();
-        if (std::isinf(f_stat) || isNaN(f_stat) || f_stat < 0)
-            throw Exception("F statistic is not defined or infinite for these arguments", ErrorCodes::BAD_ARGUMENTS);
+
+        auto & column_tuple = assert_cast<ColumnTuple &>(to);
+        auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
+        auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
+
+        if (unlikely(!std::isfinite(f_stat) || f_stat < 0))
+        {
+            column_stat.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            column_value.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            return;
+        }
 
         auto p_value = data(place).getPValue(f_stat);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
-
-        auto & column_tuple = assert_cast<ColumnTuple &>(to);
-        auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
-        auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
 
         column_stat.getData().push_back(f_stat);
         column_value.getData().push_back(p_value);

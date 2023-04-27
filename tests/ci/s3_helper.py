@@ -89,16 +89,16 @@ class S3Helper:
                 logging.info("No content type provied for %s", file_path)
         else:
             if re.search(r"\.(txt|log|err|out)$", s3_path) or re.search(
-                r"\.log\..*(?<!\.gz)$", s3_path
+                r"\.log\..*(?<!\.zst)$", s3_path
             ):
                 logging.info(
                     "Going to compress file log file %s to %s",
                     file_path,
-                    file_path + ".gz",
+                    file_path + ".zst",
                 )
-                compress_file_fast(file_path, file_path + ".gz")
-                file_path += ".gz"
-                s3_path += ".gz"
+                compress_file_fast(file_path, file_path + ".zst")
+                file_path += ".zst"
+                s3_path += ".zst"
             else:
                 logging.info("Processing file without compression")
             logging.info("File is too large, do not provide content type")

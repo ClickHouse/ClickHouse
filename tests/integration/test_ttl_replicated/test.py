@@ -247,17 +247,17 @@ def test_modify_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2"
+        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == "2\n3\n"
 
     node2.query(
-        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2"
+        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 2 HOUR SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node1.query("SELECT id FROM test_ttl") == "3\n"
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2"
+        "ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == ""
 
@@ -281,17 +281,17 @@ def test_modify_column_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2"
+        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == "42\n2\n3\n"
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2"
+        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 2 HOUR SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node1.query("SELECT id FROM test_ttl") == "42\n42\n3\n"
 
     node1.query(
-        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2"
+        "ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node2.query("SELECT id FROM test_ttl") == "42\n42\n42\n"
 

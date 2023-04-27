@@ -38,7 +38,6 @@ template <typename Data>
 class AggregateFunctionArgMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data>>
 {
 private:
-    const DataTypePtr & type_res;
     const DataTypePtr & type_val;
     const SerializationPtr serialization_res;
     const SerializationPtr serialization_val;
@@ -47,25 +46,20 @@ private:
 
 public:
     AggregateFunctionArgMinMax(const DataTypePtr & type_res_, const DataTypePtr & type_val_)
-        : Base({type_res_, type_val_}, {})
-        , type_res(this->argument_types[0])
+        : Base({type_res_, type_val_}, {}, type_res_)
         , type_val(this->argument_types[1])
-        , serialization_res(type_res->getDefaultSerialization())
+        , serialization_res(type_res_->getDefaultSerialization())
         , serialization_val(type_val->getDefaultSerialization())
     {
         if (!type_val->isComparable())
-            throw Exception("Illegal type " + type_val->getName() + " of second argument of aggregate function " + getName()
-                + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of "
+                            "aggregate function {} because the values of that data type are not comparable",
+                            type_val->getName(), getName());
     }
 
     String getName() const override
     {
         return StringRef(Data::ValueData_t::name()) == StringRef("min") ? "argMin" : "argMax";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return type_res;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

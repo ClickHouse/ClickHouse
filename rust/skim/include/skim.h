@@ -87,4 +87,4 @@ private:
 } // namespace cxxbridge1
 } // namespace rust
 
-::rust::String skim(::std::vector<::std::string> const &words);
+::rust::String skim(::std::string const &prefix, ::std::vector<::std::string> const &words);

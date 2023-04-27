@@ -254,7 +254,7 @@ bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_s
 std::vector<UUID> RolesOrUsersSet::getMatchingIDs() const
 {
     if (all)
-        throw Exception("getAllMatchingIDs() can't get ALL ids without access_control", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getAllMatchingIDs() can't get ALL ids without access_control");
     std::vector<UUID> res;
     boost::range::set_difference(ids, except_ids, std::back_inserter(res));
     return res;

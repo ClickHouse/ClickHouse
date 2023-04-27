@@ -2,6 +2,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -20,9 +21,9 @@ namespace ErrorCodes
 
 [[noreturn]] static void throwUnexpectedEof(size_t row_num)
 {
-    throw ParsingException("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
+    throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF while parsing row {}. "
                            "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
-                           ErrorCodes::CANNOT_READ_ALL_DATA);
+                           std::to_string(row_num));
 }
 
 static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_rule, FormatSettings & settings, const ParsedTemplateFormatString & row_format, char default_csv_delimiter, size_t file_column)
@@ -292,8 +293,7 @@ void TemplateRowInputFormat::resetParser()
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 TemplateFormatReader::TemplateFormatReader(
@@ -511,16 +511,16 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
         format_reader.skipDelimiter(i);
         updateFormatSettingsIfNeeded(row_format.escaping_rules[i], format_settings, row_format, default_csv_delimiter, i);
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i]));
+        data_types.push_back(tryInferDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i], &json_inference_info));
     }
 
     format_reader.skipRowEndDelimiter();
     return data_types;
 }
 
-void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t column_idx)
+void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredTypesIfNeeded(type, new_type, format_settings, row_format.escaping_rules[column_idx]);
+    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, row_format.escaping_rules[field_index], &json_inference_info);
 }
 
 static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)
@@ -544,8 +544,7 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
             {
                 if (partName == "data")
                     return 0;
-                throw Exception("Unknown input part " + partName,
-                                ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown input part {}", partName);
             });
     }
     return resultset_format;

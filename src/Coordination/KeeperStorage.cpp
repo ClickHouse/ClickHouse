@@ -11,7 +11,8 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/hex.h>
+#include <base/hex.h>
+#include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -61,16 +62,10 @@ String getSHA1(const String & userdata)
     return String{digest_id.begin(), digest_id.end()};
 }
 
-String generateDigest(const String & userdata)
-{
-    std::vector<String> user_password;
-    boost::split(user_password, userdata, [](char character) { return character == ':'; });
-    return user_password[0] + ":" + base64Encode(getSHA1(userdata));
-}
-
 bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
-    const std::vector<KeeperStorage::AuthID> & current_ids,
+    int64_t session_id,
+    const KeeperStorage::UncommittedState & uncommitted_state,
     std::vector<Coordination::ACL> & result_acls)
 {
     if (request_acls.empty())
@@ -81,14 +76,18 @@ bool fixupACL(
     {
         if (request_acl.scheme == "auth")
         {
-            for (const auto & current_id : current_ids)
-            {
-                valid_found = true;
-                Coordination::ACL new_acl = request_acl;
-                new_acl.scheme = current_id.scheme;
-                new_acl.id = current_id.id;
-                result_acls.push_back(new_acl);
-            }
+            uncommitted_state.forEachAuthInSession(
+                session_id,
+                [&](const KeeperStorage::AuthID & auth_id)
+                {
+                    valid_found = true;
+                    Coordination::ACL new_acl = request_acl;
+
+                    new_acl.scheme = auth_id.scheme;
+                    new_acl.id = auth_id.id;
+
+                    result_acls.push_back(new_acl);
+                });
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
@@ -201,9 +200,10 @@ void KeeperStorage::Node::setData(String new_data)
     data = std::move(new_data);
 }
 
-void KeeperStorage::Node::addChild(StringRef child_path)
+void KeeperStorage::Node::addChild(StringRef child_path, bool update_size)
 {
-    size_bytes += sizeof child_path;
+    if (update_size) [[likely]]
+        size_bytes += sizeof child_path;
     children.insert(child_path);
 }
 
@@ -232,6 +232,13 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
     seq_num = other.seq_num;
     setData(other.getData());
     cached_digest = other.cached_digest;
+}
+
+void KeeperStorage::Node::recalculateSize()
+{
+    size_bytes = sizeof(Node);
+    size_bytes += children.size() * sizeof(decltype(children)::value_type);
+    size_bytes += data.size();
 }
 
 KeeperStorage::KeeperStorage(
@@ -554,6 +561,32 @@ Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) cons
         return {};
 
     return storage.acl_map.convertNumber(node_it->value.acl_id);
+}
+
+void KeeperStorage::UncommittedState::forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const
+{
+    const auto call_for_each_auth = [&func](const auto & auth_ids)
+    {
+        for (const auto & auth : auth_ids)
+        {
+            using TAuth = std::remove_reference_t<decltype(auth)>;
+
+            const AuthID * auth_ptr = nullptr;
+            if constexpr (std::is_pointer_v<TAuth>)
+                auth_ptr = auth;
+            else
+                auth_ptr = &auth;
+
+            func(*auth_ptr);
+        }
+    };
+
+    // for committed
+    if (storage.session_and_auth.contains(session_id))
+        call_for_each_auth(storage.session_and_auth.at(session_id));
+    // for uncommitted
+    if (session_and_auth.contains(session_id))
+        call_for_each_auth(session_and_auth.at(session_id));
 }
 
 namespace
@@ -919,7 +952,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
         Coordination::ACLs node_acls;
-        if (!fixupACL(request.acls, storage.session_and_auth[session_id], node_acls))
+        if (!fixupACL(request.acls, session_id, storage.uncommitted_state, node_acls))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
         if (request.is_ephemeral)
@@ -1362,7 +1395,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
 
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
@@ -1525,10 +1558,8 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADVERSION}};
 
 
-        auto & session_auth_ids = storage.session_and_auth[session_id];
         Coordination::ACLs node_acls;
-
-        if (!fixupACL(request.acls, session_auth_ids, node_acls))
+        if (!fixupACL(request.acls, session_id, uncommitted_state, node_acls))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
         std::vector<KeeperStorage::Delta> new_deltas
@@ -1704,7 +1735,9 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     break;
                 default:
                     throw DB::Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
+                                        ErrorCodes::BAD_ARGUMENTS,
+                                        "Illegal command as part of multi ZooKeeper request {}",
+                                        Coordination::toString(sub_zk_request->getOpNum()));
             }
         }
 
@@ -1813,7 +1846,7 @@ struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestPro
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr process(KeeperStorage &, int64_t) const override
     {
-        throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Called process on close request");
     }
 };
 
@@ -1830,7 +1863,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZAUTHFAILED}};
 
         std::vector<KeeperStorage::Delta> new_deltas;
-        auto auth_digest = generateDigest(auth_request.data);
+        auto auth_digest = KeeperStorage::generateDigest(auth_request.data);
         if (auth_digest == storage.superdigest)
         {
             KeeperStorage::AuthID auth{"super", ""};
@@ -1861,7 +1894,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
 void KeeperStorage::finalize()
 {
     if (finalized)
-        throw DB::Exception("KeeperStorage already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage already finalized");
 
     finalized = true;
 
@@ -1895,7 +1928,7 @@ public:
     {
         auto request_it = op_num_to_request.find(zk_request->getOpNum());
         if (request_it == op_num_to_request.end())
-            throw DB::Exception("Unknown operation type " + toString(zk_request->getOpNum()), ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", toString(zk_request->getOpNum()));
 
         return request_it->second(zk_request);
     }
@@ -2020,7 +2053,9 @@ void KeeperStorage::preprocessRequest(
         // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
         if (last_zxid != old_snapshot_zxid && new_last_zxid <= last_zxid)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
+                            new_last_zxid, last_zxid);
     }
     else
     {
@@ -2030,7 +2065,9 @@ void KeeperStorage::preprocessRequest(
 
         if (new_last_zxid <= last_zxid)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
+                            new_last_zxid, last_zxid);
     }
 
     std::vector<Delta> new_deltas;
@@ -2399,6 +2436,18 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
         ret += nodes.size();
 
     return ret;
+}
+
+void KeeperStorage::recalculateStats()
+{
+    container.recalculateDataSize();
+}
+
+String KeeperStorage::generateDigest(const String & userdata)
+{
+    std::vector<String> user_password;
+    boost::split(user_password, userdata, [](char character) { return character == ':'; });
+    return user_password[0] + ":" + base64Encode(getSHA1(userdata));
 }
 
 

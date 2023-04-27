@@ -22,15 +22,15 @@ struct BlockWithPartition
 {
     Block block;
     Row partition;
-    ChunkOffsetsPtr offsets;
+    std::vector<size_t> offsets;
 
     BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
     {
     }
 
-    BlockWithPartition(Block && block_, Row && partition_, ChunkOffsetsPtr chunk_offsets_)
-        : block(block_), partition(std::move(partition_)), offsets(chunk_offsets_)
+    BlockWithPartition(Block && block_, Row && partition_, std::vector<size_t> && offsets_)
+        : block(block_), partition(std::move(partition_)), offsets(std::move(offsets_))
     {
     }
 };
@@ -79,6 +79,8 @@ public:
       */
     TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
+    TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
+
     /// For insertion.
     static TemporaryPart writeProjectionPart(
         const MergeTreeData & data,
@@ -104,6 +106,14 @@ public:
         const MergeTreeData::MergingParams & merging_params);
 
 private:
+
+    TemporaryPart writeTempPartImpl(
+        BlockWithPartition & block,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        int64_t block_number,
+        bool need_tmp_prefix);
+
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,

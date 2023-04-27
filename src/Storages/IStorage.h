@@ -19,7 +19,6 @@
 #include <Common/TypePromotion.h>
 
 #include <optional>
-#include <shared_mutex>
 #include <compare>
 
 
@@ -99,7 +98,7 @@ public:
     /// Storage metadata can be set separately in setInMemoryMetadata method
     explicit IStorage(StorageID storage_id_)
         : storage_id(std::move(storage_id_))
-        , metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
+        , metadata(std::make_unique<StorageInMemoryMetadata>()) {}
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
@@ -109,6 +108,8 @@ public:
 
     /// The name of the table.
     StorageID getStorageID() const;
+
+    virtual bool isMergeTree() const { return false; }
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -133,6 +134,10 @@ public:
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
+
+    /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
+    /// This is needed for engines whose aggregates data from multiple tables, like Merge.
+    virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
 
     /// Returns true if the storage supports optimization of moving conditions to PREWHERE section.
     virtual bool canMoveConditionsToPrewhere() const { return supportsPrewhere(); }
@@ -241,6 +246,10 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
+    /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
+    /// because those are internally translated into 'ALTER UDPATE' mutations.
+    virtual bool supportsDelete() const { return false; }
+
 private:
 
     StorageID storage_id;
@@ -266,7 +275,7 @@ public:
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
-    /// Lock table for alter. This lock must be acuqired in ALTER queries to be
+    /// Lock table for alter. This lock must be acquired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
@@ -359,6 +368,15 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Should we process blocks of data returned by the storage in parallel
+    /// even when the storage returned only one stream of data for reading?
+    /// It is beneficial, for example, when you read from a file quickly,
+    /// but then do heavy computations on returned blocks.
+    /// This is enabled by default, but in some cases shouldn't be done.
+    /// For example, when you read from system.numbers instead of system.numbers_mt,
+    /// you still expect the data to be processed sequentially.
+    virtual bool parallelizeOutputAfterReading() const { return true; }
+
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
@@ -386,7 +404,7 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/)
     {
-        throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }
 
     /** Writes the data to a table in distributed manner.
@@ -418,7 +436,7 @@ public:
         ContextPtr /* context */,
         TableExclusiveLockHolder &)
     {
-        throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
     }
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
@@ -476,37 +494,38 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
         ContextPtr /*context*/)
     {
-        throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
     }
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr)
     {
-        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {
-        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
     virtual void waitForMutation(const String & /*mutation_id*/)
     {
-        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
     virtual void setMutationCSN(const String & /*mutation_id*/, UInt64 /*csn*/)
     {
-        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
     /// Cancel a part move to shard.
     virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/)
     {
-        throw Exception("Part moves between shards are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part moves between shards are not supported by storage {}", getName());
     }
 
     /** If the table have to do some complicated work on startup,
@@ -556,6 +575,7 @@ public:
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
 
     std::atomic<bool> is_dropped{false};
+    std::atomic<bool> is_detached{false};
 
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }
@@ -564,7 +584,7 @@ public:
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
     /// Checks validity of the data
-    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
+    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName()); }
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -617,12 +637,12 @@ public:
 
     /// Number of rows INSERTed since server start.
     ///
-    /// Does not takes underlying Storage (if any) into account.
+    /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeRows() const { return {}; }
 
     /// Number of bytes INSERTed since server start.
     ///
-    /// Does not takes underlying Storage (if any) into account.
+    /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     /// Creates a storage snapshot from given metadata.
