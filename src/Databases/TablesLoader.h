@@ -22,9 +22,6 @@ class AtomicStopwatch;
 namespace DB
 {
 
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
-
-
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
@@ -63,9 +60,6 @@ public:
     void startupTables();
 
 private:
-    LoadTaskPtrs load_tables; // Tasks to load all tables
-    LoadTaskPtrs startup_tables; // Tasks to startup all tables after loading
-
     ContextMutablePtr global_context;
     Databases databases;
     LoadingStrictnessLevel strictness_mode;
@@ -80,6 +74,10 @@ private:
     AtomicStopwatch stopwatch;
 
     AsyncLoader & async_loader;
+    LoadTaskPtrs load_tables;       // Tasks to load all tables
+    LoadTaskPtrs startup_tables;    // Tasks to startup all tables after loading
+    LoadTaskPtrs startup_databases; // Tasks to startup all databases after tables startup
+
     ThreadPool pool; // TODO(serxa): get rid of it
 
     void createTasks(LoadJobSet load_after);

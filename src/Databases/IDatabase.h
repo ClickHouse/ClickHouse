@@ -212,7 +212,6 @@ public:
     virtual LoadTaskPtr startupDatabaseAsync(
         AsyncLoader & /*async_loader*/,
         LoadJobSet /*startup_after*/,
-        const QualifiedTableName & /*name*/,
         LoadingStrictnessLevel /*mode*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); // TODO: should return empty task instead because startupTables default implementation do no throw?

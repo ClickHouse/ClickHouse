@@ -26,18 +26,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
-static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
-
-void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
-{
-    if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
-    {
-        LOG_INFO(log, "{}%", processed * 100.0 / total);
-        watch.restart();
-    }
-}
-
 TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_)
     : global_context(global_context_)
     , databases(std::move(databases_))
@@ -105,19 +93,19 @@ void TablesLoader::createTasks(LoadJobSet load_after)
     for (const auto & table_id : all_loading_dependencies.getTablesSortedByDependency())
     {
         /// Make set of jobs to load before this table
-        LoadJobSet load_before;
+        LoadJobSet load_dependencies;
         for (StorageID dependency_id : all_loading_dependencies.getDependencies(table_id))
         {
             const auto & goals = load_table[dependency_id.uuid]->goals();
-            load_before.insert(goals.begin(), goals.end());
+            load_dependencies.insert(goals.begin(), goals.end());
         }
-        if (load_before.empty())
-            load_before = load_databases_without_dependencies;
+        if (load_dependencies.empty())
+            load_dependencies = load_databases_without_dependencies;
 
         // Make load table task
         auto table_name = table_id.getQualifiedName();
         const auto & path_and_query = metadata.parsed_tables[table_name];
-        auto load_task = databases[table_name.database]->loadTableFromMetadataAsync(async_loader, load_before, load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);
+        auto load_task = databases[table_name.database]->loadTableFromMetadataAsync(async_loader, load_dependencies, load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);
         load_table[table_id.uuid] = load_task;
         load_tables.push_back(load_task);
 
@@ -125,15 +113,22 @@ void TablesLoader::createTasks(LoadJobSet load_after)
         auto startup_task = databases[table_name.database]->startupTableAsync(async_loader, load_task->goals(), table_name, strictness_mode);
         startup_database[table_name.database].push_back(startup_task);
         startup_tables.push_back(startup_task);
-
-        // TODO(serxa): we should report progress, a job should be attached to task.goals() here to report it. But what task should contain that job is unclear yet
-        // logAboutProgress(log, ++tables_processed, total_tables, stopwatch);
     }
 
-    // TODO(serxa): make startup database tasks
-    // for (auto [database_name, startup_tables] : startup_database)
-    // {
-    // }
+    /// Make startup database tasks
+    for (auto [database_name, startup_table_tasks] : startup_database)
+    {
+        LoadJobSet startup_after;
+        for (const auto & startup_task : startup_table_tasks)
+            startup_after.insert(startup_task->goals().begin(), startup_task->goals().end());
+        auto startup_database_task = databases[database_name]->startupDatabaseAsync(async_loader, startup_after, strictness_mode);
+        startup_databases.push_back(startup_database_task);
+    }
+
+    // Schedule all tasks in right order
+    async_loader.schedule(load_tables);
+    async_loader.schedule(startup_tables);
+    async_loader.schedule(startup_databases);
 }
 
 LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
