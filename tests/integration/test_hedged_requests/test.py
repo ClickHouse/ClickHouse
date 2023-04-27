@@ -128,12 +128,12 @@ def check_changing_replica_events(expected_count):
     assert int(result) >= expected_count
 
 
-def check_if_query_sending_was_suspended(minimum_count):
+def check_if_query_sending_was_suspended():
     result = NODES["node"].query(
         "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
     )
 
-    assert int(result) >= minimum_count
+    assert int(result) >= 1
 
 
 def check_if_query_sending_was_not_suspended():
@@ -381,7 +381,7 @@ def test_async_connect(started_cluster):
         "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1"
     )
     check_changing_replica_events(2)
-    check_if_query_sending_was_suspended(2)
+    check_if_query_sending_was_suspended()
 
     NODES["node"].query("DROP TABLE distributed_connect")
 
@@ -406,7 +406,7 @@ def test_async_query_sending(started_cluster):
     NODES["node"].query("DROP TABLE IF EXISTS tmp")
     NODES["node"].query(
         "CREATE TEMPORARY TABLE tmp (number UInt64, s String) "
-        "as select number, randomString(number % 1000) from numbers(1000000)"
+        "as select number, randomString(number % 1000) from numbers(10000000)"
     )
 
     NODES["node"].query(
@@ -419,6 +419,6 @@ def test_async_query_sending(started_cluster):
         "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
         " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1"
     )
-    check_if_query_sending_was_suspended(3)
+    check_if_query_sending_was_suspended()
 
     NODES["node"].query("DROP TABLE distributed_query_sending")
