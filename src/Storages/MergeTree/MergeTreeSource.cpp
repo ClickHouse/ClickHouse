@@ -7,28 +7,6 @@
 namespace DB
 {
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectAlgorithmPtr algorithm_)
-    : ISource(algorithm_->getHeader())
-    , algorithm(std::move(algorithm_))
-{
-#if defined(OS_LINUX)
-    if (algorithm->getSettings().use_asynchronous_read_from_pool)
-        async_reading_state = std::make_unique<AsyncReadingState>();
-#endif
-}
-
-MergeTreeSource::~MergeTreeSource() = default;
-
-std::string MergeTreeSource::getName() const
-{
-    return algorithm->getName();
-}
-
-void MergeTreeSource::onCancel()
-{
-    algorithm->cancel();
-}
-
 #if defined(OS_LINUX)
 struct MergeTreeSource::AsyncReadingState
 {
@@ -104,7 +82,16 @@ struct MergeTreeSource::AsyncReadingState
 
     void schedule(ThreadPool::Job job)
     {
-        callback_runner(std::move(job), 0);
+        try
+        {
+            callback_runner(std::move(job), 0);
+        }
+        catch (...)
+        {
+            /// Roll back stage in case of exception from ThreadPool::schedule
+            control->stage = Stage::NotStarted;
+            throw;
+        }
     }
 
     ChunkAndProgress getResult()
@@ -146,6 +133,28 @@ private:
 };
 #endif
 
+MergeTreeSource::MergeTreeSource(MergeTreeSelectAlgorithmPtr algorithm_)
+    : ISource(algorithm_->getHeader())
+    , algorithm(std::move(algorithm_))
+{
+#if defined(OS_LINUX)
+    if (algorithm->getSettings().use_asynchronous_read_from_pool)
+        async_reading_state = std::make_unique<AsyncReadingState>();
+#endif
+}
+
+MergeTreeSource::~MergeTreeSource() = default;
+
+std::string MergeTreeSource::getName() const
+{
+    return algorithm->getName();
+}
+
+void MergeTreeSource::onCancel()
+{
+    algorithm->cancel();
+}
+
 ISource::Status MergeTreeSource::prepare()
 {
 #if defined(OS_LINUX)
@@ -167,15 +176,16 @@ ISource::Status MergeTreeSource::prepare()
 }
 
 
-std::optional<Chunk> MergeTreeSource::reportProgress(ChunkAndProgress chunk)
+Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 {
     if (chunk.num_read_rows || chunk.num_read_bytes)
         progress(chunk.num_read_rows, chunk.num_read_bytes);
 
-    if (chunk.chunk.hasRows())
-        return std::move(chunk.chunk);
+    finished = chunk.is_finished;
 
-    return {};
+    /// We can return a chunk with no rows even if are not finished.
+    /// This allows to report progress when all the rows are filtered out inside MergeTreeBaseSelectProcessor by PREWHERE logic.
+    return std::move(chunk.chunk);
 }
 
 
@@ -185,7 +195,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     if (async_reading_state)
     {
         if (async_reading_state->getStage() == AsyncReadingState::Stage::IsFinished)
-            return reportProgress(async_reading_state->getResult());
+            return processReadResult(async_reading_state->getResult());
 
         chassert(async_reading_state->getStage() == AsyncReadingState::Stage::NotStarted);
 
@@ -211,7 +221,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
-    return reportProgress(algorithm->read());
+    return processReadResult(algorithm->read());
 }
 
 #if defined(OS_LINUX)

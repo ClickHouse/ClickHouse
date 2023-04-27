@@ -50,10 +50,10 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     String root_ca_file_property = "openSSL.server.caConfig";
 
     if (!config.has(certificate_file_property))
-        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
 
     if (!config.has(private_key_file_property))
-        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
     asio_opts.enable_ssl_ = true;
     asio_opts.server_cert_file_ = config.getString(certificate_file_property);
@@ -107,7 +107,8 @@ KeeperServer::KeeperServer(
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    KeeperSnapshotManagerS3 & snapshot_manager_s3)
+    KeeperSnapshotManagerS3 & snapshot_manager_s3,
+    KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
@@ -128,6 +129,7 @@ KeeperServer::KeeperServer(
         coordination_settings,
         keeper_context,
         config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+        commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
@@ -273,6 +275,19 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+
+    if (params.election_timeout_lower_bound_ || params.election_timeout_upper_bound_)
+    {
+        if (params.election_timeout_lower_bound_ >= params.election_timeout_upper_bound_)
+        {
+            LOG_FATAL(
+                log,
+                "election_timeout_lower_bound_ms is greater than election_timeout_upper_bound_ms, this would disable leader election "
+                "completely.");
+            std::terminate();
+        }
+    }
+
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
@@ -301,8 +316,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 #if USE_SSL
         setSSLParams(asio_opts);
 #else
-        throw Exception(
-            "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
     }
 
@@ -946,6 +960,11 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
+}
+
+void KeeperServer::recalculateStorageStats()
+{
+    state_machine->recalculateStorageStats();
 }
 
 }

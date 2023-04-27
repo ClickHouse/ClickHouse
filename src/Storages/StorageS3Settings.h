@@ -63,8 +63,11 @@ struct S3Settings
         size_t max_connections = 1024;
         bool check_objects_after_upload = false;
         size_t max_unexpected_write_error_retries = 4;
+        size_t list_object_keys_size = 1000;
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
+
+        bool throw_on_zero_files_match = false;
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
 

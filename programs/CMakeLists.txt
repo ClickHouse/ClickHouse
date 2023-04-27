@@ -59,6 +59,8 @@ option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
 
+option (ENABLE_CLICKHOUSE_REPORT "A tiny tool to collect a clickhouse-server state" ${ENABLE_CLICKHOUSE_ALL})
+
 if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
     # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
@@ -370,6 +372,9 @@ if (ENABLE_CLICKHOUSE_SU)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-su" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-su)
 endif ()
+if (ENABLE_CLICKHOUSE_REPORT)
+    include(${ClickHouse_SOURCE_DIR}/utils/report/CMakeLists.txt)
+endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER AND CREATE_KEEPER_SYMLINK)
@@ -394,10 +399,6 @@ if (ENABLE_CLICKHOUSE_DISKS)
 endif ()
 
 add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
-
-if (USE_GDB_ADD_INDEX)
-    add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
-endif()
 
 if (USE_BINARY_HASH)
     add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)

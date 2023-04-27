@@ -41,7 +41,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isNumber(*arguments[0]))
-            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -74,7 +74,7 @@ public:
          */
 
         if (summary_utf8_len > (1 << 29))
-            throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
         size_t size_in_bytes_with_margin = summary_utf8_len * 4 + input_rows_count;
         data_to.resize(size_in_bytes_with_margin);

@@ -213,7 +213,7 @@ def send_event_workflow_job(workflow_job: WorkflowJob) -> None:
     #     `head_sha` String,
     #     `url` String,
     #     `html_url` String,
-    #     `status` Enum8('queued' = 1, 'in_progress' = 2, 'completed' = 3, 'waiting' = 4),
+    #     `status` Enum8('waiting' = 1, 'queued' = 2, 'in_progress' = 3, 'completed' = 4),
     #     `conclusion` LowCardinality(String),
     #     `started_at` DateTime,
     #     `completed_at` DateTime,
@@ -284,10 +284,12 @@ def handler(event: dict, _: Any) -> dict:
         wf_job["runner_group_name"] or "",  # nullable
         repo["full_name"],
     )
+    logging.info(
+        "Got the next event (private_repo=%s): %s", repo["private"], workflow_job
+    )
     if repo["private"]:
         workflow_job.anonimyze()
 
-    logging.info("Got the next event: %s", workflow_job)
     send_event_workflow_job(workflow_job)
 
     return {

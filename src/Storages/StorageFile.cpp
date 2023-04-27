@@ -3,7 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ReadFromStorageProgress.h>
 
@@ -34,6 +34,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ResizeProcessor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -49,6 +50,7 @@
 #include <unistd.h>
 #include <re2/re2.h>
 #include <filesystem>
+#include <shared_mutex>
 
 
 namespace ProfileEvents
@@ -80,6 +82,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace
@@ -105,6 +108,9 @@ void listFilesWithRegexpMatchingImpl(
     auto regexp = makeRegexpPatternFromGlobs(current_glob);
 
     re2::RE2 matcher(regexp);
+    if (!matcher.ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
     bool skip_regex = current_glob == "/*" ? true : false;
     if (!recursive)
@@ -182,7 +188,7 @@ void checkCreationIsAllowed(
     {
         auto table_path_stat = fs::status(table_path);
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
-            throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File must not be a directory");
     }
 }
 
@@ -361,19 +367,16 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     if (format == "Distributed")
     {
         if (paths.empty())
-            throw Exception(
-                "Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
 
-        auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
-        return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
+        return ColumnsDescription(DistributedAsyncInsertSource(paths[0]).getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
-            "table structure manually",
-            format);
+            "Cannot extract table structure from {} format file, because there are no files with provided path. "
+            "You must specify table structure manually", format);
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (context->getSettingsRef().schema_inference_use_cache_for_file)
@@ -414,9 +417,9 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     total_bytes_to_read = buf.st_size;
 
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Using file descriptor as source of storage isn't allowed for server daemons");
     if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     is_db_table = false;
     use_table_fd = true;
@@ -442,9 +445,9 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     : StorageFile(args)
 {
     if (relative_table_dir_path.empty())
-        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
     if (args.format_name == "Distributed")
-        throw Exception("Distributed format is allowed only with explicit file path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
@@ -482,7 +485,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         {
             columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext());
             if (!args.columns.empty() && args.columns != columns)
-                throw Exception("Table structure and file structure are different", ErrorCodes::INCOMPATIBLE_COLUMNS);
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Table structure and file structure are different");
         }
         storage_metadata.setColumns(columns);
     }
@@ -567,7 +570,7 @@ public:
         {
             shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
             if (!shared_lock)
-                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         }
     }
 
@@ -594,7 +597,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
+                        pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -698,7 +701,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    const size_t max_num_streams)
 {
     if (use_table_fd)
     {
@@ -711,7 +714,7 @@ Pipe StorageFile::read(
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
                 return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
             else
-                throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", paths[0]);
         }
     }
 
@@ -729,7 +732,8 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    if (num_streams > paths.size())
+    size_t num_streams = max_num_streams;
+    if (max_num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;
@@ -850,7 +854,7 @@ public:
         , lock(std::move(lock_))
     {
         if (!lock)
-            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         initialize();
     }
 
@@ -1020,7 +1024,7 @@ SinkToStoragePtr StorageFile::write(
     ContextPtr context)
 {
     if (format_name == "Distributed")
-        throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for Distributed format");
 
     int flags = 0;
 
@@ -1057,7 +1061,9 @@ SinkToStoragePtr StorageFile::write(
         if (!paths.empty())
         {
             if (is_path_with_globs)
-                throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                                "Table '{}' is in readonly mode because of globs in filepath",
+                                getStorageID().getNameForLogs());
 
             path = paths.back();
             fs::create_directories(fs::path(path).parent_path());
@@ -1115,17 +1121,18 @@ bool StorageFile::storesDataOnDisk() const
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
-        throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
     return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " bounded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                        "Can't rename table {} bounded to user-defined file (or FD)", getStorageID().getNameForLogs());
 
     if (paths.size() != 1)
-        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't rename table {} in readonly mode", getStorageID().getNameForLogs());
 
     std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
     if (path_new == paths[0])
@@ -1145,7 +1152,7 @@ void StorageFile::truncate(
     TableExclusiveLockHolder &)
 {
     if (is_path_with_globs)
-        throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't truncate table '{}' in readonly mode", getStorageID().getNameForLogs());
 
     if (use_table_fd)
     {
@@ -1193,9 +1200,9 @@ void registerStorageFile(StorageFactory & factory)
             ASTs & engine_args_ast = factory_args.engine_args;
 
             if (!(engine_args_ast.size() >= 1 && engine_args_ast.size() <= 3)) // NOLINT
-                throw Exception(
-                    "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Storage File requires from 1 to 3 arguments: "
+                                "name of used format, source and compression_method.");
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
             storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");
@@ -1247,8 +1254,8 @@ void registerStorageFile(StorageFactory & factory)
                 else if (*opt_name == "stderr")
                     source_fd = STDERR_FILENO;
                 else
-                    throw Exception(
-                        "Unknown identifier '" + *opt_name + "' in second arg of File storage constructor", ErrorCodes::UNKNOWN_IDENTIFIER);
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier '{}' in second arg of File storage constructor",
+                        *opt_name);
             }
             else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
             {
@@ -1260,7 +1267,7 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::String)
                     source_path = literal->value.get<String>();
                 else
-                    throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
 
             if (engine_args_ast.size() == 3)

@@ -7,6 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Backups/SettingsFieldOptionalUUID.h>
 
 
 namespace DB
@@ -162,7 +163,8 @@ namespace
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path)
+    M(OptionalUUID, restore_uuid)
+
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
 {

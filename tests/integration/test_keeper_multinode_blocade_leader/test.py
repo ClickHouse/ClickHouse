@@ -89,7 +89,9 @@ def test_blocade_leader(started_cluster):
             print("Got exception from node", smaller_exception(ex))
             time.sleep(0.1)
 
-    node2.query("INSERT INTO ordinary.t1 SELECT number FROM numbers(10)")
+    node2.query(
+        "INSERT INTO ordinary.t1 SELECT number FROM numbers(10) SETTINGS insert_keeper_max_retries = 0"
+    )
 
     node1.query("SYSTEM SYNC REPLICA ordinary.t1", timeout=10)
     node3.query("SYSTEM SYNC REPLICA ordinary.t1", timeout=10)
@@ -107,7 +109,9 @@ def test_blocade_leader(started_cluster):
                 restart_replica_for_sure(
                     node2, "ordinary.t1", "/clickhouse/t1/replicas/2"
                 )
-                node2.query("INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100)")
+                node2.query(
+                    "INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+                )
                 break
             except Exception as ex:
                 try:
@@ -128,7 +132,9 @@ def test_blocade_leader(started_cluster):
                 restart_replica_for_sure(
                     node3, "ordinary.t1", "/clickhouse/t1/replicas/3"
                 )
-                node3.query("INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100)")
+                node3.query(
+                    "INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+                )
                 break
             except Exception as ex:
                 try:
@@ -167,7 +173,9 @@ def test_blocade_leader(started_cluster):
 
     for i in range(100):
         try:
-            node1.query("INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100)")
+            node1.query(
+                "INSERT INTO ordinary.t1 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+            )
             break
         except Exception as ex:
             print("Got exception node1", smaller_exception(ex))
@@ -293,7 +301,9 @@ def test_blocade_leader_twice(started_cluster):
             print("Got exception from node", smaller_exception(ex))
             time.sleep(0.1)
 
-    node2.query("INSERT INTO ordinary.t2 SELECT number FROM numbers(10)")
+    node2.query(
+        "INSERT INTO ordinary.t2 SELECT number FROM numbers(10) SETTINGS insert_keeper_max_retries = 0"
+    )
 
     node1.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
     node3.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
@@ -311,7 +321,9 @@ def test_blocade_leader_twice(started_cluster):
                 restart_replica_for_sure(
                     node2, "ordinary.t2", "/clickhouse/t2/replicas/2"
                 )
-                node2.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
+                node2.query(
+                    "INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+                )
                 break
             except Exception as ex:
                 try:
@@ -333,7 +345,9 @@ def test_blocade_leader_twice(started_cluster):
                     node3, "ordinary.t2", "/clickhouse/t2/replicas/3"
                 )
                 node3.query("SYSTEM SYNC REPLICA ordinary.t2", timeout=10)
-                node3.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
+                node3.query(
+                    "INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+                )
                 break
             except Exception as ex:
                 try:
@@ -359,14 +373,18 @@ def test_blocade_leader_twice(started_cluster):
 
         for i in range(10):
             try:
-                node3.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
+                node3.query(
+                    "INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+                )
                 assert False, "Node3 became leader?"
             except Exception as ex:
                 time.sleep(0.5)
 
         for i in range(10):
             try:
-                node2.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
+                node2.query(
+                    "INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+                )
                 assert False, "Node2 became leader?"
             except Exception as ex:
                 time.sleep(0.5)
@@ -399,7 +417,9 @@ def test_blocade_leader_twice(started_cluster):
     for n, node in enumerate([node1, node2, node3]):
         for i in range(100):
             try:
-                node.query("INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100)")
+                node.query(
+                    "INSERT INTO ordinary.t2 SELECT rand() FROM numbers(100) SETTINGS insert_keeper_max_retries = 0"
+                )
                 break
             except Exception as ex:
                 print("Got exception node{}".format(n + 1), smaller_exception(ex))

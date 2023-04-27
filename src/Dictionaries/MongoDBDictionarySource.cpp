@@ -67,7 +67,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 #include <Poco/MongoDB/ObjectId.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
@@ -114,7 +113,11 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 {
     if (!uri.empty())
     {
-        Poco::URI poco_uri(uri);
+        // Connect with URI.
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
+        connection->connect(uri, socket_factory);
+
+        Poco::URI poco_uri(connection->uri());
 
         // Parse database from URI. This is required for correctness -- the
         // cursor is created using database name and collection name, so we have
@@ -134,10 +137,6 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         {
             user.resize(separator);
         }
-
-        // Connect with URI.
-        Poco::MongoDB::Connection::SocketFactory socket_factory;
-        connection->connect(uri, socket_factory);
     }
     else
     {
@@ -241,7 +240,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
                     break;
                 }
                 default:
-                    throw Exception("Unsupported dictionary attribute type for MongoDB dictionary source", ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary attribute type for MongoDB dictionary source");
             }
         }
     }

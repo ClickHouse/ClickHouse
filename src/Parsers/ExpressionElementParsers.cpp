@@ -121,7 +121,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
 
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
-            throw Exception("EXPLAIN in a subquery cannot have a table function or table override", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
@@ -132,7 +132,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ASTPtr settings_ast = explain_query.getSettings())
         {
             if (!settings_ast->as<ASTSetQuery>())
-                throw Exception("EXPLAIN settings must be a SET query", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
             settings_str = queryToString(settings_ast);
         }
 
@@ -868,7 +868,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
         {
             if (float_value < 0)
-                throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Logical error: token number cannot begin with minus, "
+                                "but parsed float number is less than zero.");
 
             if (negative)
                 float_value = -float_value;
@@ -1472,7 +1474,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto opos = pos;
         if (ParserExpression().parse(pos, lambda, expected))
         {
-            if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
                 if (func->arguments->children.size() != 2)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda requires two arguments");
@@ -1489,6 +1491,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
                     lambda_arg = *opt_arg_name;
                 else
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
+
+                func->is_lambda_function = true;
             }
             else
             {
@@ -1617,7 +1621,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
-            replacement->expr = std::move(expr);
+            replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
         };
@@ -2147,8 +2151,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set("SET");
     ParserKeyword s_recompress("RECOMPRESS");
     ParserKeyword s_codec("CODEC");
-    ParserToken s_comma(TokenType::Comma);
-    ParserToken s_eq(TokenType::Equals);
+    ParserKeyword s_materialize("MATERIALIZE");
+    ParserKeyword s_remove("REMOVE");
+    ParserKeyword s_modify("MODIFY");
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
@@ -2156,8 +2161,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
-    ParserList parser_assignment_list(
-        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+    if (s_materialize.checkWithoutMoving(pos, expected) ||
+        s_remove.checkWithoutMoving(pos, expected) ||
+        s_modify.checkWithoutMoving(pos, expected))
+
+        return false;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -2215,6 +2223,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_set.ignore(pos))
         {
+            ParserList parser_assignment_list(
+                std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+
             if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
                 return false;
         }

@@ -15,6 +15,7 @@ ${CLICKHOUSE_CLIENT} -q '
     )
     ENGINE = MergeTree
     ORDER BY key
+    SETTINGS old_parts_lifetime=0
 '
 
 ${CLICKHOUSE_CLIENT} -q 'INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(1000000)'

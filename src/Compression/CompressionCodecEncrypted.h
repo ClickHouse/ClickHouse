@@ -44,7 +44,7 @@ enum EncryptionMethod
     * as otherwise our engines like ReplicatedMergeTree cannot
     * deduplicate data blocks.
     */
-class CompressionCodecEncrypted : public ICompressionCodec
+class CompressionCodecEncrypted final : public ICompressionCodec
 {
 public:
     /** If a key is available, the server is supposed to

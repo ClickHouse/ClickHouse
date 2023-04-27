@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_SETTING;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -252,7 +253,7 @@ struct ExplainSettings : public Settings
     {
         auto it = boolean_settings.find(name_);
         if (it == boolean_settings.end())
-            throw Exception("Unknown setting for ExplainSettings: " + name_, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting for ExplainSettings: {}", name_);
 
         it->second.get() = value;
     }
@@ -261,7 +262,7 @@ struct ExplainSettings : public Settings
     {
         auto it = integer_settings.find(name_);
         if (it == integer_settings.end())
-            throw Exception("Unknown setting for ExplainSettings: " + name_, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting for ExplainSettings: {}", name_);
 
         it->second.get() = value;
     }
@@ -314,8 +315,8 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
     for (const auto & change : set_query.changes)
     {
         if (!settings.has(change.name))
-            throw Exception("Unknown setting \"" + change.name + "\" for EXPLAIN " + Settings::name + " query. "
-                            "Supported settings: " + settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
+            throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting \"{}\" for EXPLAIN {} query. "
+                            "Supported settings: {}", change.name, Settings::name, settings.getSettingsList());
 
         if (change.value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
@@ -326,8 +327,8 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
         {
             auto value = change.value.get<UInt64>();
             if (value > 1)
-                throw Exception("Invalid value " + std::to_string(value) + " for setting \"" + change.name +
-                                "\". Expected boolean type", ErrorCodes::INVALID_SETTING_VALUE);
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for setting \"{}\". "
+                                "Expected boolean type", value, change.name);
 
             settings.setBooleanSetting(change.name, value);
         }
@@ -386,6 +387,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
+            if (!getContext()->getSettingsRef().allow_experimental_analyzer)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
+
             if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
@@ -427,7 +432,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::QueryPlan:
         {
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
-                throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN query");
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
@@ -521,13 +526,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 printPipeline(io.pipeline.getProcessors(), buf);
             }
             else
-                throw Exception("Only SELECT and INSERT is supported for EXPLAIN PIPELINE query", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT and INSERT is supported for EXPLAIN PIPELINE query");
             break;
         }
         case ASTExplainQuery::QueryEstimates:
         {
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
-                throw Exception("Only SELECT is supported for EXPLAIN ESTIMATE query", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN ESTIMATE query");
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
@@ -564,7 +569,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::CurrentTransaction:
         {
             if (ast.getSettings())
-                throw Exception("Settings are not supported for EXPLAIN CURRENT TRANSACTION query.", ErrorCodes::UNKNOWN_SETTING);
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Settings are not supported for EXPLAIN CURRENT TRANSACTION query.");
 
             if (auto txn = getContext()->getCurrentTransaction())
             {

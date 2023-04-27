@@ -23,6 +23,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
+#include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -37,7 +39,6 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
-#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
@@ -434,7 +435,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         auto * order_by_element = child->as<ASTOrderByElement>();
 
         if (!order_by_element || order_by_element->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
         if (order_by_element->with_fill)
             return;
@@ -513,7 +514,7 @@ void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, Co
         auto * order_by_element = child->as<ASTOrderByElement>();
 
         if (!order_by_element || order_by_element->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
         if (order_by_element->with_fill)
             return;
@@ -658,6 +659,12 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
+void optimizeArrayExistsFunctions(ASTPtr & query)
+{
+    RewriteArrayExistsFunctionVisitor::Data data = {};
+    RewriteArrayExistsFunctionVisitor(data).visit(query);
+}
+
 void optimizeMultiIfToIf(ASTPtr & query)
 {
     OptimizeMultiIfToIfVisitor::Data data;
@@ -747,7 +754,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
-        throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
 
     if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
         optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
@@ -790,6 +797,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
 
+    if (settings.optimize_rewrite_array_exists_to_has)
+        optimizeArrayExistsFunctions(query);
+
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)
         optimizeInjectiveFunctionsInsideUniq(query, context);
@@ -799,9 +809,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube)
-    {
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
-    }
 
     /// Remove duplicate ORDER BY and DISTINCT from subqueries.
     if (settings.optimize_duplicate_order_by_and_distinct)

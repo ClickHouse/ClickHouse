@@ -196,7 +196,7 @@ class TestResult:
             )
         for log_path in log_paths:
             file = Path(log_path)
-            assert file.exists()
+            assert file.exists(), file
             self.log_files.append(file)
 
 
@@ -211,7 +211,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
             name = line[0]
             status = line[1]
             time = None
-            if len(line) >= 3 and line[2]:
+            if len(line) >= 3 and line[2] and line[2] != "\\N":
                 # The value can be emtpy, but when it's not,
                 # it's the time spent on the test
                 try:
@@ -224,7 +224,10 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
                 # The value can be emtpy, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
-                    result.set_raw_logs(line[3])
+                    # Python does not support TSV, so we unescape manually
+                    result.set_raw_logs(
+                        line[3].replace("\\t", "\t").replace("\\n", "\n")
+                    )
                 else:
                     result.set_log_files(line[3])
 
@@ -259,17 +262,20 @@ class ReportColorTheme:
 ColorTheme = Tuple[str, str, str]
 
 
-def _format_header(header, branch_name, branch_url=None):
-    result = " ".join([w.capitalize() for w in header.split(" ")])
+def _format_header(
+    header: str, branch_name: str, branch_url: Optional[str] = None
+) -> str:
+    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
+    # capitalizes the first letter and doesn't touch the rest of the word
+    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
     result = result.replace("Clickhouse", "ClickHouse")
     result = result.replace("clickhouse", "ClickHouse")
     if "ClickHouse" not in result:
-        result = "ClickHouse " + result
-    result += " for "
+        result = f"ClickHouse {result}"
     if branch_url:
-        result += f'<a href="{branch_url}">{branch_name}</a>'
+        result = f'{result} for <a href="{branch_url}">{branch_name}</a>'
     else:
-        result += branch_name
+        result = f"{result} for {branch_name}"
     return result
 
 
@@ -470,7 +476,7 @@ def create_build_html_report(
     commit_url: str,
 ) -> str:
     rows = ""
-    for (build_result, build_log_url, artifact_urls) in zip(
+    for build_result, build_log_url, artifact_urls in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"

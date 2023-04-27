@@ -86,7 +86,7 @@ Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & typ
 {
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
-        throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", type.getName());
 
     T scaled_value = type.getScaleMultiplier() * T(static_cast<typename T::NativeType>(value));
     return DecimalField<T>(scaled_value, type.getScale());
@@ -114,7 +114,7 @@ Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & t
 {
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
-        throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", type.getName());
 
     //String sValue = convertFieldToString(from);
     //int fromScale = sValue.length()- sValue.find('.') - 1;
@@ -149,6 +149,8 @@ Field convertDecimalType(const Field & from, const To & type)
         return convertDecimalToDecimalType<Decimal64>(from, type);
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
+    if (from.getType() == Field::Types::Decimal256)
+        return convertDecimalToDecimalType<Decimal256>(from, type);
 
     if (from.getType() == Field::Types::Float64)
         return convertFloatToDecimalType<Float64>(from, type);
@@ -233,6 +235,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Already in needed type.
             return src;
+        }
+
+        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
+        /// produce wrong result in some special cases.
+        if (which_type.isDate() && src.getType() == Field::Types::Int64)
+        {
+            return convertNumericType<UInt64>(src, type);
+        }
+
+        /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
+        /// produce wrong result in some special cases.
+        if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
+        {
+            return convertNumericType<Int64>(src, type);
         }
 
         if (which_type.isDateTime64()
@@ -321,8 +337,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             size_t dst_tuple_size = type_tuple->getElements().size();
 
             if (dst_tuple_size != src_tuple_size)
-                throw Exception("Bad size of tuple in IN or VALUES section. Expected size: "
-                    + toString(dst_tuple_size) + ", actual size: " + toString(src_tuple_size), ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple in IN or VALUES section. "
+                    "Expected size: {}, actual size: {}", dst_tuple_size, src_tuple_size);
 
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
@@ -401,7 +417,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         const auto & name = src.get<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)
-            throw Exception("Cannot convert " + name + " to " + agg_func_type->getName(), ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", name, agg_func_type->getName());
 
         return src;
     }

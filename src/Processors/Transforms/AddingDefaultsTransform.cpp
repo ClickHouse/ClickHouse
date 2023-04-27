@@ -42,13 +42,13 @@ static void checkCalculated(const ColumnWithTypeAndName & col_read,
     size_t column_size = col_read.column->size();
 
     if (column_size != col_defaults.column->size())
-        throw Exception("Mismatch column sizes while adding defaults", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Mismatch column sizes while adding defaults");
 
     if (column_size < defaults_needed)
-        throw Exception("Unexpected defaults count", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Unexpected defaults count");
 
     if (!col_read.type->equals(*col_defaults.type))
-        throw Exception("Mismatch column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Mismatch column types while adding defaults");
 }
 
 static void mixNumberColumns(
@@ -98,7 +98,7 @@ static void mixNumberColumns(
     };
 
     if (!callOnIndexAndDataType<void>(type_idx, call))
-        throw Exception("Unexpected type on mixNumberColumns", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type on mixNumberColumns");
 }
 
 static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,

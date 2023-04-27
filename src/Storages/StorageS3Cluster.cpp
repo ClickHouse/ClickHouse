@@ -8,6 +8,7 @@
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
 #include <DataTypes/DataTypeString.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -16,6 +17,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -32,8 +34,6 @@
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <memory>
 #include <string>
@@ -42,33 +42,31 @@ namespace DB
 {
 
 StorageS3Cluster::StorageS3Cluster(
-    const StorageS3ClusterConfiguration & configuration_,
+    const Configuration & configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool structure_argument_was_provided_)
     : IStorageCluster(table_id_)
-    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
-    , filename(configuration_.url)
+    , log(&Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"))
+    , s3_configuration{configuration_}
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
     , compression_method(configuration_.compression_method)
+    , structure_argument_was_provided(structure_argument_was_provided_)
 {
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
     StorageInMemoryMetadata storage_metadata;
-    StorageS3::updateS3Configuration(context_, s3_configuration);
+    updateConfigurationIfChanged(context_);
 
     if (columns_.empty())
     {
-        const bool is_key_with_globs = filename.find_first_of("*?{") != std::string::npos;
-
         /// `distributed_processing` is set to false, because this code is executed on the initiator, so there is no callback set
         /// for asking for the next tasks.
         /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
-        auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
-            /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
+        auto columns = StorageS3::getTableStructureFromDataImpl(s3_configuration, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
-        add_columns_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -86,6 +84,11 @@ StorageS3Cluster::StorageS3Cluster(
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
 }
 
+void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
+{
+    s3_configuration.update(local_context);
+}
+
 /// The code executes on initiator
 Pipe StorageS3Cluster::read(
     const Names & column_names,
@@ -96,13 +99,26 @@ Pipe StorageS3Cluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    StorageS3::updateS3Configuration(context, s3_configuration);
+    updateConfigurationIfChanged(context);
 
     auto cluster = getCluster(context);
     auto extension = getTaskIteratorExtension(query_info.query, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+
+    Block sample_block;
+    ASTPtr query_to_send = query_info.query;
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+        sample_block = interpreter.getSampleBlock();
+        query_to_send = interpreter.getQueryInfo().query->clone();
+    }
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
@@ -110,8 +126,7 @@ Pipe StorageS3Cluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    ASTPtr query_to_send = interpreter.getQueryInfo().query->clone();
-    if (add_columns_structure_to_query)
+    if (!structure_argument_was_provided)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 5, getName());
 
@@ -125,7 +140,8 @@ Pipe StorageS3Cluster::read(
         /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
-    const auto & current_settings = context->getSettingsRef();
+    auto new_context = IStorageCluster::updateSettingsForTableFunctionCluster(context, context->getSettingsRef());
+    const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -133,18 +149,18 @@ Pipe StorageS3Cluster::read(
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
                     queryToString(query_to_send),
-                    interpreter.getSampleBlock(),
-                    context,
+                    sample_block,
+                    new_context,
                     /*throttler=*/nullptr,
                     scalars,
                     Tables(),
                     processed_stage,
                     extension);
 
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
+            remote_query_executor->setLogger(log);
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
         }
     }
 
@@ -173,7 +189,7 @@ ClusterPtr StorageS3Cluster::getCluster(ContextPtr context) const
 RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, ContextPtr context) const
 {
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.uri, query, virtual_block, context);
+        *s3_configuration.client, s3_configuration.url, query, virtual_block, context);
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

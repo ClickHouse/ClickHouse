@@ -56,6 +56,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
+#include <QueryPipeline/SizeLimits.h>
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -68,6 +69,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -129,7 +131,7 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
             if (isNotCreatable(col.type->getTypeId()))
             {
                 if (throw_if_cannot_create_column)
-                    throw Exception("Cannot create column of type " + col.type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot create column of type {}", col.type->getName());
 
                 return false;
             }
@@ -147,6 +149,11 @@ ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
+    , size_limits_for_set_used_with_index(
+        (settings_.use_index_for_in_with_subqueries_max_values &&
+            settings_.use_index_for_in_with_subqueries_max_values < settings_.max_rows_in_set) ?
+        size_limits_for_set :
+        SizeLimits(settings_.use_index_for_in_with_subqueries_max_values, settings_.max_bytes_in_set, OverflowMode::BREAK))
     , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
 {}
 
@@ -314,7 +321,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         const auto & column_name = group_elements_ast[j]->getColumnName();
                         const auto * node = temp_actions->tryFindInOutputs(column_name);
                         if (!node)
-                            throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in GROUP BY): {}", column_name);
 
                         /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
                         if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
@@ -368,7 +375,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInOutputs(column_name);
                     if (!node)
-                        throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in GROUP BY): {}", column_name);
 
                     /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
                     if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
@@ -450,7 +457,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets->get(set_key))
+    if (prepared_sets->getFuture(set_key).isValid())
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
@@ -459,25 +466,57 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         return;
     }
 
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
-    auto io = interpreter_subquery->execute();
-    PullingAsyncPipelineExecutor executor(io.pipeline);
-
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
-    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
-
-    Block block;
-    while (executor.pull(block))
+    auto build_set = [&] () -> SetPtr
     {
-        if (block.rows() == 0)
-            continue;
+        LOG_TRACE(getLogger(), "Building set, key: {}", set_key.toString());
 
-        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
-            return;
+        auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
+        auto io = interpreter_subquery->execute();
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+
+        SetPtr set = std::make_shared<Set>(settings.size_limits_for_set_used_with_index, true, getContext()->getSettingsRef().transform_null_in);
+        set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
+
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+
+            /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+            if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
+                return nullptr;
+        }
+
+        set->finishInsert();
+
+        return set;
+    };
+
+    SetPtr set;
+
+    auto set_cache = getContext()->getPreparedSetsCache();
+    if (set_cache)
+    {
+        auto from_cache = set_cache->findOrPromiseToBuild(set_key.toString());
+        if (from_cache.index() == 0)
+        {
+            set = build_set();
+            std::get<0>(from_cache).set_value(set);
+        }
+        else
+        {
+            LOG_TRACE(getLogger(), "Waiting for set, key: {}", set_key.toString());
+            set = std::get<1>(from_cache).get();
+        }
+    }
+    else
+    {
+        set = build_set();
     }
 
-    set->finishInsert();
+    if (!set)
+        return;
 
     prepared_sets->set(set_key, std::move(set));
 }
@@ -930,14 +969,14 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 {
     const auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
-        throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a select query");
     return select_query;
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
-        throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No aggregation");
     return getSelectQuery();
 }
 
@@ -1089,6 +1128,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -1251,8 +1291,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     const auto & node = step.actions()->findInOutputs(prewhere_column_name);
     auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
-        throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                        filter_type->getName());
 
     ActionsDAGPtr prewhere_actions;
     {
@@ -1334,8 +1374,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     const auto & node = step.actions()->findInOutputs(where_column_name);
     auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
-        throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in WHERE: {}",
+                        filter_type->getName());
 
     return true;
 }
@@ -1556,7 +1596,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     {
         auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
-            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
@@ -1801,11 +1841,16 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions));
 }
 
-ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
+ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
 {
     auto actions = std::make_shared<ActionsDAG>(constant_inputs);
-
     getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
+    return actions;
+}
+
+ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
+{
+    auto actions = getConstActionsDAG(constant_inputs);
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 
@@ -1860,8 +1905,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
 
-            auto required_columns = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-            NameSet required_source_columns(required_columns.begin(), required_columns.end());
+            auto required_columns_ = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            NameSet required_source_columns(required_columns_.begin(), required_columns_.end());
             /// Add required columns to required output in order not to remove them after prewhere execution.
             /// TODO: add sampling and final execution to common chain.
             for (const auto & column : additional_required_columns_after_prewhere)
@@ -2230,7 +2275,7 @@ void ExpressionAnalysisResult::checkActions() const
             if (actions)
                 for (const auto & node : actions->getNodes())
                     if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-                        throw Exception("PREWHERE cannot contain ARRAY JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
+                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "PREWHERE cannot contain ARRAY JOIN action");
         };
 
         check_actions(prewhere_info->prewhere_actions);
