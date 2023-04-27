@@ -82,9 +82,7 @@ def process_test_log(log_path, broken_tests):
                                 test_name,
                                 "SKIPPED",
                                 test_time,
-                                [
-                                    "This test passed. Update broken_tests.txt.\n"
-                                ],
+                                ["This test passed. Update broken_tests.txt.\n"],
                             )
                         )
                     else:
