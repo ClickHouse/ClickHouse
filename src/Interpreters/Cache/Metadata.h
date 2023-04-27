@@ -60,7 +60,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
 
     LockedKeyPtr tryLock();
 
-    void createBaseDirectory();
+    bool createBaseDirectory();
 
     std::string getFileSegmentPath(const FileSegment & file_segment);
 
