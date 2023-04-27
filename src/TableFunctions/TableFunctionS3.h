@@ -67,51 +67,7 @@ protected:
     ColumnsDescription structure_hint;
 };
 
-class TableFunctionCOS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "cosn";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "COSN"; }
-};
-
-class TableFunctionOSS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "oss";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "OSS"; }
-};
-
 }
-
-class TableFunctionGCS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "gcs";
-    static constexpr auto signature = " - url\n"
-                                      " - url, format\n"
-                                      " - url, format, structure\n"
-                                      " - url, hmac_key, hmac_secret\n"
-                                      " - url, format, structure, compression_method\n"
-                                      " - url, hmac_key, hmac_secret, format\n"
-                                      " - url, hmac_key, hmac_secret, format, structure\n"
-                                      " - url, hmac_key, hmac_secret, format, structure, compression_method";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "GCS"; }
-};
 
 }
 
