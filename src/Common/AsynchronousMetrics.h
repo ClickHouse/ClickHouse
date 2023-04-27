@@ -202,7 +202,6 @@ private:
     void openBlockDevices();
     void openSensorsChips();
     void openEDAC();
-    void updateCgroupMemoryMetrics(ReadBufferFromFilePRead & memory_limit_in, ReadBufferFromFilePRead & memory_usage_in);
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
