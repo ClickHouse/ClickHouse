@@ -27,8 +27,14 @@ public:
     {
     }
 
+    std::string res()
+    {
+      return res_str.str();
+    }
+
 private:
     std::ostream* out_str;
+    std::ostringstream res_str;
     std::mutex mutex;
     std::unique_ptr<WriteBufferFromOStream> out;
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
@@ -45,6 +51,8 @@ private:
         out->buffer() = buffer();
         out->position() = position();
         out->next();
+
+        res_str << out_str->rdbuf();
     }
 
 using WriteBufferENetPtr = std::shared_ptr<WriteBufferENet>;

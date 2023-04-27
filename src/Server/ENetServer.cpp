@@ -68,7 +68,6 @@ void ENetServer::run()
     while (!_stopped)
     {
         ENetEvent event;
-        LOG_INFO(logger, "Server ENET STEP");
         while (enet_host_service(server, &event, 10000) > 0)
         {
             switch (event.type)
@@ -76,16 +75,14 @@ void ENetServer::run()
                 case ENET_EVENT_TYPE_CONNECT:
                     //printf("A new client connected from %x:%u.\n", event.peer->address.host, event.peer->address.port);
                     //event.peer->data = "Client information";
-                    LOG_INFO(logger, "New ENET connection");
+                    LOG_INFO(logger, "New ENet connection");
                     break;
 
                 case ENET_EVENT_TYPE_RECEIVE:
                     {
-                        LOG_INFO(logger, "ENET receive {}", reinterpret_cast<char *>(event.packet->data));
-
                         ENetPack pck;
                         ENetPack resp_pck;
-                        pck.deserialize(reinterpret_cast<char *>(event.packet->data));
+                        pck.deserialize(reinterpret_cast<char *>(event.packet->data), event.packet->dataLength);
 
                         enet_packet_destroy (event.packet);
 
@@ -119,18 +116,12 @@ void ENetServer::run()
 
                         out.finalize();
 
-                        //resp_pck.set("body", std::string(data));
-
-                        //auto resp_str = resp_pck.serialize();
-                        //auto resp_cstr = resp_str.c_str();
-
-
                         auto response_str = resp_pck.serialize();
-                        response_str += "\r" + data;
+                        response_str += "\r" + out.res();
 
-                        LOG_INFO(logger, "ENET RESULT {}", response_str);
+                        unsigned char response_cstr[response_str.size()];
 
-                        auto response_cstr = response_str.c_str();
+                        std::copy(response_str.cbegin(), response_str.cend(), response_cstr);
 
                         ENetPacket * resp = enet_packet_create (response_cstr,
                                             response_str.size() + 1,

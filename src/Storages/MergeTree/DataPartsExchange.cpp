@@ -290,19 +290,12 @@ void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
         {
             writeStringBinary(part->getType().toString(), out);
-            // WIDE
-            LOG_INFO(log, "ENET {}", std::string(out.buffer()));
         }
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
         {
             writeUUIDText(part->uuid, out);
-            LOG_INFO(log, "ENETO {}", std::string(out.buffer()));
-            // UUID
         }
-
-        out.next();
-        LOG_INFO(log, "ENETT {}", std::string(out.buffer()));
 
         // Both not in the buffer when query is finished.
 
@@ -320,7 +313,6 @@ void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack 
             const auto & projections = part->getProjectionParts();
             writeBinary(projections.size(), out);
         }
-        LOG_INFO(log, "ENET {}", std::string(out.buffer()));
 
         if (data_settings->allow_remote_fs_zero_copy_replication &&
             /// In memory data part does not have metadata yet.
@@ -546,7 +538,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     uri.setScheme(interserver_scheme);
     //uri.setHost(host);
     uri.setHost("127.0.0.1");
-    uri.setPort(port);
+    //uri.setPort(port);
+    uri.setPort(9008);
     uri.setQueryParameters(
     {
         {"endpoint",                getEndpointId(replica_path)},
@@ -734,6 +727,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             auto output_buffer_getter = [](IDataPartStorage & part_storage, const auto & file_name, size_t file_size)
             {
                 auto full_path = fs::path(part_storage.getFullPath()) / file_name;
+                //std::cout << std::string(file_name) << "\n\n\n";
                 return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
@@ -804,6 +798,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     auto output_buffer_getter = [](IDataPartStorage & part_storage, const String & file_name, size_t file_size)
     {
+        //std::cout << "Check filename: " << file_name << "\n\n";
         return part_storage.writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
     };
 

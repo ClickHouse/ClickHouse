@@ -44,9 +44,9 @@ class ENetPack
             return res;
         }
 
-        std::string deserialize(const char * inp)
+        std::string deserialize(const char * inp, size_t size)
         {
-            std::string res(inp);
+            std::string res(inp, size);
             size_t i = 0;
             std::string prev = "";
             std::string cur = "";

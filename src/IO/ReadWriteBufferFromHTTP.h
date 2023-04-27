@@ -285,8 +285,8 @@ namespace detail
                                         enet_deinitialize();
                                         throw 1;
                                     }
-                                    data = resp.deserialize(reinterpret_cast<char*>(event.packet->data));
-                                    LOG_INFO(log, "ENET RECEIVED {}", data);
+                                    data = resp.deserialize(reinterpret_cast<char*>(event.packet->data), event.packet->dataLength);
+                                    LOG_INFO(log, "ENET RECEIVED \n{}", data);
                                     enet_packet_destroy(event.packet);
                                 }
                                 break;
@@ -294,6 +294,12 @@ namespace detail
                                 break;
                         }
                     }
+
+                    std::cout << "\n\n";
+                    for (auto [key, value]: resp.data) {
+                        std::cout << key << ' ' << value << '\n';
+                    }
+                    std::cout << "\n\n";
 
                     std::istringstream* result_istr;
                     
@@ -359,6 +365,11 @@ namespace detail
                     /// and we don't want to override any context used by it
                     if constexpr (!for_object_info)
                         content_encoding = response.get("Content-Encoding", "");
+
+                    std::ostringstream ss;
+                    response.write(ss);
+
+                    LOG_INFO(log, "ENET RECEIVED {}", ss.str());
 
                     return result_istr;
                 }
