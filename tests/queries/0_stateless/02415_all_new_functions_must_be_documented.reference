@@ -418,17 +418,10 @@ makeDateTime
 makeDateTime64
 map
 mapAdd
-mapApply
-mapContains
-mapContainsKeyLike
-mapExtractKeyLike
-mapFilter
 mapFromArrays
-mapKeys
 mapPopulateSeries
 mapSubtract
 mapUpdate
-mapValues
 match
 materialize
 max2
