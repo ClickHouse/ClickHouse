@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -16,6 +17,17 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CANCELED;
 }
 
+static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
+static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
+
+void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
+{
+    if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+    {
+        LOG_INFO(log, "{}%", processed * 100.0 / total);
+        watch.restart();
+    }
+}
 
 LoadStatus LoadJob::status() const
 {
@@ -84,9 +96,22 @@ void LoadJob::canceled(const std::exception_ptr & ptr)
 void LoadJob::finish()
 {
     func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` and `LoadJob::wait()` return
+    finished_ns = clock_gettime_ns();
     if (waiters > 0)
         finished.notify_all();
 }
+
+void LoadJob::scheduled()
+{
+    scheduled_ns = clock_gettime_ns();
+}
+
+void LoadJob::execute(const LoadJobPtr & self)
+{
+    started_ns = clock_gettime_ns();
+    func(self);
+}
+
 
 LoadTask::LoadTask(AsyncLoader & loader_, LoadJobSet && jobs_, LoadJobSet && goal_jobs_)
     : loader(loader_)
@@ -127,9 +152,12 @@ void LoadTask::detach()
 
 AsyncLoader::AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_)
     : log_failures(log_failures_)
+    , log(&Poco::Logger::get("AsyncLoader"))
     , max_threads(max_threads_)
     , pool(metric_threads, metric_active_threads, max_threads)
-{}
+{
+
+}
 
 AsyncLoader::~AsyncLoader()
 {
@@ -186,6 +214,14 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & jobs)
 {
     std::unique_lock lock{mutex};
 
+    // Restart watches after idle period
+    if (scheduled_jobs.empty())
+    {
+        busy_period_started_ns = clock_gettime_ns();
+        stopwatch.restart();
+        old_jobs = finished_jobs.size();
+    }
+
     // Sanity checks
     for (const auto & job : jobs)
     {
@@ -207,6 +243,7 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & jobs)
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
             scheduled_jobs.emplace(job, Info{.initial_priority = job->load_priority, .priority = job->load_priority});
+            job->scheduled();
         });
     }
 
@@ -332,7 +369,11 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
     // On the third pass all jobs are finished - remove them all
     // It is better to do it under one lock to avoid exposing intermediate states
     for (const auto & job : jobs)
-        finished_jobs.erase(job);
+    {
+        size_t erased = finished_jobs.erase(job);
+        if (old_jobs >= erased && job->finished_ns && job->finished_ns < busy_period_started_ns)
+            old_jobs -= erased;
+    }
 }
 
 void AsyncLoader::setMaxThreads(size_t value)
@@ -459,6 +500,7 @@ void AsyncLoader::finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr &
     NOEXCEPT_SCOPE({
         ALLOW_ALLOCATIONS_IN_SCOPE;
         finished_jobs.insert(job);
+        logAboutProgress(log, finished_jobs.size() - old_jobs, finished_jobs.size() + scheduled_jobs.size() - old_jobs, stopwatch);
     });
 }
 
@@ -548,7 +590,7 @@ void AsyncLoader::worker()
 
         try
         {
-            job->func(job);
+            job->execute(job);
             exception_from_job = {};
         }
         catch (...)

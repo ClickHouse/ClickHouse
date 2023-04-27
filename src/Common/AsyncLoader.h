@@ -11,7 +11,11 @@
 #include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -22,6 +26,8 @@ using LoadJobSet = std::unordered_set<LoadJobPtr>;
 class LoadTask;
 using LoadTaskPtr = std::shared_ptr<LoadTask>;
 class AsyncLoader;
+
+void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
 
 // Execution status of a load job.
 enum class LoadStatus
@@ -79,6 +85,9 @@ private:
     void canceled(const std::exception_ptr & ptr);
     void finish();
 
+    void scheduled();
+    void execute(const LoadJobPtr & self);
+
     std::function<void(const LoadJobPtr & self)> func;
     std::atomic<ssize_t> load_priority;
 
@@ -87,6 +96,10 @@ private:
     mutable size_t waiters = 0;
     LoadStatus load_status{LoadStatus::PENDING};
     std::exception_ptr load_exception;
+
+    UInt64 scheduled_ns = 0;
+    UInt64 started_ns = 0;
+    UInt64 finished_ns = 0;
 };
 
 template <class Func>
@@ -277,7 +290,12 @@ private:
     void spawn(std::unique_lock<std::mutex> &);
     void worker();
 
+    // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
+    Poco::Logger * log;
+    UInt64 busy_period_started_ns;
+    AtomicStopwatch stopwatch;
+    size_t old_jobs = 0; // Number of jobs that were finished in previous busy period (for correct progress indication)
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = false;
