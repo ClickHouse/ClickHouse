@@ -575,31 +575,11 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id, request_settings);
     auto compression_method = chooseCompressionMethod(current_key, compression_hint);
 
-    InputFormatPtr input_format;
-    std::unique_ptr<ReadBuffer> owned_read_buf;
-
-    auto read_buf_or_factory = createS3ReadBuffer(current_key, object_size);
-    if (read_buf_or_factory.buf_factory)
-    {
-        input_format = FormatFactory::instance().getInputRandomAccess(
-            format,
-            std::move(read_buf_or_factory.buf_factory),
-            sample_block,
-            getContext(),
-            max_block_size,
-            /* is_remote_fs */ true,
-            compression_method,
-            format_settings);
-    }
-    else
-    {
-        owned_read_buf = wrapReadBufferWithCompressionMethod(
-            std::move(read_buf_or_factory.buf),
-            compression_method,
-            static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max));
-        input_format = FormatFactory::instance().getInput(
-            format, *owned_read_buf, sample_block, getContext(), max_block_size, format_settings);
-    }
+    auto read_buf = createS3ReadBuffer(current_key, object_size);
+    auto input_format = FormatFactory::instance().getInput(
+            format, *read_buf, sample_block, getContext(), max_block_size,
+            format_settings, std::nullopt, std::nullopt,
+            /* is_remote_fs */ true, compression_method);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(input_format));
@@ -614,7 +594,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(bucket) / current_key, std::move(owned_read_buf), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{fs::path(bucket) / current_key, std::move(read_buf), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
@@ -622,7 +602,7 @@ std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()
     return create_reader_scheduler([this] { return createReader(); }, 0);
 }
 
-StorageS3Source::ReadBufferOrFactory StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
+std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & key, size_t object_size)
 {
     auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
     read_settings.enable_filesystem_cache = false;
@@ -635,12 +615,13 @@ StorageS3Source::ReadBufferOrFactory StorageS3Source::createS3ReadBuffer(const S
     if (object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         LOG_TRACE(log, "Downloading object of size {} from S3 with initial prefetch", object_size);
-        return {.buf = createAsyncS3ReadBuffer(key, read_settings, object_size)};
+        return createAsyncS3ReadBuffer(key, read_settings, object_size);
     }
 
-    auto factory = std::make_unique<ReadBufferS3Factory>(
-        client, bucket, key, version_id, object_size, request_settings, read_settings);
-    return {.buf_factory = std::move(factory)};
+    return std::make_unique<ReadBufferFromS3>(
+        client, bucket, key, version_id, request_settings, read_settings,
+        /*use_external_buffer*/ false, /*offset_*/ 0, /*read_until_position_*/ 0,
+        /*restricted_seek_*/ false, object_size);
 }
 
 std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(

@@ -52,6 +52,19 @@ private:
     const char * className() const noexcept override { return "DB::HTTPException"; }
 };
 
+/// Pass this to HTTPClientSession's attachSessionData() to indicate that the session is in a clean
+/// state and can be reused by a session pool. Otherwise the pool will discard or reset the session.
+///
+/// Do it after successfully exhausting the HTTP response istream. (Have to hit eof, even if there
+/// are no content bytes left! Because with chunked encoding, there's an empty extra chunk at the end.)
+/// Would probably be better for HTTPClientSession to keep track of this automatically.
+///
+/// Also consider the race condition inherent in HTTP keepalive: we may send a request at the same
+/// time the server is closing the connection. In this case we get a network error and can't tell
+/// whether the request has been processed by the server or not.
+/// So we should only use session pooling if requests can be retried.
+struct HTTPSessionReusableTag {};
+
 using PooledHTTPSessionPtr = PoolBase<Poco::Net::HTTPClientSession>::Entry; // SingleEndpointHTTPSessionPool::Entry
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 

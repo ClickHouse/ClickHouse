@@ -5,7 +5,6 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
-#include <IO/IOThreadPool.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -219,68 +218,16 @@ template FormatSettings getFormatSettings<Settings>(ContextPtr context, const Se
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
-    ReadBuffer & buf,
+    ReadBuffer & _buf,
     const Block & sample,
     ContextPtr context,
     UInt64 max_block_size,
-    const std::optional<FormatSettings> & format_settings,
-    std::optional<size_t> max_parsing_threads) const
-{
-    return getInputImpl(
-        name,
-        nullptr,
-        &buf,
-        sample,
-        context,
-        max_block_size,
-        /* is_remote_fs */ false,
-        CompressionMethod::None,
-        format_settings,
-        /* max_download_threads */ 1,
-        max_parsing_threads);
-}
-
-InputFormatPtr FormatFactory::getInputRandomAccess(
-    const String & name,
-    SeekableReadBufferFactoryPtr buf_factory,
-    const Block & sample,
-    ContextPtr context,
-    UInt64 max_block_size,
-    bool is_remote_fs,
-    CompressionMethod compression,
-    const std::optional<FormatSettings> & format_settings,
-    std::optional<size_t> max_download_threads,
-    std::optional<size_t> max_parsing_threads) const
-{
-    return getInputImpl(
-        name,
-        std::move(buf_factory),
-        nullptr,
-        sample,
-        context,
-        max_block_size,
-        is_remote_fs,
-        compression,
-        format_settings,
-        max_download_threads,
-        max_parsing_threads);
-}
-
-InputFormatPtr FormatFactory::getInputImpl(
-    const String & name,
-    // exactly one of the following two is nullptr
-    SeekableReadBufferFactoryPtr buf_factory,
-    ReadBuffer * _buf,
-    const Block & sample,
-    ContextPtr context,
-    UInt64 max_block_size,
-    bool is_remote_fs,
-    CompressionMethod compression,
     const std::optional<FormatSettings> & _format_settings,
+    std::optional<size_t> _max_parsing_threads,
     std::optional<size_t> _max_download_threads,
-    std::optional<size_t> _max_parsing_threads) const
+    bool is_remote_fs,
+    CompressionMethod compression) const
 {
-    chassert((!_buf) != (!buf_factory));
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
@@ -300,14 +247,12 @@ InputFormatPtr FormatFactory::getInputImpl(
     if (context->hasQueryContext() && settings.log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-    // Prepare a read buffer.
+    // Add ParallelReadBuffer and decompression if needed.
 
-    std::unique_ptr<ReadBuffer> owned_buf;
-    if (buf_factory)
-        owned_buf = prepareReadBuffer(buf_factory, compression, creators, format_settings, settings, max_download_threads);
-    auto * buf = owned_buf ? owned_buf.get() : _buf;
+    auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, max_download_threads);
+    auto & buf = owned_buf ? *owned_buf : _buf;
 
-    // Decide whether to use parallel ParallelParsingInputFormat.
+    // Decide whether to use ParallelParsingInputFormat.
 
     bool parallel_parsing = max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine && !creators.random_access_input_creator;
 
@@ -320,7 +265,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     {
         const auto & non_trivial_prefix_and_suffix_checker = creators.non_trivial_prefix_and_suffix_checker;
         /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
-        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(*buf))
+        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(buf))
             parallel_parsing = false;
     }
 
@@ -338,7 +283,7 @@ InputFormatPtr FormatFactory::getInputImpl(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            *buf, sample, parser_creator, creators.file_segmentation_engine, name, max_parsing_threads,
+            buf, sample, parser_creator, creators.file_segmentation_engine, name, max_parsing_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
@@ -346,7 +291,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            *buf,
+            buf,
             sample,
             format_settings,
             context->getReadSettings(),
@@ -356,7 +301,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     }
     else
     {
-        format = creators.input_creator(*buf, sample, row_input_format_params, format_settings);
+        format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
     }
 
     if (owned_buf)
@@ -372,8 +317,8 @@ InputFormatPtr FormatFactory::getInputImpl(
     return format;
 }
 
-std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
-    SeekableReadBufferFactoryPtr & buf_factory,
+std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
+    ReadBuffer & buf,
     CompressionMethod compression,
     const Creators & creators,
     const FormatSettings & format_settings,
@@ -382,16 +327,17 @@ std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
 {
     std::unique_ptr<ReadBuffer> res;
 
-    bool parallel_read = max_download_threads > 1 && buf_factory && format_settings.seekable_read;
+    bool parallel_read = max_download_threads > 1 && format_settings.seekable_read && isBufferWithFileSize(buf);
     if (creators.random_access_input_creator)
         parallel_read &= compression != CompressionMethod::None;
+    size_t file_size = 0;
 
     if (parallel_read)
     {
         try
         {
-            parallel_read = buf_factory->checkIfActuallySeekable()
-                         && buf_factory->getFileSize() >= 2 * settings.max_download_buffer_size;
+            file_size = getFileSizeFromReadBuffer(buf);
+            parallel_read = file_size >= 2 * settings.max_download_buffer_size;
         }
         catch (const Poco::Exception & e)
         {
@@ -412,22 +358,16 @@ std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
             max_download_threads,
             settings.max_download_buffer_size);
 
-        res = std::make_unique<ParallelReadBuffer>(
-            std::move(buf_factory),
-            threadPoolCallbackRunner<void>(IOThreadPool::get(), "ParallelRead"),
-            max_download_threads,
-            settings.max_download_buffer_size);
+        res = wrapInParallelReadBufferIfSupported(
+            buf, max_download_threads, settings.max_download_buffer_size, file_size);
     }
 
     if (compression != CompressionMethod::None)
     {
         if (!res)
-            res = buf_factory->getReader(); // NOLINT
+            res = wrapReadBufferReference(buf);
         res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings.zstd_window_log_max));
     }
-
-    if (!res)
-        res = buf_factory->getReader();
 
     return res;
 }

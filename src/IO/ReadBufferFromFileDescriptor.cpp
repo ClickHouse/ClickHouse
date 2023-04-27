@@ -279,7 +279,7 @@ bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
     return res == 0 && S_ISREG(stat.st_mode);
 }
 
-size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset)
+size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
 {
     chassert(use_pread);
     return readImpl(to, n, n, offset);

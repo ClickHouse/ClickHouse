@@ -38,7 +38,7 @@ public:
 
     explicit UpdatableSession(const Poco::URI & uri, UInt64 max_redirects_, std::shared_ptr<TSessionFactory> session_factory_);
 
-    SessionPtr getSession();
+    SessionPtr & getSession();
 
     void updateSession(const Poco::URI & uri);
 
@@ -176,7 +176,7 @@ namespace detail
 
         bool nextImpl() override;
 
-        size_t readBigAt(char * to, size_t n, size_t offset) override;
+        size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) override;
 
         off_t getPosition() override;
 
@@ -213,8 +213,11 @@ namespace detail
 /// A short-lived HTTP session pool for one endpoint.
 /// Keeps an unlimited number of sessions for one URI.
 /// If URI changes (redirect), clears the pool.
-/// If a session gets an error (indicated by attachSessionData()), it's removed from the pool.
+/// If method is not GET or HEAD, we avoid pooling altogether, just in case.
 /// The pool must outlive all session pointers created by it.
+///
+/// Session is only reused if it has HTTPSessionReusableTag attached. See comment in HTTPCommon.h
+/// about HTTPSessionReusableTag.
 class LocallyPooledSessionFactory
 {
 public:
@@ -325,54 +328,6 @@ public:
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT);
 };
 
-
-class RangedReadWriteBufferFromHTTPFactory : public SeekableReadBufferFactory, public WithFileName
-{
-    using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
-
-public:
-    RangedReadWriteBufferFromHTTPFactory(
-        Poco::URI uri_,
-        std::string method_,
-        OutStreamCallback out_stream_callback_,
-        ConnectionTimeouts timeouts_,
-        const Poco::Net::HTTPBasicCredentials & credentials_,
-        UInt64 max_redirects_ = 0,
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ReadSettings settings_ = {},
-        HTTPHeaderEntries http_header_entries_ = {},
-        const RemoteHostFilter * remote_host_filter_ = nullptr,
-        bool delay_initialization_ = true,
-        bool use_external_buffer_ = false,
-        bool skip_not_found_url_ = false);
-
-    std::unique_ptr<SeekableReadBuffer> getReader() override;
-
-    size_t getFileSize() override;
-
-    bool checkIfActuallySeekable() override;
-
-    String getFileName() const override;
-
-    HTTPFileInfo getFileInfo();
-
-private:
-    Poco::URI uri;
-    std::string method;
-    OutStreamCallback out_stream_callback;
-    ConnectionTimeouts timeouts;
-    const Poco::Net::HTTPBasicCredentials & credentials;
-    UInt64 max_redirects;
-    size_t buffer_size;
-    ReadSettings settings;
-    HTTPHeaderEntries http_header_entries;
-    const RemoteHostFilter * remote_host_filter;
-    std::shared_ptr<LocallyPooledSessionFactory> session_pool;
-    std::optional<HTTPFileInfo> file_info;
-    bool delay_initialization;
-    bool use_external_buffer;
-    bool skip_not_found_url;
-};
 
 extern template class UpdatableSession<LocallyPooledSessionFactory>;
 extern template class UpdatableSession<PooledSessionFactory>;

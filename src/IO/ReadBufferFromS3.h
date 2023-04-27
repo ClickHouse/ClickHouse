@@ -77,7 +77,7 @@ public:
 
     String getFileName() const override { return bucket + "/" + key; }
 
-    size_t readBigAt(char * to, size_t n, size_t range_begin) override;
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) override;
 
     bool supportsReadAt() override { return true; }
 
@@ -89,7 +89,7 @@ private:
 
     /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
     /// Returns true if the error looks retriable.
-    bool processException(Exception & e, size_t read_offset, size_t attempt) const;
+    bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const;
 
@@ -100,43 +100,6 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
-};
-
-/// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
-class ReadBufferS3Factory : public SeekableReadBufferFactory, public WithFileName
-{
-public:
-    explicit ReadBufferS3Factory(
-        std::shared_ptr<const S3::Client> client_ptr_,
-        const String & bucket_,
-        const String & key_,
-        const String & version_id_,
-        size_t object_size_,
-        const S3Settings::RequestSettings & request_settings_,
-        const ReadSettings & read_settings_)
-        : client_ptr(client_ptr_)
-        , bucket(bucket_)
-        , key(key_)
-        , version_id(version_id_)
-        , read_settings(read_settings_)
-        , object_size(object_size_)
-        , request_settings(request_settings_)
-    {}
-
-    std::unique_ptr<SeekableReadBuffer> getReader() override;
-
-    size_t getFileSize() override;
-
-    String getFileName() const override { return bucket + "/" + key; }
-
-private:
-    std::shared_ptr<const S3::Client> client_ptr;
-    const String bucket;
-    const String key;
-    const String version_id;
-    ReadSettings read_settings;
-    size_t object_size;
-    const S3Settings::RequestSettings request_settings;
 };
 
 }

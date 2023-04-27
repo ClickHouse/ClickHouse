@@ -65,6 +65,13 @@ public:
     /// Unbuffered positional read.
     /// Doesn't affect the buffer state (position, working_buffer, etc).
     ///
+    /// `progress_callback` may be called periodically during the read, reporting that to[0..m-1]
+    /// has been filled. If it returns true, reading is stopped, and readBigAt() returns bytes read
+    /// so far. Called only from inside readBigAt(), from the same thread, with increasing m.
+    ///
+    /// Stops either after n bytes, or at end of file, or on exception. Returns number of bytes read.
+    /// If offset is past the end of file, may return 0 or throw exception.
+    ///
     /// Caller needs to be careful:
     ///  * supportsReadAt() must be checked (called and return true) before calling readBigAt().
     ///    Otherwise readBigAt() may crash.
@@ -73,44 +80,22 @@ public:
     ///    (e.g. next() or supportsReadAt()).
     ///  * Performance: there's no buffering. Each readBigAt() call typically translates into actual
     ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
-    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/)
+    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/ = nullptr)
         { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented"); }
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
     virtual bool supportsReadAt() { return false; }
 };
 
-/// Useful for reading in parallel.
-/// The created read buffers may outlive the factory.
-///
-/// There are 2 ways to use this:
-///  (1) Never call seek() or getFileSize(), read the file sequentially.
-///      For HTTP, this usually translates to just one HTTP request.
-///  (2) Call checkIfActuallySeekable(), then:
-///       a. If it returned false, go to (1). seek() and getFileSize() are not available (throw if called).
-///       b. If it returned true, seek() and getFileSize() are available, knock yourself out.
-///      For HTTP, checkIfActuallySeekable() sends a HEAD request and returns false if the web server
-///      doesn't support ranges (or doesn't support HEAD requests).
-class SeekableReadBufferFactory : public WithFileSize
-{
-public:
-    ~SeekableReadBufferFactory() override = default;
-
-    // We usually call setReadUntilPosition() and seek() on the returned buffer before reading.
-    // So it's recommended that the returned implementation be lazy, i.e. don't start reading
-    // before the first call to nextImpl().
-    virtual std::unique_ptr<SeekableReadBuffer> getReader() = 0;
-
-    virtual bool checkIfActuallySeekable() { return true; }
-};
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
-
-using SeekableReadBufferFactoryPtr = std::unique_ptr<SeekableReadBufferFactory>;
 
 /// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
 /// This function is like wrapReadBufferReference() but for SeekableReadBuffer.
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref);
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
+
+/// Helper for implementing readBigAt().
+size_t copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, bool * out_cancelled = nullptr);
 
 }

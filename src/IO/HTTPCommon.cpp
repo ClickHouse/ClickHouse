@@ -225,32 +225,25 @@ namespace
             auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
 
-            /// We store exception messages in session data.
+            /// We store session reusability state in session data.
             /// Poco HTTPSession also stores exception, but it can be removed at any time.
             const auto & session_data = session->sessionData();
-            if (!session_data.empty())
+            if (!Poco::AnyCast<HTTPSessionReusableTag>(&session_data))
             {
-                auto msg = Poco::AnyCast<std::string>(session_data);
-                if (!msg.empty())
-                {
-                    LOG_TRACE((&Poco::Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
+                /// The session may be in a non-reusable state, e.g. in the middle of receiving
+                /// response to a previous request. Close the connection.
+                session->reset();
 
-                    if (resolve_host)
-                    {
-                        /// Host can change IP
-                        const auto ip = DNSResolver::instance().resolveHost(host).toString();
-                        if (ip != session->getHost())
-                        {
-                            session->reset();
-                            session->setHost(ip);
-                        }
-                    }
+                if (resolve_host)
+                {
+                    /// Host can change IP
+                    const auto ip = DNSResolver::instance().resolveHost(host).toString();
+                    if (ip != session->getHost())
+                        session->setHost(ip);
                 }
-                /// Reset the message, once it has been printed,
-                /// otherwise you will get report for failed parts on and on,
-                /// even for different tables (since they uses the same session).
-                session->attachSessionData({});
             }
+
+            session->attachSessionData({});
 
             setTimeouts(*session, timeouts);
 

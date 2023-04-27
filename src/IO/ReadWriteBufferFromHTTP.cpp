@@ -13,7 +13,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_REDIRECTS;
     extern const int HTTP_RANGE_NOT_SATISFIABLE;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_FROM_ISTREAM;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
@@ -57,7 +56,7 @@ UpdatableSession<TSessionFactory>::UpdatableSession(const Poco::URI & uri, UInt6
 }
 
 template <typename TSessionFactory>
-typename UpdatableSession<TSessionFactory>::SessionPtr UpdatableSession<TSessionFactory>::getSession() { return session; }
+typename UpdatableSession<TSessionFactory>::SessionPtr & UpdatableSession<TSessionFactory>::getSession() { return session; }
 
 template <typename TSessionFactory>
 void UpdatableSession<TSessionFactory>::updateSession(const Poco::URI & uri)
@@ -148,30 +147,20 @@ std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
     LOG_TRACE(log, "Sending request to {}", uri_.toString());
 
     auto sess = current_session->getSession();
-    try
-    {
-        auto & stream_out = sess->sendRequest(request);
+    auto & stream_out = sess->sendRequest(request);
 
-        if (out_stream_callback)
-            out_stream_callback(stream_out);
+    if (out_stream_callback)
+        out_stream_callback(stream_out);
 
-        auto result_istr = receiveResponse(*sess, request, response, true);
-        response.getCookies(cookies);
+    auto result_istr = receiveResponse(*sess, request, response, true);
+    response.getCookies(cookies);
 
-        /// we can fetch object info while the request is being processed
-        /// and we don't want to override any context used by it
-        if (!for_object_info)
-            content_encoding = response.get("Content-Encoding", "");
+    /// we can fetch object info while the request is being processed
+    /// and we don't want to override any context used by it
+    if (!for_object_info)
+        content_encoding = response.get("Content-Encoding", "");
 
-        return result_istr;
-    }
-    catch (const Poco::Exception & e)
-    {
-        /// We use session data storage as storage for exception text
-        /// Depend on it we can deduce to reconnect session or reresolve session host
-        sess->attachSessionData(e.message());
-        throw;
-    }
+    return result_istr;
 }
 
 template <typename UpdatableSessionPtr>
@@ -440,23 +429,10 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::initialize()
     if (!read_range.end && response.hasContentLength())
         file_info = parseFileInfo(response, withPartialContent(read_range) ? getOffset() : 0);
 
-    try
-    {
-        impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
+    impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
 
-        if (use_external_buffer)
-        {
-            setupExternalBuffer();
-        }
-    }
-    catch (const Poco::Exception & e)
-    {
-        /// We use session data storage as storage for exception text
-        /// Depend on it we can deduce to reconnect session or reresolve session host
-        auto sess = session->getSession();
-        sess->attachSessionData(e.message());
-        throw;
-    }
+    if (use_external_buffer)
+        setupExternalBuffer();
 }
 
 template <typename UpdatableSessionPtr>
@@ -471,7 +447,16 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
 
     if ((read_range.end && getOffset() > read_range.end.value()) ||
         (file_info && file_info->file_size && getOffset() >= file_info->file_size.value()))
+    {
+        if (impl)
+        {
+            /// Prepare HTTP session for reuse.
+            impl->ignore(UINT64_MAX);
+            session->getSession()->attachSessionData(HTTPSessionReusableTag{});
+        }
+
         return false;
+    }
 
     if (impl)
     {
@@ -498,8 +483,7 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
     {
         retry_with_range_header = true;
         impl.reset();
-        auto http_session = session->getSession();
-        http_session->reset();
+        session->getSession()->reset();
         if (!last_attempt)
         {
             sleepForMilliseconds(milliseconds_to_wait);
@@ -560,13 +544,6 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
         }
         catch (const Poco::Exception & e)
         {
-            /// Don't reuse the session if its response istream errored out.
-            if (e.code() == ErrorCodes::CANNOT_READ_FROM_ISTREAM)
-            {
-                auto s = session->getSession();
-                s->attachSessionData(e.message());
-            }
-
             /// Too many open files - non-retryable.
             if (e.code() == POCO_EMFILE)
                 throw;
@@ -600,7 +577,10 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
         std::rethrow_exception(exception);
 
     if (!result)
+    {
+        session->getSession()->attachSessionData(HTTPSessionReusableTag{});
         return false;
+    }
 
     internal_buffer = impl->buffer();
     working_buffer = internal_buffer;
@@ -609,13 +589,11 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
 }
 
 template <typename UpdatableSessionPtr>
-size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, size_t n, size_t offset)
+size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback)
 {
     /// Caller must have checked supportsReadAt().
     /// This ensures we've sent at least one HTTP request and populated saved_uri_redirect.
     chassert(file_info && file_info->seekable);
-
-    LOG_TEST(log, "readBigAt n: {}, offset: {}", n, offset);
 
     if (n == 0)
         return 0;
@@ -652,27 +630,19 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
                     "Expected 206 Partial Content, got {} when reading {} range [{}, {})",
                     toString(response.getStatus()), uri_.toString(), offset, offset + n);
 
-            result_istr->read(to, n);
-            size_t gcount = result_istr->gcount();
+            bool cancelled;
+            size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &cancelled);
 
-            if (gcount != n && !result_istr->eof())
+            if (!cancelled)
             {
-                /// Mark the session as not reusable.
-                sess->attachSessionData(std::string("istream gone bad"));
-
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_FROM_ISTREAM,
-                    "{} at offset {} when reading HTTP response from {} for range [{}, {})",
-                    result_istr->fail() ? "Cannot read from istream" : "Unexpected state of istream",
-                    gcount, uri_.toString(), offset, offset + n);
+                result_istr->ignore(INT64_MAX);
+                sess->attachSessionData(HTTPSessionReusableTag{});
             }
 
-            return gcount;
+            return r;
         }
         catch (const Poco::Exception & e)
         {
-            sess->attachSessionData(e.message());
-
             LOG_ERROR(
                 log,
                 "HTTP request (positioned) to `{}` with range [{}, {}) failed at try {}/{}: {}",
@@ -689,7 +659,7 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
                 throw;
 
             if (auto h = dynamic_cast<const HTTPException*>(&e);
-                !isRetriableError(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(h->getHTTPStatus())))
+                h && !isRetriableError(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(h->getHTTPStatus())))
                 throw;
 
             sleepForMilliseconds(milliseconds_to_wait);
@@ -921,15 +891,11 @@ void LocallyPooledSessionFactory::returnSessionToPool(HTTPSessionPtr s, Poco::UR
         return;
 
     const auto & session_data = s->sessionData();
-    if (!session_data.empty())
+    if (!Poco::AnyCast<HTTPSessionReusableTag>(&session_data))
     {
-        auto msg = Poco::AnyCast<std::string>(session_data);
-        if (!msg.empty())
-        {
-            LOG_TRACE(&Poco::Logger::get("LocallyPooledSessionFactory"),
-                "Not reusing session for {} because of error: {}", uri.toString(), msg);
-            return;
-        }
+        LOG_TRACE(&Poco::Logger::get("LocallyPooledSessionFactory"),
+            "Not reusing session for {}", uri.toString());
+        return;
     }
 
     available.push_back(std::move(s));
@@ -995,77 +961,6 @@ PooledReadWriteBufferFromHTTP::PooledReadWriteBufferFromHTTP(
         out_stream_callback_,
         buffer_size_) {}
 
-
-RangedReadWriteBufferFromHTTPFactory::RangedReadWriteBufferFromHTTPFactory(
-    Poco::URI uri_,
-    std::string method_,
-    OutStreamCallback out_stream_callback_,
-    ConnectionTimeouts timeouts_,
-    const Poco::Net::HTTPBasicCredentials & credentials_,
-    UInt64 max_redirects_,
-    size_t buffer_size_,
-    ReadSettings settings_,
-    HTTPHeaderEntries http_header_entries_,
-    const RemoteHostFilter * remote_host_filter_,
-    bool delay_initialization_,
-    bool use_external_buffer_,
-    bool skip_not_found_url_)
-    : uri(uri_)
-    , method(std::move(method_))
-    , out_stream_callback(out_stream_callback_)
-    , timeouts(std::move(timeouts_))
-    , credentials(credentials_)
-    , max_redirects(max_redirects_)
-    , buffer_size(buffer_size_)
-    , settings(std::move(settings_))
-    , http_header_entries(std::move(http_header_entries_))
-    , remote_host_filter(remote_host_filter_)
-    , session_pool(std::make_shared<LocallyPooledSessionFactory>(timeouts))
-    , delay_initialization(delay_initialization_)
-    , use_external_buffer(use_external_buffer_)
-    , skip_not_found_url(skip_not_found_url_) {}
-
-std::unique_ptr<SeekableReadBuffer> RangedReadWriteBufferFromHTTPFactory::getReader()
-{
-    return std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        method,
-        out_stream_callback,
-        timeouts,
-        credentials,
-        max_redirects,
-        buffer_size,
-        settings,
-        http_header_entries,
-        remote_host_filter,
-        delay_initialization,
-        use_external_buffer,
-        skip_not_found_url,
-        file_info,
-        session_pool);
-}
-
-size_t RangedReadWriteBufferFromHTTPFactory::getFileSize()
-{
-    auto s = getFileInfo().file_size;
-    if (!s)
-        throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
-    return *s;
-}
-
-bool RangedReadWriteBufferFromHTTPFactory::checkIfActuallySeekable()
-{
-    return getFileInfo().seekable;
-}
-
-HTTPFileInfo RangedReadWriteBufferFromHTTPFactory::getFileInfo()
-{
-    if (!file_info)
-        file_info = static_cast<ReadWriteBufferFromHTTP*>(getReader().get())->getFileInfo();
-    return *file_info;
-}
-
-String RangedReadWriteBufferFromHTTPFactory::getFileName() const { return uri.toString(); }
 
 template class UpdatableSession<LocallyPooledSessionFactory>;
 template class UpdatableSession<PooledSessionFactory>;

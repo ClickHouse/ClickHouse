@@ -40,7 +40,6 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_READ_FROM_ISTREAM;
 }
 
 
@@ -168,7 +167,7 @@ bool ReadBufferFromS3::nextImpl()
 }
 
 
-size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin)
+size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback)
 {
     if (n == 0)
         return 0;
@@ -185,24 +184,16 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin)
             auto result = sendRequest(range_begin, range_begin + n - 1);
             std::istream & istr = result.GetBody();
 
-            istr.read(to, n);
-            size_t gcount = istr.gcount();
+            size_t bytes = copyFromIStreamWithProgressCallback(istr, to, n, progress_callback);
 
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, gcount);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes);
 
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(gcount, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+                read_settings.remote_throttler->add(bytes, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
-            if (gcount != n && !istr.eof())
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_FROM_ISTREAM,
-                    "{} at offset {} when reading key: {} from bucket: {} range: [{}, {})",
-                    istr.fail() ? "Cannot read from istream" : "Unexpected state of istream",
-                    gcount, key, bucket, range_begin, range_begin + n);
-
-            return gcount;
+            return bytes;
         }
-        catch (Exception & e)
+        catch (Poco::Exception & e)
         {
             if (!processException(e, range_begin, attempt) || last_attempt)
                 throw;
@@ -213,7 +204,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin)
     }
 }
 
-bool ReadBufferFromS3::processException(Exception & e, size_t read_offset, size_t attempt) const
+bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset, size_t attempt) const
 {
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
@@ -424,21 +415,6 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t range_begin
     }
 }
 
-std::unique_ptr<SeekableReadBuffer> ReadBufferS3Factory::getReader()
-{
-    return std::make_unique<ReadBufferFromS3>(
-        client_ptr,
-        bucket,
-        key,
-        version_id,
-        request_settings,
-        read_settings.adjustBufferSize(object_size));
-}
-
-size_t ReadBufferS3Factory::getFileSize()
-{
-    return object_size;
-}
 }
 
 #endif
