@@ -145,6 +145,8 @@ public:
     Chunk generate() override;
 
 private:
+    friend class StorageS3QueueSource;
+
     String name;
     String bucket;
     String version_id;

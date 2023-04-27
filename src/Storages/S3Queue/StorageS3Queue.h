@@ -13,6 +13,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/S3Queue/S3QueueSettings.h>
+#include <Storages/S3Queue/S3QueueSource.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -126,7 +127,7 @@ private:
     bool supportsSubsetOfColumns() const override;
     static Names getVirtualColumnNames();
 
-    const String mode;
+    String mode;
 
     static const String default_zookeeper_name;
     const String zookeeper_name;
@@ -136,6 +137,7 @@ private:
 
     zkutil::ZooKeeperPtr current_zookeeper;
     mutable std::mutex current_zookeeper_mutex;
+    mutable std::mutex sync_mutex;
 
     void setZooKeeper();
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
@@ -145,6 +147,17 @@ private:
     const String & getZooKeeperName() const { return zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
+    using KeysWithInfo = StorageS3QueueSource::KeysWithInfo;
+
+    std::shared_ptr<StorageS3QueueSource::IIterator> createFileIterator(
+        ContextPtr local_context,
+        ASTPtr query,
+        KeysWithInfo * read_keys = nullptr);
+
+    static std::unordered_set<String> parseCollection(String & files);
+    std::unordered_set<String> getExcludedFiles();
+
+    bool streamToViews();
 };
 
 }
