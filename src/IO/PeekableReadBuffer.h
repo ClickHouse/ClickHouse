@@ -1,7 +1,7 @@
 #pragma once
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <stack>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
@@ -15,6 +15,7 @@ namespace DB
 class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
+
 public:
     explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = 0);
 
@@ -40,6 +41,14 @@ public:
             peeked_size = 0;
         }
         checkpoint.emplace(pos);
+    }
+
+    ALWAYS_INLINE inline size_t offsetFromLastCheckpoint() const
+    {
+        if (recursive_checkpoints_offsets.empty())
+            return offsetFromCheckpoint();
+
+        return offsetFromCheckpoint() - recursive_checkpoints_offsets.top();
     }
 
     /// Forget checkpoint and all data between checkpoint and position
@@ -126,9 +135,12 @@ class PeekableReadBufferCheckpoint : boost::noncopyable
 {
     PeekableReadBuffer & buf;
     bool auto_rollback;
+
 public:
-    explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_, bool auto_rollback_ = false)
-                : buf(buf_), auto_rollback(auto_rollback_) { buf.setCheckpoint(); }
+    explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_, bool auto_rollback_ = false) : buf(buf_), auto_rollback(auto_rollback_)
+    {
+        buf.setCheckpoint();
+    }
     ~PeekableReadBufferCheckpoint()
     {
         if (!buf.checkpoint)
@@ -137,7 +149,6 @@ public:
             buf.rollbackToCheckpoint();
         buf.dropCheckpoint();
     }
-
 };
 
 }

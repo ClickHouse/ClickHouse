@@ -1,5 +1,4 @@
 #include "Processors/Formats/Impl/FreeformRowInputFormat.h"
-#include <tuple>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include "Common/Exception.h"
@@ -86,75 +85,78 @@ static size_t scoreForField(FormatSettings::EscapingRule rule, const DataTypePtr
     return scoreForRule(rule) * scoreForType(type);
 }
 
-std::vector<std::pair<String, String>> JSONFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
+FieldMatcher::Result FieldMatcher::generateResult(String field, size_t offset, size_t index)
 {
-    if (in.eof())
-        return {};
-
-    if (*in.position() != '{')
+    auto type = getDataTypeFromField(field);
+    if (!type)
     {
-        String ret;
-        readJSONField(ret, in);
-        return {{fmt::format("c{}", index), ret}};
+        LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "got null type from field: {}", field);
+        return {.ok = false};
     }
 
+    return {
+        .name_and_type = {fmt::format("c{}", index), type},
+        .field = field,
+        .score = scoreForField(getEscapingRule(), type),
+        .type_score = scoreForType(type),
+        .offset = offset,
+        .ok = !(field.size() <= 1 && isPunctuationASCII(field[0])),
+        .parse_till_newline_as_one_string = (field.ends_with(':') && getName() == "RawByWhitespaceFieldMatcher"),
+    };
+}
 
-    ++in.position();
-    skipWhitespacesAndDelimiters(in);
-
-    std::vector<std::pair<String, String>> ret;
-    while (*in.position() != '}')
+FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, size_t index)
+{
+    try
     {
-        String field_name = JSONUtils::readFieldName(in);
-
-        auto fields = parseFields(in, index); // "index" here doesn't do anything
-
-        for (const auto & [name, field] : fields)
-        {
-            if (name.starts_with("c"))
-                ret.emplace_back(field_name, field);
-            else
-                ret.emplace_back(fmt::format("{}.{}", field_name, name), field);
-        }
-
-        skipWhitespacesAndDelimiters(in);
+        auto field = readFieldByEscapingRule(in);
+        return generateResult(field, in.offsetFromLastCheckpoint(), index);
     }
-
-    ++in.position();
-
-    return ret;
+    catch (Exception & e)
+    {
+        LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Error while parsing: {}", e.message());
+        return {.ok = false};
+    }
 }
 
-std::vector<std::pair<String, String>> CSVFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
+String JSONFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
 {
-    String ret;
-    readCSVField(ret, in, settings.csv);
-    return {{fmt::format("c{}", index), ret}};
+    String field;
+    readJSONField(field, in);
+    return field;
 }
 
-std::vector<std::pair<String, String>> QuotedFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
+String CSVFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
 {
-    String ret;
-    readQuotedField(ret, in);
-    return {{fmt::format("c{}", index), ret}};
+    String field;
+    readCSVField(field, in, settings.csv);
+    return field;
 }
 
-std::vector<std::pair<String, String>> EscapedFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
+String QuotedFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
 {
-    String ret;
-    readEscapedString(ret, in);
-    return {{fmt::format("c{}", index), ret}};
+    String field;
+    readQuotedField(field, in);
+    return field;
 }
 
-std::vector<std::pair<String, String>> RawByWhitespaceFieldMatcher::parseFields(ReadBuffer & in, size_t index) const
+String EscapedFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
 {
-    String ret;
-    readStringUntilWhitespaceDelimiter(ret, in);
-    return {{fmt::format("c{}", index), ret}};
+    String field;
+    readEscapedString(field, in);
+    return field;
+}
+
+String RawByWhitespaceFieldMatcher::readFieldByEscapingRule(PeekableReadBuffer & in) const
+{
+    String field;
+    readStringUntilWhitespaceDelimiter(field, in);
+    return field;
 }
 
 FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSettings & settings_)
-    : max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference)), in(in_)
+    : max_rows_to_check(std::min<size_t>(100, settings_.max_rows_to_read_for_schema_inference))
+    , in(std::make_unique<PeekableReadBuffer>(in_))
 {
     // matchers are pushed in the order of priority, this helps with exiting early and reducing the search tree.
     matchers.emplace_back(std::make_unique<JSONFieldMatcher>(FormatSettings::EscapingRule::JSON, settings_));
@@ -164,105 +166,138 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
     matchers.emplace_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
 }
 
-std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, size_t index)
+std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, size_t index) const
 {
-    skipWhitespacesAndDelimiters(in);
-    char * start = in.position();
-    std::vector<FreeformFieldMatcher::Fields> next_fields;
+    skipWhitespacesAndDelimiters(*in);
+    LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "starting char: {}", *in->position());
+    std::vector<Fields> next_fields;
 
     if (parse_till_newline_as_one_string)
     {
-        auto fields = matchers.back()->parseFields(in, index);
-        NamesAndTypes columns{{fields[0].first, matchers.back()->getDataTypeFromField(fields[0].second)}};
-        next_fields.emplace_back(
-            columns, matchers.size() - 1, scoreForField(matchers.back()->getEscapingRule(), columns[0].type), in.position(), false);
+        auto result = matchers.back()->parseField(*in, index);
+        if (result.ok)
+        {
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("FreeformFieldMatcher"), "field: {}, type: {}", result.field, result.name_and_type.type->getName());
+            next_fields.emplace_back(result, matchers.size() - 1);
+        }
+
+        in->rollbackToCheckpoint();
         return next_fields;
     }
 
-    size_t best_type_score = 0, type_score = 0, fields_score = 0;
+    size_t best_score = 0;
     for (size_t i = 0; const auto & matcher : matchers)
     {
-        try
+        auto result = matcher->parseField(*in, index);
+        if (result.ok)
         {
-            auto fields = matcher->parseFields(in, index);
-            NamesAndTypes columns; // we either add all of the fields or none of them
-            columns.reserve(fields.size());
-            type_score = 0;
-            fields_score = 0;
-
-            for (const auto & [name, field] : fields)
+            // LOG_DEBUG(
+            //     &Poco::Logger::get("FreeformFieldMatcher"), "field: {}, type: {}", result.field, result.name_and_type.type->getName());
+            if (best_score <= 1 || result.type_score > best_score)
             {
-                auto type = matcher->getDataTypeFromField(field);
-                if (type)
-                {
-                    // a single punctuation is not a valid field
-                    if (field.size() == 1 && isPunctuationASCII(field[0]))
-                        continue;
-
-                    columns.emplace_back(name, type);
-
-                    type_score += scoreForType(type);
-                    fields_score += scoreForField(matcher->getEscapingRule(), type);
-
-                    parse_till_newline_as_one_string = field.ends_with(':') && matcher->getName() == "RawByWhitespaceFieldMatcher";
-                }
+                best_score = result.type_score;
+                next_fields.emplace_back(result, i);
             }
-
-            // add a new field only if type_score > best_type_score or if we haven't found a field other than string
-            if (columns.size() == fields.size() && (type_score > best_type_score || best_type_score <= 1))
-            {
-                best_type_score = type_score;
-                next_fields.emplace_back(columns, i, fields_score, in.position(), parse_till_newline_as_one_string);
-            }
-        }
-        catch (Exception & e)
-        {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "fail to parse field: {}", e.message());
         }
 
         ++i;
-        in.position() = start;
+        in->rollbackToCheckpoint();
     }
 
     return next_fields;
 }
 
-void FreeformFieldMatcher::recursivelyGetNextFieldInRow(
-    char * current_pos, Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string)
+void FreeformFieldMatcher::buildSolutions(
+    Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string) const
 {
-    char * tmp = in.position();
-    in.position() = current_pos;
-    if (*in.position() == '\n')
+    if (in->eof() || *in->position() == '\n')
     {
         solutions.push_back(current_solution);
+        LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "solution size: {}", solutions.size());
         return;
     }
 
+    in->setCheckpoint();
     const auto next_fields = readNextFields(parse_till_newline_as_one_string, current_solution.size);
-    for (const auto & fields : next_fields)
+    for (const auto & field : next_fields)
     {
         auto next = current_solution;
-        next.matchers_order.push_back(fields.matcher_index);
-        for (const auto & column : fields.columns)
-            next.columns.push_back(column);
+        next.matchers_order.push_back(field.matcher_index);
+        next.columns.push_back(field.parse_result.name_and_type);
 
-        next.score += fields.score;
-        next.size += fields.columns.size();
+        next.score += field.parse_result.score;
+        next.size += 1;
 
-        recursivelyGetNextFieldInRow(fields.pos, next, solutions, fields.parse_the_rest_as_one_string);
+        in->ignore(field.parse_result.offset);
+        buildSolutions(next, solutions, field.parse_result.parse_till_newline_as_one_string);
+        in->rollbackToCheckpoint();
     }
 
-    in.position() = tmp; // reset to initial position
+    in->dropCheckpoint();
 }
 
-void FreeformFieldMatcher::readRowAndGenerateSolutions(char * pos, std::vector<Solution> & solutions)
+bool FreeformFieldMatcher::validateSolution(Solution solution) const
 {
-    Solution current_solution{.score = 0};
-    recursivelyGetNextFieldInRow(pos, current_solution, solutions, false);
-    skipToNextLineOrEOF(in);
+    in->setCheckpoint();
+    try
+    {
+        // A map mapping column name to an index. This allows transforming multiple rows in one columns into one type.
+        std::unordered_map<String, size_t> column_index;
+        for (size_t i = 0; const auto & [name, _] : solution.columns)
+        {
+            column_index[name] = i++;
+        }
+
+        for (size_t row = 0; row < max_rows_to_check; ++row)
+        {
+            if (in->eof())
+                break;
+
+
+            size_t validated_columns = 0;
+            for (const auto & i : solution.matchers_order)
+            {
+                skipWhitespacesAndDelimiters(*in);
+                auto result = matchers[i]->parseField(*in, validated_columns);
+                if (!result.ok)
+                    break;
+
+                auto type = result.name_and_type.type;
+                auto name = result.name_and_type.name;
+                if (!type || !column_index.contains(name))
+                    break;
+
+                auto type_index = column_index[name];
+                matchers[i]->transformTypesIfPossible(solution.columns[type_index].type, type);
+                if (!solution.columns[type_index].type->equals(*type))
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Received unexpected type after transform attempt");
+
+                ++validated_columns;
+            }
+
+            if (validated_columns < solution.columns.size())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unable to parse the desired number of fields");
+
+            if (!in->eof() && *in->position() != '\n')
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character");
+
+            skipToNextLineOrEOF(*in);
+        }
+
+        in->rollbackToCheckpoint(true);
+        return true;
+    }
+    catch (Exception & e)
+    {
+        LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Solution fails: {}", e.message());
+    }
+
+    in->rollbackToCheckpoint(true);
+    return false;
 }
 
-bool FreeformFieldMatcher::generateSolutionsAndPickBest()
+bool FreeformFieldMatcher::buildSolutionsAndPickBest()
 {
     if (!final_solution.matchers_order.empty())
         // if a solution is found already, we could return immediately
@@ -272,88 +307,37 @@ bool FreeformFieldMatcher::generateSolutionsAndPickBest()
         // possibly by making use of the SchemaCache
         return true;
 
-    skipBOMIfExists(in);
-    if (in.eof())
+    skipBOMIfExists(*in);
+    if (in->eof())
         return false;
 
-    char * start = in.position();
-
     std::vector<Solution> solutions;
-    readRowAndGenerateSolutions(in.position(), solutions);
+    buildSolutions(Solution{.score = 0}, solutions, false);
     if (solutions.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solution.");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solutions set");
 
     ::sort(
         solutions.begin(),
         solutions.end(),
         [](const Solution & first, const Solution & second)
-        { return std::tie(first.score, first.matchers_order) < std::tie(second.score, second.matchers_order); });
+        { return std::tie(first.score, first.matchers_order) > std::tie(second.score, second.matchers_order); });
 
-    // after finding and ranking the solutions, we now run them through max_rows_to_check and pick the first one that works for all rows
+    // after finding and ranking the solutions, we now run them through the next max_rows_to_check rows and pick the first one that works for all of them
+    skipToNextLineOrEOF(*in);
     for (const auto & solution : solutions)
-    {
-        try
+        if (validateSolution(solution))
         {
-            in.position() = start;
-            for (size_t row = 0; row < max_rows_to_check; ++row)
-            {
-                if (in.eof())
-                    break;
-
-                std::unordered_map<String, size_t> field_index;
-                for (size_t i = 0; const auto & [name, _] : solution.columns)
-                {
-                    field_index[name] = i;
-                    ++i;
-                }
-
-                size_t col = 0;
-                for (const auto & i : solution.matchers_order)
-                {
-                    skipWhitespacesAndDelimiters(in);
-                    auto fields = matchers[i]->parseFields(in, col);
-                    for (const auto & [name, field] : fields)
-                    {
-                        auto type = matchers[i]->getDataTypeFromField(field);
-                        if (type && field_index.contains(name))
-                        {
-                            auto type_index = field_index[name];
-                            matchers[i]->transformTypesIfPossible(solution.columns[type_index].type, type);
-                            if (!solution.columns[type_index].type->equals(*type))
-                                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Received unexpected type after transform attempt.");
-
-                            ++col;
-                        }
-                    }
-                }
-
-                if (col + 1 < solution.columns.size())
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unable to parse the desired number of fields.");
-
-                if (!in.eof() && *in.position() != '\n')
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Solution did not end at newline character.");
-
-                skipToNextLineOrEOF(in);
-            }
-
             final_solution = solution;
-            in.position() = start;
             return true;
         }
-        catch (Exception & e)
-        {
-            LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Solution fails: {}", e.message());
-        }
-    }
 
-    in.position() = start;
     return false;
 }
 
 bool FreeformFieldMatcher::parseRow()
 {
-    skipWhitespacesAndDelimiters(in);
-    if (in.eof() || final_solution.matchers_order.empty())
+    skipWhitespacesAndDelimiters(*in);
+    if (in->eof() || final_solution.matchers_order.empty())
         return false;
 
     matched_fields.resize(final_solution.size);
@@ -361,29 +345,26 @@ bool FreeformFieldMatcher::parseRow()
 
     for (size_t col = 0; const auto & i : final_solution.matchers_order)
     {
-        skipWhitespacesAndDelimiters(in);
-        auto fields = matchers[i]->parseFields(in, col);
-        for (const auto & [name, field] : fields)
+        skipWhitespacesAndDelimiters(*in);
+        auto result = matchers[i]->parseField(*in, col);
+        if (!first_row)
         {
-            if (!first_row)
-            {
-                auto it = field_name_to_index.find(name);
-                if (it != field_name_to_index.end())
-                    matched_fields[it->second] = field;
-            }
-            else
-            {
-                field_name_to_index[name] = col;
-                rules[col] = matchers[i]->getEscapingRule();
-                matched_fields[col] = field;
-            }
-
-            ++col;
+            auto it = field_name_to_index.find(result.name_and_type.name);
+            if (it != field_name_to_index.end())
+                matched_fields[it->second] = result.field;
         }
+        else
+        {
+            field_name_to_index[result.name_and_type.name] = col;
+            rules[col] = matchers[i]->getEscapingRule();
+            matched_fields[col] = result.field;
+        }
+
+        ++col;
     }
 
     first_row = false;
-    skipToNextLineOrEOF(in);
+    skipToNextLineOrEOF(*in);
     return true;
 }
 
@@ -407,8 +388,8 @@ bool FreeformRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     if (in->eof())
         return false;
 
-    if (!matcher.generateSolutionsAndPickBest())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text, no solutions found.");
+    if (!matcher.buildSolutionsAndPickBest())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text, no solutions found");
 
     if (matcher.parseRow())
     {
@@ -436,8 +417,8 @@ FreeformSchemaReader::FreeformSchemaReader(ReadBuffer & in_, const FormatSetting
 
 NamesAndTypesList FreeformSchemaReader::readSchema()
 {
-    if (!matcher.generateSolutionsAndPickBest())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text, no solutions found.");
+    if (!matcher.buildSolutionsAndPickBest())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse freeform text, no solutions found");
 
     auto columns = matcher.getNamesAndTypes();
     NamesAndTypesList ret;
