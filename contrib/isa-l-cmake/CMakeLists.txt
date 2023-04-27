@@ -3,7 +3,7 @@ set(ISAL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/isa-l")
 # check nasm compiler
 include(CheckLanguage)
 check_language(ASM_NASM)
-if(NOT CMAKE_ASM_NASM_COMPILER)
+if(NOT CMAKE_ASM_NASM_COMPILER OR CMAKE_ASM_NASM_COMPILER MATCHES "yasm")
     message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
 endif()
 
