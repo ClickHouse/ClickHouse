@@ -7,24 +7,6 @@ toc_max_heading_level: 2
 
 # Format settings {#format-settings}
 
-## display_secrets_in_show_and_select_query {#display_secrets_in_show_and_select_query}
-
-Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
-table functions, and dictionaries.
-User wishing to see secrets must also have
-[`displaySecretsInShowSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
-
-:::info Warning Turning this setting on allows users with all privileges to view secrets immediately.
-Please grant/revoke [`displaySecretsInShowSelect`](../../sql-reference/statements/grant#grant-display-secrets)
-privilege first and turn this setting on after that :::
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 0.
-
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
 
 Enables or disables skipping insertion of extra data.

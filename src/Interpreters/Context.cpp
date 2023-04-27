@@ -1607,6 +1607,11 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+bool Context::displaySecretsInShowSelect() const
+{
+    return shared->server_settings.display_secrets_in_show_and_select_query;
+}
+
 Settings Context::getSettings() const
 {
     auto lock = getLock();
@@ -1619,14 +1624,12 @@ void Context::setSettings(const Settings & settings_)
     const auto old_readonly = settings.readonly;
     const auto old_allow_ddl = settings.allow_ddl;
     const auto old_allow_introspection_functions = settings.allow_introspection_functions;
-    const auto old_display_secrets = settings.display_secrets_in_show_and_select_query;
 
     settings = settings_;
 
     if ((settings.readonly != old_readonly)
         || (settings.allow_ddl != old_allow_ddl)
-        || (settings.allow_introspection_functions != old_allow_introspection_functions)
-        || (settings.display_secrets_in_show_and_select_query != old_display_secrets))
+        || (settings.allow_introspection_functions != old_allow_introspection_functions))
         calculateAccessRights();
 }
 
@@ -1634,8 +1637,7 @@ void Context::recalculateAccessRightsIfNeeded(std::string_view name)
 {
     if (name == "readonly"
         || name == "allow_ddl"
-        || name == "allow_introspection_functions"
-        || name == "display_secrets_in_show_and_select_query")
+        || name == "allow_introspection_functions")
         calculateAccessRights();
 }
 
