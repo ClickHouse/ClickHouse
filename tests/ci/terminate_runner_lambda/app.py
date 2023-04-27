@@ -64,7 +64,7 @@ cached_token = CachedToken(0, "")
 
 
 def get_cached_access_token() -> str:
-    if time.time() - 500 < cached_token.time:
+    if time.time() - 550 < cached_token.time:
         return cached_token.value
     private_key, app_id = get_key_and_app_from_aws()
     payload = {
