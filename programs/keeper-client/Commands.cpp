@@ -24,8 +24,7 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
     else
         path = client->cwd;
 
-    const auto children = client->zookeeper->getChildren(path);
-    for (const auto & child : children)
+    for (const auto & child : client->zookeeper->getChildren(path))
         std::cout << child << " ";
     std::cout << "\n";
 }
@@ -92,6 +91,19 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
         return false;
     node->args.push_back(std::move(arg));
 
+    int mode = zkutil::CreateMode::Persistent;
+
+    if (ParserKeyword{"PERSISTENT"}.ignore(pos, expected))
+        mode = zkutil::CreateMode::Persistent;
+    else if (ParserKeyword{"EPHEMERAL"}.ignore(pos, expected))
+        mode = zkutil::CreateMode::Ephemeral;
+    else if (ParserKeyword{"EPHEMERAL SEQUENTIAL"}.ignore(pos, expected))
+        mode = zkutil::CreateMode::EphemeralSequential;
+    else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
+        mode = zkutil::CreateMode::PersistentSequential;
+
+    node->args.push_back(mode);
+
     return true;
 }
 
@@ -100,7 +112,7 @@ void CreateCommand::execute(const ASTKeeperQuery * query, KeeperClient * client)
     client->zookeeper->create(
         client->getAbsolutePath(query->args[0].safeGet<String>()),
         query->args[1].safeGet<String>(),
-        zkutil::CreateMode::Persistent);
+        static_cast<int>(query->args[2].safeGet<Int64>()));
 }
 
 bool GetCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
