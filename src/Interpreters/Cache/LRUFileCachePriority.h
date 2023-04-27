@@ -54,7 +54,7 @@ public:
 
     void removeAndGetNext(std::lock_guard<std::mutex> &) override;
 
-    void incrementSize(size_t size_increment, std::lock_guard<std::mutex> &) override;
+    void updateSize(int64_t size, std::lock_guard<std::mutex> &) override;
 
     void use(std::lock_guard<std::mutex> &) override;
 
