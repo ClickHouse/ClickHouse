@@ -431,16 +431,13 @@ KeyMetadataPtr FileSegment::tryGetKeyMetadata() const
 
 LockedKeyPtr FileSegment::lockKeyMetadata(bool assert_exists) const
 {
-    KeyMetadataPtr metadata;
     if (assert_exists)
-        metadata = getKeyMetadata();
-    else
-    {
-        metadata = tryGetKeyMetadata();
-        if (!metadata)
-            return nullptr;
-    }
-    return metadata->lock();
+        return getKeyMetadata()->lock();
+
+    auto metadata = tryGetKeyMetadata();
+    if (!metadata)
+        return nullptr;
+    return metadata->tryLock();
 }
 
 bool FileSegment::reserve(size_t size_to_reserve)

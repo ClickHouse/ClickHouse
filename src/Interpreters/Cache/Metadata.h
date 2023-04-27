@@ -58,6 +58,7 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
 
     LockedKeyPtr lock();
 
+    /// Return nullptr if key has non-ACTIVE state.
     LockedKeyPtr tryLock();
 
     bool createBaseDirectory();
