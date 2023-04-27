@@ -63,6 +63,4 @@ protected:
     Poco::Logger * log;
 };
 
-DatabasePtr CreateClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_);
-
 }

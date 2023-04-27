@@ -1,11 +1,9 @@
 #include <Databases/DatabasesOverlay.h>
 
+#include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Common/typeid_cast.h>
-
-#include <Databases/DatabaseFilesystem.h>
-#include <Databases/DatabaseMemory.h>
+#include <Parsers/ASTCreateQuery.h>
 
 #include <Storages/IStorage_fwd.h>
 
@@ -73,14 +71,10 @@ void DatabasesOverlay::dropTable(ContextPtr context_, const String & table_name,
 {
     for (auto & db : databases)
     {
-        try
+        if (db->isTableExist(table_name, context_))
         {
             db->dropTable(context_, table_name, sync);
             return;
-        }
-        catch (...)
-        {
-            continue;
         }
     }
     throw Exception(
@@ -119,16 +113,8 @@ StoragePtr DatabasesOverlay::detachTable(ContextPtr context_, const String & tab
     StoragePtr result = nullptr;
     for (auto & db : databases)
     {
-        try
-        {
-            result = db->detachTable(context_, table_name);
-            if (result)
-                return result;
-        }
-        catch (...)
-        {
-            continue;
-        }
+        if (db->isTableExist(table_name, context_))
+            return db->detachTable(context_, table_name);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
@@ -212,17 +198,10 @@ void DatabasesOverlay::alterTable(ContextPtr local_context, const StorageID & ta
 {
     for (auto & db : databases)
     {
-        try
+        if (!db->isReadOnly() && db->isTableExist(table_id.table_name, local_context))
         {
-            if (!db->isReadOnly())
-            {
-                db->alterTable(local_context, table_id, metadata);
-                return;
-            }
-        }
-        catch (...)
-        {
-            continue;
+            db->alterTable(local_context, table_id, metadata);
+            return;
         }
     }
     throw Exception(
@@ -239,8 +218,8 @@ DatabasesOverlay::getTablesForBackup(const FilterByNameFunction & filter, const 
     std::vector<std::pair<ASTPtr, StoragePtr>> result;
     for (const auto & db : databases)
     {
-        auto dbBackup = db->getTablesForBackup(filter, local_context);
-        result.insert(result.end(), std::make_move_iterator(dbBackup.begin()), std::make_move_iterator(dbBackup.end()));
+        auto db_backup = db->getTablesForBackup(filter, local_context);
+        result.insert(result.end(), std::make_move_iterator(db_backup.begin()), std::make_move_iterator(db_backup.end()));
     }
     return result;
 }
@@ -282,14 +261,6 @@ DatabaseTablesIteratorPtr DatabasesOverlay::getTablesIterator(ContextPtr context
             tables.insert({table_it->name(), table_it->table()});
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
-}
-
-DatabasePtr CreateClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_)
-{
-    auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
-    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
-    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
-    return databaseCombiner;
 }
 
 }
