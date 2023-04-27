@@ -69,6 +69,4 @@ protected:
 
 }
 
-}
-
 #endif
