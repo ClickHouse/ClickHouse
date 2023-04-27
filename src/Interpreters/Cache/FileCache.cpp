@@ -14,6 +14,20 @@
 #include <filesystem>
 
 
+namespace
+{
+
+size_t roundDownToMultiple(size_t num, size_t multiple)
+{
+    return (num / multiple) * multiple;
+}
+
+size_t roundUpToMultiple(size_t num, size_t multiple)
+{
+    return roundDownToMultiple(num + multiple - 1, multiple);
+}
+}
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -37,6 +51,7 @@ FileCache::FileCache(const FileCacheSettings & settings)
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
     , max_stash_element_size(settings.max_elements)
+    , boundary_alignment(settings.boundary_alignment)
 {
 }
 
@@ -194,8 +209,7 @@ FileCache::FileSegmentCell * FileCache::getCell(
     return &cell_it->second;
 }
 
-FileSegments FileCache::getImpl(
-    const Key & key, const FileSegment::Range & range, std::lock_guard<std::mutex> & cache_lock)
+FileSegments FileCache::getImpl(const Key & key, const FileSegment::Range & range, std::lock_guard<std::mutex> & cache_lock)
 {
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
@@ -409,8 +423,13 @@ void FileCache::fillHolesWithEmptyFileSegments(
     }
 }
 
-FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
+FileSegmentsHolder
+FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
 {
+    const auto aligned_offset = roundDownToMultiple(offset, boundary_alignment);
+    const auto aligned_end = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size);
+    const auto aligned_size = aligned_end - aligned_offset;
+
     std::lock_guard cache_lock(mutex);
 
     assertInitialized(cache_lock);
@@ -419,18 +438,25 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     assertCacheCorrectness(key, cache_lock);
 #endif
 
-    FileSegment::Range range(offset, offset + size - 1);
+    FileSegment::Range range(aligned_offset, aligned_offset + aligned_size - 1);
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(key, range, cache_lock);
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock);
+        file_segments = splitRangeIntoCells(key, range.left, range.size(), FileSegment::State::EMPTY, settings, cache_lock);
     }
     else
     {
-        fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */false, settings, cache_lock);
+        fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */ false, settings, cache_lock);
     }
+
+    while (!file_segments.empty() && file_segments.front()->range().right < offset)
+        file_segments.pop_front();
+
+    while (!file_segments.empty() && file_segments.back()->range().left >= offset + size)
+        file_segments.pop_back();
+
     assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
 }

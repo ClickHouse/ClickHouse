@@ -426,6 +426,8 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
 FileSegment::State FileSegment::wait()
 {
+    OpenTelemetry::SpanHolder span{fmt::format("FileSegment::wait({})", key().toString())};
+
     std::unique_lock segment_lock(mutex);
 
     if (is_detached)

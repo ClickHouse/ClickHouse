@@ -1,11 +1,12 @@
 #pragma once
 
-#include "config.h"
-#include <IO/ReadBufferFromFile.h>
+#include <chrono>
+#include <utility>
 #include <IO/AsynchronousReader.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include <utility>
+#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -97,7 +98,7 @@ private:
 
     struct LastPrefetchInfo
     {
-        UInt64 submit_time = 0;
+        std::chrono::system_clock::time_point submit_time;
         size_t priority = 0;
     };
     LastPrefetchInfo last_prefetch_info;

@@ -48,7 +48,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
 #else
@@ -120,7 +120,7 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     else
     {
         CreateFileSegmentSettings create_settings(is_persistent ? FileSegmentKind::Persistent : FileSegmentKind::Regular);
-        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
+        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, file_size.value(), create_settings));
     }
 
     /**
@@ -150,6 +150,8 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     ReadSettings local_read_settings{settings};
     /// Do not allow to use asynchronous version of LocalFSReadMethod.
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
+    if (use_external_buffer)
+        local_read_settings.local_fs_buffer_size = 0;
 
     // The buffer will unnecessarily allocate a Memory of size local_fs_buffer_size, which will then
     // most likely be unused because we're swap()ping our own internal_buffer into
@@ -538,6 +540,9 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
             ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
     });
 
+    OpenTelemetry::SpanHolder span{
+        fmt::format("CachedOnDiskReadBufferFromFile::predownload(key={}, size={})", file_segment->key().toString(), bytes_to_predownload)};
+
     if (bytes_to_predownload)
     {
         /// Consider this case. Some user needed segment [a, b] and downloaded it partially.
@@ -806,6 +811,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (current_file_segment_it == file_segments_holder->file_segments.end())
         return false;
 
+    const size_t original_buffer_size = internal_buffer.size();
+
     bool implementation_buffer_can_be_reused = false;
     SCOPE_EXIT({
         try
@@ -830,6 +837,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     file_segment->completePartAndResetDownloader();
                 }
             }
+
+            if (use_external_buffer && initialized)
+                internal_buffer.resize(original_buffer_size);
 
             chassert(!file_segment->isDownloader());
         }
@@ -856,6 +866,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     chassert(!internal_buffer.empty());
+
+    /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
+    /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
+    if (use_external_buffer && read_type == ReadType::CACHED && settings.local_fs_buffer_size < internal_buffer.size())
+        internal_buffer.resize(settings.local_fs_buffer_size);
 
     // Pass a valid external buffer for implementation_buffer to read into.
     // We then take it back with another swap() after reading is done.

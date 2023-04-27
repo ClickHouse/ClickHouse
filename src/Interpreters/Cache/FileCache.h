@@ -58,7 +58,8 @@ public:
      * As long as pointers to returned file segments are held
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings);
+
     FileSegmentsHolder set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
     /**
@@ -214,6 +215,7 @@ private:
     FileCacheRecords stash_records;
     std::unique_ptr<IFileCachePriority> stash_priority;
     size_t max_stash_element_size;
+    size_t boundary_alignment;
 
     void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
