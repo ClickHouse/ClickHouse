@@ -106,7 +106,7 @@ LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, ssize_t priority
 class LoadTask : private boost::noncopyable
 {
 public:
-    LoadTask(AsyncLoader & loader_, LoadJobSet && jobs_, LoadJobSet && goals_jobs_ = {});
+    LoadTask(AsyncLoader & loader_, LoadJobSet && jobs_, LoadJobSet && goal_jobs_ = {});
     ~LoadTask();
 
     // Merge all jobs from other task into this task.
