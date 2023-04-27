@@ -304,6 +304,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
     /// Add aliases for old column names for backwards compatibility.
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
+    add_alias("part_name", "name");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(tmp_columns);
