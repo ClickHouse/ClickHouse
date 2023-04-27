@@ -91,6 +91,7 @@ LOCALTIMESTAMP
 LibFuzzer
 LineAsString
 LinksDeployment
+LLVM's
 LowCardinality
 MEMTABLE
 MVCC
