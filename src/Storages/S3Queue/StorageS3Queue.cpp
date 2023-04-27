@@ -3,6 +3,14 @@
 #include "IO/ParallelReadBuffer.h"
 #include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+
+#include <IO/WriteBuffer.h>
+#include <IO/ReadBufferFromString.h>
+
 
 #if USE_AWS_S3
 
@@ -23,6 +31,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
 #include <Storages/S3Queue/StorageS3Queue.h>
+#include <Storages/S3Queue/S3QueueSource.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/PartitionedSink.h>
@@ -68,11 +77,16 @@
 
 namespace fs = std::filesystem;
 
+//namespace CurrentMetrics
+//{
+//extern const Metric S3QueueBackgroundReads;
+//}
 
 namespace ProfileEvents
 {
 extern const Event S3DeleteObjects;
 extern const Event S3ListObjects;
+extern const Event S3QueueBackgroundReads;
 }
 
 namespace DB
@@ -151,6 +165,9 @@ StorageS3Queue::StorageS3Queue(
     , zookeeper_name(zkutil::extractZooKeeperName(zookeeper_path_))
     , zookeeper_path(zkutil::extractZooKeeperPath(zookeeper_path_, /* check_starts_with_slash */ true, log))
 {
+    if (!is_key_with_globs) {
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue engine can read only from key with globs");
+    }
     FormatFactory::instance().checkFormatName(format_name);
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(s3_configuration.url.uri);
 
@@ -212,6 +229,7 @@ Pipe StorageS3Queue::read(
     size_t max_block_size,
     size_t num_streams)
 {
+
 //    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
 //        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
 //                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
@@ -239,14 +257,9 @@ Pipe StorageS3Queue::read(
             requested_virtual_columns.push_back(virtual_column);
     }
 
-    std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = StorageS3::createFileIterator(
-        query_s3_configuration,
-        keys,
-        is_key_with_globs,
-        distributed_processing,
+    std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
         local_context,
-        query_info.query,
-        virtual_block);
+        query_info.query);
 
     ColumnsDescription columns_description;
     Block block_for_format;
@@ -273,11 +286,12 @@ Pipe StorageS3Queue::read(
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
     // const size_t max_download_threads = 1;
-    LOG_WARNING(log, "num_streams");
 
+
+    auto zookeeper = getZooKeeper();
     for (size_t i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<StorageS3Source>(
+        pipes.emplace_back(std::make_shared<StorageS3QueueSource>(
             requested_virtual_columns,
             format_name,
             getName(),
@@ -292,14 +306,13 @@ Pipe StorageS3Queue::read(
             query_s3_configuration.url.bucket,
             query_s3_configuration.url.version_id,
             iterator_wrapper,
+            zookeeper,
+            zookeeper_path,
             max_download_threads));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    LOG_WARNING(log, "unitePipes");
-
     narrowPipe(pipe, num_streams);
-    LOG_WARNING(log, "narrowPipe");
 
     return pipe;
 }
@@ -386,10 +399,10 @@ void StorageS3Queue::threadFunc()
         auto table_id = getStorageID();
 
         auto dependencies_count = getTableDependentCount();
-
+        LOG_TRACE(log, "dependencies_count {}", toString(dependencies_count));
         if (dependencies_count)
         {
-            // auto start_time = std::chrono::steady_clock::now();
+            auto start_time = std::chrono::steady_clock::now();
 
             mv_attached.store(true);
             // Keep streaming as long as there are attached views and streaming is not cancelled
@@ -404,20 +417,20 @@ void StorageS3Queue::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                //                if (streamToViews())
-                //                {
-                //                    LOG_TRACE(log, "Stream stalled. Reschedule.");
-                //                    break;
-                //                }
+                if (streamToViews())
+                {
+                    LOG_TRACE(log, "Stream stalled. Reschedule.");
+                    break;
+                }
 
-                //                auto ts = std::chrono::steady_clock::now();
-                //                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
-                //                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
-                //                {
-                //                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
-                //                    reschedule = true;
-                //                    break;
-                //                }
+                auto ts = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
+                if (duration.count() > 600000)
+                {
+                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
+                    reschedule = true;
+                    break;
+                }
             }
         }
     }
@@ -435,6 +448,125 @@ void StorageS3Queue::threadFunc()
         /// Reschedule with backoff.
         task->holder->scheduleAfter(milliseconds_to_wait);
     }
+}
+
+
+bool StorageS3Queue::streamToViews()
+{
+    LOG_TRACE(log, "streamToViews");
+
+    Stopwatch watch;
+
+    auto table_id = getStorageID();
+    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (!table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
+
+    // CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
+    // ProfileEvents::increment(ProfileEvents::S3QueueBackgroundReads);
+
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+
+    // Create an INSERT query for streaming data
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = table_id;
+
+    size_t block_size = 100;
+
+    auto s3queue_context = Context::createCopy(getContext());
+    s3queue_context->makeQueryContext();
+    auto query_s3_configuration = StorageS3::copyAndUpdateConfiguration(s3queue_context, s3_configuration);
+
+    // s3queue_context->applySettingsChanges(settings_adjustments);
+
+    // Create a stream for each consumer and join them in a union stream
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+    InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
+    auto block_io = interpreter.execute();
+    auto column_names = block_io.pipeline.getHeader().getNames();
+
+    // Create a stream for each consumer and join them in a union stream
+    std::vector<NameAndTypePair> requested_virtual_columns;
+
+    for (const auto & virtual_column : getVirtuals())
+    {
+        requested_virtual_columns.push_back(virtual_column);
+    }
+
+    std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
+        s3queue_context,
+        nullptr);
+    ColumnsDescription columns_description;
+    Block block_for_format;
+    if (supportsSubsetOfColumns())
+    {
+        auto fetch_columns = column_names;
+        const auto & virtuals = getVirtuals();
+        std::erase_if(
+            fetch_columns,
+            [&](const String & col)
+            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
+
+        if (fetch_columns.empty())
+            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
+        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+    }
+    else
+    {
+        columns_description = storage_snapshot->metadata->getColumns();
+        block_for_format = storage_snapshot->metadata->getSampleBlock();
+    }
+
+    const size_t max_download_threads = s3queue_context->getSettingsRef().max_download_threads;
+
+    Pipes pipes;
+
+    auto zookeeper = getZooKeeper();
+    size_t num_streams = 1;
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        pipes.emplace_back(std::make_shared<StorageS3QueueSource>(
+            requested_virtual_columns,
+            format_name,
+            getName(),
+            block_for_format,
+            s3queue_context,
+            format_settings,
+            columns_description,
+            block_size,
+            query_s3_configuration.request_settings,
+            compression_method,
+            query_s3_configuration.client,
+            query_s3_configuration.url.bucket,
+            query_s3_configuration.url.version_id,
+            iterator_wrapper,
+            zookeeper,
+            zookeeper_path,
+            max_download_threads));
+    }
+
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
+    // It will be cancelled on underlying layer (kafka buffer)
+
+    std::atomic_size_t rows = 0;
+    {
+        block_io.pipeline.complete(std::move(pipe));
+
+        // we need to read all consumers in parallel (sequential read may lead to situation
+        // when some of consumers are not used, and will break some Kafka consumer invariants)
+        block_io.pipeline.setNumThreads(num_streams);
+
+        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+        CompletedPipelineExecutor executor(block_io.pipeline);
+        executor.execute();
+    }
+
+    bool some_stream_is_stalled = false;
+    return some_stream_is_stalled;
 }
 
 
@@ -474,28 +606,31 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
 
     for (size_t i = 0; i < 1000; ++i)
     {
+        Coordination::Requests ops;
+        auto table_uuid = getStorageID().uuid;
+
         if (zookeeper->exists(zookeeper_path + ""))
         {
+            ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "processing" / toString(table_uuid), "{}",
+                                                       zkutil::CreateMode::Ephemeral));
             LOG_DEBUG(log, "This table {} is already created, will add new replica", zookeeper_path);
-            return false;
         }
-        /// We write metadata of table so that the replicas can check table parameters with them.
-        // String metadata_str = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
+        else
+        {
+            /// We write metadata of table so that the replicas can check table parameters with them.
+            // String metadata_str = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
 
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", "",
-                                                   zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/failed", "",
-                                                   zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processing", "",
-                                                   zkutil::CreateMode::Ephemeral));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(),
-                                                   zkutil::CreateMode::Persistent));
-//        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
-//                                                   zkutil::CreateMode::Persistent));
-
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processed", "[]", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/failed", "[]", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/processing", "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(
+                fs::path(zookeeper_path) / "processing" / toString(table_uuid), "[]", zkutil::CreateMode::Ephemeral));
+            ops.emplace_back(zkutil::makeCreateRequest(
+                zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(), zkutil::CreateMode::Persistent));
+            //        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
+            //                                                   zkutil::CreateMode::Persistent));
+        }
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
@@ -516,6 +651,60 @@ bool StorageS3Queue::createTableIfNotExists(const StorageMetadataPtr & metadata_
                     "Cannot create table, because it is created concurrently every time or because "
                     "of wrong zookeeper_path or because of logical error");
 }
+
+
+std::shared_ptr<StorageS3QueueSource::IIterator> StorageS3Queue::createFileIterator(
+    ContextPtr local_context,
+    ASTPtr query,
+    KeysWithInfo * read_keys)
+{
+    /// Iterate through disclosed globs and make a source for each file
+    auto it =  std::make_shared<StorageS3QueueSource::QueueGlobIterator>(
+        *s3_configuration.client, s3_configuration.url, query, virtual_block,
+        local_context, read_keys, s3_configuration.request_settings);
+    mode = "unordered";
+
+    std::lock_guard lock{sync_mutex};
+    std::unordered_set<String> exclude = getExcludedFiles();
+
+    auto zookeeper = getZooKeeper();
+    auto table_uuid = getStorageID().uuid;
+    Strings processing = it->setProcessing(mode, exclude);
+    zookeeper->set(fs::path(zookeeper_path) / "processing" / toString(table_uuid), toString(processing));
+
+    return it;
+}
+
+std::unordered_set<String> StorageS3Queue::getExcludedFiles() {
+    auto zookeeper = getZooKeeper();
+    std::unordered_set<String> exclude_files;
+
+    String failed = zookeeper->get(zookeeper_path + "/failed");
+    std::unordered_set<String> failed_files = StorageS3QueueSource::parseCollection(failed);
+
+    LOG_DEBUG(log, "failed_files {}", failed_files.size());
+    String processed = zookeeper->get(zookeeper_path + "/processed");
+    std::unordered_set<String> processed_files = StorageS3QueueSource::parseCollection(processed);
+    LOG_DEBUG(log, "processed_files {}", processed_files.size());
+
+    exclude_files.merge(failed_files);
+    exclude_files.merge(processed_files);
+
+    Strings consumer_table_uuids;
+    zookeeper->tryGetChildren(zookeeper_path + "/processing", consumer_table_uuids);
+
+    for (const auto & uuid : consumer_table_uuids)
+    {
+        String processing = zookeeper->get(fs::path(zookeeper_path) / "processing" / toString(uuid));
+        std::unordered_set<String> processing_files = StorageS3QueueSource::parseCollection(processing);
+        LOG_DEBUG(log, "processing {}", processing_files.size());
+        exclude_files.merge(processing_files);
+    }
+
+    return exclude_files;
+}
+
+
 
 void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
 {
