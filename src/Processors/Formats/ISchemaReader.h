@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 /// Base class for schema inference for the data in some specific format.
-/// It reads some data from read buffer and try to determine the schema
+/// It reads some data from read buffer and tries to determine the schema
 /// from read data.
 class ISchemaReader
 {
@@ -173,19 +173,19 @@ void chooseResultColumnType(
                 ErrorCodes::TYPE_MISMATCH,
                 "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
                 "You can specify the type for this column using setting schema_inference_hints",
-                type->getName(),
+                new_type->getName(),
                 column_name,
                 row,
-                new_type->getName());
+                type->getName());
         else
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
                 "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                type->getName(),
+                new_type->getName(),
                 column_name,
                 row,
-                new_type->getName(),
+                type->getName(),
                 hints_parsing_error);
     }
 }

@@ -11,6 +11,7 @@ MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
+
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(started_cluster):
     # Allows read-write access for bucket without authorization.
@@ -87,7 +88,10 @@ def started_cluster():
                 "AWS_ACCESS_KEY_ID": "aws",
                 "AWS_SECRET_ACCESS_KEY": "aws123",
             },
-            main_configs=["configs/use_environment_credentials.xml"],
+            main_configs=[
+                "configs/use_environment_credentials.xml",
+                "configs/named_collections.xml",
+            ],
         )
 
         logging.info("Starting cluster...")
@@ -104,12 +108,39 @@ def started_cluster():
 
 
 def test_with_invalid_environment_credentials(started_cluster):
-    auth = "'minio','minio123'"
-    bucket = started_cluster.minio_restricted_bucket
-
     instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
+
+    for bucket, auth in [
+        (started_cluster.minio_restricted_bucket, "'minio', 'minio123'"),
+        (started_cluster.minio_bucket, "NOSIGN"),
+    ]:
+        instance.query(
+            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth}) select * from numbers(100) settings s3_truncate_on_insert=1"
+        )
+
+        with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+            instance.query(
+                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl')"
+            )
+
+            assert ei.value.returncode == 243
+            assert "HTTP response code: 403" in ei.value.stderr
+
+        assert (
+            "100"
+            == instance.query(
+                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth})"
+            ).strip()
+        )
+
+
+def test_no_sign_named_collections(started_cluster):
+    instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
+
+    bucket = started_cluster.minio_bucket
+
     instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth}) select * from numbers(100) settings s3_truncate_on_insert=1"
+        f"insert into function s3(s3_json_no_sign) select * from numbers(100) settings s3_truncate_on_insert=1"
     )
 
     with pytest.raises(helpers.client.QueryRuntimeException) as ei:
@@ -120,9 +151,4 @@ def test_with_invalid_environment_credentials(started_cluster):
         assert ei.value.returncode == 243
         assert "HTTP response code: 403" in ei.value.stderr
 
-    assert (
-        "100"
-        == instance.query(
-            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth})"
-        ).strip()
-    )
+    assert "100" == instance.query(f"select count() from s3(s3_json_no_sign)").strip()

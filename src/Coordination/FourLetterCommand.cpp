@@ -148,6 +148,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr recalculate_command = std::make_shared<RecalculateCommand>(keeper_dispatcher);
         factory.registerCommand(recalculate_command);
 
+        FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
+        factory.registerCommand(clean_resources_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -521,6 +524,12 @@ String RequestLeaderCommand::run()
 String RecalculateCommand::run()
 {
     keeper_dispatcher.recalculateStorageStats();
+    return "ok";
+}
+
+String CleanResourcesCommand::run()
+{
+    keeper_dispatcher.cleanResources();
     return "ok";
 }
 

@@ -9,7 +9,6 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB

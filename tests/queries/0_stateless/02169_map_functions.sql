@@ -15,6 +15,25 @@ SELECT mapApply((x, y) -> (x, x + 1), materialize(map(1, 0, 2, 0)));
 SELECT mapApply((x, y) -> ('x', 'y'), map(1, 0, 2, 0));
 SELECT mapApply((x, y) -> ('x', 'y'), materialize(map(1, 0, 2, 0)));
 
+SELECT mapUpdate(map('k1', 1, 'k2', 2), map('k1', 11, 'k2', 22));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), map('k1', 11, 'k2', 22));
+SELECT mapUpdate(map('k1', 1, 'k2', 2), materialize(map('k1', 11, 'k2', 22)));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), materialize(map('k1', 11, 'k2', 22)));
+
+SELECT mapUpdate(map('k1', 1, 'k2', 2, 'k3', 3), map('k2', 22, 'k3', 33, 'k4', 44));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2, 'k3', 3)), map('k2', 22, 'k3', 33, 'k4', 44));
+SELECT mapUpdate(map('k1', 1, 'k2', 2, 'k3', 3), materialize(map('k2', 22, 'k3', 33, 'k4', 44)));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2, 'k3', 3)), materialize(map('k2', 22, 'k3', 33, 'k4', 44)));
+
+SELECT mapUpdate(map('k1', 1, 'k2', 2), map('k3', 33, 'k4', 44));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), map('k3', 33, 'k4', 44));
+SELECT mapUpdate(map('k1', 1, 'k2', 2), materialize(map('k3', 33, 'k4', 44)));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), materialize(map('k3', 33, 'k4', 44)));
+
+WITH (range(0, number % 10), range(0, number % 10))::Map(UInt64, UInt64) AS m1,
+     (range(0, number % 10, 2), arrayMap(x -> x * x, range(0, number % 10, 2)))::Map(UInt64, UInt64) AS m2
+SELECT DISTINCT mapUpdate(m1, m2) FROM numbers (100000);
+
 SELECT mapApply(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapApply((x, y) -> (x), map(1, 0, 2, 0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapApply((x, y) -> ('x'), map(1, 0, 2, 0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

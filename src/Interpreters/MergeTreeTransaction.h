@@ -78,6 +78,9 @@ private:
 
     bool finalized TSA_GUARDED_BY(mutex) = false;
 
+    /// Indicates if transaction was read-only before `afterFinalize`
+    bool is_read_only TSA_GUARDED_BY(mutex) = false;
+
     /// Lists of changes made by transaction
     std::unordered_set<StoragePtr> storages TSA_GUARDED_BY(mutex);
     DataPartsVector creating_parts TSA_GUARDED_BY(mutex);

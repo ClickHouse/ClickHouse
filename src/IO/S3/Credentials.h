@@ -9,13 +9,14 @@
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
 
-#    include <Common/logger_useful.h>
 
 #    include <IO/S3/PocoHTTPClient.h>
 
 
 namespace DB::S3
 {
+
+inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -97,9 +98,11 @@ class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWS
     /// See STSAssumeRoleWebIdentityCredentialsProvider.
 
 public:
-    explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration);
+    explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
+        DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
 protected:
     void Reload() override;
 
@@ -114,14 +117,25 @@ private:
     Aws::String token;
     bool initialized = false;
     Poco::Logger * logger;
+    uint64_t expiration_window_seconds;
+};
+
+struct CredentialsConfiguration
+{
+    bool use_environment_credentials = false;
+    bool use_insecure_imds_request = false;
+    uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS;
+    bool no_sign_request = false;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request);
+    S3CredentialsProviderChain(
+        const DB::S3::PocoHTTPClientConfiguration & configuration,
+        const Aws::Auth::AWSCredentials & credentials,
+        CredentialsConfiguration credentials_configuration);
 };
-
 }
 
 #endif

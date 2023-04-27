@@ -11,7 +11,8 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/hex.h>
+#include <base/hex.h>
+#include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -61,16 +62,10 @@ String getSHA1(const String & userdata)
     return String{digest_id.begin(), digest_id.end()};
 }
 
-String generateDigest(const String & userdata)
-{
-    std::vector<String> user_password;
-    boost::split(user_password, userdata, [](char character) { return character == ':'; });
-    return user_password[0] + ":" + base64Encode(getSHA1(userdata));
-}
-
 bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
-    const std::vector<KeeperStorage::AuthID> & current_ids,
+    int64_t session_id,
+    const KeeperStorage::UncommittedState & uncommitted_state,
     std::vector<Coordination::ACL> & result_acls)
 {
     if (request_acls.empty())
@@ -81,14 +76,18 @@ bool fixupACL(
     {
         if (request_acl.scheme == "auth")
         {
-            for (const auto & current_id : current_ids)
-            {
-                valid_found = true;
-                Coordination::ACL new_acl = request_acl;
-                new_acl.scheme = current_id.scheme;
-                new_acl.id = current_id.id;
-                result_acls.push_back(new_acl);
-            }
+            uncommitted_state.forEachAuthInSession(
+                session_id,
+                [&](const KeeperStorage::AuthID & auth_id)
+                {
+                    valid_found = true;
+                    Coordination::ACL new_acl = request_acl;
+
+                    new_acl.scheme = auth_id.scheme;
+                    new_acl.id = auth_id.id;
+
+                    result_acls.push_back(new_acl);
+                });
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
@@ -564,6 +563,32 @@ Coordination::ACLs KeeperStorage::UncommittedState::getACLs(StringRef path) cons
     return storage.acl_map.convertNumber(node_it->value.acl_id);
 }
 
+void KeeperStorage::UncommittedState::forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const
+{
+    const auto call_for_each_auth = [&func](const auto & auth_ids)
+    {
+        for (const auto & auth : auth_ids)
+        {
+            using TAuth = std::remove_reference_t<decltype(auth)>;
+
+            const AuthID * auth_ptr = nullptr;
+            if constexpr (std::is_pointer_v<TAuth>)
+                auth_ptr = auth;
+            else
+                auth_ptr = &auth;
+
+            func(*auth_ptr);
+        }
+    };
+
+    // for committed
+    if (storage.session_and_auth.contains(session_id))
+        call_for_each_auth(storage.session_and_auth.at(session_id));
+    // for uncommitted
+    if (session_and_auth.contains(session_id))
+        call_for_each_auth(session_and_auth.at(session_id));
+}
+
 namespace
 {
 
@@ -927,7 +952,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
         Coordination::ACLs node_acls;
-        if (!fixupACL(request.acls, storage.session_and_auth[session_id], node_acls))
+        if (!fixupACL(request.acls, session_id, storage.uncommitted_state, node_acls))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
         if (request.is_ephemeral)
@@ -1533,10 +1558,8 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADVERSION}};
 
 
-        auto & session_auth_ids = storage.session_and_auth[session_id];
         Coordination::ACLs node_acls;
-
-        if (!fixupACL(request.acls, session_auth_ids, node_acls))
+        if (!fixupACL(request.acls, session_id, uncommitted_state, node_acls))
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
         std::vector<KeeperStorage::Delta> new_deltas
@@ -1840,7 +1863,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZAUTHFAILED}};
 
         std::vector<KeeperStorage::Delta> new_deltas;
-        auto auth_digest = generateDigest(auth_request.data);
+        auto auth_digest = KeeperStorage::generateDigest(auth_request.data);
         if (auth_digest == storage.superdigest)
         {
             KeeperStorage::AuthID auth{"super", ""};
@@ -2418,6 +2441,13 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
 void KeeperStorage::recalculateStats()
 {
     container.recalculateDataSize();
+}
+
+String KeeperStorage::generateDigest(const String & userdata)
+{
+    std::vector<String> user_password;
+    boost::split(user_password, userdata, [](char character) { return character == ':'; });
+    return user_password[0] + ":" + base64Encode(getSHA1(userdata));
 }
 
 

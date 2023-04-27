@@ -31,10 +31,13 @@ SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 # They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
 # updated accordingly
+# The following lists are append only, try to avoid editing them
+# They atill could be cleaned out after the decent time though.
 LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
+        "Bug Fix (user-visible misbehavior in an official stable release)",
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
@@ -95,6 +98,13 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
         print(f"Label '{DO_NOT_TEST_LABEL}' set, skipping remaining checks")
         return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
+    if OK_SKIP_LABELS.intersection(pr_info.labels):
+        return (
+            True,
+            "Don't try new checks for release/backports/cherry-picks",
+            "success",
+        )
+
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
@@ -102,13 +112,6 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
             f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
         )
         return False, "Needs 'can be tested' label", "failure"
-
-    if OK_SKIP_LABELS.intersection(pr_info.labels):
-        return (
-            False,
-            "Don't try new checks for release/backports/cherry-picks",
-            "success",
-        )
 
     return True, "No special conditions apply", "pending"
 
@@ -129,6 +132,7 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
 
     category = ""
     entry = ""
+    description_error = ""
 
     i = 0
     while i < len(lines):
@@ -180,26 +184,36 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
             i += 1
 
     if not category:
-        return "Changelog category is empty", category
-
+        description_error = "Changelog category is empty"
     # Filter out the PR categories that are not for changelog.
-    if re.match(
+    elif re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        return "", category
+        pass  # to not check the rest of the conditions
+    elif category not in CATEGORY_TO_LABEL:
+        description_error, category = f"Category '{category}' is not valid", ""
+    elif not entry:
+        description_error = f"Changelog entry required for category '{category}'"
 
-    if not entry:
-        return f"Changelog entry required for category '{category}'", category
-
-    return "", category
+    return description_error, category
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
+    # The case for special branches like backports and releases without created
+    # PRs, like merged backport branches that are reset immediately after merge
+    if pr_info.number == 0:
+        print("::notice ::Cannot run, no PR exists for the commit")
+        sys.exit(1)
+
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
+    if can_run and OK_SKIP_LABELS.intersection(pr_info.labels):
+        print("::notice :: Early finish the check, running in a special PR")
+        sys.exit(0)
+
     description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)

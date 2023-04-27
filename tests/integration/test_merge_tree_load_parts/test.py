@@ -148,17 +148,17 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
     node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts_2")
 
     def check_parts_loading(node, partition, loaded, failed, skipped):
-        for (min_block, max_block) in loaded:
+        for min_block, max_block in loaded:
             part_name = f"{partition}_{min_block}_{max_block}"
             assert node.contains_in_log(f"Loading Active part {part_name}")
             assert node.contains_in_log(f"Finished loading Active part {part_name}")
 
-        for (min_block, max_block) in failed:
+        for min_block, max_block in failed:
             part_name = f"{partition}_{min_block}_{max_block}"
             assert node.contains_in_log(f"Loading Active part {part_name}")
             assert not node.contains_in_log(f"Finished loading Active part {part_name}")
 
-        for (min_block, max_block) in skipped:
+        for min_block, max_block in skipped:
             part_name = f"{partition}_{min_block}_{max_block}"
             assert not node.contains_in_log(f"Loading Active part {part_name}")
             assert not node.contains_in_log(f"Finished loading Active part {part_name}")

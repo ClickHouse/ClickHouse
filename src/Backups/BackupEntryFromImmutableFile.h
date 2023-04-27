@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IBackupEntry.h>
+#include <IO/ReadSettings.h>
 #include <base/defines.h>
 #include <mutex>
 
@@ -19,6 +20,7 @@ public:
     BackupEntryFromImmutableFile(
         const DiskPtr & disk_,
         const String & file_path_,
+        const ReadSettings & settings_,
         const std::optional<UInt64> & file_size_ = {},
         const std::optional<UInt128> & checksum_ = {},
         const std::shared_ptr<TemporaryFileOnDisk> & temporary_file_ = {});
@@ -37,6 +39,7 @@ public:
 private:
     const DiskPtr disk;
     const String file_path;
+    ReadSettings settings;
     mutable std::optional<UInt64> file_size TSA_GUARDED_BY(get_file_size_mutex);
     mutable std::mutex get_file_size_mutex;
     const std::optional<UInt128> checksum;

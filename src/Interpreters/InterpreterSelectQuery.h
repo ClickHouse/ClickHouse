@@ -215,6 +215,9 @@ private:
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;
 
+    /// For "per replica" filter when multiple replicas are used
+    FilterDAGInfoPtr parallel_replicas_custom_filter_info;
+
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
     /// List of columns to read to execute the query.
