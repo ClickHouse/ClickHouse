@@ -78,6 +78,13 @@ if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
   terminate-and-exit
 fi
 
+# If there is a rebalance event, then the instance could die soon
+# Let's don't wait for it and terminate proactively
+if curl --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
+  echo 'The runner received rebalance recommendation, we are terminating'
+  terminate-and-exit
+fi
+
 # shellcheck disable=SC2046
 docker ps --quiet | xargs --no-run-if-empty docker kill ||:
 # shellcheck disable=SC2046
