@@ -68,7 +68,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
-    ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
+    ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
@@ -324,7 +324,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (limit_with_ties_occured && distinct_on_expression_list)
-            throw Exception("Can not use WITH TIES alongside LIMIT BY/DISTINCT ON", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+            throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
         if (s_by.ignore(pos, expected))
         {
@@ -332,10 +332,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
             /// So we have to ignore WITH TIES exactly in LIMIT BY state.
             if (limit_with_ties_occured)
-                throw Exception("Can not use WITH TIES alongside LIMIT BY/DISTINCT ON", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+                throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
             if (distinct_on_expression_list)
-                throw Exception("Can not use DISTINCT ON alongside LIMIT BY", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use DISTINCT ON alongside LIMIT BY");
 
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
@@ -347,7 +347,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (top_length && limit_length)
-            throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+            throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
     }
     else if (s_offset.ignore(pos, expected))
     {
@@ -360,7 +360,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (s_row.ignore(pos, expected))
         {
             if (s_rows.ignore(pos, expected))
-                throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+                throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
             offset_with_fetch_maybe = true;
         }
         else if (s_rows.ignore(pos, expected))
@@ -372,12 +372,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// OFFSET FETCH clause must exists with "ORDER BY"
             if (!order_expression_list)
-                throw Exception("Can not use OFFSET FETCH clause without ORDER BY", ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY);
+                throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
 
             if (s_first.ignore(pos, expected))
             {
                 if (s_next.ignore(pos, expected))
-                    throw Exception("Can not use FIRST and NEXT together", ErrorCodes::FIRST_AND_NEXT_TOGETHER);
+                    throw Exception(ErrorCodes::FIRST_AND_NEXT_TOGETHER, "Can not use FIRST and NEXT together");
             }
             else if (!s_next.ignore(pos, expected))
                 return false;
@@ -388,7 +388,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (s_row.ignore(pos, expected))
             {
                 if (s_rows.ignore(pos, expected))
-                    throw Exception("Can not use ROW and ROWS together", ErrorCodes::ROW_AND_ROWS_TOGETHER);
+                    throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
             }
             else if (!s_rows.ignore(pos, expected))
                 return false;
@@ -452,7 +452,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// WITH TIES was used without ORDER BY
     if (!order_expression_list && select_query->limit_with_ties)
-        throw Exception("Can not use WITH TIES without ORDER BY", ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY);
+        throw Exception(ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY, "Can not use WITH TIES without ORDER BY");
 
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))

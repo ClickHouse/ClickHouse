@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_sort_proj (x UInt32, y UInt32, PROJECTION p (SELECT x, y ORDER BY y)) ENGINE = MergeTree ORDER BY x"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test_sort_proj (x UInt32, y UInt32, PROJECTION p (SELECT x, y ORDER BY y)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity=8192, index_granularity_bytes='10Mi'"
 $CLICKHOUSE_CLIENT -q "insert into test_sort_proj select number, toUInt32(-number - 1) from numbers(100)"
 
 echo "select where x < 10"

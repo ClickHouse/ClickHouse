@@ -19,7 +19,6 @@
 #include <utility>
 #include <memory>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -198,7 +197,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , join_algorithm(JoinAlgorithm::HASH)
+        , join_algorithm(JoinAlgorithm::DEFAULT)
     {
         clauses.emplace_back().key_names_right = key_names_right;
         table_join.kind = kind;
@@ -209,7 +208,7 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getTemporaryVolume() { return tmp_volume; }
+    VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {

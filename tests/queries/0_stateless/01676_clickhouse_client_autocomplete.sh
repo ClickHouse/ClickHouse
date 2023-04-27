@@ -34,9 +34,9 @@ set timeout 60
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
-    eof { exp_continue }
+    -i \$any_spawn_id eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    -i \$any_spawn_id timeout { exit 1 }
 }
 
 spawn bash -c "$*"

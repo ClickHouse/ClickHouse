@@ -1,5 +1,5 @@
 #include <Access/Authentication.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
@@ -187,7 +187,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throw Exception("areCredentialsValid(): authentication type " + toString(auth_data.getType()) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "areCredentialsValid(): authentication type {} not supported", toString(auth_data.getType()));
 }
 
 }

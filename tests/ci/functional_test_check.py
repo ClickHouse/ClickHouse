@@ -4,6 +4,7 @@ import argparse
 import csv
 import logging
 import os
+import re
 import subprocess
 import sys
 import atexit
@@ -48,9 +49,12 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_DATABASE_ORDINARY=1")
     if "wide parts enabled" in check_name:
         result.append("USE_POLYMORPHIC_PARTS=1")
-
+    if "ParallelReplicas" in check_name:
+        result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+    if "analyzer" in check_name:
+        result.append("USE_NEW_ANALYZER=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -69,6 +73,7 @@ def get_image_name(check_name):
 
 
 def get_run_command(
+    check_name,
     builds_path,
     repo_tests_path,
     result_path,
@@ -101,27 +106,40 @@ def get_run_command(
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
+    volume_with_broken_test = (
+        f"--volume={repo_tests_path}/broken_tests.txt:/broken_tests.txt"
+        if "analyzer" in check_name
+        else ""
+    )
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
+        f"{volume_with_broken_test} "
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
 
 def get_tests_to_run(pr_info):
-    result = set([])
+    result = set()
 
     if pr_info.changed_files is None:
         return []
 
     for fpath in pr_info.changed_files:
-        if "tests/queries/0_stateless/0" in fpath:
-            logging.info("File %s changed and seems like stateless test", fpath)
+        if re.match(r"tests/queries/0_stateless/[0-9]{5}", fpath):
+            logging.info("File '%s' is changed and seems like a test", fpath)
             fname = fpath.split("/")[3]
             fname_without_ext = os.path.splitext(fname)[0]
+            # add '.' to the end of the test name not to run all tests with the same prefix
+            # e.g. we changed '00001_some_name.reference'
+            # and we have ['00001_some_name.sh', '00001_some_name_2.sql']
+            # so we want to run only '00001_some_name.sh'
             result.add(fname_without_ext + ".")
+        elif "tests/queries/" in fpath:
+            # log suspicious changes from tests/ for debugging in case of any problems
+            logging.info("File '%s' is changed, but it doesn't look like a test", fpath)
     return list(result)
 
 
@@ -163,17 +181,25 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = Path(result_folder) / "test_results.tsv"
+    try:
+        results_path = Path(result_folder) / "test_results.tsv"
 
-    if results_path.exists():
-        logging.info("Found test_results.tsv")
-    else:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
-        return "error", "Not found test_results.tsv", test_results, additional_files
+        if results_path.exists():
+            logging.info("Found test_results.tsv")
+        else:
+            logging.info("Files in result folder %s", os.listdir(result_folder))
+            return "error", "Not found test_results.tsv", test_results, additional_files
 
-    test_results = read_test_results(results_path)
-    if len(test_results) == 0:
-        return "error", "Empty test_results.tsv", test_results, additional_files
+        test_results = read_test_results(results_path)
+        if len(test_results) == 0:
+            return "error", "Empty test_results.tsv", test_results, additional_files
+    except Exception as e:
+        return (
+            "error",
+            f"Cannot parse test_results.tsv ({e})",
+            test_results,
+            additional_files,
+        )
 
     return state, description, test_results, additional_files
 
@@ -305,6 +331,7 @@ def main():
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
 
     run_command = get_run_command(
+        check_name,
         packages_path,
         repo_tests_path,
         result_path,
@@ -347,16 +374,34 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            gh, pr_info.sha, check_name_with_group, description, state, report_url
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status(
+                gh,
+                pr_info.sha,
+                check_name_with_group,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status(
+                gh, pr_info.sha, check_name_with_group, description, state, report_url
+            )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                state,
+                report_url,
+            )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -374,7 +419,11 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

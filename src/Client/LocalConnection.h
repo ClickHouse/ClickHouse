@@ -7,6 +7,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -93,8 +94,6 @@ public:
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
 
-    int getBcryptWorkfactor() const override { return 12; }
-
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -112,7 +111,7 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 

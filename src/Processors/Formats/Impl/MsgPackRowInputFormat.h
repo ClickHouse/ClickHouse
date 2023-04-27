@@ -19,10 +19,15 @@ class ReadBuffer;
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
+    MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
+
     struct Info
     {
         IColumn & column;
         DataTypePtr type;
+        bool is_tuple_element;
+        std::optional<size_t> array_size;
+        UInt8 * read;
     };
 
     /// These functions are called when parser meets corresponding object in parsed data
@@ -34,7 +39,7 @@ public:
     bool visit_bin(const char * value, size_t size);
     bool visit_boolean(bool value);
     bool start_array(size_t size);
-    bool end_array();
+    bool end_array_item();
     bool visit_nil();
     bool start_map(uint32_t size);
     bool start_map_key();
@@ -47,25 +52,26 @@ public:
     [[noreturn]] void parse_error(size_t parsed_offset, size_t error_offset);
 
     /// Update info_stack
-    void set_info(IColumn & column, DataTypePtr type);
+    void set_info(IColumn & column, DataTypePtr type, UInt8 & read);
     void reset();
 
 private:
     /// Stack is needed to process arrays and maps
     std::stack<Info> info_stack;
+    bool null_as_default;
 };
 
 class MsgPackRowInputFormat : public IRowInputFormat
 {
 public:
-    MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
+    MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
 
 private:
-    MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_);
+    MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 

@@ -186,9 +186,8 @@ String ParsedTemplateFormatString::dump() const
 
 void ParsedTemplateFormatString::throwInvalidFormat(const String & message, size_t column) const
 {
-    throw Exception("Invalid format string for Template: " + message + " (near column " + std::to_string(column) +
-                    ")" + ". Parsed format string:\n" + dump() + "\n",
-                    ErrorCodes::INVALID_TEMPLATE_FORMAT);
+    throw Exception(ErrorCodes::INVALID_TEMPLATE_FORMAT, "Invalid format string for Template: {} (near column {}). "
+                    "Parsed format string:\n{}\n", message, std::to_string(column), dump());
 }
 
 }

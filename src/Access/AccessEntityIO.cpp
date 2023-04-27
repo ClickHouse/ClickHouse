@@ -80,53 +80,53 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
         if (auto * create_user_query = query->as<ASTCreateUserQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = user = std::make_unique<User>();
             InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = role = std::make_unique<Role>();
             InterpreterCreateRoleQuery::updateRoleFromQuery(*role, *create_role_query);
         }
         else if (auto * create_policy_query = query->as<ASTCreateRowPolicyQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = policy = std::make_unique<RowPolicy>();
             InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
         }
         else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = quota = std::make_unique<Quota>();
             InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
         }
         else if (auto * create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = profile = std::make_unique<SettingsProfile>();
             InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
         }
         else if (auto * grant_query = query->as<ASTGrantQuery>())
         {
             if (!user && !role)
-                throw Exception("A user or role should be attached before grant", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "A user or role should be attached before grant");
             if (user)
                 InterpreterGrantQuery::updateUserFromQuery(*user, *grant_query);
             else
                 InterpreterGrantQuery::updateRoleFromQuery(*role, *grant_query);
         }
         else
-            throw Exception("No interpreter found for query " + query->getID(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+            throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "No interpreter found for query {}", query->getID());
     }
 
     if (!res)
-        throw Exception("No access entities attached", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+        throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "No access entities attached");
 
     return res;
 }

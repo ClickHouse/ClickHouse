@@ -10,7 +10,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int EMPTY_DATA_PASSED;
-    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 template <typename T>
@@ -18,7 +18,7 @@ EnumValues<T>::EnumValues(const Values & values_)
     : values(values_)
 {
     if (values.empty())
-        throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
 
     ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
     {
@@ -37,17 +37,15 @@ void EnumValues<T>::fillMaps()
             { StringRef{name_and_value.first}, name_and_value.second });
 
         if (!inserted_value.second)
-            throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and " + toString(inserted_value.first->getMapped()),
-                ErrorCodes::SYNTAX_ERROR};
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate names in enum: '{}' = {} and {}",
+                    name_and_value.first, toString(name_and_value.second), toString(inserted_value.first->getMapped()));
 
         const auto inserted_name = value_to_name_map.insert(
             { name_and_value.second, StringRef{name_and_value.first} });
 
         if (!inserted_name.second)
-            throw Exception{"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + toString((*inserted_name.first).first) + "'",
-                ErrorCodes::SYNTAX_ERROR};
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate values in enum: '{}' = {} and '{}'",
+                    name_and_value.first, toString(name_and_value.second), toString((*inserted_name.first).first));
     }
 }
 
@@ -71,7 +69,7 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
         }
         auto hints = this->getHints(field_name.toString());
         auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
-        throw Exception{"Unknown element '" + field_name.toString() + "' for enum" + hints_string, ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element '{}' for enum{}", field_name.toString(), hints_string);
     }
     return it->getMapped();
 }

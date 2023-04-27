@@ -47,15 +47,16 @@ void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::
         else if (scope == "subtree")   params.scope = LDAPClient::SearchParams::Scope::SUBTREE;
         else if (scope == "children")  params.scope = LDAPClient::SearchParams::Scope::CHILDREN;
         else
-            throw Exception("Invalid value for 'scope' field of LDAP search parameters in '" + prefix +
-                "' section, must be one of 'base', 'one_level', 'subtree', or 'children'", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid value for 'scope' field of LDAP search parameters "
+                            "in '{}' section, must be one of 'base', 'one_level', 'subtree', or 'children'", prefix);
     }
 }
 
 void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConfiguration & config, const String & name)
 {
     if (name.empty())
-        throw Exception("LDAP server name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty");
 
     const String ldap_server_config = "ldap_servers." + name;
 
@@ -77,17 +78,17 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
 
     if (!has_host)
-        throw Exception("Missing 'host' entry", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
 
     params.host = config.getString(ldap_server_config + ".host");
 
     if (params.host.empty())
-        throw Exception("Empty 'host' entry", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'host' entry");
 
     if (has_bind_dn)
     {
         if (has_auth_dn_prefix || has_auth_dn_suffix)
-            throw Exception("Deprecated 'auth_dn_prefix' and 'auth_dn_suffix' entries cannot be used with 'bind_dn' entry", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deprecated 'auth_dn_prefix' and 'auth_dn_suffix' entries cannot be used with 'bind_dn' entry");
 
         params.bind_dn = config.getString(ldap_server_config + ".bind_dn");
     }
@@ -120,7 +121,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (enable_tls_lc_str == "starttls")
             params.enable_tls = LDAPClient::Params::TLSEnable::YES_STARTTLS;
         else if (config.getBool(ldap_server_config + ".enable_tls"))
-            params.enable_tls = LDAPClient::Params::TLSEnable::YES; //-V1048
+            params.enable_tls = LDAPClient::Params::TLSEnable::YES;
         else
             params.enable_tls = LDAPClient::Params::TLSEnable::NO;
     }
@@ -139,9 +140,11 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_minimum_protocol_version_lc_str == "tls1.1")
             params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_1;
         else if (tls_minimum_protocol_version_lc_str == "tls1.2")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2; //-V1048
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2;
         else
-            throw Exception("Bad value for 'tls_minimum_protocol_version' entry, allowed values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Bad value for 'tls_minimum_protocol_version' entry, allowed values are: "
+                            "'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'");
     }
 
     if (has_tls_require_cert)
@@ -156,9 +159,11 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_require_cert_lc_str == "try")
             params.tls_require_cert = LDAPClient::Params::TLSRequireCert::TRY;
         else if (tls_require_cert_lc_str == "demand")
-            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND; //-V1048
+            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND;
         else
-            throw Exception("Bad value for 'tls_require_cert' entry, allowed values are: 'never', 'allow', 'try', 'demand'", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Bad value for 'tls_require_cert' entry, allowed values are: "
+                            "'never', 'allow', 'try', 'demand'");
     }
 
     if (has_tls_cert_file)
@@ -180,7 +185,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     {
         UInt32 port = config.getUInt(ldap_server_config + ".port");
         if (port > 65535)
-            throw Exception("Bad value for 'port' entry", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad value for 'port' entry");
 
         params.port = port;
     }
@@ -212,13 +217,13 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
     }
 
     if (reealm_key_count > 0 && principal_keys_count > 0)
-        throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Realm and principal name cannot be specified simultaneously");
 
     if (reealm_key_count > 1)
-        throw Exception("Multiple realm sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple realm sections are not allowed");
 
     if (principal_keys_count > 1)
-        throw Exception("Multiple principal sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple principal sections are not allowed");
 
     params.realm = config.getString("kerberos.realm", "");
     params.principal = config.getString("kerberos.principal", "");
@@ -274,10 +279,10 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     }
 
     if (ldap_servers_key_count > 1)
-        throw Exception("Multiple ldap_servers sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple ldap_servers sections are not allowed");
 
     if (kerberos_keys_count > 1)
-        throw Exception("Multiple kerberos sections are not allowed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple kerberos sections are not allowed");
 
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
@@ -291,7 +296,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
                 ldap_server_name.resize(bracket_pos);
 
             if (ldap_client_params_blueprint.contains(ldap_server_name))
-                throw Exception("Multiple LDAP servers with the same name are not allowed", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple LDAP servers with the same name are not allowed");
 
             LDAPClient::Params ldap_client_params_tmp;
             parseLDAPServer(ldap_client_params_tmp, config, ldap_server_name);
@@ -346,7 +351,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
         // Retrieve the server parameters.
         const auto pit = ldap_client_params_blueprint.find(server);
         if (pit == ldap_client_params_blueprint.end())
-            throw Exception("LDAP server '" + server + "' is not configured", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
 
         params = pit->second;
         params->user = credentials.getUserName();
@@ -461,7 +466,7 @@ bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, cons
     std::scoped_lock lock(mutex);
 
     if (!kerberos_params.has_value())
-        throw Exception("Kerberos is not enabled", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kerberos is not enabled");
 
     if (!credentials.isReady())
         return false;
@@ -480,7 +485,7 @@ GSSAcceptorContext::Params ExternalAuthenticators::getKerberosParams() const
     std::scoped_lock lock(mutex);
 
     if (!kerberos_params.has_value())
-        throw Exception("Kerberos is not enabled", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kerberos is not enabled");
 
     return kerberos_params.value();
 }

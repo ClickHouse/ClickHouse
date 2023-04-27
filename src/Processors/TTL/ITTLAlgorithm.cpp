@@ -59,7 +59,7 @@ UInt32 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) 
             return column_const->getValue<UInt32>();
     }
 
-    throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
 }
 
 }

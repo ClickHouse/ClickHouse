@@ -1,3 +1,4 @@
+#include <exception>
 #include <optional>
 #include <string_view>
 
@@ -8,14 +9,16 @@
 #include <Poco/Logger.h>
 #include <Poco/RegularExpression.h>
 
-#include "Common/Exception.h"
 #include <Common/ArenaUtils.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/Regexps.h>
+#include <Functions/checkHyperscanRegexp.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
@@ -32,6 +35,7 @@
 
 #if USE_VECTORSCAN
 #    include <hs.h>
+#    include <hs_compile.h>
 #endif
 
 namespace DB
@@ -44,6 +48,7 @@ namespace ErrorCodes
     extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
     extern const int UNSUPPORTED_METHOD;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
+    extern const int LOGICAL_ERROR;
 }
 
 const std::string kRegExp = "regexp";
@@ -75,7 +80,9 @@ namespace
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot parse {} for data type {}, Reason is: {}", raw, data_type->getName(), getCurrentExceptionMessage(false));
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                        "Cannot parse {} for data type {}, Reason is: {}",
+                        raw, data_type->getName(), getCurrentExceptionMessage(false));
     }
 }
 
@@ -86,8 +93,26 @@ struct RegExpTreeDictionary::RegexTreeNode
     UInt64      parent_id;
     std::string regex;
     re2_st::RE2 searcher;
+
     RegexTreeNode(UInt64 id_, UInt64 parent_id_, const String & regex_, const re2_st::RE2::Options & regexp_options):
         id(id_), parent_id(parent_id_), regex(regex_), searcher(regex_, regexp_options) {}
+
+    bool match(const char * haystack, size_t size) const
+    {
+        return searcher.Match(haystack, 0, size, re2_st::RE2::Anchor::UNANCHORED, nullptr, 0);
+    }
+
+    /// check if this node can cover all the attributes from the query.
+    bool containsAll(const std::unordered_map<String, const DictionaryAttribute &> & matching_attributes) const
+    {
+        for (const auto & [key, value] : matching_attributes)
+        {
+            if (!attributes.contains(key))
+                return false;
+        }
+        return true;
+    }
+
     struct AttributeValue
     {
         Field field;
@@ -116,7 +141,7 @@ std::vector<StringPiece> createStringPieces(const String & value, int num_captur
                 }
                 int ref_num = value[i+1]-'0';
                 if (ref_num >= num_captures)
-                    LOG_DEBUG(logger,
+                    LOG_TRACE(logger,
                         "Reference Id {} in set string is invalid, the regexp {} only has {} capturing groups",
                         ref_num, regex, num_captures-1);
                 result.push_back(StringPiece(ref_num));
@@ -135,7 +160,7 @@ std::vector<StringPiece> createStringPieces(const String & value, int num_captur
 
 void RegExpTreeDictionary::calculateBytesAllocated()
 {
-    for (const String & regex : regexps)
+    for (const String & regex : simple_regexps)
         bytes_allocated += regex.size();
     bytes_allocated += sizeof(UInt64) * regexp_ids.size();
     bytes_allocated += (sizeof(RegexTreeNode) + sizeof(UInt64)) * regex_nodes.size();
@@ -163,38 +188,69 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         if (id == 0)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are invalid id {}", id);
 
-        regexps.push_back(regex);
-        regexp_ids.push_back(id);
 
         re2_st::RE2::Options regexp_options;
         regexp_options.set_log_errors(false);
-        RegexTreeNodePtr node = std::make_unique<RegexTreeNode>(id, parent_id, regex, regexp_options);
+        RegexTreeNodePtr node = std::make_shared<RegexTreeNode>(id, parent_id, regex, regexp_options);
 
         int num_captures = std::min(node->searcher.NumberOfCapturingGroups() + 1, 10);
 
         Array keys = (*keys_column)[i].safeGet<Array>();
         Array values = (*values_column)[i].safeGet<Array>();
         size_t keys_size = keys.size();
-        for (size_t i = 0; i < keys_size; i++)
+        for (size_t j = 0; j < keys_size; j++)
         {
-            const String & name = keys[i].safeGet<String>();
-            const String & value = values[i].safeGet<String>();
-            if (structure.hasAttribute(name))
+            const String & name_ = keys[j].safeGet<String>();
+            const String & value = values[j].safeGet<String>();
+            if (structure.hasAttribute(name_))
             {
-                const auto & attr = structure.getAttribute(name);
+                const auto & attr = structure.getAttribute(name_);
                 auto string_pieces = createStringPieces(value, num_captures, regex, logger);
                 if (!string_pieces.empty())
                 {
-                    node->attributes[name] = RegexTreeNode::AttributeValue{.field = values[i], .pieces = std::move(string_pieces)};
+                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = values[j], .pieces = std::move(string_pieces)};
                 }
                 else
                 {
-                    Field field = parseStringToField(values[i].safeGet<String>(), attr.type);
-                    node->attributes[name] = RegexTreeNode::AttributeValue{.field = std::move(field)};
+                    Field field = parseStringToField(values[j].safeGet<String>(), attr.type);
+                    node->attributes[name_] = RegexTreeNode::AttributeValue{.field = std::move(field)};
                 }
             }
         }
-        regex_nodes.emplace(id, std::move(node));
+        regex_nodes.emplace(id, node);
+
+#if USE_VECTORSCAN
+        String required_substring;
+        bool is_trivial, required_substring_is_prefix;
+        std::vector<std::string> alternatives;
+
+        if (use_vectorscan)
+            OptimizedRegularExpression::analyze(regex, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+
+        for (auto & alter : alternatives)
+        {
+            if (alter.size() < 3)
+            {
+                alternatives.clear();
+                break;
+            }
+        }
+        if (!required_substring.empty())
+        {
+            simple_regexps.push_back(required_substring);
+            regexp_ids.push_back(id);
+        }
+        else if (!alternatives.empty())
+        {
+            for (auto & alternative : alternatives)
+            {
+                simple_regexps.push_back(alternative);
+                regexp_ids.push_back(id);
+            }
+        }
+        else
+#endif
+            complex_regexp_nodes.push_back(node);
     }
 }
 
@@ -215,16 +271,18 @@ void RegExpTreeDictionary::initGraph()
     for (const auto & [id, value]: regex_nodes)
         if (value->parent_id == 0) // this is root node.
             initTopologyOrder(id, visited, topology_id);
+    /// If there is a cycle and all nodes have a parent, this condition will be met.
     if (topology_order.size() != regex_nodes.size())
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree");
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "The regexp tree is cyclical. Please check your config.");
 }
 
 void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id)
 {
     visited.insert(node_idx);
     for (UInt64 child_idx : regex_nodes[node_idx]->children)
+        /// there is a cycle when dfs the graph.
         if (visited.contains(child_idx))
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "The regexp tree is cyclical. Please check your config.");
         else
             initTopologyOrder(child_idx, visited, topology_id);
     topology_order[node_idx] = topology_id++;
@@ -243,12 +301,57 @@ void RegExpTreeDictionary::loadData()
             initRegexNodes(block);
         }
         initGraph();
-        #if USE_VECTORSCAN
-        std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
-        hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
-        /// TODO: fallback when exceptions occur.
-        hyperscan_regex->get();
-        #endif
+        if (simple_regexps.empty() && complex_regexp_nodes.empty())
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
+        LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", simple_regexps.size(), complex_regexp_nodes.size());
+        /// If all the regexps cannot work with hyperscan, we should set this flag off to avoid exceptions.
+        if (simple_regexps.empty())
+            use_vectorscan = false;
+        if (!use_vectorscan)
+            return;
+
+#if USE_VECTORSCAN
+        std::vector<const char *> patterns;
+        std::vector<unsigned int> flags;
+        std::vector<size_t> lengths;
+
+        for (const std::string & simple_regexp : simple_regexps)
+        {
+            patterns.push_back(simple_regexp.data());
+            lengths.push_back(simple_regexp.size());
+            flags.push_back(HS_FLAG_SINGLEMATCH);
+        }
+
+        hs_database_t * db = nullptr;
+        hs_compile_error_t * compile_error;
+
+        std::unique_ptr<unsigned int[]> ids;
+        ids.reset(new unsigned int[patterns.size()]);
+        for (size_t i = 0; i < patterns.size(); i++)
+            ids[i] = static_cast<unsigned>(i+1);
+
+        hs_error_t err = hs_compile_lit_multi(patterns.data(), flags.data(), ids.get(), lengths.data(), static_cast<unsigned>(patterns.size()), HS_MODE_BLOCK, nullptr, &db, &compile_error);
+        origin_db = (db);
+        if (err != HS_SUCCESS)
+        {
+            /// CompilerError is a unique_ptr, so correct memory free after the exception is thrown.
+            MultiRegexps::CompilerErrorPtr error(compile_error);
+
+            if (error->expression < 0)
+                throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
+        }
+
+        /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
+        /// function which is faster than allocating scratch space each time in each thread.
+        hs_scratch_t * scratch = nullptr;
+        err = hs_alloc_scratch(db, &scratch);
+        origin_scratch.reset(scratch);
+        /// If not HS_SUCCESS, it is guaranteed that the memory would not be allocated for scratch.
+        if (err != HS_SUCCESS)
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
+#endif
 
     }
     else
@@ -258,8 +361,17 @@ void RegExpTreeDictionary::loadData()
 }
 
 RegExpTreeDictionary::RegExpTreeDictionary(
-    const StorageID & id_, const DictionaryStructure & structure_, DictionarySourcePtr source_ptr_, Configuration configuration_)
-    : IDictionary(id_), structure(structure_), source_ptr(source_ptr_), configuration(configuration_), logger(&Poco::Logger::get("RegExpTreeDictionary"))
+    const StorageID & id_,
+    const DictionaryStructure & structure_,
+    DictionarySourcePtr source_ptr_,
+    Configuration configuration_,
+    bool use_vectorscan_)
+    : IDictionary(id_),
+      structure(structure_),
+      source_ptr(source_ptr_),
+      configuration(configuration_),
+      use_vectorscan(use_vectorscan_),
+      logger(&Poco::Logger::get("RegExpTreeDictionary"))
 {
     if (auto * ch_source = typeid_cast<ClickHouseDictionarySource *>(source_ptr.get()))
     {
@@ -277,12 +389,15 @@ RegExpTreeDictionary::RegExpTreeDictionary(
     calculateBytesAllocated();
 }
 
-String processBackRefs(const String & data, const re2_st::RE2 & searcher, const std::vector<StringPiece> & pieces)
+std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 & searcher, const std::vector<StringPiece> & pieces)
 {
     re2_st::StringPiece haystack(data.data(), data.size());
     re2_st::StringPiece matches[10];
     String result;
     searcher.Match(haystack, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
+    /// if the pattern is a single '$1' but fails to match, we would use the default value.
+    if (pieces.size() == 1 && pieces[0].ref_num >= 0 && pieces[0].ref_num < 10 && matches[pieces[0].ref_num].empty())
+        return std::make_pair(result, true);
     for (const auto & item : pieces)
     {
         if (item.ref_num >= 0 && item.ref_num < 10)
@@ -290,7 +405,7 @@ String processBackRefs(const String & data, const re2_st::RE2 & searcher, const 
         else
             result += item.literal;
     }
-    return result;
+    return {result, false};
 }
 
 // walk towards root and collect attributes.
@@ -300,105 +415,138 @@ bool RegExpTreeDictionary::setAttributes(
     std::unordered_map<String, Field> & attributes_to_set,
     const String & data,
     std::unordered_set<UInt64> & visited_nodes,
-    const std::unordered_map<String, const DictionaryAttribute &> & attributes) const
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    const std::unordered_map<String, ColumnPtr> & defaults,
+    size_t key_index) const
 {
 
     if (visited_nodes.contains(id))
         return attributes_to_set.size() == attributes.size();
     visited_nodes.emplace(id);
     const auto & node_attributes = regex_nodes.at(id)->attributes;
-    for (const auto & [name, value] : node_attributes)
+    for (const auto & [name_, value] : node_attributes)
     {
-        if (!attributes.contains(name) || attributes_to_set.contains(name))
+        if (!attributes.contains(name_) || attributes_to_set.contains(name_))
             continue;
         if (value.containsBackRefs())
         {
-            String updated_str = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
-            attributes_to_set[name] = parseStringToField(updated_str, attributes.at(name).type);
+            auto [updated_str, use_default] = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
+            if (use_default)
+            {
+                DefaultValueProvider default_value(attributes.at(name_).null_value, defaults.at(name_));
+                attributes_to_set[name_] = default_value.getDefaultValue(key_index);
+            }
+            else
+                attributes_to_set[name_] = parseStringToField(updated_str, attributes.at(name_).type);
         }
         else
-            attributes_to_set[name] = value.field;
+            attributes_to_set[name_] = value.field;
     }
 
     auto parent_id = regex_nodes.at(id)->parent_id;
     if (parent_id > 0)
-        setAttributes(parent_id, attributes_to_set, data, visited_nodes, attributes);
+        setAttributes(parent_id, attributes_to_set, data, visited_nodes, attributes, defaults, key_index);
 
-    // if all the attributes have set, the walking through can be stopped.
+    /// if all the attributes have set, the walking through can be stopped.
     return attributes_to_set.size() == attributes.size();
 }
 
-#if USE_VECTORSCAN
-namespace
+/// a temp struct to store all the matched result.
+struct MatchContext
 {
-    struct MatchContext
+    std::set<UInt64> matched_idx_set;
+    std::vector<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
+
+    const std::vector<UInt64> & regexp_ids ;
+    const std::unordered_map<UInt64, UInt64> & topology_order;
+    const char * data;
+    size_t length;
+    const std::map<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes;
+
+    size_t pre_match_counter = 0;
+    size_t match_counter = 0;
+
+    MatchContext(
+        const std::vector<UInt64> & regexp_ids_,
+        const std::unordered_map<UInt64, UInt64> & topology_order_,
+        const char * data_, size_t length_,
+        const std::map<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes_
+    )
+    : regexp_ids(regexp_ids_),
+        topology_order(topology_order_),
+        data(data_),
+        length(length_),
+        regex_nodes(regex_nodes_)
+    {}
+
+    [[maybe_unused]]
+    void insertIdx(unsigned int idx)
     {
-        std::unordered_set<UInt64> matched_idx_set;
-        std::vector<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
-
-        const std::vector<UInt64> & regexp_ids ;
-        const std::unordered_map<UInt64, UInt64> & topology_order;
-
-        MatchContext(const std::vector<UInt64> & regexp_ids_, const std::unordered_map<UInt64, UInt64> & topology_order_)
-            : regexp_ids(regexp_ids_), topology_order(topology_order_) {}
-
-        void insert(unsigned int id)
+        UInt64 node_id = regexp_ids[idx-1];
+        pre_match_counter++;
+        if (!regex_nodes.at(node_id)->match(data, length))
         {
-            UInt64 idx = regexp_ids[id-1];
-            UInt64 topological_order = topology_order.at(idx);
-            matched_idx_set.emplace(idx);
-            matched_idx_sorted_list.push_back(std::make_pair(topological_order, idx));
+            return;
         }
+        match_counter++;
+        matched_idx_set.emplace(node_id);
 
-        void sort()
-        {
-            std::sort(matched_idx_sorted_list.begin(), matched_idx_sorted_list.end());
-        }
+        UInt64 topological_order = topology_order.at(node_id);
+        matched_idx_sorted_list.push_back(std::make_pair(topological_order, node_id));
+    }
 
-        bool contains(UInt64 idx) const
-        {
-            return matched_idx_set.contains(idx);
-        }
-    };
-}
-#endif // USE_VECTORSCAN
+    [[maybe_unused]]
+    void insertNodeID(UInt64 id)
+    {
+        matched_idx_set.emplace(id);
 
-std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
-    [[maybe_unused]] const ColumnString::Chars & keys_data,
-    [[maybe_unused]] const ColumnString::Offsets & keys_offsets,
-    [[maybe_unused]] const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> & defaults) const
+        UInt64 topological_order = topology_order.at(id);
+        matched_idx_sorted_list.push_back(std::make_pair(topological_order, id));
+    }
+
+    /// Sort by topological order, which indicates the matching priorities.
+    void sort()
+    {
+        std::sort(matched_idx_sorted_list.begin(), matched_idx_sorted_list.end());
+    }
+
+    bool contains(UInt64 idx) const
+    {
+        return matched_idx_set.contains(idx);
+    }
+};
+
+std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
+    const ColumnString::Chars & keys_data,
+    const ColumnString::Offsets & keys_offsets,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    const std::unordered_map<String, ColumnPtr> & defaults) const
 {
+
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
-    hs_error_t err = hs_clone_scratch(hyperscan_regex->get()->getScratch(), &scratch);
-
-    if (err != HS_SUCCESS)
+    if (use_vectorscan)
     {
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for hyperscan");
+        hs_error_t err = hs_clone_scratch(origin_scratch.get(), &scratch);
+
+        if (err != HS_SUCCESS)
+        {
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for hyperscan");
+        }
     }
 
     MultiRegexps::ScratchPtr smart_scratch(scratch);
+#endif
 
     std::unordered_map<String, MutableColumnPtr> columns;
 
     /// initialize columns
-    for (const auto & [name, attr] : attributes)
+    for (const auto & [name_, attr] : attributes)
     {
         auto col_ptr = attr.type->createColumn();
         col_ptr->reserve(keys_offsets.size());
-        columns[name] = std::move(col_ptr);
+        columns[name_] = std::move(col_ptr);
     }
-
-    auto on_match = [](unsigned int id,
-                    unsigned long long /* from */, // NOLINT
-                    unsigned long long /* to */, // NOLINT
-                    unsigned int /* flags */,
-                    void * context) -> int
-    {
-        static_cast<MatchContext *>(context)->insert(id);
-        return 0;
-    };
 
     UInt64 offset = 0;
     for (size_t key_idx = 0; key_idx < keys_offsets.size(); ++key_idx)
@@ -406,27 +554,56 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
         auto key_offset = keys_offsets[key_idx];
         UInt64 length = key_offset - offset - 1;
 
-        MatchContext match_result(regexp_ids, topology_order);
+        const char * begin = reinterpret_cast<const char *>(keys_data.data()) + offset;
 
-        err = hs_scan(
-            hyperscan_regex->get()->getDB(),
-            reinterpret_cast<const char *>(keys_data.data()) + offset,
-            static_cast<unsigned>(length),
-            0,
-            smart_scratch.get(),
-            on_match,
-            &match_result);
+        MatchContext match_result(regexp_ids, topology_order, begin, length, regex_nodes);
 
-        if (err != HS_SUCCESS)
-            throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
+#if USE_VECTORSCAN
+        if (use_vectorscan)
+        {
+            /// pre-select all the possible matches
+            auto on_match = [](unsigned int id,
+                            unsigned long long /* from */, // NOLINT
+                            unsigned long long /* to */, // NOLINT
+                            unsigned int /* flags */,
+                            void * context) -> int
+            {
+                static_cast<MatchContext *>(context)->insertIdx(id);
+                return 0;
+            };
+
+            hs_error_t err = hs_scan(
+                origin_db,
+                reinterpret_cast<const char *>(keys_data.data()) + offset,
+                static_cast<unsigned>(length),
+                0,
+                smart_scratch.get(),
+                on_match,
+                &match_result);
+
+            if (err != HS_SUCCESS)
+                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
+
+        }
+#endif
+
+        for (const auto & node_ptr : complex_regexp_nodes)
+        {
+            if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
+            {
+                match_result.insertNodeID(node_ptr->id);
+                /// When this node is leaf and contains all the required attributes, it means a match.
+                if (node_ptr->containsAll(attributes) && node_ptr->children.empty())
+                    break;
+            }
+        }
 
         match_result.sort();
-
-        // Walk through the regex tree util all attributes are set;
+        /// Walk through the regex tree util all attributes are set;
         std::unordered_map<String, Field> attributes_to_set;
         std::unordered_set<UInt64> visited_nodes;
 
-        // check if it is a valid id
+        /// Some node matches but its parents cannot match. In this case we must regard this node unmatched.
         auto is_invalid = [&](UInt64 id)
         {
             while (id)
@@ -447,35 +624,31 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
                 continue;
             if (visited_nodes.contains(id))
                 continue;
-            if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes))
+            if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes, defaults, key_idx))
                 break;
         }
 
-        for (const auto & [name, attr] : attributes)
+        for (const auto & [name_, attr] : attributes)
         {
-            if (attributes_to_set.contains(name))
+            if (attributes_to_set.contains(name_))
                 continue;
 
-            /// TODO: default value might be a back-reference, that is useful in lib ua-core
-            DefaultValueProvider default_value(attr.null_value, defaults.at(name));
-            columns[name]->insert(default_value.getDefaultValue(key_idx));
+            DefaultValueProvider default_value(attr.null_value, defaults.at(name_));
+            columns[name_]->insert(default_value.getDefaultValue(key_idx));
         }
 
-        // insert to columns
-        for (const auto & [name, value] : attributes_to_set)
-            columns[name]->insert(value);
+        /// insert to columns
+        for (const auto & [name_, value] : attributes_to_set)
+            columns[name_]->insert(value);
 
         offset = key_offset;
     }
 
     std::unordered_map<String, ColumnPtr> result;
-    for (auto & [name, mutable_ptr] : columns)
-        result.emplace(name, std::move(mutable_ptr));
+    for (auto & [name_, mutable_ptr] : columns)
+        result.emplace(name_, std::move(mutable_ptr));
 
     return result;
-#else
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Multi search all indices is not implemented when USE_VECTORSCAN is off");
-#endif // USE_VECTORSCAN
 }
 
 Columns RegExpTreeDictionary::getColumns(
@@ -488,7 +661,7 @@ Columns RegExpTreeDictionary::getColumns(
     /// valid check
     if (key_columns.size() != 1)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", std::to_string(key_columns.size()));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", key_columns.size());
     }
     structure.validateKeyTypes(key_types);
 
@@ -504,15 +677,15 @@ Columns RegExpTreeDictionary::getColumns(
 
     /// calculate matches
     const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
-    const auto & columns_map = matchSearchAllIndices(
+    const auto & columns_map = match(
         key_column->getChars(),
         key_column->getOffsets(),
         attributes,
         defaults);
 
     Columns result;
-    for (const String & name : attribute_names)
-        result.push_back(columns_map.at(name));
+    for (const String & name_ : attribute_names)
+        result.push_back(columns_map.at(name_));
 
     return result;
 }
@@ -530,7 +703,9 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
 
         if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")
         {
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "dictionary regexp_tree should have one primary key with string value to represent regular expressions");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                            "dictionary regexp_tree should have one primary key with string value "
+                            "to represent regular expressions");
         }
 
         String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
@@ -543,9 +718,11 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         if (!context->getSettings().regexp_dict_allow_other_sources && typeid_cast<YAMLRegExpTreeDictionarySource *>(source_ptr.get()) == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "regexp_tree dictionary doesn't accept sources other than yaml source. To active it, please set regexp_dict_allow_other_sources=true");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                            "regexp_tree dictionary doesn't accept sources other than yaml source. "
+                            "To active it, please set regexp_dict_allow_other_sources=true");
 
-        return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration, context->getSettings().regexp_dict_allow_hyperscan);
     };
 
     factory.registerLayout("regexp_tree", create_layout, true);

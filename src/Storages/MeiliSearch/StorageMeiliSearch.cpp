@@ -99,9 +99,9 @@ Pipe StorageMeiliSearch::read(
         for (const auto & el : query_params->children)
         {
             auto str = el->getColumnName();
-            auto it = find(str.begin(), str.end(), '=');
+            auto it = std::find(str.begin(), str.end(), '=');
             if (it == str.end())
-                throw Exception("meiliMatch function must have parameters of the form \'key=value\'", ErrorCodes::BAD_QUERY_PARAMETER);
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "meiliMatch function must have parameters of the form \'key=value\'");
 
             String key(str.begin() + 1, it);
             String value(it + 1, str.end() - 1);
@@ -129,7 +129,7 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
 
 MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
         validateNamedCollection(*named_collection, {"url", "index"}, {"key"});
 
@@ -139,8 +139,8 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
 
         if (url.empty() || index.empty())
         {
-            throw Exception(
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")");
         }
 
         return MeiliSearchConfiguration(url, index, key);
@@ -149,9 +149,8 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
     {
         if (engine_args.size() < 2 || 3 < engine_args.size())
         {
-            throw Exception(
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url', 'index', 'key'= \"\")");
         }
 
         for (auto & engine_arg : engine_args)

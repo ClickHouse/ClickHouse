@@ -9,7 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Core/IResolvedFunction.h>
 
 #include "config.h"
@@ -95,7 +95,7 @@ public:
     /// Get type which will be used for prediction result in case if function is an ML method.
     virtual DataTypePtr getReturnTypeToPredict() const
     {
-        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prediction is not supported for {}", getName());
     }
 
     virtual bool isVersioned() const { return false; }
@@ -199,7 +199,7 @@ public:
         size_t /*limit*/,
         ContextPtr /*context*/) const
     {
-        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method predictValues is not supported for {}", getName());
     }
 
     /** Returns true for aggregate functions of type -State

@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <chrono>
 #include <cerrno>
@@ -334,6 +335,7 @@ ReplxxLineReader::ReplxxLineReader(
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
+    rx.set_indent_multiline(false);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -417,6 +419,10 @@ ReplxxLineReader::ReplxxLineReader(
         {
             rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
         }
+
+        /// REPAINT before to avoid prompt overlap by the query
+        rx.invoke(Replxx::ACTION::REPAINT, code);
+
         if (!new_query.empty())
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
 
@@ -428,6 +434,7 @@ ReplxxLineReader::ReplxxLineReader(
     };
 
     rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+#endif
 
     /// Rebind regular incremental search to C-T.
     ///
@@ -439,7 +446,6 @@ ReplxxLineReader::ReplxxLineReader(
         uint32_t reverse_search = Replxx::KEY::control('R');
         return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
-#endif
 }
 
 ReplxxLineReader::~ReplxxLineReader()
@@ -512,6 +518,12 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
+}
+
+void ReplxxLineReader::disableBracketedPaste()
+{
+    bracketed_paste_enabled = false;
+    rx.disable_bracketed_paste();
 }
 
 }

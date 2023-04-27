@@ -43,7 +43,7 @@ private:
     void stopProducingTask() override;
     void finishImpl() override;
 
-    void iterateEventLoop();
+    int iterateEventLoop();
     void startProducingTaskLoop() override;
     void setupChannel();
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);
@@ -103,8 +103,6 @@ private:
 
     /// Record of pending acknowledgements from the server; its size never exceeds size of returned.queue
     std::map<UInt64, Payload> delivery_record;
-
-    Poco::Logger * log;
 };
 
 }

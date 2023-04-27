@@ -3,6 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -65,6 +66,9 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
+
+    openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
+    openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
 
     openSensors();
     openBlockDevices();
@@ -530,8 +534,15 @@ void AsynchronousMetrics::update(TimePoint update_time)
     AsynchronousMetricValues new_values;
 
     auto current_time = std::chrono::system_clock::now();
-    auto time_after_previous_update [[maybe_unused]] = current_time - previous_update_time;
+    auto time_after_previous_update = current_time - previous_update_time;
     previous_update_time = update_time;
+
+    double update_interval = 0.;
+    if (first_run)
+        update_interval = update_period.count();
+    else
+        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
+    new_values["AsynchronousMetricsUpdateInterval"] = { update_interval, "Metrics update interval" };
 
     /// This is also a good indicator of system responsiveness.
     new_values["Jitter"] = { std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - update_time).count() / 1e9,
@@ -672,6 +683,12 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+
+            /// A slight improvement for the rare case when ClickHouse is run inside LXC and LXCFS is used.
+            /// The LXCFS has an issue: sometimes it returns an error "Transport endpoint is not connected" on reading from the file inside `/proc`.
+            /// This error was correctly logged into ClickHouse's server log, but it was a source of annoyance to some users.
+            /// We additionally workaround this issue by reopening a file.
+            openFileIfExists("/proc/loadavg", loadavg);
         }
     }
 
@@ -689,6 +706,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/uptime", uptime);
         }
     }
 
@@ -876,6 +894,36 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/stat", proc_stat);
+        }
+    }
+
+    if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
+    {
+        try {
+            cgroupmem_limit_in_bytes->rewind();
+            cgroupmem_usage_in_bytes->rewind();
+
+            uint64_t cgroup_mem_limit_in_bytes = 0;
+            uint64_t cgroup_mem_usage_in_bytes = 0;
+
+            readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
+            readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
+
+            if (cgroup_mem_limit_in_bytes && cgroup_mem_usage_in_bytes)
+            {
+                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes." };
+                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
+            }
+            else
+            {
+                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
+                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -967,6 +1015,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/meminfo", meminfo);
         }
     }
 
@@ -1019,6 +1068,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/cpuinfo", cpuinfo);
         }
     }
 
@@ -1036,6 +1086,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/sys/fs/file-nr", file_nr);
         }
     }
 
@@ -1268,6 +1319,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/net/dev", net_dev);
         }
     }
 

@@ -92,7 +92,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     {
         assertBinary(name, argument_types);
         if (!isInteger(argument_types[1]))
-            throw Exception("The second argument for aggregate function 'topKWeighted' must have integer type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument for aggregate function 'topKWeighted' must have integer type");
     }
 
     UInt64 threshold = 10;  /// default values

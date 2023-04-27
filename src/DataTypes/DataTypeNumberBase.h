@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/TypeName.h>
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -7,9 +8,6 @@
 
 namespace DB
 {
-
-template <typename T>
-class ColumnVector;
 
 /** Implements part of the IDataType interface, common to all numbers and for Date and DateTime.
   */

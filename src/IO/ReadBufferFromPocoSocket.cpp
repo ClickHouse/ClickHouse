@@ -8,7 +8,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-
+#include <Common/AsyncTaskExecutor.h>
 
 namespace ProfileEvents
 {
@@ -52,8 +52,8 @@ bool ReadBufferFromPocoSocket::nextImpl()
         /// If async_callback is specified, and read will block, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
-            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
+        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR))
+            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
 
         if (internal_buffer.size() > INT_MAX)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
@@ -62,21 +62,21 @@ bool ReadBufferFromPocoSocket::nextImpl()
     }
     catch (const Poco::Net::NetException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket ({}, {} ms)",
             peer_address.toString(),
-            socket.impl()->getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+            socket.impl()->getReceiveTimeout().totalMilliseconds());
     }
     catch (const Poco::IOException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
     }
 
     if (bytes_read < 0)
-        throw NetException("Cannot read from socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+        throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket ({})", peer_address.toString());
 
     if (bytes_read)
         working_buffer.resize(bytes_read);
