@@ -176,6 +176,12 @@ if (OS_DARWIN)
     set (ENABLE_CURL_BUILD OFF)
 endif ()
 
+option(ENABLE_ISAL_LIBRARY "Enable ISA-L library ON by default except on aarch64." ON)
+if (ARCH_AARCH64)
+    # Disable ISA-L libray on aarch64.
+    set (ENABLE_ISAL_LIBRARY OFF)
+endif ()
+
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # Can be lld or ld-lld or lld-13 or /path/to/lld.
     if (LINKER_NAME MATCHES "lld")
