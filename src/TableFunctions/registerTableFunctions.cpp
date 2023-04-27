@@ -30,7 +30,9 @@ void registerTableFunctions()
     registerTableFunctionOSS(factory);
     registerTableFunctionGCS(factory);
     registerTableFunctionHudi(factory);
+#if USE_PARQUET
     registerTableFunctionDeltaLake(factory);
+#endif
 #if USE_AVRO
     registerTableFunctionIceberg(factory);
 #endif

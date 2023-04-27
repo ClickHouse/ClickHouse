@@ -3,7 +3,7 @@
 #include "config.h"
 #include <set>
 
-#if USE_AWS_S3
+#if USE_AWS_S3 && USE_PARQUET
 #include <Storages/DataLakes/S3MetadataReader.h>
 #include <Storages/StorageS3.h>
 #include <parquet/file_reader.h>
