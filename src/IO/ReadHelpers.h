@@ -28,7 +28,6 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/Arena.h>
 #include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
@@ -136,22 +135,6 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t max_strin
     s.resize(size);
     buf.readStrict(s.data(), size);
 }
-
-
-inline StringRef readStringBinaryInto(Arena & arena, ReadBuffer & buf)
-{
-    size_t size = 0;
-    readVarUInt(size, buf);
-
-    if (unlikely(size > DEFAULT_MAX_STRING_SIZE))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
-
-    char * data = arena.alloc(size);
-    buf.readStrict(data, size);
-
-    return StringRef(data, size);
-}
-
 
 template <typename T>
 void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
@@ -1586,4 +1569,10 @@ void readQuotedField(String & s, ReadBuffer & buf);
 void readJSONField(String & s, ReadBuffer & buf);
 
 void readTSVField(String & s, ReadBuffer & buf);
+
+/** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
+  * It is assumed that the cursor is located on the `\` symbol
+  */
+bool parseComplexEscapeSequence(String & s, ReadBuffer & buf);
+
 }

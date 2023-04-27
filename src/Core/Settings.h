@@ -129,6 +129,7 @@ class IColumn;
     \
     M(Bool, allow_suspicious_low_cardinality_types, false, "In CREATE TABLE statement allows specifying LowCardinality modifier for types of small fixed size (8 or less). Enabling this may increase merge times and memory consumption.", 0) \
     M(Bool, allow_suspicious_fixed_string_types, false, "In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates misusage", 0) \
+    M(Bool, allow_suspicious_indices, false, "Reject primary/secondary indexes and sorting keys with identical expressions", 0) \
     M(Bool, compile_expressions, true, "Compile some scalar functions and operators to native code.", 0) \
     M(UInt64, min_count_to_compile_expression, 3, "The number of identical expressions before they are JIT-compiled", 0) \
     M(Bool, compile_aggregate_expressions, false, "Compile aggregate functions to native code. This feature has a bug and should not be used.", 0) \
@@ -565,6 +566,8 @@ class IColumn;
     M(Bool, enable_writes_to_query_cache, true, "Enable storing results of SELECT queries in the query cache", 0) \
     M(Bool, enable_reads_from_query_cache, true, "Enable reading results of SELECT queries from the query cache", 0) \
     M(Bool, query_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query cache", 0) \
+    M(UInt64, query_cache_max_size_in_bytes, 0, "The maximum amount of memory (in bytes) the current user may allocate in the query cache. 0 means unlimited. ", 0) \
+    M(UInt64, query_cache_max_entries, 0, "The maximum number of query results the current user may store in the query cache. 0 means unlimited.", 0) \
     M(UInt64, query_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query cache", 0) \
     M(Milliseconds, query_cache_min_query_duration, 0, "Minimum time in milliseconds for a query to run for its result to be stored in the query cache.", 0) \
     M(Bool, query_cache_compress_entries, true, "Compress cache entries.", 0) \
@@ -705,6 +708,8 @@ class IColumn;
     M(String, additional_result_filter, "", "Additional filter expression which would be applied to query result", 0) \
     \
     M(String, workload, "default", "Name of workload to be used to access resources", 0) \
+    \
+    M(Bool, parallelize_output_from_storages, false, "Parallelize output for reading step from storage. It allows parallelizing query processing right after reading from storage if possible", 0) \
     \
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
