@@ -58,7 +58,7 @@ public:
 
     void annul() override;
 
-    void updateSize(ssize_t size) override;
+    void updateSize(int64_t size) override;
 
 private:
     LRUFileCachePriority * cache_priority;

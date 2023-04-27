@@ -40,9 +40,10 @@ set (LOG_HW_INIT OFF)
 set (SANITIZE_MEMORY OFF)
 set (SANITIZE_THREADS OFF)
 set (LIB_FUZZING_ENGINE OFF)
+set (DYNAMIC_LOADING_LIBACCEL_CONFIG OFF)
 
 function(GetLibraryVersion _content _outputVar)
-    string(REGEX MATCHALL "Qpl VERSION (.+) LANGUAGES" VERSION_REGEX "${_content}")
+    string(REGEX MATCHALL "QPL VERSION (.+) LANGUAGES" VERSION_REGEX "${_content}")
     SET(${_outputVar} ${CMAKE_MATCH_1} PARENT_SCOPE)
 endfunction()
 
@@ -240,7 +241,9 @@ add_library(core_iaa OBJECT ${HW_PATH_SRC})
 target_include_directories(core_iaa
         PRIVATE ${UUID_DIR}
         PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/include>
-        PRIVATE $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/sources/include>
+        PUBLIC $<BUILD_INTERFACE:${QPL_SRC_DIR}/core-iaa/sources/include>
+        PRIVATE $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include>  # status.h in own_checkers.h
+        PRIVATE $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/sources/c_api> # own_checkers.h
         PRIVATE $<TARGET_PROPERTY:qplcore_avx512,INTERFACE_INCLUDE_DIRECTORIES>)
 
 target_compile_options(core_iaa
@@ -339,4 +342,7 @@ target_link_libraries(_qpl
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)
-target_include_directories(_qpl SYSTEM BEFORE PUBLIC "${QPL_PROJECT_DIR}/include")
+target_include_directories(_qpl SYSTEM BEFORE
+        PUBLIC "${QPL_PROJECT_DIR}/include"
+        PUBLIC "${LIBACCEL_SOURCE_DIR}/accfg"
+        PUBLIC ${UUID_DIR})
