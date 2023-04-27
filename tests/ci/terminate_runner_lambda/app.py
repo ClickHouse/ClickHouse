@@ -58,14 +58,19 @@ def get_access_token(jwt_token: str, installation_id: int) -> str:
 class CachedToken:
     time: int
     value: str
+    updating: bool = False
 
 
 cached_token = CachedToken(0, "")
 
 
 def get_cached_access_token() -> str:
-    if time.time() - 550 < cached_token.time:
+    if time.time() - 550 < cached_token.time or cached_token.updating:
         return cached_token.value
+    # Indicate that the value is updating now, so the cached value can be
+    # used. The first setting and close-to-ttl are not counted as update
+    if cached_token.time != 0 or time.time() - 590 < cached_token.time:
+        cached_token.updating = True
     private_key, app_id = get_key_and_app_from_aws()
     payload = {
         "iat": int(time.time()) - 60,
@@ -77,7 +82,40 @@ def get_cached_access_token() -> str:
     installation_id = get_installation_id(encoded_jwt)
     cached_token.time = int(time.time())
     cached_token.value = get_access_token(encoded_jwt, installation_id)
+    cached_token.updating = False
     return cached_token.value
+
+
+@dataclass
+class CachedInstances:
+    time: int
+    value: dict
+    updating: bool = False
+
+
+cached_instances = CachedInstances(0, {})
+
+
+def get_cached_instances() -> dict:
+    """return cached instances description with updating it once per five minutes"""
+    if time.time() - 250 < cached_instances.time or cached_instances.updating:
+        return cached_instances.value
+    # Indicate that the value is updating now, so the cached value can be
+    # used. The first setting and close-to-ttl are not counted as update
+    if cached_instances.time != 0 or time.time() - 300 < cached_instances.time:
+        cached_instances.updating = True
+    ec2_client = boto3.client("ec2")
+    instances_response = ec2_client.describe_instances(
+        Filters=[{"Name": "instance-state-name", "Values": ["running"]}]
+    )
+    cached_instances.time = int(time.time())
+    cached_instances.value = {
+        instance["InstanceId"]: instance
+        for reservation in instances_response["Reservations"]
+        for instance in reservation["Instances"]
+    }
+    cached_instances.updating = False
+    return cached_instances.value
 
 
 RunnerDescription = namedtuple(
