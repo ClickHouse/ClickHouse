@@ -20,24 +20,42 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int DATABASE_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
 }
 
 DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(&Poco::Logger::get("DatabaseFileSystem(" + name_ + ")"))
 {
-    path = fs::path(path).lexically_normal().string();
+    fs::path user_files_path;
+    if (context_->getApplicationType() != Context::ApplicationType::LOCAL)
+        user_files_path = fs::canonical(fs::path(getContext()->getUserFilesPath()));
+
+    if (fs::path(path).is_relative())
+        path = user_files_path / path;
+
+    path = fs::absolute(path).lexically_normal().string();
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
 {
-    return fs::path(path) / table_name;
+    fs::path table_path = fs::path(path) / table_name;
+    return table_path.lexically_normal().string();
 }
 
 void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    loaded_tables.emplace(table_name, table_storage);
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name,
+            getDatabaseName(),
+            getEngineName());
 }
 
 bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr) const
@@ -62,7 +80,19 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
             return it->second;
     }
 
+    // If run in Local mode, no need for path checking.
+    bool need_check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
+    std::string user_files_path = fs::canonical(fs::path(context_->getUserFilesPath())).string();
+
     auto table_path = getTablePath(name);
+
+    // Check access for file before checking its existence
+    if (need_check_path && table_path.find(user_files_path) != 0)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_path);
+
+    // If the table doesn't exist in the tables map, check if the corresponding file exists
+    if (!fs::exists(table_path) || !fs::is_regular_file(table_path))
+        return nullptr;
 
     // If the file exists, create a new table using TableFunctionFile and return it.
     auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
@@ -89,11 +119,17 @@ StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr conte
 {
     try
     {
-        return getTable(name, context_);
+        return getTableImpl(name, context_);
     }
-    catch (...)
+    catch (const Exception & e)
     {
-        return nullptr;
+        // Ignore exceptions thrown by TableFunctionFile and which indicate that there is no table
+        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+            return nullptr;
+        if (e.code() == ErrorCodes::DATABASE_ACCESS_DENIED)
+            return nullptr;
+
+        throw;
     }
 }
 
