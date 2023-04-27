@@ -76,12 +76,22 @@ LockedKeyPtr KeyMetadata::tryLock()
     return nullptr;
 }
 
-void KeyMetadata::createBaseDirectory()
+bool KeyMetadata::createBaseDirectory()
 {
     if (!created_base_directory.exchange(true))
     {
-        fs::create_directories(key_path);
+        try
+        {
+            fs::create_directories(key_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            created_base_directory = false;
+            return false;
+        }
     }
+    return true;
 }
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment)
@@ -364,7 +374,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    ssize_t diff = file_segment->reserved_size - downloaded_size;
+    int64_t diff = file_segment->reserved_size - downloaded_size;
 
     metadata->file_segment = std::make_shared<FileSegment>(
         getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,

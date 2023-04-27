@@ -648,6 +648,9 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     if (is_main_priority_overflow())
         return false;
 
+    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+        return false;
+
     for (auto & [current_key, deletion_info] : to_delete)
     {
         auto locked_key = deletion_info.getMetadata().lock();
@@ -693,7 +696,6 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
 
-    file_segment.getKeyMetadata()->createBaseDirectory();
     file_segment.reserved_size += size;
     return true;
 }

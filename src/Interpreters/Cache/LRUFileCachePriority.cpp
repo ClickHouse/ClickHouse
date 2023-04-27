@@ -148,13 +148,15 @@ void LRUFileCachePriority::LRUFileCacheIterator::annul()
     queue_iter->size = 0;
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::updateSize(ssize_t size)
+void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
 {
     cache_priority->current_size += size;
+
     if (size > 0)
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     else
         CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, size);
+
     queue_iter->size += size;
 
     chassert(cache_priority->current_size >= 0);
