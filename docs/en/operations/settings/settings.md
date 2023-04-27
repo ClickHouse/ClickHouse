@@ -890,7 +890,7 @@ Write time that processor spent during execution/waiting for data to `system.pro
 
 See also:
 
-- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md)
 - [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
@@ -1511,6 +1511,26 @@ Possible values:
 - 1 - Enabled
 
 Default value: `0`.
+
+## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
+
+The maximum amount of memory (in bytes) the current user may allocate in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
+
+## query_cache_max_entries {#query-cache-max-entries}
+
+The maximum number of query results the current user may store in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
 
 ## insert_quorum {#settings-insert_quorum}
 

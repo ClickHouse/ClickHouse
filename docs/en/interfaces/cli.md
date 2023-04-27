@@ -119,7 +119,7 @@ When processing a query, the client shows:
 1.  Progress, which is updated no more than 10 times per second (by default). For quick queries, the progress might not have time to be displayed.
 2.  The formatted query after parsing, for debugging.
 3.  The result in the specified format.
-4.  The number of lines in the result, the time passed, and the average speed of query processing.
+4.  The number of lines in the result, the time passed, and the average speed of query processing. All data amounts refer to uncompressed data.
 
 You can cancel a long query by pressing Ctrl+C. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press Ctrl+C a second time, the client will exit.
 
