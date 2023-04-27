@@ -544,7 +544,9 @@ class SettingsRandomizer:
         ),
         "local_filesystem_read_method": lambda: random.choice(
             # Allow to use uring only when running on Linux
-            ["read", "pread", "mmap", "pread_threadpool", "io_uring"] if platform.system().lower() == "linux" else ["read", "pread", "mmap", "pread_threadpool"]
+            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
+            if platform.system().lower() == "linux"
+            else ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
