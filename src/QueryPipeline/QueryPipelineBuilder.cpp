@@ -576,6 +576,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     return left;
 }
 
+static UInt32 toPowerOfTwo(UInt32 x)
+{
+    if (x <= 1)
+        return 1;
+    return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeftByShuffle(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
@@ -597,12 +604,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
 
-    // Too large parts will more slow
+    size_t original_num_strems = left->getNumStreams();
+    size_t num_streams = original_num_strems;
     size_t default_max_shuffle_parts = 32;
-    size_t max_shuffle_parts = std::min(default_max_shuffle_parts, max_streams);
-    size_t num_streams = left->getNumStreams();
-    size_t pre_num_streams = num_streams;
-    if (num_streams < max_shuffle_parts)
+    size_t max_shuffle_parts = toPowerOfTwo(static_cast<UInt32>(max_streams));
+    if (max_shuffle_parts > max_streams &&  max_streams != 1)
+    {
+        max_shuffle_parts /= 2;
+    }
+    max_shuffle_parts = std::min(default_max_shuffle_parts, max_shuffle_parts);
+    if (num_streams != max_shuffle_parts)
     {
         left->resize(max_shuffle_parts);
         num_streams = max_shuffle_parts;
@@ -621,11 +632,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     // from both side.
     DataStream right_datestream;
     right_datestream.header = right->getHeader();
-    InnerShuffleStep right_shuffle_step(right_datestream, join->getTableJoin().getOnlyClause().key_names_right);
+    InnerShuffleStepV2 right_shuffle_step(right_datestream, join->getTableJoin().getOnlyClause().key_names_right);
     right_shuffle_step.transformPipeline(*right, BuildQueryPipelineSettings());
     DataStream left_datastream;
     left_datastream.header = left->getHeader();
-    InnerShuffleStep left_shuffle_step(left_datastream, join->getTableJoin().getOnlyClause().key_names_left);
+    InnerShuffleStepV2 left_shuffle_step(left_datastream, join->getTableJoin().getOnlyClause().key_names_left);
     left_shuffle_step.transformPipeline(*left, BuildQueryPipelineSettings());
 
 
@@ -750,7 +761,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     // FIXME, mess up the streams here, otherwise the executing graph will be hungup with MergingSortedTransform.
     left->resize(1);
-    left->resize(pre_num_streams);
+    left->resize(original_num_strems);
     return left;
 }
 

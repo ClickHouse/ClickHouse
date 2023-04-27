@@ -305,7 +305,10 @@ void FillingRightJoinSideTransform::work()
     if (for_totals)
         join->setTotals(block);
     else
+    {
+        LOG_ERROR(&Poco::Logger::get("FillingRightJoinSideTransform"), "xxx FillingRightJoinSideTransform::work. {}/{}", fmt::ptr(this), fmt::ptr(join.get()));
         stop_reading = !join->addJoinedBlock(block);
+    }
 
     set_totals = for_totals;
 }

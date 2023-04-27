@@ -1,3 +1,4 @@
+#include <memory>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/createBlockSelector.h>
@@ -5,10 +6,15 @@
 #include <Processors/Transforms/InnerShuffleTransform.h>
 #include <Common/WeakHash.h>
 #include <Common/logger_useful.h>
+#include "InnerShuffleTransform.h"
 
 namespace DB
 {
-static InputPorts buildGatherInputports(size_t num_streams, const Block & header)
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+static InputPorts buildMultiInputports(size_t num_streams, const Block & header)
 {
     InputPorts ports;
     for (size_t i = 0; i < num_streams; ++i)
@@ -19,7 +25,7 @@ static InputPorts buildGatherInputports(size_t num_streams, const Block & header
     return ports;
 }
 
-static OutputPorts buildScatterOutports(size_t num_streams, const Block & header)
+static OutputPorts buildMultiOutputports(size_t num_streams, const Block & header)
 {
     OutputPorts outports;
     for (size_t i = 0; i < num_streams; ++i)
@@ -30,8 +36,316 @@ static OutputPorts buildScatterOutports(size_t num_streams, const Block & header
     return outports;
 }
 
+InnerShuffleScatterTransformV2::InnerShuffleScatterTransformV2(size_t num_streams_, const Block & header_, const std::vector<size_t> & hash_columns_)
+    : IProcessor({header_}, {header_})
+    , num_streams(num_streams_)
+    , header(header_)
+    , hash_columns(hash_columns_)
+{}
+
+
+IProcessor::Status InnerShuffleScatterTransformV2::prepare()
+{
+    auto & outport = outputs.front();
+    auto & inport = inputs.front();
+    if (outport.isFinished())
+    {
+        inport.close();
+        return Status::Finished;
+    }
+    if (has_input)
+    {
+        return Status::Ready;
+    }
+    if (has_output)
+    {
+        if(outport.canPush())
+        {
+            auto empty_block = header.cloneEmpty();
+            Chunk chunk(empty_block.getColumns(), 0);
+            auto chunk_info = std::make_shared<InnerShuffleScatterChunkInfo>();
+            chunk_info->chunks.swap(output_chunks);
+            chunk.setChunkInfo(chunk_info);
+            outport.push(std::move(chunk));
+            has_output = false;
+        }
+        return Status::PortFull;
+    }
+    if (inport.isFinished())
+    {
+        outport.finish();
+        return Status::Finished;
+    }
+
+    inport.setNeeded();
+    if (!inport.hasData())
+    {
+        return Status::NeedData;
+    }
+    input_chunk = inport.pull(true);
+    has_input = true;
+    return Status::Ready;
+}
+
+void InnerShuffleScatterTransformV2::work()
+{
+    if (!has_input)
+    {
+        return;
+    }
+    Block block = header.cloneWithColumns(input_chunk.detachColumns());
+    size_t num_rows = block.rows();
+    WeakHash32 hash(num_rows);
+    for (const auto col_index : hash_columns)
+    {
+        const auto & key_col = block.getByPosition(col_index).column->convertToFullColumnIfConst();
+        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
+        key_col_no_lc->updateWeakHash32(hash);
+    }
+
+    IColumn::Selector selector(num_rows);
+    const auto & hash_data = hash.getData();
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        selector[i] = hash_data[i] & (num_streams - 1);
+    }
+
+    Blocks result_blocks;
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        result_blocks.emplace_back(header.cloneEmpty());
+    }
+
+    for (size_t i = 0, num_cols = header.columns(); i < num_cols; ++i)
+    {
+        auto shuffled_columms = block.getByPosition(i).column->scatter(num_streams, selector);
+        for (size_t block_index = 0; block_index < num_streams; ++block_index)
+        {
+            result_blocks[block_index].getByPosition(i).column = std::move(shuffled_columms[block_index]);
+        }
+    }
+    output_chunks.clear();
+    for (auto & scattered_block : result_blocks)
+    {
+        LOG_ERROR(&Poco::Logger::get("InnerShuffleScatterTransformV2"), "scattered_block.rows() = {}, num_rows={}, num_streams:{}", scattered_block.rows(), num_rows, num_streams);
+        Chunk chunk(scattered_block.getColumns(), scattered_block.rows());
+        output_chunks.emplace_back(std::move(chunk));
+    }
+    has_output = true;
+    has_input = false;
+}
+
+InnerShuffleDispatchTransform::InnerShuffleDispatchTransform(size_t input_nums_, size_t output_nums_, const Block & header_)
+    : IProcessor(buildMultiInputports(input_nums_, header_), buildMultiOutputports(output_nums_, header_))
+    , input_nums(input_nums_)
+    , output_nums(output_nums_)
+    , header(header_)
+{
+    for (size_t i = 0; i < output_nums; ++i)
+    {
+        output_chunks.emplace_back(std::list<Chunk>());
+    }
+}
+
+IProcessor::Status InnerShuffleDispatchTransform::prepare()
+{
+    // If there is any output port is finished, make it finished.
+    bool is_output_finished = false;
+    for (auto & iter : outputs)
+    {
+        if (iter.isFinished())
+        {
+            is_output_finished = true;
+            break;
+        }
+    }
+    if (is_output_finished)
+    {
+        for (auto & iter : outputs)
+        {
+            iter.finish();
+        }
+        for (auto & iter : inputs)
+        {
+            iter.close();
+        }
+        return Status::Finished;
+    }
+    
+    if (has_input)
+    {
+        return Status::Ready;
+    }
+    
+    // if (!output_chunks.empty()) [[likely]]
+    {
+        bool has_chunks_out = false;
+        bool has_pending_chunks = false;
+        size_t i = 0;
+        for (auto & outport : outputs)
+        {
+            if (outport.canPush())
+            {
+                if (!output_chunks[i].empty())
+                {
+                    has_pending_chunks = true;
+                    Chunk tmp_chunk;
+                    tmp_chunk.swap(output_chunks[i].front());
+                    output_chunks[i].pop_front();
+                    outport.push(std::move(tmp_chunk));
+                    has_chunks_out = true;
+                }
+            }
+            i += 1;
+        }
+        // If there is no output port available, return PortFull
+        if (has_pending_chunks && !has_chunks_out)
+        {
+            return Status::PortFull;
+        }
+    }
+
+    bool all_input_finished = true;
+    for (auto & inport : inputs)
+    {
+        if (inport.isFinished())
+            continue;
+        all_input_finished = false;
+        inport.setNeeded();
+        if (inport.hasData())
+        {
+            input_chunks.emplace_back(inport.pull(true));
+            has_input = true;
+        }
+    }
+    if (all_input_finished)
+    {
+        for (auto & outport : outputs)
+        {
+            outport.finish();
+        }
+        return Status::Finished;
+    }
+    if (!has_input)
+    {
+        return Status::NeedData;
+    }
+    return Status::Ready;
+}
+
+void InnerShuffleDispatchTransform::work()
+{
+    for (auto & input_chunk : input_chunks)
+    {
+        if (!input_chunk.hasChunkInfo())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty chunk info");
+        }
+        auto chunk_list = std::dynamic_pointer_cast<const InnerShuffleScatterChunkInfo>(input_chunk.getChunkInfo());
+        size_t i = 0;
+        for (const auto & chunk : chunk_list->chunks)
+        {
+            if (output_chunks[i].empty() || output_chunks[i].back().getNumRows() >= DEFAULT_BLOCK_SIZE)
+            {
+                LOG_ERROR(&Poco::Logger::get("InnerShuffleDispatchTransform"), "xxx new_chunk cols:{}", chunk.getColumns().size());
+                Chunk new_chunk(chunk.getColumns(), chunk.getNumRows());
+                LOG_ERROR(&Poco::Logger::get("InnerShuffleDispatchTransform"), "xxx 2 new_chunk cols:{}", new_chunk.getColumns().size());
+                output_chunks[i].push_back(std::move(new_chunk));
+                LOG_ERROR(&Poco::Logger::get("InnerShuffleDispatchTransform"), "xxx 1 new_chunk cols:{}", output_chunks[i].back().getColumns().size());
+            }
+            else
+            {
+                auto & last_chunk = output_chunks[i].back();
+                auto src_cols = chunk.getColumns();
+                auto dst_cols = last_chunk.mutateColumns();
+                LOG_ERROR(&Poco::Logger::get("InnerShuffleDispatchTransform"), "xxxx src cols:{}, dst cols:{}/{}", src_cols.size(), dst_cols.size(), last_chunk.getColumns().size());
+                for (size_t n = 0; n < src_cols.size(); ++n)
+                {
+                    LOG_ERROR(&Poco::Logger::get("InnerShuffleDispatchTransform"), "xxx src_cols[{}] = {}, dst_cols[{}]:{}", n, fmt::ptr(src_cols[n].get()), n , fmt::ptr(dst_cols[n].get()));
+                    dst_cols[n]->insertRangeFrom(*src_cols[n], 0, src_cols[n]->size());
+                }
+                auto rows = dst_cols[0]->size();
+                output_chunks[i].back().setColumns(std::move(dst_cols), rows);
+            }
+            i += 1;
+        }
+    }
+    has_input = false;
+}
+
+InnerShuffleGatherTransformV2::InnerShuffleGatherTransformV2(const Block & header_, size_t input_num_)
+    : IProcessor(buildMultiInputports(input_num_, header_), {header_})
+{
+    for (auto & port : inputs)
+    {
+        input_port_ptrs.emplace_back(&port);
+    }
+}
+
+IProcessor::Status InnerShuffleGatherTransformV2::prepare()
+{
+    if (outputs.front().isFinished())
+    {
+        for (auto & iter : inputs)
+        {
+            iter.close();
+        }
+        return Status::Finished;
+    }
+    if (has_input)
+    {
+        return Status::Ready;
+    }
+    if (has_output)
+    {
+        if (outputs.front().canPush())
+        {
+            outputs.front().push(std::move(output_chunk));
+            has_output = false;
+        }
+        return Status::PortFull;
+    }
+    size_t i = 0;
+    bool all_input_finished = true;
+    while (i < inputs.size())
+    {
+        if (!input_port_ptrs[input_port_iter]->isFinished())
+        {
+            all_input_finished = false;
+            input_port_ptrs[input_port_iter]->setNeeded();
+            if (input_port_ptrs[input_port_iter]->hasData())
+            {
+                output_chunk = input_port_ptrs[input_port_iter]->pull(true);
+                has_input = true;
+                input_port_iter = (input_port_iter + 1) % inputs.size();
+                break;
+            }
+            
+        }
+        input_port_iter = (input_port_iter + 1) % inputs.size();
+        i += 1;
+    }
+    if (all_input_finished)
+    {
+        outputs.front().finish();
+        return Status::Finished;
+    }
+    if (!has_input)
+    {
+        return Status::NeedData;
+    }
+
+    return Status::Ready;
+}
+
+void InnerShuffleGatherTransformV2::work()
+{
+    has_input = false;
+    has_output = true;
+}
+
 InnerShuffleScatterTransform::InnerShuffleScatterTransform(size_t num_streams_, const Block & header_, const std::vector<size_t> & hash_columns_)
-    : IProcessor({header_}, buildScatterOutports(num_streams_, header_))
+    : IProcessor({header_}, buildMultiOutputports(num_streams_, header_))
     , num_streams(num_streams_)
     , header(header_)
     , hash_columns(hash_columns_)
@@ -169,7 +483,7 @@ void InnerShuffleScatterTransform::work()
 }
 
 InnerShuffleGatherTransform::InnerShuffleGatherTransform(const Block & header_, size_t inputs_num_)
-    : IProcessor(buildGatherInputports(inputs_num_, header_), {header_})
+    : IProcessor(buildMultiInputports(inputs_num_, header_), {header_})
 {
     for (auto & port : inputs)
     {

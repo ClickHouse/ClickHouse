@@ -41,7 +41,11 @@ bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
     if (!inner_join->addJoinedBlock(block, false))
         return false;
     if (check_limits)
-        return shared_context->size_limit_per_clone.check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    {
+        auto total_rows = getTotalRowCount();
+        auto total_bytes = getTotalByteCount();
+        return shared_context->size_limit_per_clone.check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
     return true;
 }
 
@@ -67,7 +71,7 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    return inner_join->getTotalByteCount();
+    return inner_join->getTotalRowCount();
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
