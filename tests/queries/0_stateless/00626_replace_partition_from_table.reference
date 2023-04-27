@@ -18,3 +18,10 @@ After restart
 5	8
 DETACH+ATTACH PARTITION
 3	4
+Temporary tables
+Initial
+4	8
+REPLACE simple
+4	6
+ATTACH FROM
+4	6

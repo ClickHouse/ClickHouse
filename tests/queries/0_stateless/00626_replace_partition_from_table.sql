@@ -82,3 +82,32 @@ SELECT count(), sum(d) FROM dst;
 
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
+
+SELECT 'Temporary tables';
+
+CREATE TEMPORARY TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
+CREATE TABLE dst (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
+
+SELECT 'Initial';
+INSERT INTO src VALUES (0, '0', 1);
+INSERT INTO src VALUES (1, '0', 1);
+INSERT INTO src VALUES (1, '1', 1);
+INSERT INTO src VALUES (2, '0', 1);
+
+INSERT INTO dst VALUES (0, '1', 2);
+INSERT INTO dst VALUES (1, '1', 2), (1, '2', 2);
+INSERT INTO dst VALUES (2, '1', 2);
+
+SELECT count(), sum(d) FROM dst;
+
+SELECT 'REPLACE simple';
+ALTER TABLE dst REPLACE PARTITION 1 FROM src;
+SELECT count(), sum(d) FROM dst;
+
+SELECT 'ATTACH FROM';
+ALTER TABLE dst DROP PARTITION 1;
+ALTER TABLE dst ATTACH PARTITION 1 FROM src;
+SELECT count(), sum(d) FROM dst;
+
+DROP TEMPORARY TABLE IF EXISTS src;
+DROP TABLE IF EXISTS dst;
