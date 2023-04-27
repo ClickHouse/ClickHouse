@@ -12,6 +12,8 @@
 #include <filesystem>
 
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -33,7 +35,7 @@ public:
 
     void defineOptions(Poco::Util::OptionSet & options) override;
 
-    String getAbsolutePath(const String & relative) const;
+    fs::path getAbsolutePath(const String & relative) const;
 
     void askConfirmation(const String & prompt, std::function<void()> && callback);
 
@@ -52,12 +54,16 @@ protected:
 
     void loadCommands(std::vector<Command> && new_commands);
 
+    std::vector<String> getCompletions(const String & prefix) const;
+
     String history_file;
     LineReader::Suggest suggest;
 
     zkutil::ZooKeeperArgs zk_args;
 
     bool need_confirmation = false;
+
+    std::vector<String> registered_commands_and_four_letter_words;
 };
 
 }
