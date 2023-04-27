@@ -1,6 +1,12 @@
 set(ISAL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/isa-l")
 
-# check nasm compiler
+# The YASM and NASM assembers are somewhat mutually compatible. ISAL specifically needs NASM. If only YASM is installed, then check_language(ASM_NASM)
+# below happily finds YASM, leading to weird errors at build time. Therefore, do an explicit check for # NASM here.
+find_program(NASM_PATH NAMES nasm)
+if (NOT NASM_PATH)
+    message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
+endif ()
+
 include(CheckLanguage)
 check_language(ASM_NASM)
 if(NOT CMAKE_ASM_NASM_COMPILER)
