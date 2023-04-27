@@ -10,7 +10,6 @@
 
 
 namespace po = boost::program_options;
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -42,6 +41,48 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     return result;
 }
 
+std::vector<String> KeeperClient::getCompletions(const String & prefix) const
+{
+    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
+    IParser::Pos pos(tokens, 0);
+
+    if (pos->type != TokenType::BareWord)
+        return registered_commands_and_four_letter_words;
+
+    ++pos;
+    if (pos->isEnd())
+        return registered_commands_and_four_letter_words;
+
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
+    std::vector<String> result;
+    String string_path;
+    Expected expected;
+    if (!parseKeeperPath(pos, expected, string_path))
+        string_path = cwd;
+
+    if (!pos->isEnd())
+        return result;
+
+    fs::path path = string_path;
+    String parent_path;
+    if (string_path.ends_with("/"))
+        parent_path = getAbsolutePath(string_path);
+    else
+        parent_path = getAbsolutePath(path.parent_path());
+
+    try
+    {
+        for (const auto & child : zookeeper->getChildren(parent_path))
+            result.push_back(child);
+    }
+    catch (Coordination::Exception &) {}
+
+    std::sort(result.begin(), result.end());
+
+    return result;
+}
+
 void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
 {
     std::cout << prompt << " Continue?\n";
@@ -49,7 +90,7 @@ void KeeperClient::askConfirmation(const String & prompt, std::function<void()> 
     confirmation_callback = callback;
 }
 
-String KeeperClient::getAbsolutePath(const String & relative) const
+fs::path KeeperClient::getAbsolutePath(const String & relative) const
 {
     String result;
     if (relative.starts_with('/'))
@@ -65,18 +106,17 @@ String KeeperClient::getAbsolutePath(const String & relative) const
 
 void KeeperClient::loadCommands(std::vector<Command> && new_commands)
 {
-    std::vector<String> suggestions;
     for (const auto & command : new_commands)
     {
         String name = command->getName();
         commands.insert({name, command});
-        suggestions.push_back(std::move(name));
+        registered_commands_and_four_letter_words.push_back(std::move(name));
     }
 
     for (const auto & command : four_letter_word_commands)
-        suggestions.push_back(command);
+        registered_commands_and_four_letter_words.push_back(command);
 
-    suggest.addWords(std::move(suggestions));
+    std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
@@ -130,6 +170,9 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
 {
+    suggest.setCompletionsCallback(
+        [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
+
     loadCommands({
         std::make_shared<LSCommand>(),
         std::make_shared<CDCommand>(),
@@ -248,7 +291,6 @@ void KeeperClient::runInteractive()
 
 int KeeperClient::main(const std::vector<String> & /* args */)
 {
-
     auto host = config().getString("host", "localhost");
     auto port = config().getString("port", "2181");
     zk_args.hosts = {host + ":" + port};
