@@ -86,6 +86,9 @@ bool KeyMetadata::createBaseDirectory()
         }
         catch (...)
         {
+            /// Avoid errors like
+            /// std::__1::__fs::filesystem::filesystem_error: filesystem error: in create_directories: No space left on device
+            /// and mark file segment with SKIP_CACHE state
             tryLogCurrentException(__PRETTY_FUNCTION__);
             created_base_directory = false;
             return false;
