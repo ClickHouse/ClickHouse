@@ -40,7 +40,6 @@ namespace
         {
             res_columns[2]->insert(false);
             res_columns[3]->insertDefault();
-            res_columns[7]->insert(false);
         }
         else
         {
