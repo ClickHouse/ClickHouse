@@ -14,7 +14,7 @@ The `system.httpclient_log` table contains the following columns:
 -   `client` - ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the client that issues the request. Can have one of the following values:
     -   `AWS` — HTTP Client that access S3.
 -   `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the query that triggered this event.
--   `trace_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the current [trace](opentelemetry_span_log.md) that triggerd this event.
+-   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Identifier of the current [trace](opentelemetry_span_log.md) that triggerd this event.
 -   `span_id` ([UInt64](../../sql-reference/data-types/string.md)) — Identifier of current [span](opentelemetry_span_log.md) that triggered this event.
 -   `duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration of this HTTP request.
 -   `method` ([Enum8](../../sql-reference/data-types/string.md)) — HTTP method of this request. Can be one of the following values:

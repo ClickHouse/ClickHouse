@@ -41,16 +41,7 @@ NamesAndTypesList HttpClientLogElement::getNamesAndTypes()
         {"event_time", std::make_shared<DataTypeDateTime64>(6)},
         {"client", std::move(http_client_type)},
         {"query_id", std::make_shared<DataTypeString>()},
-
-        /// In the system table opentelemetry_log, trace id is designed as type of UUID.
-        /// In such case, when trace_id column is selected, its value is formatted as 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxx'.
-        ///
-        /// However, the OpenTelemetry standard treats trace id as a hex string without the dash character, that is 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-        /// it's not convenient for users to copy the format of UUID to search it in tracing log systems that follows OpenTelemetry standard.
-        ///
-        /// So we define the trace id as String in storage to make it consistent with OpenTelemetry standard, which will simply the SELECT sql.
-        /// This requires extra 16 bytes compared to saving it as UUID, and it's affordable.
-        {"trace_id", std::make_shared<DataTypeString>()},
+        {"trace_id", std::make_shared<DataTypeUUID>()},
         {"span_id",  std::make_shared<DataTypeUInt64>()},
         {"duration_ms", std::make_shared<DataTypeUInt64>()},
         {"method", std::move(http_method_type)},
@@ -73,7 +64,7 @@ void HttpClientLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(client);
 
     columns[i++]->insert(query_id);
-    columns[i++]->insert(trace_id == UUID() ? "" : fmt::format("{:016x}{:016x}",trace_id.toUnderType().items[0],trace_id.toUnderType().items[1]));
+    columns[i++]->insert(trace_id);
     columns[i++]->insert(span_id);
 
     columns[i++]->insert(duration_ms);
