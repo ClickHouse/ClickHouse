@@ -1145,7 +1145,7 @@ private:
 
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();
-    void recalcRightsIfNeeded(std::string_view setting_name);
+    void recalculateAccessRightsIfNeeded(std::string_view setting_name);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;

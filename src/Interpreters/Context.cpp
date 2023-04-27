@@ -1630,7 +1630,7 @@ void Context::setSettings(const Settings & settings_)
         calculateAccessRights();
 }
 
-void Context::recalcRightsIfNeeded(std::string_view name)
+void Context::recalculateAccessRightsIfNeeded(std::string_view name)
 {
     if (name == "readonly"
         || name == "allow_ddl"
@@ -1648,7 +1648,7 @@ void Context::setSetting(std::string_view name, const String & value)
         return;
     }
     settings.set(name, value);
-    recalcRightsIfNeeded(name);
+    recalculateAccessRightsIfNeeded(name);
 }
 
 void Context::setSetting(std::string_view name, const Field & value)
@@ -1660,7 +1660,7 @@ void Context::setSetting(std::string_view name, const Field & value)
         return;
     }
     settings.set(name, value);
-    recalcRightsIfNeeded(name);
+    recalculateAccessRightsIfNeeded(name);
 }
 
 void Context::applySettingChange(const SettingChange & change)
