@@ -175,6 +175,16 @@ public:
         field = nullptr;
     }
 
+    /// After changing one of `children` elements, update the corresponding member pointer if needed.
+    void updatePointerToChild(void * old_ptr, void * new_ptr)
+    {
+        forEachPointerToChild([old_ptr, new_ptr](void ** ptr) mutable
+        {
+            if (*ptr == old_ptr)
+                *ptr = new_ptr;
+        });
+    }
+
     /// Convert to a string.
 
     /// Format settings.
@@ -198,7 +208,8 @@ public:
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
+            show_secrets(other.show_secrets)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
@@ -272,6 +283,7 @@ public:
         Delete,
         Create,
         Drop,
+        Undrop,
         Rename,
         Optimize,
         Check,
@@ -308,6 +320,10 @@ public:
 
 protected:
     bool childrenHaveSecretParts() const;
+
+    /// Some AST classes have naked pointers to children elements as members.
+    /// This method allows to iterate over them.
+    virtual void forEachPointerToChild(std::function<void(void**)>) {}
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;

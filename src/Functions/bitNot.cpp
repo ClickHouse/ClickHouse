@@ -20,7 +20,7 @@ struct BitNotImpl
     static const constexpr bool allow_fixed_string = true;
     static const constexpr bool allow_string_integer = false;
 
-    static inline ResultType apply(A a)
+    static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
         return ~static_cast<ResultType>(a);
     }

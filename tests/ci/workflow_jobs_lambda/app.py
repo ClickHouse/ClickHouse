@@ -213,7 +213,7 @@ def send_event_workflow_job(workflow_job: WorkflowJob) -> None:
     #     `head_sha` String,
     #     `url` String,
     #     `html_url` String,
-    #     `status` Enum8('queued' = 1, 'in_progress' = 2, 'completed' = 3, 'waiting' = 4),
+    #     `status` Enum8('waiting' = 1, 'queued' = 2, 'in_progress' = 3, 'completed' = 4),
     #     `conclusion` LowCardinality(String),
     #     `started_at` DateTime,
     #     `completed_at` DateTime,

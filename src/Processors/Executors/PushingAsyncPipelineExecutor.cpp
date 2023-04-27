@@ -5,8 +5,9 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Poco/Event.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/CurrentThread.h>
+#include <Poco/Event.h>
 
 namespace DB
 {
@@ -97,18 +98,18 @@ struct PushingAsyncPipelineExecutor::Data
     }
 };
 
-static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
+            CurrentThread::detachFromGroupIfNotDetached();
     );
     setThreadName("QueryPushPipeEx");
 
     try
     {
         if (thread_group)
-            CurrentThread::attachTo(thread_group);
+            CurrentThread::attachToGroup(thread_group);
 
         data.executor->execute(num_threads);
     }
@@ -187,7 +188,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 
     if (!is_pushed)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+                        "Pipeline for PushingAsyncPipelineExecutor was finished before all data was inserted");
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)

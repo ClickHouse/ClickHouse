@@ -18,7 +18,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
-#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/DateLUT.h>
@@ -33,6 +32,8 @@
 namespace CurrentMetrics
 {
     extern const Metric PendingAsyncInsert;
+    extern const Metric AsynchronousInsertThreads;
+    extern const Metric AsynchronousInsertThreadsActive;
 }
 
 namespace ProfileEvents
@@ -104,10 +105,9 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return query_str == other.query_str && settings == other.settings;
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_)
+AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_)
     : bytes(std::move(bytes_))
     , query_id(std::move(query_id_))
-    , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
 {
 }
@@ -132,7 +132,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     : WithContext(context_)
     , pool_size(pool_size_)
     , queue_shards(pool_size)
-    , pool(pool_size)
+    , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, pool_size)
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
@@ -236,7 +236,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
+    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
@@ -342,10 +342,15 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
     }
 }
 
-static void appendElementsToLogSafe(
+namespace
+{
+
+using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
+
+void appendElementsToLogSafe(
     AsynchronousInsertLog & log,
     std::vector<AsynchronousInsertLogElement> elements,
-    std::chrono::time_point<std::chrono::system_clock> flush_time,
+    TimePoint flush_time,
     const String & flush_query_id,
     const String & flush_exception)
 try
@@ -365,6 +370,8 @@ try
 catch (...)
 {
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
+}
+
 }
 
 // static
@@ -473,8 +480,26 @@ try
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
 
+    auto finish_entries = [&]
+    {
+        for (const auto & entry : data->entries)
+        {
+            if (!entry->isFinished())
+                entry->finish();
+        }
+
+        if (!log_elements.empty())
+        {
+            auto flush_time = std::chrono::system_clock::now();
+            appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
+        }
+    };
+
     if (total_rows == 0)
+    {
+        finish_entries();
         return;
+    }
 
     try
     {
@@ -502,17 +527,7 @@ try
         throw;
     }
 
-    for (const auto & entry : data->entries)
-    {
-        if (!entry->isFinished())
-            entry->finish();
-    }
-
-    if (!log_elements.empty())
-    {
-        auto flush_time = std::chrono::system_clock::now();
-        appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
-    }
+    finish_entries();
 }
 catch (const Exception & e)
 {

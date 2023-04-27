@@ -10,7 +10,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 

@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS t_tuple_element;
 
 CREATE TABLE t_tuple_element(t1 Tuple(a UInt32, s String), t2 Tuple(UInt32, String)) ENGINE = Memory;
@@ -18,7 +16,7 @@ EXPLAIN SYNTAX SELECT tupleElement(t1, 'a') FROM t_tuple_element;
 
 SELECT tupleElement(number, 1) FROM numbers(1); -- { serverError 43 }
 SELECT tupleElement(t1) FROM t_tuple_element; -- { serverError 42 }
-SELECT tupleElement(t1, 'b') FROM t_tuple_element; -- { serverError 10 }
+SELECT tupleElement(t1, 'b') FROM t_tuple_element; -- { serverError 10, 47 }
 SELECT tupleElement(t1, 0) FROM t_tuple_element; -- { serverError 127 }
 SELECT tupleElement(t1, 3) FROM t_tuple_element; -- { serverError 127 }
 SELECT tupleElement(t1, materialize('a')) FROM t_tuple_element; -- { serverError 43 }
@@ -30,7 +28,7 @@ SELECT tupleElement(t2, 1) FROM t_tuple_element;
 EXPLAIN SYNTAX SELECT tupleElement(t2, 1) FROM t_tuple_element;
 
 SELECT tupleElement(t2) FROM t_tuple_element; -- { serverError 42 }
-SELECT tupleElement(t2, 'a') FROM t_tuple_element; -- { serverError 10 }
+SELECT tupleElement(t2, 'a') FROM t_tuple_element; -- { serverError 10, 47 }
 SELECT tupleElement(t2, 0) FROM t_tuple_element; -- { serverError 127 }
 SELECT tupleElement(t2, 3) FROM t_tuple_element; -- { serverError 127 }
 SELECT tupleElement(t2, materialize(1)) FROM t_tuple_element; -- { serverError 43 }

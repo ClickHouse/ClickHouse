@@ -288,7 +288,8 @@ public:
         readVarUInt(size, buf);
 
         if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
 
         if (limit_num_elems && unlikely(size > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
@@ -366,6 +367,9 @@ struct GroupArrayNodeBase
     {
         UInt64 size;
         readVarUInt(size, buf);
+        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
@@ -619,7 +623,8 @@ public:
             return;
 
         if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE);
 
         if (limit_num_elems && unlikely(elems > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);

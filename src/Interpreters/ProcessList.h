@@ -86,7 +86,7 @@ protected:
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
-    ThreadGroupStatusPtr thread_group;
+    ThreadGroupPtr thread_group;
 
     Stopwatch watch;
 
@@ -119,8 +119,22 @@ protected:
 
     mutable std::mutex executors_mutex;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    struct ExecutorHolder
+    {
+        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+
+        void cancel();
+
+        void remove();
+
+        PipelineExecutor * executor;
+        std::mutex mutex;
+    };
+
+    using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
+
+    /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
+    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
     enum QueryStreamsStatus
     {
@@ -148,7 +162,7 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        ThreadGroupStatusPtr && thread_group_,
+        ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         UInt64 watch_start_nanoseconds);
 
