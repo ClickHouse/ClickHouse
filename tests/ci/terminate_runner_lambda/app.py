@@ -198,11 +198,37 @@ def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
 
 
 def main(access_token: str, event: dict) -> Dict[str, List[str]]:
+    start = time.time()
     print("Got event", json.dumps(event, sort_keys=True).replace("\n", ""))
     to_kill_by_zone = how_many_instances_to_kill(event)
     instances_by_zone = get_candidates_to_be_killed(event)
+    # Getting ASG and instances' descriptions from the API
+    # We don't kill instances that alive for less than 10 minutes, since they
+    # could be not in the GH active runners yet
+    print(f"Check other hosts from the same ASG {event['AutoScalingGroupName']}")
+    asg_client = boto3.client("autoscaling")
+    as_groups_response = asg_client.describe_auto_scaling_groups(
+        AutoScalingGroupNames=[event["AutoScalingGroupName"]]
+    )
+    assert len(as_groups_response["AutoScalingGroups"]) == 1
+    asg = as_groups_response["AutoScalingGroups"][0]
+    asg_instance_ids = [instance["InstanceId"] for instance in asg["Instances"]]
+    instance_descriptions = get_cached_instances()
+    # The instances launched less than 10 minutes ago
+    immune_ids = [
+        instance["InstanceId"]
+        for instance in instance_descriptions.values()
+        if start - instance["LaunchTime"].timestamp() < 600
+    ]
+    # if the ASG's instance ID not in instance_descriptions, it's most probably
+    # is not cached yet, so we must mark it as immuned
+    immune_ids.extend(
+        iid for iid in asg_instance_ids if iid not in instance_descriptions
+    )
+    print("Time spent on the requests to AWS: ", time.time() - start)
 
     runners = list_runners(access_token)
+    runner_ids = set(runner.name for runner in runners)
     # We used to delete potential hosts to terminate from GitHub runners pool,
     # but the documentation states:
     # --- Returning an instance first in the response data does not guarantee its termination
@@ -221,13 +247,17 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
 
         delete_for_av = []  # type: RunnerDescriptions
         for candidate in candidates:
-            if candidate not in set(runner.name for runner in runners):
+            if candidate in immune_ids:
+                print(
+                    f"Candidate {candidate} started less than 10 minutes ago, won't touch a child"
+                )
+                break
+            if candidate not in runner_ids:
                 print(
                     f"Candidate {candidate} was not in runners list, simply delete it"
                 )
                 instances_to_kill.append(candidate)
-
-        for candidate in candidates:
+                break
             if len(delete_for_av) + len(instances_to_kill) == num_to_kill:
                 break
             if candidate in instances_to_kill:
@@ -253,16 +283,11 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
         instances_to_kill += [runner.name for runner in delete_for_av]
 
     if len(instances_to_kill) < total_to_kill:
-        print(f"Check other hosts from the same ASG {event['AutoScalingGroupName']}")
-        client = boto3.client("autoscaling")
-        as_groups = client.describe_auto_scaling_groups(
-            AutoScalingGroupNames=[event["AutoScalingGroupName"]]
-        )
-        assert len(as_groups["AutoScalingGroups"]) == 1
-        asg = as_groups["AutoScalingGroups"][0]
-        for instance in asg["Instances"]:
+        for instance in asg_instance_ids:
+            if instance in immune_ids:
+                continue
             for runner in runners:
-                if runner.name == instance["InstanceId"] and not runner.busy:
+                if runner.name == instance and not runner.busy:
                     print(f"Runner {runner.name} is not busy and can be deleted")
                     instances_to_kill.append(runner.name)
 
@@ -270,9 +295,9 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
                 print("Got enough instances to kill")
                 break
 
-    print("Got instances to kill: ", ", ".join(instances_to_kill))
     response = {"InstanceIDs": instances_to_kill}
-    print(response)
+    print("Got instances to kill: ", response)
+    print("Time spent on the request: ", time.time() - start)
     return response
 
 
