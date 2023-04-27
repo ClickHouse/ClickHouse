@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <config_version.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -773,6 +774,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->makeQueryContext();
         query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         query_context->getClientInfo().is_replicated_database_internal = true;
+        query_context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
+        query_context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
+        query_context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId("");
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");

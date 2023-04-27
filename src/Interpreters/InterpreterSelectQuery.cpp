@@ -96,8 +96,6 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
 
-#include "config_version.h"
-
 namespace DB
 {
 
@@ -3112,7 +3110,7 @@ void InterpreterSelectQuery::initSettings()
     if (query.settings())
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
 
-    auto & client_info = context->getClientInfo();
+    const auto & client_info = context->getClientInfo();
     static constexpr auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
     static constexpr auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
