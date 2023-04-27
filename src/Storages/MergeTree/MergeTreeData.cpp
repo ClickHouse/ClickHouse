@@ -3165,6 +3165,9 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
     else
         LOG_INFO(log, "Renaming {} to {}_{} and forgetting it.", part_to_detach->data_part_storage->getPartDirectory(), prefix, part_to_detach->name);
 
+    if (restore_covered)
+        waitForOutdatedPartsToBeLoaded();
+
     auto lock = lockParts();
     bool removed_active_part = false;
     bool restored_active_part = false;
