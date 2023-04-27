@@ -86,7 +86,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 
-        auto watch = std::make_unique<Stopwatch>(CLOCK_MONOTONIC);
+        auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
         Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
         watch->stop();
 

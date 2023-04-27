@@ -366,6 +366,9 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         part_info->column_name_set = {required_column_names.begin(), required_column_names.end()};
         part_info->task_columns = task_columns;
 
+        if (settings.prefetch_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "remove me");
+
         /// adjustBufferSize(), which is done in MergeTreeReaderStream and MergeTreeReaderCompact,
         /// lowers buffer size if file size (or required read range) is less. So we know that the
         /// settings.prefetch_buffer_size will be lowered there, therefore we account it here as well.
