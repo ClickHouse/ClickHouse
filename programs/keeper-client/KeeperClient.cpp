@@ -6,10 +6,8 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/parseQuery.h>
-#include <boost/program_options.hpp>
+#include <Poco/Util/HelpFormatter.h>
 
-
-namespace po = boost::program_options;
 
 namespace DB
 {
@@ -291,6 +289,15 @@ void KeeperClient::runInteractive()
 
 int KeeperClient::main(const std::vector<String> & /* args */)
 {
+    if (config().hasOption("help"))
+    {
+        Poco::Util::HelpFormatter help_formatter(KeeperClient::options());
+        auto header_str = fmt::format("{} [OPTION]\n", commandName());
+        help_formatter.setHeader(header_str);
+        help_formatter.format(std::cout);
+        return 0;
+    }
+
     auto host = config().getString("host", "localhost");
     auto port = config().getString("port", "2181");
     zk_args.hosts = {host + ":" + port};
