@@ -78,29 +78,8 @@ struct Documentation
     /// TODO: Please remove this constructor. Documentation should always be non-empty.
     Documentation() = default;
 
-    std::string examplesAsString() const
-    {
-        std::string res;
-        for (const auto & [example_name, example_query] : examples)
-        {
-            res += example_name + ":\n\n";
-            res += "```sql\n";
-            res += example_query + "\n";
-            res += "```\n";
-        }
-        return res;
-    }
-
-    std::string categoriesAsString() const
-    {
-        if (categories.empty())
-            return "";
-
-        std::string res = categories[0];
-        for (size_t i = 1; i < categories.size(); ++i)
-            res += ", " + categories[i];
-        return res;
-    }
+    std::string examplesAsString() const;
+    std::string categoriesAsString() const;
 };
 
 }
