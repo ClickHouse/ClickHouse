@@ -584,7 +584,9 @@ Strings DiskObjectStorage::getBlobPath(const String & path) const
     auto objects = getStorageObjects(path);
     Strings res;
     res.reserve(objects.size() + 1);
-    res.emplace_back(object_storage->getObjectsNamespace());
+    String objects_namespace = object_storage->getObjectsNamespace();
+    if (!objects_namespace.empty())
+        res.emplace_back(objects_namespace);
     for (const auto & object : objects)
         res.emplace_back(object.absolute_path);
     return res;
