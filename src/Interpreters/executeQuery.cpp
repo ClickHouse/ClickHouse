@@ -176,7 +176,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 
 
 /// Log exception (with query info) into text log (not into system table).
-static void logException(ContextPtr context, QueryLogElement & elem)
+static void logException(ContextPtr context, QueryLogElement & elem, bool log_error = true)
 {
     String comment;
     if (!elem.log_comment.empty())
@@ -187,7 +187,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
     PreformattedMessage message;
     message.format_string = elem.exception_format_string;
 
-    if (elem.stack_trace.empty())
+    if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
@@ -201,7 +201,10 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             toOneLineQuery(elem.query),
             elem.stack_trace);
 
-    LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
+    if (log_error)
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
+    else
+        LOG_INFO(&Poco::Logger::get("executeQuery"), message);
 }
 
 static void onExceptionBeforeStart(
@@ -300,22 +303,6 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     {
         if (ast_insert_into->watch)
             context->setSetting("output_format_enable_streaming", 1);
-    }
-}
-
-static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
-{
-    const ASTs & children = select_with_union.list_of_selects->children;
-    if (children.empty())
-        return;
-
-    // We might have an arbitrarily complex UNION tree, so just give
-    // up if the last first-order child is not a plain SELECT.
-    // It is flattened later, when we process UNION ALL/DISTINCT.
-    const auto * last_select = children.back()->as<ASTSelectQuery>();
-    if (last_select && last_select->settings())
-    {
-        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
     }
 }
 
@@ -448,9 +435,23 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
     BlockIO res;
-    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
+    auto implicit_txn_control = std::make_shared<bool>(false);
     String query_database;
     String query_table;
+
+    auto execute_implicit_tcl_query = [implicit_txn_control](const ContextMutablePtr & query_context, ASTTransactionControl::QueryType tcl_type)
+    {
+        /// Unset the flag on COMMIT and ROLLBACK
+        SCOPE_EXIT({ if (tcl_type != ASTTransactionControl::BEGIN) *implicit_txn_control = false; });
+
+        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(tcl_type);
+        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
+        tc.execute();
+
+        /// Set the flag after successful BIGIN
+        if (tcl_type == ASTTransactionControl::BEGIN)
+            *implicit_txn_control = true;
+    };
 
     try
     {
@@ -466,35 +467,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
-        if (const auto * select_query = ast->as<ASTSelectQuery>())
-        {
-            if (auto new_settings = select_query->settings())
-                InterpreterSetQuery(new_settings, context).executeForCurrentContext();
-        }
-        else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
-        {
-            applySettingsFromSelectWithUnion(*select_with_union_query, context);
-        }
-        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
-        {
-            if (query_with_output->settings_ast)
-                InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
+        InterpreterSetQuery::applySettingsFromQuery(ast, context);
 
-            if (const auto * create_query = ast->as<ASTCreateQuery>())
-            {
-                if (create_query->select)
-                {
-                    applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
-                }
-            }
-        }
-        else if (auto * insert_query = ast->as<ASTInsertQuery>())
-        {
-            context->setInsertFormat(insert_query->format);
-            if (insert_query->settings_ast)
-                InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+        if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
-        }
 
         setQuerySpecificSettings(ast, context);
 
@@ -661,6 +637,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
+        bool can_use_query_cache =
+            settings.allow_experimental_query_cache && settings.use_query_cache
+            && !ast->as<ASTExplainQuery>();
+
         if (!async_insert)
         {
             /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
@@ -671,14 +651,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (context->isGlobalContext())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
 
-                    /// If there is no session (which is the default for the HTTP Handler), set up one just for this as it is necessary
-                    /// to control the transaction lifetime
-                    if (!context->hasSessionContext())
-                        context->makeSessionContext();
-
-                    auto tc = std::make_shared<InterpreterTransactionControlQuery>(ast, context);
-                    tc->executeBegin(context->getSessionContext());
-                    implicit_txn_control = std::move(tc);
+                    execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
                 }
                 catch (Exception & e)
                 {
@@ -747,13 +720,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_cache = context->getQueryCache();
                 bool read_result_from_query_cache = false; /// a query must not read from *and* write to the query cache at the same time
                 if (query_cache != nullptr
-                    && (settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_reads_from_query_cache)
+                    && (can_use_query_cache && settings.enable_reads_from_query_cache)
                     && res.pipeline.pulling())
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                        context->getUserName(), /*dummy for is_shared*/ false,
+                        /*dummy value for expires_at*/ std::chrono::system_clock::from_time_t(1),
+                        /*dummy value for is_compressed*/ false);
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -768,20 +742,27 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 /// then add a processor on top of the pipeline which stores the result in the query cache.
                 if (!read_result_from_query_cache
                     && query_cache != nullptr
-                    && settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_writes_to_query_cache
+                    && can_use_query_cache && settings.enable_writes_to_query_cache
                     && res.pipeline.pulling()
                     && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        settings.query_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                        context->getUserName(), settings.query_cache_share_between_users,
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
+                        settings.query_cache_compress_entries);
 
                     const size_t num_query_runs = query_cache->recordQueryRun(key);
                     if (num_query_runs > settings.query_cache_min_query_runs)
                     {
-                        auto stream_in_query_cache_transform = std::make_shared<StreamInQueryCacheTransform>(res.pipeline.getHeader(), query_cache, key,
-                                std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()));
+                        auto stream_in_query_cache_transform =
+                                    std::make_shared<StreamInQueryCacheTransform>(
+                                        res.pipeline.getHeader(), query_cache, key,
+                                        std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()),
+                                        context->getSettings().query_cache_squash_partial_results,
+                                        context->getSettings().max_block_size,
+                                        context->getSettings().query_cache_max_size_in_bytes,
+                                        context->getSettings().query_cache_max_entries);
                         res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
                     }
                 }
@@ -936,8 +917,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    allow_experimental_query_cache = settings.allow_experimental_query_cache,
-                                    use_query_cache = settings.use_query_cache,
+                                    can_use_query_cache = can_use_query_cache,
                                     enable_writes_to_query_cache = settings.enable_writes_to_query_cache,
                                     query_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
@@ -946,6 +926,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     log_processors_profiles = settings.log_processors_profiles,
                                     status_info_to_query_log,
                                     implicit_txn_control,
+                                    execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
@@ -954,7 +935,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_cache = context->getQueryCache();
                 if (query_cache != nullptr
                     && pulling_pipeline
-                    && allow_experimental_query_cache && use_query_cache && enable_writes_to_query_cache
+                    && can_use_query_cache && enable_writes_to_query_cache
                     && (!astContainsNonDeterministicFunctions(ast, context) || query_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     query_pipeline.finalizeWriteInQueryCache();
@@ -995,7 +976,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                         double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
                         double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
-                        LOG_INFO(
+                        LOG_DEBUG(
                             &Poco::Logger::get("executeQuery"),
                             "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                             elem.read_rows,
@@ -1059,21 +1040,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         }
                     }
 
-                    if (implicit_txn_control)
-                    {
-                        try
-                        {
-                            implicit_txn_control->executeCommit(context->getSessionContext());
-                            implicit_txn_control.reset();
-                        }
-                        catch (const Exception &)
-                        {
-                            /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
-                            /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
-                            implicit_txn_control.reset();
-                            throw;
-                        }
-                    }
+                    if (*implicit_txn_control)
+                        execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
                 }
 
                 if (query_span)
@@ -1101,13 +1069,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                        quota(quota),
                                        status_info_to_query_log,
                                        implicit_txn_control,
-                                       query_span]() mutable
+                                       execute_implicit_tcl_query,
+                                       query_span](bool log_error) mutable
             {
-                if (implicit_txn_control)
-                {
-                    implicit_txn_control->executeRollback(context->getSessionContext());
-                    implicit_txn_control.reset();
-                }
+                if (*implicit_txn_control)
+                    execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
                 else if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
@@ -1139,9 +1105,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_duration_ms = start_watch.elapsedMilliseconds();
                 }
 
-                if (current_settings.calculate_text_stack_trace)
+                if (current_settings.calculate_text_stack_trace && log_error)
                     setExceptionStackTrace(elem);
-                logException(context, elem);
+                logException(context, elem, log_error);
 
                 /// In case of exception we log internal queries also
                 if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
@@ -1176,15 +1142,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        if (implicit_txn_control)
-        {
-            implicit_txn_control->executeRollback(context->getSessionContext());
-            implicit_txn_control.reset();
-        }
+        if (*implicit_txn_control)
+            execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
         else if (auto txn = context->getCurrentTransaction())
-        {
             txn->onException();
-        }
 
         if (!internal)
             onExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
@@ -1262,7 +1223,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(istr, max_query_size + 1, false);
+        LimitReadBuffer limit(istr, max_query_size + 1, /* trow_exception */ false, /* exact_limit */ {});
         copyData(limit, out);
         out.finalize();
 
@@ -1270,17 +1231,36 @@ void executeQuery(
         end = begin + parse_buf.size();
     }
 
-    ASTPtr ast;
-    BlockIO streams;
-
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
-    auto & pipeline = streams.pipeline;
-
     QueryResultDetails result_details
     {
         .query_id = context->getClientInfo().current_query_id,
         .timezone = DateLUT::instance().getTimeZone(),
     };
+
+    /// Set the result details in case of any exception raised during query execution
+    SCOPE_EXIT({
+        if (set_result_details == nullptr)
+            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+            return;
+
+        try
+        {
+            set_result_details(result_details);
+        }
+        catch (...)
+        {
+            /// This exception can be ignored.
+            /// because if the code goes here, it means there's already an exception raised during query execution,
+            /// and that exception will be propagated to outer caller,
+            /// there's no need to report the exception thrown here.
+        }
+    });
+
+    ASTPtr ast;
+    BlockIO streams;
+
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1351,7 +1331,15 @@ void executeQuery(
         }
 
         if (set_result_details)
-            set_result_details(result_details);
+        {
+            /// The call of set_result_details itself might throw exception,
+            /// in such case there's no need to call this function again in the SCOPE_EXIT defined above.
+            /// So the callback is cleared before its execution.
+            auto set_result_details_copy = set_result_details;
+            set_result_details = nullptr;
+
+            set_result_details_copy(result_details);
+        }
 
         if (pipeline.initialized())
         {

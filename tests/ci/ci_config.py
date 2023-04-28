@@ -259,6 +259,9 @@ CI_CONFIG = {
         "Stateless tests (release, wide parts enabled)": {
             "required_build": "package_release",
         },
+        "Stateless tests (release, analyzer)": {
+            "required_build": "package_release",
+        },
         "Stateless tests (release, DatabaseOrdinary)": {
             "required_build": "package_release",
         },
@@ -316,8 +319,11 @@ CI_CONFIG = {
         "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
-        "Compatibility check": {
+        "Compatibility check (amd64)": {
             "required_build": "package_release",
+        },
+        "Compatibility check (aarch64)": {
+            "required_build": "package_aarch64",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
@@ -372,20 +378,24 @@ CI_CONFIG = {
         "SQLancer (debug)": {
             "required_build": "package_debug",
         },
+        "Sqllogic test (release)": {
+            "required_build": "package_release",
+        },
     },
 }  # type: dict
 
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
-    "Fast test",
-    "Style Check",
     "ClickHouse build check",
     "ClickHouse special build check",
+    "Docs Check",
+    "Fast test",
     "Stateful tests (release)",
     "Stateless tests (release)",
-    "Unit tests (release-clang)",
+    "Style Check",
     "Unit tests (asan)",
     "Unit tests (msan)",
+    "Unit tests (release-clang)",
     "Unit tests (tsan)",
     "Unit tests (ubsan)",
 ]

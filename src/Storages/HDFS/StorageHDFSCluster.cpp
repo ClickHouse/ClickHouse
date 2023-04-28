@@ -13,6 +13,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -83,8 +84,12 @@ Pipe StorageHDFSCluster::read(
     auto extension = getTaskIteratorExtension(query_info.query, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    Block header;
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+    else
+        header = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
@@ -97,7 +102,8 @@ Pipe StorageHDFSCluster::read(
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 3, getName());
 
-    const auto & current_settings = context->getSettingsRef();
+    auto new_context = IStorageCluster::updateSettingsForTableFunctionCluster(context, context->getSettingsRef());
+    const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -105,18 +111,17 @@ Pipe StorageHDFSCluster::read(
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                shard_info.pool,
                 std::vector<IConnectionPool::Entry>{try_result},
                 queryToString(query_to_send),
                 header,
-                context,
+                new_context,
                 /*throttler=*/nullptr,
                 scalars,
                 Tables(),
                 processed_stage,
                 extension);
 
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
         }
     }
 

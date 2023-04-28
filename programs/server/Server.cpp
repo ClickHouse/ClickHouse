@@ -41,6 +41,7 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/ServerUUID.h>
+#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
@@ -66,7 +67,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <IO/Resource/registerSchedulerNodes.h>
@@ -773,6 +773,11 @@ try
         server_settings.max_io_thread_pool_free_size,
         server_settings.io_thread_pool_queue_size);
 
+    BackupsIOThreadPool::initialize(
+        server_settings.max_backups_io_thread_pool_size,
+        server_settings.max_backups_io_thread_pool_free_size,
+        server_settings.backups_io_thread_pool_queue_size);
+
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -810,9 +815,8 @@ try
         }
     );
 
-    ConnectionCollector::init(global_context, server_settings.max_threads_for_connection_collector);
-
-    bool has_zookeeper = config().has("zookeeper");
+    zkutil::validateZooKeeperConfig(config());
+    bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -977,7 +981,7 @@ try
 
     StatusFile status{path / "status", StatusFile::write_full_info};
 
-    DB::ServerUUID::load(path / "uuid", log);
+    ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -1188,12 +1192,12 @@ try
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
-            ServerSettings server_settings;
-            server_settings.loadSettingsFromConfig(*config);
+            ServerSettings server_settings_;
+            server_settings_.loadSettingsFromConfig(*config);
 
-            size_t max_server_memory_usage = server_settings.max_server_memory_usage;
+            size_t max_server_memory_usage = server_settings_.max_server_memory_usage;
 
-            double max_server_memory_usage_to_ram_ratio = server_settings.max_server_memory_usage_to_ram_ratio;
+            double max_server_memory_usage_to_ram_ratio = server_settings_.max_server_memory_usage_to_ram_ratio;
             size_t default_max_server_memory_usage = static_cast<size_t>(memory_amount * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
@@ -1221,7 +1225,7 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            total_memory_tracker.setAllowUseJemallocMemory(server_settings.allow_use_jemalloc_memory);
+            total_memory_tracker.setAllowUseJemallocMemory(server_settings_.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
@@ -1239,23 +1243,23 @@ try
 
             global_context->setRemoteHostFilter(*config);
 
-            global_context->setMaxTableSizeToDrop(server_settings.max_table_size_to_drop);
-            global_context->setMaxPartitionSizeToDrop(server_settings.max_partition_size_to_drop);
+            global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
+            global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
-            if (server_settings.concurrent_threads_soft_limit_num > 0 && server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = server_settings.concurrent_threads_soft_limit_num;
-            if (server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
+            if (server_settings_.concurrent_threads_soft_limit_num > 0 && server_settings_.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
+                concurrent_threads_soft_limit = server_settings_.concurrent_threads_soft_limit_num;
+            if (server_settings_.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = server_settings.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
+                auto value = server_settings_.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
             ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
 
-            global_context->getProcessList().setMaxSize(server_settings.max_concurrent_queries);
-            global_context->getProcessList().setMaxInsertQueriesAmount(server_settings.max_concurrent_insert_queries);
-            global_context->getProcessList().setMaxSelectQueriesAmount(server_settings.max_concurrent_select_queries);
+            global_context->getProcessList().setMaxSize(server_settings_.max_concurrent_queries);
+            global_context->getProcessList().setMaxInsertQueriesAmount(server_settings_.max_concurrent_insert_queries);
+            global_context->getProcessList().setMaxSelectQueriesAmount(server_settings_.max_concurrent_select_queries);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
@@ -1266,34 +1270,34 @@ try
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings.background_pool_size;
-                auto new_ratio = server_settings.background_merges_mutations_concurrency_ratio;
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
-                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings.background_merges_mutations_scheduling_policy.toString());
+                auto new_pool_size = server_settings_.background_pool_size;
+                auto new_ratio = server_settings_.background_merges_mutations_concurrency_ratio;
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings_.background_merges_mutations_scheduling_policy.toString());
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings.background_move_pool_size;
+                auto new_pool_size = server_settings_.background_move_pool_size;
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings.background_fetches_pool_size;
+                auto new_pool_size = server_settings_.background_fetches_pool_size;
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings.background_common_pool_size;
+                auto new_pool_size = server_settings_.background_common_pool_size;
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(server_settings.background_buffer_flush_schedule_pool_size);
-            global_context->getSchedulePool().increaseThreadsCount(server_settings.background_schedule_pool_size);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings.background_message_broker_schedule_pool_size);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings.background_distributed_schedule_pool_size);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(server_settings_.background_buffer_flush_schedule_pool_size);
+            global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
+            global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
 
             if (config->has("resources"))
             {
@@ -1304,7 +1308,7 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (config->has("zookeeper"))
+                if (zkutil::hasZooKeeperConfig(*config))
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
@@ -1453,7 +1457,7 @@ try
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -1478,7 +1482,7 @@ try
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     if (server_settings.index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);

@@ -43,13 +43,7 @@ DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    return cache->hash(path);
-}
-
-String CachedObjectStorage::getCachePath(const std::string & path) const
-{
-    FileCache::Key cache_key = getCacheKey(path);
-    return cache->getPathInLocalCache(cache_key);
+    return cache->createKeyForPath(path);
 }
 
 std::string CachedObjectStorage::generateBlobNameForPath(const std::string & path)
@@ -62,7 +56,7 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
 
-    if (FileCache::isReadOnly())
+    if (!canUseReadThroughCache())
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     return IObjectStorage::patchSettings(modified_settings);
@@ -182,7 +176,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
         && fs::path(object.absolute_path).extension() != ".tmp";
 
     auto path_key_for_cache = object.getPathKeyForCache();
@@ -192,7 +186,6 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     if (cache_on_write)
     {
         auto key = getCacheKey(path_key_for_cache);
-        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(path_key_for_cache), key.toString());
 
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
             std::move(implementation_buffer),
@@ -213,7 +206,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    cache->removeIfExists(getCacheKey(path_key_for_cache));
+    cache->removeKeyIfExists(getCacheKey(path_key_for_cache));
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
@@ -306,6 +299,13 @@ void CachedObjectStorage::applyNewSettings(
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
+}
+
+bool CachedObjectStorage::canUseReadThroughCache()
+{
+    return CurrentThread::isInitialized()
+        && CurrentThread::get().getQueryContext()
+        && !CurrentThread::getQueryId().empty();
 }
 
 }

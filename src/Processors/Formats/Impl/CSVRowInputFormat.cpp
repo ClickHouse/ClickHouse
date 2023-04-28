@@ -102,6 +102,12 @@ void CSVRowInputFormat::setReadBuffer(ReadBuffer & in_)
     buf->setSubBuffer(in_);
 }
 
+void CSVRowInputFormat::resetParser()
+{
+    RowInputFormatWithNamesAndTypes::resetParser();
+    buf->reset();
+}
+
 static void skipEndOfLine(ReadBuffer & in)
 {
     /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
