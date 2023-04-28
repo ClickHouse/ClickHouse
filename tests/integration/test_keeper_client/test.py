@@ -30,7 +30,10 @@ def test_base_commands(started_cluster):
         [
             started_cluster.server_bin_path,
             "keeper-client",
-            f"{cluster.get_instance_ip('zoo1')}:{cluster.zookeeper_port}",
+            "--host",
+            cluster.get_instance_ip('zoo1'),
+            "--port",
+            cluster.zookeeper_port,
             "-q",
             "create test_create_zk_node1 testvalue1;create test_create_zk_node_2 testvalue2;get test_create_zk_node1;",
         ],
@@ -47,7 +50,10 @@ def test_four_letter_word_commands(started_cluster):
         [
             started_cluster.server_bin_path,
             "keeper-client",
-            f"{cluster.get_instance_ip('zoo1')}:{cluster.zookeeper_port}",
+            "--host",
+            cluster.get_instance_ip('zoo1'),
+            "--port",
+            cluster.zookeeper_port,
             "-q",
             "ruok",
         ],
