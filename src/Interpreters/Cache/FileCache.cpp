@@ -405,11 +405,8 @@ FileSegmentsHolderPtr FileCache::set(
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
-FileSegmentsHolderPtr FileCache::getOrSet(
-    const Key & key,
-    size_t offset,
-    size_t size,
-    const CreateFileSegmentSettings & settings)
+FileSegmentsHolderPtr
+FileCache::getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
 

@@ -536,7 +536,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
     });
 
     OpenTelemetry::SpanHolder span{
-        fmt::format("CachedOnDiskReadBufferFromFile::predownload(key={}, size={})", file_segment->key().toString(), bytes_to_predownload)};
+        fmt::format("CachedOnDiskReadBufferFromFile::predownload(key={}, size={})", file_segment.key().toString(), bytes_to_predownload)};
 
     if (bytes_to_predownload)
     {
