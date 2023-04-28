@@ -23,9 +23,9 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionIceberg>(
         {.documentation
-         = {R"(The table function can be used to read the Iceberg table stored on object store.)",
-            Documentation::Examples{{"iceberg", "SELECT * FROM iceberg(url, access_key_id, secret_access_key)"}},
-            Documentation::Categories{"DataLake"}},
+         = {.description=R"(The table function can be used to read the Iceberg table stored on object store.)",
+            .examples{{"iceberg", "SELECT * FROM iceberg(url, access_key_id, secret_access_key)", ""}},
+            .categories{"DataLake"}},
          .allow_readonly = false});
 }
 

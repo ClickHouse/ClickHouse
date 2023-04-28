@@ -135,8 +135,8 @@ struct NameExtractKeyValuePairsWithEscaping
 REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
     factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairs, false>>(
-        Documentation(
-            R"(Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
+        FunctionDocumentation{
+            .description=R"(Extracts key-value pairs from any string. The string does not need to be 100% structured in a key value pair format;
 
             It can contain noise (e.g. log files). The key-value pair format to be interpreted should be specified via function arguments.
 
@@ -197,12 +197,12 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv────────────────────┐
             │ {'age':'a\\x0A\\n\\0'} │
             └───────────────────────┘
-            ```)")
+            ```)"}
     );
 
     factory.registerFunction<ExtractKeyValuePairs<NameExtractKeyValuePairsWithEscaping, true>>(
-        Documentation(
-            R"(Same as `extractKeyValuePairs` but with escaping support.
+        FunctionDocumentation{
+            .description=R"(Same as `extractKeyValuePairs` but with escaping support.
 
             Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
             Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
@@ -226,7 +226,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             ┌─kv───────────────┐
             │ {'age':'a\n\n\0'} │
             └──────────────────┘
-            ```)")
+            ```)"}
     );
 }
 
