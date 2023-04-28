@@ -36,6 +36,18 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
+## Grant Current Grants Syntax
+``` sql
+GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+-   `privilege` — Type of privilege.
+-   `role` — ClickHouse user role.
+-   `user` — ClickHouse user account.
+
+Using the `CURRENT GRANTS` statement allows you to give all specified privileges to the given user or role.
+If none of the privileges were specified, then the given user or role will receive all available privileges for `CURRENT_USER`.
+
 ## Usage
 
 To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can grant privileges only inside the scope of your account privileges.

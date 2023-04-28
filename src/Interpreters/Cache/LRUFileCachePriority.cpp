@@ -1,5 +1,7 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 
 namespace CurrentMetrics
@@ -16,8 +18,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IFileCachePriority::WriteIterator LRUFileCachePriority::add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> &)
+IFileCachePriority::Iterator LRUFileCachePriority::add(
+    KeyMetadataPtr key_metadata,
+    size_t offset,
+    size_t size,
+    const CacheGuard::Lock &)
 {
+    const auto & key = key_metadata->key;
 #ifndef NDEBUG
     for (const auto & entry : queue)
     {
@@ -25,40 +32,56 @@ IFileCachePriority::WriteIterator LRUFileCachePriority::add(const Key & key, siz
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
-                entry.key.toString(), entry.offset, entry.size);
+                entry.key, entry.offset, entry.size);
     }
 #endif
 
-    auto iter = queue.insert(queue.end(), FileCacheRecord(key, offset, size));
-    cache_size += size;
+    const auto & size_limit = getSizeLimit();
+    if (size_limit && current_size + size > size_limit)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Not enough space to add {}:{} with size {}: current size: {}/{}",
+            key, offset, size, current_size, getSizeLimit());
+    }
+
+    current_size += size;
+
+    auto iter = queue.insert(queue.end(), Entry(key, offset, size, key_metadata));
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
+    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key, offset);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }
 
-bool LRUFileCachePriority::contains(const Key & key, size_t offset, std::lock_guard<std::mutex> &)
+void LRUFileCachePriority::removeAll(const CacheGuard::Lock &)
 {
-    for (const auto & record : queue)
-    {
-        if (key == record.key && offset == record.offset)
-            return true;
-    }
-    return false;
-}
-
-void LRUFileCachePriority::removeAll(std::lock_guard<std::mutex> &)
-{
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, cache_size);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, current_size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, queue.size());
 
     LOG_TEST(log, "Removed all entries from LRU queue");
 
     queue.clear();
-    cache_size = 0;
+    current_size = 0;
+}
+
+void LRUFileCachePriority::pop(const CacheGuard::Lock &)
+{
+    remove(queue.begin());
+}
+
+LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIterator it)
+{
+    current_size -= it->size;
+
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
+
+    LOG_TEST(log, "Removed entry from LRU queue, key: {}, offset: {}", it->key, it->offset);
+    return queue.erase(it);
 }
 
 LRUFileCachePriority::LRUFileCacheIterator::LRUFileCacheIterator(
@@ -67,44 +90,83 @@ LRUFileCachePriority::LRUFileCacheIterator::LRUFileCacheIterator(
 {
 }
 
-IFileCachePriority::ReadIterator LRUFileCachePriority::getLowestPriorityReadIterator(std::lock_guard<std::mutex> &)
+void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &)
 {
-    return std::make_unique<const LRUFileCacheIterator>(this, queue.begin());
+    for (auto it = queue.begin(); it != queue.end();)
+    {
+        auto locked_key = it->key_metadata->tryLock();
+        if (!locked_key || it->size == 0)
+        {
+            it = remove(it);
+            continue;
+        }
+
+        auto metadata = locked_key->tryGetByOffset(it->offset);
+        if (!metadata)
+        {
+            it = remove(it);
+            continue;
+        }
+
+        if (metadata->size() != it->size)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mismatch of file segment size in file segment metadata and priority queue: {} != {} ({})",
+                it->size, metadata->size(), metadata->file_segment->getInfoForLog());
+        }
+
+        auto result = func(*locked_key, metadata);
+        switch (result)
+        {
+            case IterationResult::BREAK:
+            {
+                return;
+            }
+            case IterationResult::CONTINUE:
+            {
+                ++it;
+                break;
+            }
+            case IterationResult::REMOVE_AND_CONTINUE:
+            {
+                it = remove(it);
+                break;
+            }
+        }
+    }
 }
 
-IFileCachePriority::WriteIterator LRUFileCachePriority::getLowestPriorityWriteIterator(std::lock_guard<std::mutex> &)
+LRUFileCachePriority::Iterator LRUFileCachePriority::LRUFileCacheIterator::remove(const CacheGuard::Lock &)
 {
-    return std::make_shared<LRUFileCacheIterator>(this, queue.begin());
+    return std::make_shared<LRUFileCacheIterator>(cache_priority, cache_priority->remove(queue_iter));
 }
 
-size_t LRUFileCachePriority::getElementsNum(std::lock_guard<std::mutex> &) const
+void LRUFileCachePriority::LRUFileCacheIterator::annul()
 {
-    return queue.size();
+    cache_priority->current_size -= queue_iter->size;
+    queue_iter->size = 0;
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::removeAndGetNext(std::lock_guard<std::mutex> &)
+void LRUFileCachePriority::LRUFileCacheIterator::updateSize(int64_t size)
 {
-    cache_priority->cache_size -= queue_iter->size;
+    cache_priority->current_size += size;
 
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, queue_iter->size);
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
+    if (size > 0)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
+    else
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, size);
 
-    LOG_TEST(cache_priority->log, "Removed entry from LRU queue, key: {}, offset: {}", queue_iter->key.toString(), queue_iter->offset);
+    queue_iter->size += size;
 
-    queue_iter = cache_priority->queue.erase(queue_iter);
+    chassert(cache_priority->current_size >= 0);
+    chassert(queue_iter->size >= 0);
 }
 
-void LRUFileCachePriority::LRUFileCacheIterator::incrementSize(size_t size_increment, std::lock_guard<std::mutex> &)
+size_t LRUFileCachePriority::LRUFileCacheIterator::use(const CacheGuard::Lock &)
 {
-    cache_priority->cache_size += size_increment;
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size_increment);
-    queue_iter->size += size_increment;
-}
-
-void LRUFileCachePriority::LRUFileCacheIterator::use(std::lock_guard<std::mutex> &)
-{
-    queue_iter->hits++;
     cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, queue_iter);
+    return ++queue_iter->hits;
 }
 
 };
