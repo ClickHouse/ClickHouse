@@ -63,6 +63,9 @@ struct HTTPFileInfo
     std::optional<size_t> file_size;
     std::optional<time_t> last_modified;
     bool seekable = false;
+
+    /// If we got a non-retriable error, we cache that information and don't try HEAD requests again.
+    std::optional<HTTPException> exception;
 };
 
 
@@ -106,8 +109,6 @@ namespace detail
         /// In case of redirects, save result uri to use it if we retry the request.
         std::optional<Poco::URI> saved_uri_redirect;
 
-        bool http_skip_not_found_url;
-
         ReadSettings settings;
         Poco::Logger * log;
 
@@ -132,8 +133,6 @@ namespace detail
             RETRYABLE_ERROR,
             /// If error is not retriable, `exception` variable must be set.
             NON_RETRYABLE_ERROR,
-            /// Allows to skip not found urls for globs
-            SKIP_NOT_FOUND_URL,
             NONE,
         };
 
@@ -160,7 +159,6 @@ namespace detail
             const RemoteHostFilter * remote_host_filter_ = nullptr,
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
-            bool http_skip_not_found_url_ = false,
             std::optional<HTTPFileInfo> file_info_ = std::nullopt);
 
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false, bool for_object_info = false);
@@ -169,8 +167,7 @@ namespace detail
 
         /**
          * Throws if error is retryable, otherwise sets initialization_error = NON_RETRYABLE_ERROR and
-         * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
-         * sets initialization_error = SKIP_NOT_FOUND_URL, otherwise throws.
+         * saves exception into `exception` variable.
          */
         void initialize();
 
@@ -203,7 +200,7 @@ namespace detail
 
         std::optional<time_t> getLastModificationTime();
 
-        HTTPFileInfo getFileInfo();
+        HTTPFileInfo getFileInfo(bool use_cache = true);
 
         HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
     };
@@ -285,10 +282,7 @@ public:
         const HTTPHeaderEntries & http_header_entries_ = {},
         const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
-        bool use_external_buffer_ = false,
-        bool skip_not_found_url_ = false,
-        std::optional<HTTPFileInfo> file_info_ = std::nullopt,
-        std::shared_ptr<LocallyPooledSessionFactory> session_pool = nullptr);
+        bool use_external_buffer_ = false);
 };
 
 

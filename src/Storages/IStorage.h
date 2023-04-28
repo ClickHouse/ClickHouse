@@ -375,7 +375,7 @@ private:
     /// This is enabled by default, but in some cases shouldn't be done.
     /// For example, when you read from system.numbers instead of system.numbers_mt,
     /// you still expect the data to be processed sequentially.
-    virtual bool parallelizeOutputAfterReading() const { return true; }
+    virtual bool parallelizeOutputAfterReading(ContextPtr) const { return true; }
 
 public:
     /// Other version of read which adds reading step to query plan.

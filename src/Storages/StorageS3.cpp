@@ -984,6 +984,11 @@ bool StorageS3::supportsSubsetOfColumns() const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
+bool StorageS3::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
+}
+
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

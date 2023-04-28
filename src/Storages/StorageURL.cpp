@@ -198,10 +198,12 @@ namespace
             auto headers = getHeaders(headers_);
 
             /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
-            initialize = [=, this](const URIInfo::FailoverOptions & uri_options)
+            initialize = [=, this](const URIInfo::FailoverOptions & uri_options) -> InitResult
             {
                 if (uri_options.empty())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
+
+                bool skip_if_not_found = glob_url && context->getReadSettings().http_skip_not_found_url_for_globs;
 
                 auto first_option = uri_options.begin();
                 read_buf = getFirstAvailableURLReadBuffer(
@@ -214,8 +216,10 @@ namespace
                     timeouts,
                     credentials,
                     headers,
-                    glob_url,
-                    uri_options.size() == 1);
+                    skip_if_not_found);
+
+                if (skip_if_not_found && !read_buf)
+                    return InitResult::Skip;
 
                 try
                 {
@@ -248,6 +252,8 @@ namespace
 
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
+                return InitResult::Ok;
             };
         }
 
@@ -272,7 +278,10 @@ namespace
 
                     auto current_uri = uri_info->uri_list_to_read[current_uri_pos];
 
-                    initialize(current_uri);
+                    auto r = initialize(current_uri);
+
+                    if (r == InitResult::Skip)
+                        continue;
                 }
 
                 Chunk chunk;
@@ -302,16 +311,21 @@ namespace
             const ConnectionTimeouts & timeouts,
             Poco::Net::HTTPBasicCredentials & credentials,
             const HTTPHeaderEntries & headers,
-            bool glob_url,
-            bool delay_initialization)
+            bool skip_if_not_found)
         {
             String first_exception_message;
             ReadSettings read_settings = context->getReadSettings();
 
+            /// Iterate over failover options. Used in 2 ways:
+            ///  + For glob like "x|y|z" we need to read from only one of x, y, z.
+            ///    These are failover options, iterated by this loop here.
+            ///  - For glob like "{1..10}" we need to read from all 10 URLs.
+            ///    These are iterated in generate(), not here.
+            ///  + But for schema inference, "{1..10}" globs are treated as failover options and are
+            ///    subject to this loop.
             size_t options = std::distance(option, end);
             for (; option != end; ++option)
             {
-                bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
                 auto request_uri = Poco::URI(*option);
 
                 for (const auto & [param, value] : params)
@@ -320,47 +334,67 @@ namespace
                 setCredentials(credentials, request_uri);
 
                 const auto settings = context->getSettings();
-                auto res = std::make_unique<ReadWriteBufferFromHTTP>(
-                    request_uri,
-                    http_method,
-                    callback,
-                    timeouts,
-                    credentials,
-                    settings.max_http_get_redirects,
-                    settings.max_read_buffer_size,
-                    read_settings,
-                    headers,
-                    &context->getRemoteHostFilter(),
-                    delay_initialization,
-                    /* use_external_buffer */ false,
-                    /* skip_url_not_found_error */ skip_url_not_found_error);
 
-                if (options > 1)
+                /// There's a bit of a tradeoff here. Consider two situations:
+                ///  (1) Suppose the URL contains failover options
+                ///      (or globs & http_skip_not_found_url_for_globs).
+                ///      Then we want to send an HTTP request right here to determine availability.
+                ///      Suppose also that the web server doesn't support ranges or HEAD requests
+                ///      (e.g. webhdfs). Then the HTTP request we send should be the actual GET
+                ///      for the whole file.
+                ///      So, delay_initialization = false is required.
+                ///  (2) Suppose HTTP server supports ranges.
+                ///      Then we want to read in parallel, in shorter chunks.
+                ///      It would be better to not send a big GET request here, it will just be
+                ///      cancelled later.
+                ///      So, delay_initialization = true is preferred.
+                ///
+                /// So we opportunistically set delay_initialization to true when there's only one
+                /// URL, and to false in other cases to make (1) work.
+                bool delay_initialization = options == 1 && !skip_if_not_found;
+
+                try
                 {
-                    // Send a HEAD request to check availability.
-                    try
-                    {
-                        res->getFileInfo();
-                    }
-                    catch (...)
-                    {
-                        if (first_exception_message.empty())
-                            first_exception_message = getCurrentExceptionMessage(false);
-
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-                        continue;
-                    }
+                    return std::make_unique<ReadWriteBufferFromHTTP>(
+                        request_uri,
+                        http_method,
+                        callback,
+                        timeouts,
+                        credentials,
+                        settings.max_http_get_redirects,
+                        settings.max_read_buffer_size,
+                        read_settings,
+                        headers,
+                        &context->getRemoteHostFilter(),
+                        delay_initialization);
                 }
+                catch (...)
+                {
+                    if (first_exception_message.empty())
+                        first_exception_message = getCurrentExceptionMessage(false);
 
-                return res;
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                    continue;
+                }
             }
 
-            throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
+            if (skip_if_not_found)
+                return nullptr;
+            else
+                throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}",
+                    options, first_exception_message);
         }
 
     private:
-        using InitializeFunc = std::function<void(const URIInfo::FailoverOptions &)>;
+        enum class InitResult
+        {
+            Ok,
+            /// Silently skip this URI.
+            Skip,
+        };
+
+        using InitializeFunc = std::function<InitResult(const URIInfo::FailoverOptions &)>;
         InitializeFunc initialize;
 
         String name;
@@ -571,7 +605,6 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             getHTTPTimeouts(context),
             credentials,
             headers,
-            false,
             false);
         ++it;
         return wrapReadBufferWithCompressionMethod(
@@ -595,6 +628,11 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
 bool IStorageURLBase::supportsSubsetOfColumns() const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+}
+
+bool IStorageURLBase::parallelizeOutputAfterReading(ContextPtr context) const
+{
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
 }
 
 Pipe IStorageURLBase::read(
@@ -842,10 +880,7 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             settings.max_read_buffer_size,
             context->getReadSettings(),
             headers,
-            &context->getRemoteHostFilter(),
-            true,
-            false,
-            false);
+            &context->getRemoteHostFilter());
 
         return buf.getLastModificationTime();
     }
