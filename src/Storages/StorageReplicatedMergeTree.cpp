@@ -7617,7 +7617,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     background_operations_assignee.trigger();
 
     std::unordered_set<String> wait_for_ids;
-    bool was_interrupted = false;
+    std::atomic_bool was_interrupted = false;
 
     Poco::Event target_entry_event;
     auto callback = [this, &target_entry_event, &wait_for_ids, &was_interrupted, sync_mode]
