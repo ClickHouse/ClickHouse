@@ -8325,6 +8325,34 @@ MergeTreePartInfo MergeTreeData::findPartInfoByMinBlock(Int64 min_block) const
             ErrorCodes::LOGICAL_ERROR, "Can not find part info in part_info_by_block_number, this is a bug, min_block: {}", min_block);
 }
 
+ASTPtr MergeTreeData::getSelectQuery()
+{
+    auto metadata = getInMemoryMetadataPtr();
+    auto res_query = std::make_shared<ASTSelectQuery>();
+
+    auto select = std::make_shared<ASTExpressionList>();
+    for (const auto & unique_expr : metadata->unique_key.expression_list_ast->children)
+    {
+        select->children.push_back(unique_expr);
+    }
+    select->children.push_back(std::make_shared<ASTIdentifier>("_part_min_block"));
+    select->children.push_back(std::make_shared<ASTIdentifier>("_part_offset"));
+    if (!merging_params.version_column.empty())
+        select->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
+    res_query->setExpression(ASTSelectQuery::Expression::SELECT, select);
+
+    res_query->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+    auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto table_expr = std::make_shared<ASTTableExpression>();
+    res_query->tables()->children.push_back(tables_elem);
+    tables_elem->table_expression = table_expr;
+    tables_elem->children.push_back(table_expr);
+    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(getStorageID());
+    table_expr->children.push_back(table_expr->database_and_table_name);
+
+    return res_query;
+}
+
 ASTPtr MergeTreeData::getFetchIndexQuery(
     const MergeTreePartition & partition, const std::vector<Field> & min_key_values, const std::vector<Field> & max_key_values)
 {

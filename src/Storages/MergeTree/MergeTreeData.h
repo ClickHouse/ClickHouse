@@ -1080,6 +1080,7 @@ public:
 
     ASTPtr getFetchIndexQuery(
         const MergeTreePartition & partition, const std::vector<Field> & min_key_values, const std::vector<Field> & max_key_values);
+    ASTPtr getSelectQuery();
 
 protected:
     friend class IMergeTreeDataPart;

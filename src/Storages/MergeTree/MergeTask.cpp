@@ -551,15 +551,25 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     Pipes pipes;
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
+        DeleteBitmapPtr delete_bitmap = nullptr;
+        auto part = global_ctx->future_part->parts[part_num];
+        if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && global_ctx->table_version)
+        {
+            auto part_version = global_ctx->table_version->getPartVersion(part->info);
+
+            auto & bitmap_cache = global_ctx->data->delete_bitmap_cache;
+            delete_bitmap = bitmap_cache->getOrCreate(part, part_version);
+        }
         Pipe pipe = createMergeTreeSequentialSource(
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            global_ctx->future_part->parts[part_num],
+            part,
             column_names,
             ctx->read_with_direct_io,
             true,
             false,
-            global_ctx->input_rows_filtered);
+            global_ctx->input_rows_filtered,
+            delete_bitmap);
 
         pipes.emplace_back(std::move(pipe));
     }
@@ -905,7 +915,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     for (const auto & part : global_ctx->future_part->parts)
     {
-        // leefeng pass unique mergetree into it, filter data by delete bitmap
         DeleteBitmapPtr delete_bitmap = nullptr;
         if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && global_ctx->table_version)
         {

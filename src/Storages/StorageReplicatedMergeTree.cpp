@@ -97,6 +97,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string.hpp>
@@ -4154,7 +4156,32 @@ bool StorageReplicatedMergeTree::fetchPart(
         if (!to_detached)
         {
             Transaction transaction(*this, NO_TRANSACTION_RAW);
-            renameTempPartAndReplace(part, transaction);
+
+            std::unique_ptr<TableVersion> new_table_version;
+            if (merging_params.mode == MergingParams::Mode::Unique)
+            {
+                std::lock_guard<std::mutex> lock(write_merge_lock);
+                auto primary_index = primary_index_cache->getOrSet(part->info.partition_id, part->partition);
+
+                PrimaryIndex::DeletesMap deletes_map;
+                PrimaryIndex::DeletesKeys deletes_keys;
+
+                auto storage_metadata = getInMemoryMetadataPtr();
+                auto storage_snapshot = getStorageSnapshotWithoutParts(storage_metadata);
+                Names unique_keys = storage_metadata->getUniqueKeyColumns();
+
+                Names read_columns = unique_keys;
+                read_columns.push_back("_part_min_block");
+                read_columns.push_back("_part_offset");
+                if (!merging_params.version_column.empty())
+                    read_columns.push_back(merging_params.version_column);
+
+                Pipe pipe = createMergeTreeSequentialSource(*this, storage_snapshot, part, read_columns, false, true, false, nullptr);
+                auto query = getSelectQuery();
+                /// TODO apply part
+            }
+
+            renameTempPartAndReplace(part, transaction, std::move(new_table_version));
 
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, hardlinked_files);
 
