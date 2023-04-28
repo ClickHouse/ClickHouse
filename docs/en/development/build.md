@@ -72,7 +72,7 @@ cmake -S . -B build
 cmake --build build  # or: `cd build; ninja`
 ```
 
-To create an executable, run `cmake --build --target clickhouse` (or: `cd build; ninja clickhouse`).
+To create an executable, run `cmake --build build --target clickhouse` (or: `cd build; ninja clickhouse`).
 This will create executable `build/programs/clickhouse` which can be used with `client` or `server` arguments.
 
 ## Building on Any Linux {#how-to-build-clickhouse-on-any-linux}
