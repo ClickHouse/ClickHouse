@@ -199,10 +199,12 @@ public:
     }
 
     std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(
-        const String & path, const ReadSettings & settings) const override
+        const String & path, const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->readFile(wrapped_path, settings);
+        return delegate->readFile(wrapped_path, settings, read_hint, file_size);
     }
 
     std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(

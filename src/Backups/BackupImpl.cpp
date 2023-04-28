@@ -737,14 +737,14 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
     }
 }
 
-size_t BackupImpl::copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode, const WriteSettings & write_settings) const
+size_t BackupImpl::copyFileToDisk(const String & file_name,
+                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
 {
-    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode, write_settings);
+    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode);
 }
 
-size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode, const WriteSettings & write_settings) const
+size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
+                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
 {
     if (open_mode != OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
@@ -790,13 +790,13 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, Dis
     if (info.size && !info.base_size && !use_archive)
     {
         /// Data comes completely from this backup.
-        reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode, write_settings);
+        reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
         file_copied = true;
     }
     else if (info.size && (info.size == info.base_size))
     {
         /// Data comes completely from the base backup (nothing comes from this backup).
-        base_backup->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode, write_settings);
+        base_backup->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode);
         file_copied = true;
     }
 
@@ -812,11 +812,11 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, Dis
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
         auto read_buffer = readFileImpl(size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
         std::unique_ptr<WriteBuffer> write_buffer;
-        size_t buf_size = std::min<size_t>(info.size, DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buf_size = std::min<size_t>(info.size, reader->getWriteBufferSize());
         if (info.encrypted_by_disk)
-            write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, write_settings);
+            write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
         else
-            write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, write_settings);
+            write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
         copyData(*read_buffer, *write_buffer, info.size);
         write_buffer->finalize();
     }

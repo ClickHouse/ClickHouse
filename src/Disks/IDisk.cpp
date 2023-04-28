@@ -52,7 +52,7 @@ void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_ba
     }
 }
 
-std::unique_ptr<ReadBufferFromFileBase> IDisk::readEncryptedFile(const String &, const ReadSettings &) const
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readEncryptedFile(const String &, const ReadSettings &, std::optional<size_t>, std::optional<size_t>) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }

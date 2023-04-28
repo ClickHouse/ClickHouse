@@ -254,7 +254,10 @@ public:
 
     /// Reads a file from an encrypted disk without decrypting it.
     virtual std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(
-        const String & path, const ReadSettings & settings = ReadSettings{}) const;
+        const String & path,
+        const ReadSettings & settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const;
 
     /// Writes an already encrypted file to an encrypted disk.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(

@@ -11,6 +11,7 @@
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
+#include <Disks/IDisk.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -101,10 +102,9 @@ namespace
 
 BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
-    : IBackupReader(&Poco::Logger::get("BackupReaderS3"))
+    : BackupReaderDefault(&Poco::Logger::get("BackupReaderS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
-    , read_settings(context_->getReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
     , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
 {
@@ -133,7 +133,7 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
-                                    DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, const WriteSettings & write_settings)
+                                    DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
     if (destination_data_source_description.sameKind(data_source_description)
@@ -170,13 +170,13 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
     }
 
     /// Fallback to copy through buffers.
-    IBackupReader::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode, write_settings);
+    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 
 BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
-    : IBackupWriter(context_, &Poco::Logger::get("BackupWriterS3"))
+    : BackupWriterDefault(&Poco::Logger::get("BackupWriterS3"), context_)
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
@@ -193,8 +193,8 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
     if (source_data_source_description.sameKind(data_source_description)
         && (source_data_source_description.is_encrypted == copy_encrypted))
     {
-        /// getBlobPath() can return std::nullopt if the file is stored as multiple objects in S3 bucket.
-        /// In this case we can't use native copy.
+        /// getBlobPath() can return more than 2 elements if the file is stored as multiple objects in S3 bucket.
+        /// In this case we can't use the native copy.
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             /// Use native copy, the more optimal way.
@@ -215,7 +215,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
     }
 
     /// Fallback to copy through buffers.
-    IBackupWriter::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
@@ -239,24 +239,11 @@ UInt64 BackupWriterS3::getFileSize(const String & file_name)
     return objects[0].GetSize();
 }
 
-bool BackupWriterS3::fileContentsEqual(const String & file_name, const String & expected_file_contents)
+std::unique_ptr<ReadBuffer> BackupWriterS3::readFile(const String & file_name, size_t expected_file_size)
 {
-    if (listObjects(*client, s3_uri, file_name).empty())
-        return false;
-
-    try
-    {
-        auto in = std::make_unique<ReadBufferFromS3>(
-            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
-        String actual_file_contents(expected_file_contents.size(), ' ');
-        return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
-            && (actual_file_contents == expected_file_contents) && in->eof();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
+    return std::make_unique<ReadBufferFromS3>(
+            client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings,
+            false, 0, 0, false, expected_file_size);
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
@@ -267,7 +254,8 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         fs::path(s3_uri.key) / file_name,
         request_settings,
         std::nullopt,
-        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
+        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"),
+        write_settings);
 }
 
 void BackupWriterS3::removeFile(const String & file_name)
