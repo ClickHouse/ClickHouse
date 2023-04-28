@@ -302,7 +302,7 @@ struct RemoveGarbageParametersFromURLImpl
         /// Reserve memory
         res_data.reserve(data.size());
         res_offsets.resize(offsets.size());
-        
+
         /// Set length
         res_offsets[0] = 0;
 
