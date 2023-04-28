@@ -909,14 +909,14 @@ void AsynchronousMetrics::update(TimePoint update_time)
     {
         try
         {
-            cgroupmem_limit_in_bytes.rewind();
-            cgroupmem_usage_in_bytes.rewind();
+            cgroupmem_limit_in_bytes->rewind();
+            cgroupmem_usage_in_bytes->rewind();
 
             uint64_t limit = 0;
             uint64_t usage = 0;
 
-            tryReadText(limit, cgroupmem_limit_in_bytes);
-            tryReadText(usage, cgroupmem_usage_in_bytes);
+            tryReadText(limit, *cgroupmem_limit_in_bytes);
+            tryReadText(usage, *cgroupmem_usage_in_bytes);
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
             new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes." };
