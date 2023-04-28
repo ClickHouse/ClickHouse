@@ -821,6 +821,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const auto data_settings = data.getSettings();
     MergeTreeData::DataPart::Checksums data_checksums;
 
+    zkutil::EphemeralNodeHolderPtr zero_copy_temporary_lock_holder;
     if (to_remote_disk)
     {
         readStringBinary(part_id, in);
@@ -829,7 +830,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), toString(disk->getDataSourceDescription().type));
 
         LOG_DEBUG(log, "Downloading part {} unique id {} metadata onto disk {}.", part_name, part_id, disk->getName());
-        data.lockSharedDataTemporary(part_name, part_id, disk);
+        zero_copy_temporary_lock_holder = data.lockSharedDataTemporary(part_name, part_id, disk);
     }
     else
     {
@@ -946,6 +947,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             new_data_part->checksums.checkEqual(data_checksums, false);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
+    if (zero_copy_temporary_lock_holder)
+        zero_copy_temporary_lock_holder->setAlreadyRemoved();
 
     return new_data_part;
 }

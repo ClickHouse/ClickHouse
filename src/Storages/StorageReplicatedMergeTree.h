@@ -259,7 +259,7 @@ public:
         std::optional<HardlinkedFiles> hardlinked_files,
         Coordination::Requests & requests) const;
 
-    void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
+    zkutil::EphemeralNodeHolderPtr lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
