@@ -1,4 +1,3 @@
-#include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
@@ -9,7 +8,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event DuplicatedInsertedBlocks;
+extern const Event DuplicatedInsertedBlocks;
 }
 
 
@@ -110,6 +109,21 @@ TableVersionPtr MergeTreeSink::updateDeleteBitmapAndTableVersion(
     return new_table_version;
 }
 
+struct MergeTreeSink::DelayedChunk
+{
+    struct Partition
+    {
+        MergeTreeDataWriter::TemporaryPart temp_part;
+        WriteStatePtr write_state;
+        UInt64 elapsed_ns;
+        String block_dedup_token;
+        ProfileEvents::Counters part_counters;
+    };
+
+    std::vector<Partition> partitions;
+};
+
+
 MergeTreeSink::~MergeTreeSink() = default;
 
 MergeTreeSink::MergeTreeSink(
@@ -137,21 +151,6 @@ void MergeTreeSink::onFinish()
 {
     finishDelayedChunk();
 }
-
-struct MergeTreeSink::DelayedChunk
-{
-    struct Partition
-    {
-        MergeTreeDataWriter::TemporaryPart temp_part;
-        WriteStatePtr write_state;
-        UInt64 elapsed_ns;
-        String block_dedup_token;
-        ProfileEvents::Counters part_counters;
-    };
-
-    std::vector<Partition> partitions;
-};
-
 
 void MergeTreeSink::consume(Chunk chunk)
 {

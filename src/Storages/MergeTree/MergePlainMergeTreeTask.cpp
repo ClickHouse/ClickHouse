@@ -4,6 +4,8 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ProfileEvents.h>
+
 
 namespace DB
 {
@@ -29,13 +31,17 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
-    /// Metrics will be saved in the thread_group.
+    /// All metrics will be saved in the thread_group, including all scheduled tasks.
+    /// In profile_counters only metrics from this thread will be saved.
     ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
-    MemoryTrackerThreadSwitcherPtr switcher;
+    std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_list_entry);
+    {
+        switcher.emplace((*merge_list_entry)->thread_group);
+
+    }
 
     switch (state)
     {
@@ -82,11 +88,11 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    const Settings & settings = storage.getContext()->getSettingsRef();
+    task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        settings);
+        task_context);
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
@@ -103,6 +109,19 @@ void MergePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
+    transfer_profile_counters_to_initial_query = [this, query_thread_group = CurrentThread::getGroup()] ()
+    {
+        if (query_thread_group)
+        {
+            auto task_thread_group = (*merge_list_entry)->thread_group;
+            auto task_counters_snapshot = task_thread_group->performance_counters.getPartiallyAtomicSnapshot();
+
+            auto & query_counters = query_thread_group->performance_counters;
+            for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
+                query_counters.incrementNoTrace(i, task_counters_snapshot[i]);
+        }
+    };
+
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_part,
             metadata_snapshot,
@@ -110,7 +129,7 @@ void MergePlainMergeTreeTask::prepare()
             {} /* projection_merge_list_element */,
             table_lock_holder,
             time(nullptr),
-            storage.getContext(),
+            task_context,
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
@@ -216,6 +235,16 @@ void MergePlainMergeTreeTask::finish()
 
     write_part_log({});
     storage.incrementMergedPartsProfileEvent(new_part->getType());
+    transfer_profile_counters_to_initial_query();
+}
+
+ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
+{
+    auto context = Context::createCopy(storage.getContext());
+    context->makeQueryContext();
+    auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
+    context->setCurrentQueryId(queryId);
+    return context;
 }
 
 }

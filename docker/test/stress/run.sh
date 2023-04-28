@@ -41,6 +41,9 @@ if [ "$is_tsan_build" -eq "0" ]; then
     export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
     export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+
+    export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.01
+    export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.01
 fi
 
 export ZOOKEEPER_FAULT_INJECTION=1

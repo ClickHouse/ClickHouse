@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543 
+personal_ws-1.1 en 543
 AArch
 ACLs
 AMQP
@@ -22,6 +22,7 @@ CSVWithNamesAndTypes
 CamelCase
 CapnProto
 CentOS
+ClickableSquare
 ClickHouse
 ClickHouse's
 CodeBlock
@@ -53,7 +54,9 @@ HDDs
 Heredoc
 Homebrew
 Homebrew's
+HorizontalDivide
 Hostname
+INSERTed
 IPv
 IntN
 Integrations
@@ -87,8 +90,11 @@ LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
 LineAsString
+LinksDeployment
+LLVM's
 LowCardinality
 MEMTABLE
+MVCC
 MSan
 MacOS
 Memcheck
@@ -105,6 +111,7 @@ NULLIF
 NVME
 NYPD
 NuRaft
+Observability
 OLAP
 OLTP
 ObjectId
@@ -115,6 +122,7 @@ OpenStack
 OpenTelemetry
 PAAMAYIM
 Parsers
+ParquetMetadata
 Postgres
 Precompiled
 PrettyCompact
@@ -128,6 +136,7 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyJSONEachRow
 Protobuf
 ProtobufSingle
 QEMU
@@ -143,6 +152,7 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
+SELECTs
 SERIALIZABLE
 SIMD
 SMALLINT
@@ -169,6 +179,8 @@ Testflows
 Tgz
 Toolset
 Tradeoff
+Transactional
+TwoColumnList
 UBSan
 UInt
 UIntN
@@ -178,6 +190,8 @@ Updatable
 Util
 Valgrind
 Vectorized
+VideoContainer
+ViewAllLink
 VirtualBox
 Werror
 WithNamesAndTypes
@@ -197,6 +211,7 @@ analytics
 anonymized
 ansi
 async
+atomicity
 autogeneration
 autostart
 avro
@@ -280,6 +295,7 @@ dragonbox
 durations
 endian
 enum
+encodings
 exFAT
 fastops
 fcoverage
@@ -289,6 +305,7 @@ flatbuffers
 fmtlib
 formatschema
 formatter
+fsync
 fuzzer
 fuzzers
 gRPC
@@ -362,11 +379,13 @@ linearizability
 linearizable
 lineasstring
 linefeeds
+lineorder
 linux
 llvm
 localhost
 macOS
 mariadb
+mdadm
 miniselect
 msgpack
 msgpk
@@ -419,6 +438,7 @@ prettyspace
 prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
+prettyjsoneachrow
 prlimit
 prometheus
 proto
@@ -505,6 +525,7 @@ tokenization
 toml
 toolchain
 toolset
+transactional
 transactionally
 tskv
 tsv

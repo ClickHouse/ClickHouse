@@ -19,8 +19,8 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -150,11 +150,11 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
 
     if (restore_coordination)
     {
-        restore_coordination->setStage(restore_settings.host_id, new_stage, message);
+        restore_coordination->setStage(new_stage, message);
         if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-            restore_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
         else
-            restore_coordination->waitForStage(all_hosts, new_stage);
+            restore_coordination->waitForStage(new_stage);
     }
 }
 

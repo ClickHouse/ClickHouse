@@ -23,6 +23,8 @@
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
+    extern const Event WriteBufferFromS3Microseconds;
+    extern const Event WriteBufferFromS3RequestsErrors;
     extern const Event S3WriteBytes;
 
     extern const Event S3CreateMultipartUpload;
@@ -200,7 +202,11 @@ void WriteBufferFromS3::createMultipartUpload()
     if (write_settings.for_object_storage)
         ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
+    Stopwatch watch;
     auto outcome = client_ptr->CreateMultipartUpload(req);
+    watch.stop();
+
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
     if (outcome.IsSuccess())
     {
@@ -208,7 +214,10 @@ void WriteBufferFromS3::createMultipartUpload()
         LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", bucket, key, multipart_upload_id);
     }
     else
+    {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+    }
 }
 
 void WriteBufferFromS3::writePart()
@@ -345,8 +354,12 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
 
     ResourceCost cost = task.req.GetContentLength();
     ResourceGuard rlock(write_settings.resource_link, cost);
+    Stopwatch watch;
     auto outcome = client_ptr->UploadPart(task.req);
+    watch.stop();
     rlock.unlock(); // Avoid acquiring other locks under resource lock
+
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
     if (outcome.IsSuccess())
     {
@@ -356,6 +369,7 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     }
     else
     {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
         write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
     }
@@ -391,27 +405,41 @@ void WriteBufferFromS3::completeMultipartUpload()
         if (write_settings.for_object_storage)
             ProfileEvents::increment(ProfileEvents::DiskS3CompleteMultipartUpload);
 
+        Stopwatch watch;
         auto outcome = client_ptr->CompleteMultipartUpload(req);
+        watch.stop();
+
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
         if (outcome.IsSuccess())
         {
             LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
-            break;
-        }
-        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        {
-            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
-            LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
+            return;
         }
         else
         {
-            throw S3Exception(
-                outcome.GetError().GetErrorType(),
-                "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+
+            if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            {
+                /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+                /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
+                LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", bucket, key, multipart_upload_id, tags.size());
+            }
+            else
+            {
+                throw S3Exception(
+                    outcome.GetError().GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                    outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
+            }
         }
     }
+
+    throw S3Exception(
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        "Message: Multipart upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+        max_retry, key, bucket);
 }
 
 void WriteBufferFromS3::makeSinglepartUpload()
@@ -501,30 +529,43 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
 
         ResourceCost cost = task.req.GetContentLength();
         ResourceGuard rlock(write_settings.resource_link, cost);
+        Stopwatch watch;
         auto outcome = client_ptr->PutObject(task.req);
+        watch.stop();
         rlock.unlock();
+
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
         bool with_pool = static_cast<bool>(schedule);
         if (outcome.IsSuccess())
         {
             LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
-            break;
-        }
-        else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        {
-            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
-            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
+            return;
         }
         else
         {
-            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
-            throw S3Exception(
-                outcome.GetError().GetErrorType(),
-                "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
-                outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+            if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            {
+                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
+                /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+                LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
+            }
+            else
+            {
+                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
+                throw S3Exception(
+                    outcome.GetError().GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
+                    outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+            }
         }
     }
+
+    throw S3Exception(
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        "Message: Single part upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+        max_retry, key, bucket);
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()

@@ -725,8 +725,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                        context->getUserName(), /*dummy for is_shared*/ false,
+                        /*dummy value for expires_at*/ std::chrono::system_clock::from_time_t(1),
+                        /*dummy value for is_compressed*/ false);
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -747,14 +748,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        settings.query_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
-                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                        context->getUserName(), settings.query_cache_share_between_users,
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
+                        settings.query_cache_compress_entries);
 
                     const size_t num_query_runs = query_cache->recordQueryRun(key);
                     if (num_query_runs > settings.query_cache_min_query_runs)
                     {
-                        auto stream_in_query_cache_transform = std::make_shared<StreamInQueryCacheTransform>(res.pipeline.getHeader(), query_cache, key,
-                                std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()));
+                        auto stream_in_query_cache_transform =
+                                    std::make_shared<StreamInQueryCacheTransform>(
+                                        res.pipeline.getHeader(), query_cache, key,
+                                        std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()),
+                                        context->getSettings().query_cache_squash_partial_results,
+                                        context->getSettings().max_block_size,
+                                        context->getSettings().query_cache_max_size_in_bytes,
+                                        context->getSettings().query_cache_max_entries);
                         res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
                     }
                 }
@@ -1223,17 +1231,36 @@ void executeQuery(
         end = begin + parse_buf.size();
     }
 
-    ASTPtr ast;
-    BlockIO streams;
-
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
-    auto & pipeline = streams.pipeline;
-
     QueryResultDetails result_details
     {
         .query_id = context->getClientInfo().current_query_id,
         .timezone = DateLUT::instance().getTimeZone(),
     };
+
+    /// Set the result details in case of any exception raised during query execution
+    SCOPE_EXIT({
+        if (set_result_details == nullptr)
+            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+            return;
+
+        try
+        {
+            set_result_details(result_details);
+        }
+        catch (...)
+        {
+            /// This exception can be ignored.
+            /// because if the code goes here, it means there's already an exception raised during query execution,
+            /// and that exception will be propagated to outer caller,
+            /// there's no need to report the exception thrown here.
+        }
+    });
+
+    ASTPtr ast;
+    BlockIO streams;
+
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1304,7 +1331,15 @@ void executeQuery(
         }
 
         if (set_result_details)
-            set_result_details(result_details);
+        {
+            /// The call of set_result_details itself might throw exception,
+            /// in such case there's no need to call this function again in the SCOPE_EXIT defined above.
+            /// So the callback is cleared before its execution.
+            auto set_result_details_copy = set_result_details;
+            set_result_details = nullptr;
+
+            set_result_details_copy(result_details);
+        }
 
         if (pipeline.initialized())
         {

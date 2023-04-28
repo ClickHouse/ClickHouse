@@ -9,12 +9,12 @@
 #include <variant>
 #include <utility>
 
-
 #include <boost/circular_buffer.hpp>
 #include <boost/noncopyable.hpp>
+#include <Poco/Event.h>
 
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
@@ -22,10 +22,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int INVALID_CONFIG_PARAMETER;
-}
 
 struct TaskRuntimeData;
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
@@ -247,42 +243,17 @@ public:
         String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
-        CurrentMetrics::Metric metric_)
-        : name(name_)
-        , threads_count(threads_count_)
-        , max_tasks_count(max_tasks_count_)
-        , metric(metric_)
-    {
-        if (max_tasks_count == 0)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
-
-        pending.setCapacity(max_tasks_count);
-        active.set_capacity(max_tasks_count);
-
-        pool.setMaxThreads(std::max(1UL, threads_count));
-        pool.setMaxFreeThreads(std::max(1UL, threads_count));
-        pool.setQueueSize(std::max(1UL, threads_count));
-
-        for (size_t number = 0; number < threads_count; ++number)
-            pool.scheduleOrThrowOnError([this] { threadFunction(); });
-    }
-
+        CurrentMetrics::Metric metric_,
+        CurrentMetrics::Metric max_tasks_metric_);
     MergeTreeBackgroundExecutor(
         String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
+        CurrentMetrics::Metric max_tasks_metric_,
         std::string_view policy)
-        requires requires(Queue queue) { queue.updatePolicy(policy); } // Because we use explicit template instantiation
-        : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_)
-    {
-        pending.updatePolicy(policy);
-    }
-
-    ~MergeTreeBackgroundExecutor()
-    {
-        wait();
-    }
+        requires requires(Queue queue) { queue.updatePolicy(policy); }; // Because we use explicit template instantiation
+    ~MergeTreeBackgroundExecutor();
 
     /// Handler for hot-reloading
     /// Supports only increasing the number of threads and tasks, because
@@ -311,6 +282,7 @@ private:
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;
+    CurrentMetrics::Increment max_tasks_metric;
 
     void routine(TaskRuntimeDataPtr item);
 
@@ -323,7 +295,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
     bool shutdown TSA_GUARDED_BY(mutex) = false;
-    ThreadPool pool;
+    std::unique_ptr<ThreadPool> pool;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
 

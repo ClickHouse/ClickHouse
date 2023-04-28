@@ -56,7 +56,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 
     auto & url_function_args = assert_cast<ASTExpressionList *>(args[0].get())->children;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(url_function_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(url_function_args, context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
 

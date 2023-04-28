@@ -91,7 +91,9 @@ Pipe StoragePostgreSQL::read(
     /// Connection is already made to the needed database, so it should not be present in the query;
     /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
-        query_info_, storage_snapshot->metadata->getColumns().getOrdinary(),
+        query_info_,
+        column_names_,
+        storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
     LOG_TRACE(log, "Query: {}", query);
 
@@ -343,6 +345,7 @@ private:
         PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
                        const ColumnsWithTypeAndName & columns, const String & on_conflict_)
             : Inserter(connection_)
+            , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
             buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
@@ -355,12 +358,14 @@ private:
             }
             buf << ") ";
             buf << on_conflict_;
-            connection.prepare("insert", buf.str());
+            connection.prepare(statement_name, buf.str());
+            prepared = true;
         }
 
         void complete() override
         {
-            connection.unprepare("insert");
+            connection.unprepare(statement_name);
+            prepared = false;
             tx.commit();
         }
 
@@ -369,8 +374,24 @@ private:
             pqxx::params params;
             params.reserve(row.size());
             params.append_multi(row);
-            tx.exec_prepared("insert", params);
+            tx.exec_prepared(statement_name, params);
         }
+
+        ~PreparedInsert() override
+        {
+            try
+            {
+                if (prepared)
+                    connection.unprepare(statement_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        const String statement_name;
+        bool prepared = false;
     };
 
     StorageMetadataPtr metadata_snapshot;
@@ -387,31 +408,41 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, bool require_table)
+{
+    StoragePostgreSQL::Configuration configuration;
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
+    if (require_table)
+        required_arguments.insert("table");
+
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
+        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_tables_cache"});
+
+    configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
+    if (configuration.addresses_expr.empty())
+    {
+        configuration.host = named_collection.getAny<String>({"host", "hostname"});
+        configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
+        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+    }
+
+    configuration.username = named_collection.getAny<String>({"username", "user"});
+    configuration.password = named_collection.get<String>("password");
+    configuration.database = named_collection.getAny<String>({"db", "database"});
+    if (require_table)
+        configuration.table = named_collection.get<String>("table");
+    configuration.schema = named_collection.getOrDefault<String>("schema", "");
+    configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
+
+    return configuration;
+}
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
-        validateNamedCollection(
-            *named_collection,
-            {"user", "password", "database", "table"},
-            {"schema", "on_conflict", "addresses_expr", "host", "port"});
-
-        configuration.addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
-        if (configuration.addresses_expr.empty())
-        {
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-        }
-
-        configuration.username = named_collection->get<String>("user");
-        configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->get<String>("database");
-        configuration.table = named_collection->get<String>("table");
-        configuration.schema = named_collection->getOrDefault<String>("schema", "");
-        configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection);
     }
     else
     {
@@ -428,10 +459,10 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
         if (configuration.addresses.size() == 1)
         {
             configuration.host = configuration.addresses[0].first;
