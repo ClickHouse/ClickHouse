@@ -20,12 +20,22 @@ verify_sql="SELECT
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    while true; do
+    for i in $(seq 1 3001); do
         result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
         if [ "$result" = "1" ]; then
             echo 1
             return
         fi
+
+        if [ "$i" = "3000" ]; then
+            echo "======="
+            $CLICKHOUSE_CLIENT --query="SELECT * FROM system.parts format TSVWithNames"
+            echo "======="
+            $CLICKHOUSE_CLIENT --query="SELECT * FROM system.metrics format TSVWithNames"
+            echo "======="
+            return
+        fi
+
         sleep 0.1
     done
 }
