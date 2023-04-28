@@ -1,15 +1,14 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include <vector>
-#include <map>
 
 
 namespace DB
 {
 
-/** Embedded reference documentation for high-level server components,
-  * such as SQL functions, table functions, data types, table engines, etc.
+/** Embedded reference documentation for functions.
   *
   * The advantages of embedded documentation are:
   * - it is easy to write and update with code;
@@ -34,50 +33,49 @@ namespace DB
   * - examples (queries that can be referenced from the text by names);
   * - categories - one or a few text strings like {"Mathematical", "Array Processing"};
   *
-  * Only the description is mandatory.
-  *
   * The description should be represented in Markdown (or just plaintext).
   * Some extensions for Markdown are added:
   * - [example:name] will reference to an example with the corresponding name.
   *
   * Documentation does not support multiple languages.
   * The only available language is English.
-  *
-  * TODO: Allow to specify Syntax, Argument(s) and a Returned Value.
-  * TODO: Organize Examples as a struct of ExampleName, ExampleQuery and ExampleResult.
   */
-struct Documentation
+struct FunctionDocumentation
 {
     using Description = std::string;
 
     using Syntax = std::string;
 
-    using Argument = std::string;
+    struct Argument
+    {
+        std::string name;
+        std::string description;
+    };
     using Arguments = std::vector<Argument>;
 
     using ReturnedValue = std::string;
 
-    using ExampleName = std::string;
-    using ExampleQuery = std::string;
-    using Examples = std::map<ExampleName, ExampleQuery>;
+    struct Example
+    {
+        std::string name;
+        std::string query;
+        std::string result;
+    };
+    using Examples = std::vector<Example>;
 
     using Category = std::string;
-    using Categories = std::vector<Category>;
+    using Categories = std::set<Category>;
 
     using Related = std::string;
 
-    Description description;
-    Examples examples;
-    Categories categories;
+    Description description;        /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
+    Syntax syntax;                  /// E.g. "position(haystack, needle)"
+    Arguments arguments;            /// E.g. ["haystack — String in which the search is performed. String.", "needle — Substring to be searched. String."]
+    ReturnedValue returned_value;   /// E.g. "Starting position in bytes and counting from 1, if the substring was found."
+    Examples examples;              ///
+    Categories categories;          /// E.g. {"String Search"}
 
-    Documentation(Description description_) : description(std::move(description_)) {} /// NOLINT
-    Documentation(Description description_, Examples examples_) : description(std::move(description_)), examples(std::move(examples_)) {}
-    Documentation(Description description_, Examples examples_, Categories categories_)
-        : description(std::move(description_)), examples(std::move(examples_)), categories(std::move(categories_)) {}
-
-    /// TODO: Please remove this constructor. Documentation should always be non-empty.
-    Documentation() = default;
-
+    std::string argumentsAsString() const;
     std::string examplesAsString() const;
     std::string categoriesAsString() const;
 };
