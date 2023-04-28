@@ -63,7 +63,7 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-            query->auth_data = user.auth_data;
+            query->auth_data = user.auth_data.toAST();
 
         if (!user.settings.empty())
         {

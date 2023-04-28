@@ -88,6 +88,33 @@ If the query was aborted due to an exception or user cancellation, no entry is w
 The size of the query cache in bytes, the maximum number of cache entries and the maximum size of individual cache entries (in bytes and in
 records) can be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
 
+It is also possible to limit the cache usage of individual users using [settings profiles](settings/settings-profiles.md) and [settings
+constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
+allocate in the query cache and the the maximum number of stored query results. For that, first provide configurations
+[query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
+[query_cache_max_entries](settings/settings.md#query-cache-size-max-items) in a user profile in `users.xml`, then make both settings
+readonly:
+
+``` xml
+<profiles>
+    <default>
+        <!-- The maximum cache size in bytes for user/profile 'default' -->
+        <query_cache_max_size_in_bytes>10000</query_cache_max_size_in_bytes>
+        <!-- The maximum number of SELECT query results stored in the cache for user/profile 'default' -->
+        <query_cache_max_entries>100</query_cache_max_entries>
+        <!-- Make both settings read-only so the user cannot change them -->
+        <constraints>
+            <query_cache_max_size_in_bytes>
+                <readonly/>
+            </query_cache_max_size_in_bytes>
+            <query_cache_max_entries>
+                <readonly/>
+            <query_cache_max_entries>
+        </constraints>
+    </default>
+</profiles>
+```
+
 To define how long a query must run at least such that its result can be cached, you can use setting
 [query_cache_min_query_duration](settings/settings.md#query-cache-min-query-duration). For example, the result of query
 
