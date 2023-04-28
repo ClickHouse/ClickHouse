@@ -22,7 +22,7 @@ The minimum recommended Ubuntu version for development is 22.04 LTS.
 ### Install Prerequisites {#install-prerequisites}
 
 ``` bash
-sudo apt-get install git cmake ccache python3 ninja-build yasm gawk
+sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk
 ```
 
 ### Install and Use the Clang compiler
@@ -92,7 +92,7 @@ If all the components are installed, you may build in the same way as the steps 
 Example for OpenSUSE Tumbleweed:
 
 ``` bash
-sudo zypper install git cmake ninja clang-c++ python lld yasm gawk
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build
 cmake -S . -B build
@@ -103,7 +103,7 @@ Example for Fedora Rawhide:
 
 ``` bash
 sudo yum update
-sudo yum --nogpg install git cmake make clang python3 ccache yasm gawk
+sudo yum --nogpg install git cmake make clang python3 ccache nasm yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build
 cmake -S . -B build
