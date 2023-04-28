@@ -4288,7 +4288,7 @@ ReadSettings Context::getReadSettings() const
             "Invalid value '{}' for max_read_buffer_size", settings.max_read_buffer_size);
     }
 
-    res.local_fs_buffer_size = settings.max_read_buffer_size;
+    /* res.local_fs_buffer_size = settings.max_read_buffer_size; */
     res.remote_fs_buffer_size = settings.max_read_buffer_size;
     res.prefetch_buffer_size = settings.prefetch_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
