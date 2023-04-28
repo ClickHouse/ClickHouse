@@ -130,6 +130,8 @@ namespace CurrentMetrics
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsCleanerThreads;
     extern const Metric MergeTreePartsCleanerThreadsActive;
+    extern const Metric OutdatedPartsLoadingThreads;
+    extern const Metric OutdatedPartsLoadingThreadsActive;
 }
 
 
@@ -1875,7 +1877,10 @@ try
     {
         std::lock_guard lock(outdated_data_parts_mutex);
         if (outdated_unloaded_data_parts.empty())
+        {
+            outdated_data_parts_loading_finished = true;
             return;
+        }
 
         LOG_DEBUG(log, "Loading {} outdated data parts {}",
             outdated_unloaded_data_parts.size(),
@@ -1887,6 +1892,7 @@ try
     if (is_async)
         shared_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
+    bool use_thread_pool = false;
     size_t num_loaded_parts = 0;
     while (true)
     {
@@ -1894,6 +1900,8 @@ try
 
         {
             std::lock_guard lock(outdated_data_parts_mutex);
+
+            use_thread_pool |= static_cast<bool>(outdated_data_parts_threadpool);
 
             if (is_async && outdated_data_parts_loading_canceled)
             {
@@ -1907,34 +1915,42 @@ try
                 break;
 
             part = outdated_unloaded_data_parts.back();
+            outdated_unloaded_data_parts.pop_back();
         }
 
-        auto res = loadDataPartWithRetries(
+        auto routine = [&]()
+        {
+            auto res = loadDataPartWithRetries(
             part->info, part->name, part->disk,
             DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-        ++num_loaded_parts;
-        if (res.is_broken)
-            res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
-        else if (res.part->is_duplicate)
-            res.part->remove();
+            ++num_loaded_parts;
+            if (res.is_broken)
+                res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+            else if (res.part->is_duplicate)
+                res.part->remove();
+            else
+                preparePartForRemoval(res.part);
+        };
+
+        if (use_thread_pool)
+            outdated_data_parts_threadpool->scheduleOrThrow(routine);
         else
-            preparePartForRemoval(res.part);
-
-        {
-            std::lock_guard lock(outdated_data_parts_mutex);
-            chassert(part == outdated_unloaded_data_parts.back());
-            outdated_unloaded_data_parts.pop_back();
-
-            if (outdated_unloaded_data_parts.empty())
-                break;
-        }
+            routine();
     }
+
+    if (use_thread_pool)
+        outdated_data_parts_threadpool->wait();
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts, is_async ? "asynchronously" : "synchronously");
-    outdated_data_parts_cv.notify_all();
+
+    {
+        std::lock_guard lock(outdated_data_parts_mutex);
+        outdated_data_parts_loading_finished = true;
+        outdated_data_parts_cv.notify_all();
+    }
 }
 catch (...)
 {
@@ -1952,14 +1968,18 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
         return;
 
     std::unique_lock lock(outdated_data_parts_mutex);
-    if (outdated_unloaded_data_parts.empty())
-        return;
+
+    if (!outdated_data_parts_threadpool)
+        outdated_data_parts_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::OutdatedPartsLoadingThreads,
+            CurrentMetrics::OutdatedPartsLoadingThreadsActive,
+            settings->max_part_loading_threads);
 
     LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
 
     outdated_data_parts_cv.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        return outdated_unloaded_data_parts.empty() || outdated_data_parts_loading_canceled;
+        return outdated_data_parts_loading_finished || outdated_data_parts_loading_canceled;
     });
 
     if (outdated_data_parts_loading_canceled)
