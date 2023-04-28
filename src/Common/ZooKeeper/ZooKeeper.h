@@ -524,8 +524,6 @@ public:
     void setServerCompletelyStarted();
 
 private:
-    friend class EphemeralNodeHolder;
-
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
