@@ -2063,7 +2063,7 @@ Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, d
 table functions, and dictionaries.
 
 User wishing to see secrets must also have
-[`display_secrets_in_show_and_select` format setting](../settings/formats#display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
 [`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 

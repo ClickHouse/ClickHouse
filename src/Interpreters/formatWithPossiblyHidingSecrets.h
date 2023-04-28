@@ -17,7 +17,7 @@ struct SecretHidingFormatSettings
 inline String format(const SecretHidingFormatSettings & settings)
 {
     const bool show_secrets = settings.ctx->displaySecretsInShowAndSelect()
-        && settings.ctx->getSettingsRef().display_secrets_in_show_and_select
+        && settings.ctx->getSettingsRef().format_display_secrets_in_show_and_select
         && settings.ctx->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
 
     return settings.query.formatWithPossiblyHidingSensitiveData(settings.max_length, settings.one_line, show_secrets);
