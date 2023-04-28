@@ -48,10 +48,10 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
             throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
 #else
         if (-1 == ::fdatasync(fd))
-            throw Exception("Cannot fdatasync", ErrorCodes::CANNOT_FSYNC);
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");
 #endif
         if (-1 == ::close(fd))
-            throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+            throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 
         ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
     }

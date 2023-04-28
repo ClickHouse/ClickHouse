@@ -4,11 +4,14 @@
 #include <unordered_set>
 #include <stack>
 
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include "Parsers/ASTColumnDeclaration.h"
 
 
 namespace DB
@@ -17,26 +20,109 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
-void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
+void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 {
-    auto * function = ast->as<ASTFunction>();
-    if (!function)
+    const auto visit_child_with_shared_ptr = [&](ASTPtr & child)
+    {
+        if (!child)
+            return;
+
+        auto * old_value = child.get();
+        visit(child);
+
+        // child did not change
+        if (old_value == child.get())
+            return;
+
+        // child changed, we need to modify it in the list of children of the parent also
+        for (auto & current_child : ast->children)
+        {
+            if (current_child.get() == old_value)
+                current_child = child;
+        }
+    };
+
+    if (auto * col_decl = ast->as<ASTColumnDeclaration>())
+    {
+        visit_child_with_shared_ptr(col_decl->default_expression);
+        visit_child_with_shared_ptr(col_decl->ttl);
+        return;
+    }
+
+    if (auto * storage = ast->as<ASTStorage>())
+    {
+        const auto visit_child = [&](IAST * & child)
+        {
+            if (!child)
+                return;
+
+            if (const auto * function = child->template as<ASTFunction>())
+            {
+                std::unordered_set<std::string> udf_in_replace_process;
+                auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+                if (replace_result)
+                    ast->setOrReplace(child, replace_result);
+            }
+
+            visit(child);
+        };
+
+        visit_child(storage->partition_by);
+        visit_child(storage->primary_key);
+        visit_child(storage->order_by);
+        visit_child(storage->sample_by);
+        visit_child(storage->ttl_table);
+
+        return;
+    }
+
+    if (auto * alter = ast->as<ASTAlterCommand>())
+    {
+        visit_child_with_shared_ptr(alter->col_decl);
+        visit_child_with_shared_ptr(alter->column);
+        visit_child_with_shared_ptr(alter->partition);
+        visit_child_with_shared_ptr(alter->order_by);
+        visit_child_with_shared_ptr(alter->sample_by);
+        visit_child_with_shared_ptr(alter->index_decl);
+        visit_child_with_shared_ptr(alter->index);
+        visit_child_with_shared_ptr(alter->constraint_decl);
+        visit_child_with_shared_ptr(alter->constraint);
+        visit_child_with_shared_ptr(alter->projection_decl);
+        visit_child_with_shared_ptr(alter->projection);
+        visit_child_with_shared_ptr(alter->predicate);
+        visit_child_with_shared_ptr(alter->update_assignments);
+        visit_child_with_shared_ptr(alter->values);
+        visit_child_with_shared_ptr(alter->ttl);
+        visit_child_with_shared_ptr(alter->select);
+
+        return;
+    }
+
+    if (const auto * function = ast->template as<ASTFunction>())
+    {
+        std::unordered_set<std::string> udf_in_replace_process;
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+        if (replace_result)
+            ast = replace_result;
+    }
+
+    for (auto & child : ast->children)
+        visit(child);
+}
+
+void UserDefinedSQLFunctionVisitor::visit(IAST * ast)
+{
+    if (!ast)
         return;
 
-    std::unordered_set<std::string> udf_in_replace_process;
-    auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
-    if (replace_result)
-        ast = replace_result;
+    for (auto & child : ast->children)
+        visit(child);
 }
 
-bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr &)
-{
-    return true;
-}
-
-ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
 {
     if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -46,6 +132,12 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;
+
+    /// All UDFs are not parametric for now.
+    if (function.parameters)
+    {
+        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function.name);
+    }
 
     const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;

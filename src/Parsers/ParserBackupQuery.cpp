@@ -1,5 +1,6 @@
 #include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -102,7 +103,7 @@ namespace
         });
     }
 
-    bool parseElement(IParser::Pos & pos, Expected & expected, bool allow_all, Element & element)
+    bool parseElement(IParser::Pos & pos, Expected & expected, Element & element)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -168,7 +169,7 @@ namespace
                 return true;
             }
 
-            if (allow_all && ParserKeyword{"ALL"}.ignore(pos, expected))
+            if (ParserKeyword{"ALL"}.ignore(pos, expected))
             {
                 element.type = ElementType::ALL;
                 parseExceptDatabases(pos, expected, element.except_databases);
@@ -180,7 +181,7 @@ namespace
         });
     }
 
-    bool parseElements(IParser::Pos & pos, Expected & expected, bool allow_all, std::vector<Element> & elements)
+    bool parseElements(IParser::Pos & pos, Expected & expected, std::vector<Element> & elements)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -189,7 +190,7 @@ namespace
             auto parse_element = [&]
             {
                 Element element;
-                if (parseElement(pos, expected, allow_all, element))
+                if (parseElement(pos, expected, element))
                 {
                     result.emplace_back(std::move(element));
                     return true;
@@ -207,7 +208,11 @@ namespace
 
     bool parseBackupName(IParser::Pos & pos, Expected & expected, ASTPtr & backup_name)
     {
-        return ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected);
+        if (!ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected))
+            return false;
+
+        backup_name->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+        return true;
     }
 
     bool parseBaseBackupSetting(IParser::Pos & pos, Expected & expected, ASTPtr & base_backup_name)
@@ -329,11 +334,8 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    /// Disable "ALL" if this is a RESTORE command.
-    bool allow_all = (kind == Kind::RESTORE);
-
     std::vector<Element> elements;
-    if (!parseElements(pos, expected, allow_all, elements))
+    if (!parseElements(pos, expected, elements))
         return false;
 
     String cluster;
@@ -358,10 +360,15 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->kind = kind;
     query->elements = std::move(elements);
     query->cluster = std::move(cluster);
-    query->backup_name = std::move(backup_name);
+
+    if (backup_name)
+        query->set(query->backup_name, backup_name);
+
     query->settings = std::move(settings);
-    query->base_backup_name = std::move(base_backup_name);
     query->cluster_host_ids = std::move(cluster_host_ids);
+
+    if (base_backup_name)
+        query->set(query->base_backup_name, base_backup_name);
 
     return true;
 }

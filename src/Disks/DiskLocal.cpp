@@ -1,4 +1,5 @@
 #include "DiskLocal.h"
+#include <Common/Throttler_fwd.h>
 #include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
@@ -11,6 +12,7 @@
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -18,13 +20,13 @@
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
-#include <Disks/DiskMemory.h>
-#include <Disks/DiskRestartProxy.h>
+#include <Disks/IO/WriteBufferFromTemporaryFile.h>
+
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
+
 
 namespace CurrentMetrics
 {
@@ -63,17 +65,16 @@ static void loadDiskLocalConfig(const String & name,
     if (name == "default")
     {
         if (!path.empty())
-            throw Exception(
-                "\"default\" disk path should be provided in <path> not it <storage_configuration>",
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                "\"default\" disk path should be provided in <path> not it <storage_configuration>");
         path = context->getPath();
     }
     else
     {
         if (path.empty())
-            throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path can not be empty. Disk {}", name);
         if (path.back() != '/')
-            throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path must end with /. Disk {}", name);
         if (path == context->getPath())
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path ('{}') cannot be equal to <path>. Use <default> disk instead.", path);
     }
@@ -81,9 +82,8 @@ static void loadDiskLocalConfig(const String & name,
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
 
     if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
-        throw Exception(
-            "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                        "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified");
 
     keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
 
@@ -91,7 +91,7 @@ static void loadDiskLocalConfig(const String & name,
     {
         auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
         if (ratio < 0 || ratio > 1)
-            throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'keep_free_space_ratio' have to be between 0 and 1");
         String tmp_path = path;
         if (tmp_path.empty())
             tmp_path = context->getPath();
@@ -133,7 +133,7 @@ public:
     DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
-            throw Exception("Can't use i != 0 with single disk reservation. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use i != 0 with single disk reservation. It's a bug");
         return disk;
     }
 
@@ -371,10 +371,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
+    return std::make_unique<WriteBufferFromFile>(
+        fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
 }
 
 void DiskLocal::removeFile(const String & path)
@@ -493,14 +494,14 @@ void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & confi
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
 
     if (disk_path != new_disk_path)
-        throw Exception("Disk path can't be updated from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path can't be updated from config {}", name);
 
     if (keep_free_space_bytes != new_keep_free_space_bytes)
         keep_free_space_bytes = new_keep_free_space_bytes;
 }
 
 DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
-    : name(name_)
+    : IDisk(name_)
     , disk_path(path_)
     , keep_free_space_bytes(keep_free_space_bytes_)
     , logger(&Poco::Logger::get("DiskLocal"))
@@ -526,26 +527,6 @@ DiskLocal::DiskLocal(
 DataSourceDescription DiskLocal::getDataSourceDescription() const
 {
     return data_source_description;
-}
-
-void DiskLocal::startup(ContextPtr)
-{
-    try
-    {
-        broken = false;
-        disk_checker_magic_number = -1;
-        disk_checker_can_check_read = true;
-        readonly = !setup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(logger, fmt::format("Disk {} is marked as broken during startup", name));
-        broken = true;
-        /// Disk checker is disabled when failing to start up.
-        disk_checker_can_check_read = false;
-    }
-    if (disk_checker && disk_checker_can_check_read)
-        disk_checker->startup();
 }
 
 void DiskLocal::shutdown()
@@ -604,13 +585,14 @@ struct DiskWriteCheckData
     }
 };
 
-bool DiskLocal::canWrite() const noexcept
+bool DiskLocal::canWrite() noexcept
 try
 {
     static DiskWriteCheckData data;
-    String tmp_template = fs::path(disk_path) / "";
     {
-        auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
+        auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
+        auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
+        auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->sync();
     }
@@ -641,18 +623,30 @@ DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
     );
 }
 
-bool DiskLocal::setup()
+void DiskLocal::checkAccessImpl(const String & path)
 {
     try
     {
         fs::create_directories(disk_path);
+        if (!FS::canWrite(disk_path))
+        {
+            LOG_ERROR(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
+            readonly = true;
+            return;
+        }
     }
     catch (...)
     {
-        LOG_ERROR(logger, "Cannot create the directory of disk {} ({}).", name, disk_path);
-        throw;
+        LOG_ERROR(logger, "Cannot create the root directory of disk {} ({}).", name, disk_path);
+        readonly = true;
+        return;
     }
 
+    IDisk::checkAccessImpl(path);
+}
+
+void DiskLocal::setup()
+{
     try
     {
         if (!FS::canRead(disk_path))
@@ -666,7 +660,7 @@ bool DiskLocal::setup()
 
     /// If disk checker is disabled, just assume RW by default.
     if (!disk_checker)
-        return true;
+        return;
 
     try
     {
@@ -690,6 +684,7 @@ bool DiskLocal::setup()
 
     /// Try to create a new checker file. The disk status can be either broken or readonly.
     if (disk_checker_magic_number == -1)
+    {
         try
         {
             pcg32_fast rng(randomSeed());
@@ -709,12 +704,33 @@ bool DiskLocal::setup()
                 disk_checker_path,
                 name);
             disk_checker_can_check_read = false;
-            return true;
+            return;
         }
+    }
 
     if (disk_checker_magic_number == -1)
-        throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
-    return true;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "disk_checker_magic_number is not initialized. It's a bug");
+}
+
+void DiskLocal::startupImpl(ContextPtr)
+{
+    broken = false;
+    disk_checker_magic_number = -1;
+    disk_checker_can_check_read = true;
+
+    try
+    {
+        setup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, fmt::format("Disk {} is marked as broken during startup", name));
+        broken = true;
+        /// Disk checker is disabled when failing to start up.
+        disk_checker_can_check_read = false;
+    }
+    if (disk_checker && disk_checker_can_check_read)
+        disk_checker->startup();
 }
 
 struct stat DiskLocal::stat(const String & path) const
@@ -741,13 +757,14 @@ MetadataStoragePtr DiskLocal::getMetadataStorage()
         std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
 }
 
-void registerDiskLocal(DiskFactory & factory)
+void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
 {
-    auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & map) -> DiskPtr
+    auto creator = [global_skip_access_check](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        ContextPtr context,
+        const DisksMap & map) -> DiskPtr
     {
         String path;
         UInt64 keep_free_space_bytes;
@@ -757,10 +774,11 @@ void registerDiskLocal(DiskFactory & factory)
             if (path == disk_ptr->getPath())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} and disk {} cannot have the same path ({})", name, disk_name, path);
 
+        bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
-        disk->startup(context);
-        return std::make_shared<DiskRestartProxy>(disk);
+        disk->startup(context, skip_access_check);
+        return disk;
     };
     factory.registerDiskType("local", creator);
 }

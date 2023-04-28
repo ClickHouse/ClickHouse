@@ -26,10 +26,10 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!create_query->columns_list->columns)
                     create_query->columns_list->set(create_query->columns_list->columns, std::make_shared<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->columns->children;
-                auto exists = std::find_if(dest_children.begin(), dest_children.end(), [&](ASTPtr node) -> bool
-                {
-                    return node->as<ASTColumnDeclaration>()->name == override_column->name;
-                });
+                auto * exists = std::find_if(
+                    dest_children.begin(),
+                    dest_children.end(),
+                    [&](ASTPtr node) -> bool { return node->as<ASTColumnDeclaration>()->name == override_column->name; });
                 /// For columns, only allow adding ALIAS (non-physical) for now.
                 /// TODO: This logic should instead be handled by validation that is
                 ///       executed from InterpreterCreateQuery / InterpreterAlterQuery.
@@ -52,10 +52,10 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!create_query->columns_list->indices)
                     create_query->columns_list->set(create_query->columns_list->indices, std::make_shared<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->indices->children;
-                auto exists = std::find_if(dest_children.begin(), dest_children.end(), [&](ASTPtr node) -> bool
-                {
-                    return node->as<ASTIndexDeclaration>()->name == override_index->name;
-                });
+                auto * exists = std::find_if(
+                    dest_children.begin(),
+                    dest_children.end(),
+                    [&](ASTPtr node) -> bool { return node->as<ASTIndexDeclaration>()->name == override_index->name; });
                 if (exists == dest_children.end())
                     dest_children.emplace_back(override_index_ast);
                 else
@@ -72,10 +72,10 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!create_query->columns_list->constraints)
                     create_query->columns_list->set(create_query->columns_list->constraints, std::make_shared<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->constraints->children;
-                auto exists = std::find_if(dest_children.begin(), dest_children.end(), [&](ASTPtr node) -> bool
-                {
-                    return node->as<ASTConstraintDeclaration>()->name == override_constraint->name;
-                });
+                auto * exists = std::find_if(
+                    dest_children.begin(),
+                    dest_children.end(),
+                    [&](ASTPtr node) -> bool { return node->as<ASTConstraintDeclaration>()->name == override_constraint->name; });
                 if (exists == dest_children.end())
                     dest_children.emplace_back(override_constraint_ast);
                 else
@@ -92,10 +92,10 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (!create_query->columns_list->projections)
                     create_query->columns_list->set(create_query->columns_list->projections, std::make_shared<ASTExpressionList>());
                 auto & dest_children = create_query->columns_list->projections->children;
-                auto exists = std::find_if(dest_children.begin(), dest_children.end(), [&](ASTPtr node) -> bool
-                {
-                    return node->as<ASTProjectionDeclaration>()->name == override_projection->name;
-                });
+                auto * exists = std::find_if(
+                    dest_children.begin(),
+                    dest_children.end(),
+                    [&](ASTPtr node) -> bool { return node->as<ASTProjectionDeclaration>()->name == override_projection->name; });
                 if (exists == dest_children.end())
                     dest_children.emplace_back(override_projection_ast);
                 else

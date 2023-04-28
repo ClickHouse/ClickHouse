@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int NETWORK_ERROR;
 }
 
 MetadataStorageFromStaticFilesWebServer::MetadataStorageFromStaticFilesWebServer(
@@ -22,7 +21,7 @@ MetadataStorageFromStaticFilesWebServer::MetadataStorageFromStaticFilesWebServer
 {
 }
 
-MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransaction() const
+MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransaction()
 {
     return std::make_shared<MetadataStorageFromStaticFilesWebServerTransaction>(*this);
 }
@@ -38,7 +37,7 @@ bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) c
     if (fs_path.has_extension())
         fs_path = fs_path.parent_path();
 
-    initializeIfNeeded(fs_path, false);
+    initializeIfNeeded(fs_path);
 
     if (object_storage.files.empty())
         return false;
@@ -109,7 +108,7 @@ StoredObjects MetadataStorageFromStaticFilesWebServer::getStorageObjects(const s
     auto fs_path = fs::path(object_storage.url) / path;
     std::string remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
     remote_path = remote_path.substr(object_storage.url.size());
-    return {StoredObject::create(object_storage, remote_path, object_storage.files.at(path).size, true)};
+    return {StoredObject::create(object_storage, remote_path, object_storage.files.at(path).size, path, true)};
 }
 
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const
@@ -123,39 +122,21 @@ std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(
     return result;
 }
 
-bool MetadataStorageFromStaticFilesWebServer::initializeIfNeeded(const std::string & path, std::optional<bool> throw_on_error) const
+void MetadataStorageFromStaticFilesWebServer::initializeIfNeeded(const std::string & path) const
 {
     if (object_storage.files.find(path) == object_storage.files.end())
     {
-        try
-        {
-            object_storage.initialize(fs::path(object_storage.url) / path);
-        }
-        catch (...)
-        {
-            const auto message = getCurrentExceptionMessage(false);
-            bool can_throw = throw_on_error.has_value() ? *throw_on_error : CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
-            if (can_throw)
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
-
-            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
-            return false;
-        }
+        object_storage.initialize(fs::path(object_storage.url) / path);
     }
-
-    return true;
 }
 
 DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(const std::string & path) const
 {
     std::vector<fs::path> dir_file_paths;
 
-    if (!initializeIfNeeded(path))
-    {
+    initializeIfNeeded(path);
+    if (!exists(path))
         return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
-    }
-
-    assertExists(path);
 
     for (const auto & [file_path, _] : object_storage.files)
     {

@@ -49,4 +49,3 @@ SELECT argMax(user, salary), argMax(tuple(user, salary), salary) FROM salary;
 │ director             │ ('director',5000)                   │
 └──────────────────────┴─────────────────────────────────────┘
 ```
-

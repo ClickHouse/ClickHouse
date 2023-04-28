@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -8,13 +9,14 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
+#include <Common/MultiVersion.h>
+#include <Common/Macros.h>
 
 namespace DB
 {
@@ -101,6 +103,11 @@ private:
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
+    std::mutex read_request_queue_mutex;
+
+    /// queue of read requests that can be processed after a request with specific session ID and XID is committed
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorage::RequestsForSessions>> read_request_queue;
+
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
@@ -109,7 +116,8 @@ public:
 
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
-    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
+    /// 'macros' are used to substitute macros in endpoint of disks
+    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros);
 
     void startServer();
 
@@ -124,7 +132,8 @@ public:
 
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+    /// 'macros' are used to substitute macros in endpoint of disks
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
@@ -215,6 +224,19 @@ public:
     {
         return server->getKeeperLogInfo();
     }
+
+    /// Request to be leader.
+    bool requestLeader()
+    {
+        return server->requestLeader();
+    }
+
+    void recalculateStorageStats()
+    {
+        return server->recalculateStorageStats();
+    }
+
+    static void cleanResources();
 };
 
 }

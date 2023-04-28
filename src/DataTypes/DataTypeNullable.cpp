@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
@@ -24,7 +25,7 @@ DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
     : nested_data_type{nested_data_type_}
 {
     if (!nested_data_type->canBeInsideNullable())
-        throw Exception("Nested type " + nested_data_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Nested type {} cannot be inside Nullable type", nested_data_type->getName());
 }
 
 
@@ -46,7 +47,7 @@ Field DataTypeNullable::getDefault() const
 
 size_t DataTypeNullable::getSizeOfValueInMemory() const
 {
-    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
 }
 
 
@@ -64,7 +65,7 @@ SerializationPtr DataTypeNullable::doGetDefaultSerialization() const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Nullable data type family must have exactly one argument - nested type");
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
 
@@ -98,5 +99,20 @@ DataTypePtr removeNullable(const DataTypePtr & type)
         return static_cast<const DataTypeNullable &>(*type).getNestedType();
     return type;
 }
+
+DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        return type;
+
+    if (type->lowCardinality())
+    {
+        const auto & dictionary_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+        return std::make_shared<DataTypeLowCardinality>(makeNullable(dictionary_type));
+    }
+
+    return std::make_shared<DataTypeNullable>(type);
+}
+
 
 }

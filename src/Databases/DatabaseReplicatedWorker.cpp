@@ -2,6 +2,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Core/ServerUUID.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -36,6 +37,13 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
             auto zookeeper = getAndSetZooKeeper();
             if (database->is_readonly)
                 database->tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::ATTACH);
+            if (database->is_probably_dropped)
+            {
+                /// The flag was set in tryConnectToZooKeeperAndInitDatabase
+                LOG_WARNING(log, "Exiting main thread, because the database was probably dropped");
+                /// NOTE It will not stop cleanup thread until DDLWorker::shutdown() call (cleanup thread will just do nothing)
+                break;
+            }
             initializeReplication();
             initialized = true;
             return true;
@@ -62,6 +70,16 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
     auto zookeeper = getAndSetZooKeeper();
+
+    /// Create "active" node (remove previous one if necessary)
+    String active_path = fs::path(database->replica_path) / "active";
+    String active_id = toString(ServerUUID::get());
+    zookeeper->handleEphemeralNodeExistence(active_path, active_id);
+    zookeeper->create(active_path, active_id, zkutil::CreateMode::Ephemeral);
+    active_node_holder.reset();
+    active_node_holder_zookeeper = zookeeper;
+    active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));

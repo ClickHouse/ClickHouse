@@ -3,7 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Common/BitHelpers.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
@@ -160,10 +160,9 @@ public:
 
         const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
         if (!ptr || ptr->getN() != uuid_bytes_length)
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument of function " + getName() +
-                            ", expected FixedString(" + toString(uuid_bytes_length) + ")",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}, expected FixedString({})",
+                            arguments[0]->getName(), getName(), uuid_bytes_length);
 
         checkFormatArgument(arguments, name);
 
@@ -180,11 +179,9 @@ public:
         if (const auto * col_in = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (col_in->getN() != uuid_bytes_length)
-                throw Exception("Illegal type " + col_type_name.type->getName() +
-                                " of column " + col_in->getName() +
-                                " argument of function " + getName() +
-                                ", expected FixedString(" + toString(uuid_bytes_length) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of column {} argument of function {}, expected FixedString({})",
+                                col_type_name.type->getName(), col_in->getName(), getName(), uuid_bytes_length);
 
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
@@ -213,9 +210,8 @@ public:
             return col_res;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 
@@ -241,10 +237,9 @@ public:
         {
             const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != uuid_text_length)
-                throw Exception("Illegal type " + arguments[0]->getName() +
-                                " of first argument of function " + getName() +
-                                ", expected FixedString(" + toString(uuid_text_length) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of first argument of function {}, expected FixedString({})",
+                                arguments[0]->getName(), getName(), uuid_text_length);
         }
 
         checkFormatArgument(arguments, name);
@@ -294,11 +289,9 @@ public:
         else if (const auto * col_in_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             if (col_in_fixed->getN() != uuid_text_length)
-                throw Exception("Illegal type " + col_type_name.type->getName() +
-                                " of column " + col_in_fixed->getName() +
-                                " argument of function " + getName() +
-                                ", expected FixedString(" + toString(uuid_text_length) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of column {} argument of function {}, expected FixedString({})",
+                                col_type_name.type->getName(), col_in_fixed->getName(), getName(), uuid_text_length);
 
             const auto size = col_in_fixed->size();
             const auto & vec_in = col_in_fixed->getChars();
@@ -321,8 +314,8 @@ public:
             return col_res;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 

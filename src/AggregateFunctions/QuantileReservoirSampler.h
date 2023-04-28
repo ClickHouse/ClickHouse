@@ -34,7 +34,7 @@ struct QuantileReservoirSampler
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
-        throw Exception("Method add with weight is not implemented for ReservoirSampler", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for ReservoirSampler");
     }
 
     void merge(const QuantileReservoirSampler & rhs)
@@ -55,6 +55,9 @@ struct QuantileReservoirSampler
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
     {
+        if (data.empty())
+            return {};
+
         if constexpr (is_decimal<Value>)
             return Value(static_cast<typename Value::NativeType>(data.quantileInterpolated(level)));
         else
@@ -65,11 +68,22 @@ struct QuantileReservoirSampler
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
     void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
+        bool is_empty = data.empty();
+
         for (size_t i = 0; i < size; ++i)
-            if constexpr (is_decimal<Value>)
-                result[indices[i]] = Value(static_cast<typename Value::NativeType>(data.quantileInterpolated(levels[indices[i]])));
+        {
+            if (is_empty)
+            {
+                result[i] = Value{};
+            }
             else
-                result[indices[i]] = Value(data.quantileInterpolated(levels[indices[i]]));
+            {
+                if constexpr (is_decimal<Value>)
+                    result[indices[i]] = Value(static_cast<typename Value::NativeType>(data.quantileInterpolated(levels[indices[i]])));
+                else
+                    result[indices[i]] = Value(data.quantileInterpolated(levels[indices[i]]));
+            }
+        }
     }
 
     /// The same, but in the case of an empty state, NaN is returned.

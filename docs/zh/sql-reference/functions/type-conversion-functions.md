@@ -635,5 +635,3 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

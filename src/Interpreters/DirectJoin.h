@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 
 #include <Core/Block.h>
 
@@ -48,7 +47,7 @@ public:
 
     virtual bool isFilled() const override { return true; }
 
-    virtual std::shared_ptr<NotJoinedBlocks>
+    virtual IBlocksStreamPtr
     getNonJoinedBlocks(const Block &, const Block &, UInt64) const override
     {
         return nullptr;

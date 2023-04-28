@@ -11,12 +11,11 @@ namespace DB
 
 JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_,
         bool yield_strings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_, params_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(settings_.json.validate_utf8, header_, out_)
     , settings(settings_)
     , with_names(with_names_)
     , with_types(with_types_)
@@ -80,7 +79,7 @@ void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & va
         writeChar('\"', *ostr);
         writeString(values[i], *ostr);
         writeChar('\"', *ostr);
-        if (i != values.size() - 1)
+        if (i + 1 != values.size())
             writeFieldDelimiter();
     }
     writeRowEndDelimiter();
@@ -112,10 +111,9 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [yield_strings, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const RowOutputFormatParams & params,
                 const FormatSettings & format_settings)
             {
-                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, params, format_settings, with_names, with_types, yield_strings);
+                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, format_settings, with_names, with_types, yield_strings);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);

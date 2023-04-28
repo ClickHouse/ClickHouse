@@ -1,5 +1,6 @@
 #include <Analyzer/MatcherNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTColumnsTransformers.h>
 
 namespace DB
 {
@@ -203,22 +205,48 @@ QueryTreeNodePtr MatcherNode::cloneImpl() const
     return matcher_node;
 }
 
-ASTPtr MatcherNode::toASTImpl() const
+ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     ASTPtr result;
+    ASTPtr transformers;
+
+    const auto & column_transformers = getColumnTransformers().getNodes();
+
+    if (!column_transformers.empty())
+    {
+        transformers = std::make_shared<ASTColumnsTransformerList>();
+
+        for (const auto & column_transformer : column_transformers)
+            transformers->children.push_back(column_transformer->toAST(options));
+    }
 
     if (matcher_type == MatcherNodeType::ASTERISK)
     {
         if (qualified_identifier.empty())
         {
-            result = std::make_shared<ASTAsterisk>();
+            auto asterisk = std::make_shared<ASTAsterisk>();
+
+            if (transformers)
+            {
+                asterisk->transformers = std::move(transformers);
+                asterisk->children.push_back(asterisk->transformers);
+            }
+
+            result = asterisk;
         }
         else
         {
             auto qualified_asterisk = std::make_shared<ASTQualifiedAsterisk>();
 
             auto identifier_parts = qualified_identifier.getParts();
-            qualified_asterisk->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            qualified_asterisk->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            qualified_asterisk->children.push_back(qualified_asterisk->qualifier);
+
+            if (transformers)
+            {
+                qualified_asterisk->transformers = std::move(transformers);
+                qualified_asterisk->children.push_back(qualified_asterisk->transformers);
+            }
 
             result = qualified_asterisk;
         }
@@ -229,6 +257,13 @@ ASTPtr MatcherNode::toASTImpl() const
         {
             auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
             regexp_matcher->setPattern(columns_matcher->pattern());
+
+            if (transformers)
+            {
+                regexp_matcher->transformers = std::move(transformers);
+                regexp_matcher->children.push_back(regexp_matcher->transformers);
+            }
+
             result = regexp_matcher;
         }
         else
@@ -237,7 +272,14 @@ ASTPtr MatcherNode::toASTImpl() const
             regexp_matcher->setPattern(columns_matcher->pattern());
 
             auto identifier_parts = qualified_identifier.getParts();
-            regexp_matcher->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            regexp_matcher->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            regexp_matcher->children.push_back(regexp_matcher->qualifier);
+
+            if (transformers)
+            {
+                regexp_matcher->transformers = std::move(transformers);
+                regexp_matcher->children.push_back(regexp_matcher->transformers);
+            }
 
             result = regexp_matcher;
         }
@@ -257,22 +299,35 @@ ASTPtr MatcherNode::toASTImpl() const
         {
             auto columns_list_matcher = std::make_shared<ASTColumnsListMatcher>();
             columns_list_matcher->column_list = std::move(column_list);
+            columns_list_matcher->children.push_back(columns_list_matcher->column_list);
+
+            if (transformers)
+            {
+                columns_list_matcher->transformers = std::move(transformers);
+                columns_list_matcher->children.push_back(columns_list_matcher->transformers);
+            }
+
             result = columns_list_matcher;
         }
         else
         {
             auto columns_list_matcher = std::make_shared<ASTQualifiedColumnsListMatcher>();
-            columns_list_matcher->column_list = std::move(column_list);
 
             auto identifier_parts = qualified_identifier.getParts();
-            columns_list_matcher->children.push_back(std::make_shared<ASTIdentifier>(std::move(identifier_parts)));
+            columns_list_matcher->qualifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+            columns_list_matcher->column_list = std::move(column_list);
+            columns_list_matcher->children.push_back(columns_list_matcher->qualifier);
+            columns_list_matcher->children.push_back(columns_list_matcher->column_list);
+
+            if (transformers)
+            {
+                columns_list_matcher->transformers = std::move(transformers);
+                columns_list_matcher->children.push_back(columns_list_matcher->transformers);
+            }
 
             result = columns_list_matcher;
         }
     }
-
-    for (const auto & child : children)
-        result->children.push_back(child->toAST());
 
     return result;
 }

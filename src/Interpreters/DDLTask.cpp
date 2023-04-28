@@ -15,7 +15,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 
 
 namespace DB
@@ -30,12 +29,14 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
 }
 
+
 HostID HostID::fromString(const String & host_port_str)
 {
     HostID res;
     std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
     return res;
 }
+
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
@@ -174,7 +175,7 @@ void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
     query_str = queryToString(*query);
-    query_for_logging = maskSensitiveInfoInQueryForLogging(query_str, query, context);
+    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -247,7 +248,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
-        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Received unknown DDL query");
 
     cluster_name = query_on_cluster->cluster;
     cluster = context->tryGetCluster(cluster_name);
@@ -320,7 +321,8 @@ bool DDLTask::tryFindHostInCluster()
                         {
                             if (!query_with_table->database)
                                 throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+                                                "For a distributed DDL on circular replicated cluster its table name "
+                                                "must be qualified by database name.");
 
                             if (default_database == query_with_table->getDatabase())
                                 return true;

@@ -10,13 +10,10 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
+#include <Interpreters/Context_fwd.h>
+
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
 
 /** Query node represents query in query tree.
   *
@@ -66,7 +63,41 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class QueryNode final : public IQueryTreeNode
 {
 public:
-    explicit QueryNode();
+    /// Construct query node with context and changed settings
+    explicit QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_);
+
+    /// Construct query node with context
+    explicit QueryNode(ContextMutablePtr context_);
+
+    /// Get context
+    ContextPtr getContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    const ContextMutablePtr & getMutableContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    ContextMutablePtr & getMutableContext()
+    {
+        return context;
+    }
+
+    /// Returns true if query node has settings changes, false otherwise
+    bool hasSettingsChanges() const
+    {
+        return !settings_changes.empty();
+    }
+
+    /// Get query node settings changes
+    const SettingsChanges & getSettingsChanges() const
+    {
+        return settings_changes;
+    }
 
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
@@ -174,6 +205,18 @@ public:
     void setIsGroupByWithGroupingSets(bool is_group_by_with_grouping_sets_value)
     {
         is_group_by_with_grouping_sets = is_group_by_with_grouping_sets_value;
+    }
+
+    /// Returns true, if query node has GROUP BY ALL modifier, false otherwise
+    bool isGroupByAll() const
+    {
+        return is_group_by_all;
+    }
+
+    /// Set query node GROUP BY ALL modifier value
+    void setIsGroupByAll(bool is_group_by_all_value)
+    {
+        is_group_by_all = is_group_by_all_value;
     }
 
     /// Returns true if query node WITH section is not empty, false otherwise
@@ -506,24 +549,6 @@ public:
         return children[offset_child_index];
     }
 
-    /// Returns true if query node has settings changes specified, false otherwise
-    bool hasSettingsChanges() const
-    {
-        return !settings_changes.empty();
-    }
-
-    /// Get query node settings changes
-    const SettingsChanges & getSettingsChanges() const
-    {
-        return settings_changes;
-    }
-
-    /// Set query node settings changes value
-    void setSettingsChanges(SettingsChanges settings_changes_value)
-    {
-        settings_changes = std::move(settings_changes_value);
-    }
-
     /// Get query node projection columns
     const NamesAndTypes & getProjectionColumns() const
     {
@@ -541,25 +566,6 @@ public:
         return QueryTreeNodeType::QUERY;
     }
 
-    DataTypePtr getResultType() const override
-    {
-        if (constant_value)
-            return constant_value->getType();
-
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for non scalar query node");
-    }
-
-    /// Perform constant folding for scalar subquery node
-    void performConstantFolding(ConstantValuePtr constant_folded_value)
-    {
-        constant_value = std::move(constant_folded_value);
-    }
-
-    ConstantValuePtr getConstantValueOrNull() const override
-    {
-        return constant_value;
-    }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -569,7 +575,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;
@@ -580,10 +586,11 @@ private:
     bool is_group_by_with_rollup = false;
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
+    bool is_group_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
-    ConstantValuePtr constant_value;
+    ContextMutablePtr context;
     SettingsChanges settings_changes;
 
     static constexpr size_t with_child_index = 0;

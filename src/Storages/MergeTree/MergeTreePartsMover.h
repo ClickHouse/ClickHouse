@@ -5,14 +5,21 @@
 #include <vector>
 #include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MovesList.h>
 #include <Common/ActionBlocker.h>
 
 namespace DB
 {
 
+enum class MovePartsOutcome
+{
+    PartsMoved,
+    NothingToMove,
+    MovesAreCancelled,
+    MoveWasPostponedBecauseOfZeroCopy,
+};
 
-/// Active part from storage and destination reservation where
-/// it have to be moved.
+/// Active part from storage and destination reservation where it has to be moved
 struct MergeTreeMoveEntry
 {
     std::shared_ptr<const IMergeTreeDataPart> part;
@@ -54,7 +61,7 @@ public:
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
-    ///IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
+    /// IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
     /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
     /// merge or mutation.
     void swapClonedPart(const MergeTreeMutableDataPartPtr & cloned_parts) const;

@@ -1,11 +1,14 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/getThreadId.h>
+#include <base/defines.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <Common/logger_useful.h>
+#include <boost/noncopyable.hpp>
 
 
 #if defined(OS_LINUX)
@@ -47,6 +50,8 @@ struct RUsageCounters
     UInt64 soft_page_faults = 0;
     UInt64 hard_page_faults = 0;
 
+    UInt64 thread_id = 0;
+
     RUsageCounters() = default;
     RUsageCounters(const ::rusage & rusage_, UInt64 real_time_)
     {
@@ -61,6 +66,8 @@ struct RUsageCounters
 
         soft_page_faults = static_cast<UInt64>(rusage.ru_minflt);
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
+
+        thread_id = getThreadId();
     }
 
     static RUsageCounters current()
@@ -78,6 +85,12 @@ struct RUsageCounters
 
     static void incrementProfileEvents(const RUsageCounters & prev, const RUsageCounters & curr, ProfileEvents::Counters & profile_events)
     {
+        chassert(prev.thread_id == curr.thread_id);
+        /// LONG_MAX is ~106751 days
+        chassert(curr.real_time - prev.real_time < LONG_MAX);
+        chassert(curr.user_time - prev.user_time < LONG_MAX);
+        chassert(curr.sys_time - prev.sys_time < LONG_MAX);
+
         profile_events.increment(ProfileEvents::RealTimeMicroseconds,   (curr.real_time - prev.real_time) / 1000U);
         profile_events.increment(ProfileEvents::UserTimeMicroseconds,   (curr.user_time - prev.user_time) / 1000U);
         profile_events.increment(ProfileEvents::SystemTimeMicroseconds, (curr.sys_time - prev.sys_time) / 1000U);
@@ -193,7 +206,7 @@ public:
     void updateCounters(ProfileEvents::Counters & profile_events);
 
 private:
-    ::taskstats stats;  //-V730_NOINIT
+    ::taskstats stats;
     std::function<::taskstats()> stats_getter;
 
     explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);

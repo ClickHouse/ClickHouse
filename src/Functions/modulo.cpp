@@ -1,16 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#if defined(__SSE2__)
-#    define LIBDIVIDE_SSE2
-#elif defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX512VL__)
-#    define LIBDIVIDE_AVX512
-#elif defined(__AVX2__)
-#    define LIBDIVIDE_AVX2
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-#    define LIBDIVIDE_NEON
-#endif
-
+#include <libdivide-config.h>
 #include <libdivide.h>
 
 
@@ -64,9 +55,6 @@ struct ModuloByConstantImpl
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
         /// Modulo with too small divisor.
         if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
@@ -84,14 +72,12 @@ struct ModuloByConstantImpl
             return;
         }
 
-#pragma GCC diagnostic pop
-
         if (unlikely(static_cast<A>(b) == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         /// Division by min negative value.
         if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
-            throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
@@ -133,6 +119,7 @@ struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
 {
     using Op = ModuloLegacyImpl<A, B>;
 };
+
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -177,6 +164,30 @@ using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, 
 REGISTER_FUNCTION(ModuloLegacy)
 {
     factory.registerFunction<FunctionModuloLegacy>();
+}
+
+struct NamePositiveModulo
+{
+    static constexpr auto name = "positiveModulo";
+};
+using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloImpl, NamePositiveModulo, false>;
+
+REGISTER_FUNCTION(PositiveModulo)
+{
+    factory.registerFunction<FunctionPositiveModulo>(
+        {
+            R"(
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
+Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
+In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
+        )",
+            Documentation::Examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);"}},
+            Documentation::Categories{"Arithmetic"}},
+        FunctionFactory::CaseInsensitive);
+
+    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);
+    /// Compatibility with Spark:
+    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 DROP TABLE IF EXISTS t_json_17;
 SET allow_experimental_object_type = 1;

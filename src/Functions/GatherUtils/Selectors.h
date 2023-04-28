@@ -17,7 +17,6 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 /// Base classes which selects template function implementation with concrete ArraySource or ArraySink
 /// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector,
@@ -134,12 +133,13 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
         auto check_type = [] (auto source_ptr)
         {
             if (source_ptr == nullptr)
-                throw Exception(demangle(typeid(Base).name()) + " expected "
-                            + demangle(typeid(typename SynkType::CompatibleArraySource).name())
-                            + " or " + demangle(typeid(ConstSource<typename SynkType::CompatibleArraySource>).name())
-                            + " or " + demangle(typeid(typename SynkType::CompatibleValueSource).name()) +
-                            + " or " + demangle(typeid(ConstSource<typename SynkType::CompatibleValueSource>).name())
-                            + " but got " + demangle(typeid(*source_ptr).name()), ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} expected {} or {} or {} or {} but got {}",
+                                demangle(typeid(Base).name()),
+                                demangle(typeid(typename SynkType::CompatibleArraySource).name()),
+                                demangle(typeid(ConstSource<typename SynkType::CompatibleArraySource>).name()),
+                                demangle(typeid(typename SynkType::CompatibleValueSource).name()),
+                                demangle(typeid(ConstSource<typename SynkType::CompatibleValueSource>).name()),
+                                demangle(typeid(*source_ptr).name()));
         };
         auto check_type_and_call_concat = [& sink, & check_type, & args ...] (auto array_source_ptr, auto value_source_ptr)
         {
@@ -164,7 +164,6 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
     }
 };
 
-#pragma GCC visibility pop
 }
 
 }

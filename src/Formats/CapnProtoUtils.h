@@ -30,6 +30,8 @@ public:
     capnp::StructSchema getMessageSchema(const FormatSchemaInfo & schema_info);
 };
 
+std::pair<String, String> splitCapnProtoFieldName(const String & name);
+
 bool compareEnumNames(const String & first, const String & second, FormatSettings::EnumComparingMode mode);
 
 std::pair<capnp::DynamicStruct::Builder, capnp::StructSchema::Field> getStructBuilderAndFieldByColumnName(capnp::DynamicStruct::Builder struct_builder, const String & name);

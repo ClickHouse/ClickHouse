@@ -19,12 +19,12 @@ private:
 
     void assertExists(const std::string & path) const;
 
-    bool initializeIfNeeded(const std::string & path, std::optional<bool> throw_on_error = std::nullopt) const;
+    void initializeIfNeeded(const std::string & path) const;
 
 public:
     explicit MetadataStorageFromStaticFilesWebServer(const WebObjectStorage & object_storage_);
 
-    MetadataTransactionPtr createTransaction() const override;
+    MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
 

@@ -5,7 +5,6 @@ from helpers.test_tools import TSV
 disk_types = {
     "default": "local",
     "disk_s3": "s3",
-    "disk_memory": "memory",
     "disk_hdfs": "hdfs",
     "disk_encrypted": "s3",
 }
@@ -22,6 +21,7 @@ def cluster():
             with_hdfs=True,
         )
         cluster.start()
+
         yield cluster
     finally:
         cluster.shutdown()

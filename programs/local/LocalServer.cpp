@@ -1,5 +1,8 @@
 #include "LocalServer.h"
 
+#include <sys/resource.h>
+#include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
@@ -23,6 +26,7 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -48,6 +52,10 @@
 
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
 namespace fs = std::filesystem;
@@ -114,6 +122,14 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
+#if USE_AZURE_BLOB_STORAGE
+    /// See the explanation near the same line in Server.cpp
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
+
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
@@ -167,9 +183,9 @@ void LocalServer::tryInitPath()
             parent_folder = std::filesystem::temp_directory_path();
 
         }
-        catch (const fs::filesystem_error& e)
+        catch (const fs::filesystem_error & e)
         {
-            // tmp folder don't exists? misconfiguration? chroot?
+            // The tmp folder doesn't exist? Is it a misconfiguration? Or chroot?
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
@@ -204,7 +220,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp", "", 0);
+    global_context->setTemporaryStoragePath(path + "tmp/", 0);
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
@@ -354,7 +370,7 @@ void LocalServer::setupUsers()
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
-        throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+        throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
 }
 
 void LocalServer::connect()
@@ -377,6 +393,21 @@ try
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
+
+    /// Try to increase limit on number of open files.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NOFILE, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur < rlim.rlim_max)
+        {
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
+            int rc = setrlimit(RLIMIT_NOFILE, &rlim);
+            if (rc != 0)
+                std::cerr << fmt::format("Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString()) << '\n';
+        }
+    }
 
 #if defined(FUZZING_MODE)
     static bool first_time = true;
@@ -410,10 +441,12 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
     processConfig();
+    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+
     applyCmdSettings(global_context);
 
     if (is_interactive)
@@ -482,15 +515,13 @@ void LocalServer::processConfig()
     if (is_interactive && !delayed_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
 
         if (config().has("multiquery"))
             is_multiquery = true;
     }
     else
     {
-        std::string progress = config().getString("progress", "tty");
-        need_render_progress = (Poco::icompare(progress, "off") && Poco::icompare(progress, "no") && Poco::icompare(progress, "false") && Poco::icompare(progress, "0"));
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
@@ -570,13 +601,13 @@ void LocalServer::processConfig()
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+        global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables).
     String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+        global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
@@ -637,8 +668,9 @@ void LocalServer::processConfig()
 
         if (!config().has("only-system-tables"))
         {
+            DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
-            DatabaseCatalog::instance().loadDatabases();
+            DatabaseCatalog::instance().startupBackgroundCleanup();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.

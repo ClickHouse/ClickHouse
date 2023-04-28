@@ -23,12 +23,6 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
-    MergeTreeDataPartWide(
-        MergeTreeData & storage_,
-        const String & name_,
-        const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr);
-
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
         const StorageMetadataPtr & metadata_snapshot,
@@ -52,8 +46,6 @@ public:
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
-
-    bool supportsVerticalMerge() const override { return true; }
 
     String getFileNameForColumn(const NameAndTypePair & column) const override;
 

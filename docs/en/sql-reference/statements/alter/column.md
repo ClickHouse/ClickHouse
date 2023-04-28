@@ -18,14 +18,14 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
--   [ADD COLUMN](#add-column) — Adds a new column to the table.
--   [DROP COLUMN](#drop-column) — Deletes the column.
--   [RENAME COLUMN](#rename-column) — Renames an existing column.
--   [CLEAR COLUMN](#clear-column) — Resets column values.
--   [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
--   [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
--   [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
+- [ADD COLUMN](#add-column) — Adds a new column to the table.
+- [DROP COLUMN](#drop-column) — Deletes the column.
+- [RENAME COLUMN](#rename-column) — Renames an existing column.
+- [CLEAR COLUMN](#clear-column) — Resets column values.
+- [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
+- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression and TTL.
+- [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
+- [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 
 These actions are described in detail below.
 
@@ -75,7 +75,7 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
-:::warning    
+:::tip    
 You can’t delete a column if it is referenced by [materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
 :::
 
@@ -144,21 +144,19 @@ ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [AFTER na
 
 This query changes the `name` column properties:
 
--   Type
+- Type
 
--   Default expression
+- Default expression
 
--   Compression Codec
+- Compression Codec
 
--   TTL
+- TTL
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#codecs).
 
 For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
-
-The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description.
 
 When changing the type, values are converted as if the [toType](/docs/en/sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
 
@@ -169,6 +167,40 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
+
+The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description, but column type is mandatory in this case.
+
+Example:
+
+```sql
+CREATE TABLE users (
+    c1 Int16,
+    c2 String
+) ENGINE = MergeTree
+ORDER BY c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+
+ALTER TABLE users MODIFY COLUMN c2 String FIRST;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c2   │ String │
+│ c1   │ Int16  │
+└──────┴────────┴
+
+ALTER TABLE users ALTER COLUMN c2 TYPE String AFTER c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+```
 
 The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
@@ -254,7 +286,7 @@ The `ALTER` query lets you create and delete separate elements (columns) in nest
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](/docs/en/sql-reference/statements/insert-into.md/#insert_query_insert-select) query, then switch the tables using the [RENAME](/docs/en/sql-reference/statements/rename.md/#rename-table) query and delete the old table. You can use the [clickhouse-copier](/docs/en/operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](/docs/en/sql-reference/statements/insert-into.md/#inserting-the-results-of-select) query, then switch the tables using the [RENAME](/docs/en/sql-reference/statements/rename.md/#rename-table) query and delete the old table. You can use the [clickhouse-copier](/docs/en/operations/utilities/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 

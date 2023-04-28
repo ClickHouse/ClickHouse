@@ -190,6 +190,7 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
   */
 std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
+    const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context);
 

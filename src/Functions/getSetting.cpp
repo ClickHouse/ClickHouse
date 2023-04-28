@@ -49,12 +49,14 @@ private:
     Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (!isString(arguments[0].type))
-            throw Exception{"The argument of function " + String{name} + " should be a constant string with the name of a setting",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The argument of function {} should be a constant string with the name of a setting",
+                            String{name});
         const auto * column = arguments[0].column.get();
         if (!column || !checkAndGetColumnConstStringOrFixedString(column))
-            throw Exception{"The argument of function " + String{name} + " should be a constant string with the name of a setting",
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "The argument of function {} should be a constant string with the name of a setting",
+                            String{name});
 
         std::string_view setting_name{column->getDataAt(0).toView()};
         return getContext()->getSettingsRef().get(setting_name);

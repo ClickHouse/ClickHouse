@@ -82,8 +82,8 @@ protected:
                     arguments[0].type->getName(), getName());
             if (!isUInt8(arguments[1].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
-                    getName());
+                    "Illegal type {} of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
+                    arguments[1].type->getName(), getName());
         }
         else if (arguments.size() == 3)
         {
@@ -93,12 +93,12 @@ protected:
                     arguments[0].type->getName(), getName());
             if (!isUInt8(arguments[1].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
-                    getName());
+                    "Illegal type {} of 2nd (optional) argument of function {}. Must be constant UInt8 (week mode).",
+                    arguments[1].type->getName(), getName());
             if (!isString(arguments[2].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type of 3rd (optional) argument of function {}. Must be constant string (timezone name).",
-                    getName());
+                    "Illegal type {} of 3rd (optional) argument of function {}. Must be constant string (timezone name).",
+                    arguments[2].type->getName(), getName());
             if ((isDate(arguments[0].type) || isDate32(arguments[0].type)) && is_result_type_date_or_date32)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "The timezone argument of function {} is allowed only when the 1st argument is DateTime or DateTime64.",

@@ -39,6 +39,8 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
     factory.registerFunction<FunctionToUUID>();
+    factory.registerFunction<FunctionToIPv4>();
+    factory.registerFunction<FunctionToIPv6>();
     factory.registerFunction<FunctionToString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
@@ -68,6 +70,8 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToDecimal256OrZero>();
 
     factory.registerFunction<FunctionToUUIDOrZero>();
+    factory.registerFunction<FunctionToIPv4OrZero>();
+    factory.registerFunction<FunctionToIPv6OrZero>();
 
     factory.registerFunction<FunctionToUInt8OrNull>();
     factory.registerFunction<FunctionToUInt16OrNull>();
@@ -94,6 +98,8 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionToDecimal256OrNull>();
 
     factory.registerFunction<FunctionToUUIDOrNull>();
+    factory.registerFunction<FunctionToIPv4OrNull>();
+    factory.registerFunction<FunctionToIPv6OrNull>();
 
     factory.registerFunction<FunctionParseDateTimeBestEffort>();
     factory.registerFunction<FunctionParseDateTimeBestEffortOrZero>();

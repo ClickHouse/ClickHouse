@@ -9,12 +9,7 @@
 #    include <DataTypes/DataTypeNullable.h>
 #    include <Columns/ColumnConst.h>
 #    include <Columns/ColumnNullable.h>
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
-
 #    include <llvm/IR/IRBuilder.h>
-
-#    pragma GCC diagnostic pop
 
 
 namespace DB
@@ -138,7 +133,7 @@ static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataType
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
     if (value->getType()->isFloatingPointTy())
-        return b.CreateFCmpONE(value, zero); /// QNaN is false
+        return b.CreateFCmpUNE(value, zero);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
 }

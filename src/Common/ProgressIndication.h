@@ -24,8 +24,7 @@ struct ThreadEventData
     UInt64 memory_usage = 0;
 };
 
-using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
-using HostToThreadTimesMap = std::unordered_map<String, ThreadIdToTimeMap>;
+using HostToTimesMap = std::unordered_map<String, ThreadEventData>;
 
 class ProgressIndication
 {
@@ -56,9 +55,7 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
 
-    void addThreadIdToList(String const & host, UInt64 thread_id);
-
-    void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
+    void updateThreadEventData(HostToTimesMap & new_hosts_data);
 
 private:
     double getCPUUsage();
@@ -90,8 +87,8 @@ private:
 
     bool write_progress_on_update = false;
 
-    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 3'000'000'000 /*ns*/}; // average cpu utilization last 3 second
-    HostToThreadTimesMap thread_data;
+    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/}; // average cpu utilization last 2 second
+    HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local
     /// - input_format_parallel_parsing=true
@@ -99,7 +96,7 @@ private:
     ///
     /// It is possible concurrent access to the following:
     /// - writeProgress() (class properties) (guarded with progress_mutex)
-    /// - thread_data/cpu_usage_meter (guarded with profile_events_mutex)
+    /// - hosts_data/cpu_usage_meter (guarded with profile_events_mutex)
     mutable std::mutex profile_events_mutex;
     mutable std::mutex progress_mutex;
 };

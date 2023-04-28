@@ -13,7 +13,7 @@ import time
 import zlib  # for crc32
 
 
-MAX_RETRY = 3
+MAX_RETRY = 1
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
@@ -214,10 +214,9 @@ def clear_ip_tables_and_restart_daemons():
             subprocess.check_output("sudo iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info(
-            "All iptables rules cleared, "
-            + str(iptables_iter)
-            + "iterations, last error: "
-            + str(err)
+            "All iptables rules cleared, %s iterations, last error: %s",
+            iptables_iter,
+            str(err),
         )
 
 
@@ -293,6 +292,34 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/postgresql-java-client",
         ]
 
+    def _pre_pull_images(self, repo_path):
+        image_cmd = self._get_runner_image_cmd(repo_path)
+
+        cmd = (
+            "cd {repo_path}/tests/integration && "
+            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
+                repo_path=repo_path,
+                runner_opts=self._get_runner_opts(),
+                image_cmd=image_cmd,
+                command=r""" echo Pre Pull finished """,
+            )
+        )
+
+        for i in range(5):
+            logging.info("Pulling images before running tests. Attempt %s", i)
+            try:
+                subprocess.check_output(
+                    cmd,
+                    shell=True,
+                )
+                return
+            except subprocess.CalledProcessError as err:
+                logging.info("docker-compose pull failed: " + str(err))
+                continue
+        logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
+        # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
+        exit(13)
+
     def _can_run_with(self, path, opt):
         with open(path, "r") as script:
             for line in script:
@@ -327,7 +354,7 @@ class ClickhouseIntegrationTestsRunner:
                     break
             else:
                 raise Exception("Package with {} not found".format(package))
-        logging.info("Unstripping binary")
+        # logging.info("Unstripping binary")
         # logging.info(
         #     "Unstring %s",
         #     subprocess.check_output(
@@ -353,15 +380,17 @@ class ClickhouseIntegrationTestsRunner:
         )
 
     def _compress_logs(self, dir, relpaths, result_path):
-        # We execute sync in advance to have all files written after containers
-        # are finished or killed
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "sync", shell=True
-        )
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "tar czf {} -C {} {}".format(result_path, dir, " ".join(relpaths)),
+        retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+            "tar --use-compress-program='zstd --threads=0' -cf {} -C {} {}".format(
+                result_path, dir, " ".join(relpaths)
+            ),
             shell=True,
         )
+        # tar return 1 when the files are changed on compressing, we ignore it
+        if retcode in (0, 1):
+            return
+        # but even on the fatal errors it's better to retry
+        logging.error("Fatal error on compressing %s: %s", result_path, retcode)
 
     def _get_runner_opts(self):
         result = []
@@ -589,10 +618,7 @@ class ClickhouseIntegrationTestsRunner:
             test_names = set([])
             for test_name in tests_in_group:
                 if test_name not in counters["PASSED"]:
-                    if "[" in test_name:
-                        test_names.add(test_name[: test_name.find("[")])
-                    else:
-                        test_names.add(test_name)
+                    test_names.add(test_name)
 
             if i == 0:
                 test_data_dirs = self._find_test_data_dirs(repo_path, test_names)
@@ -624,13 +650,8 @@ class ClickhouseIntegrationTestsRunner:
             log_path = os.path.join(repo_path, "tests/integration", log_basename)
             with open(log_path, "w") as log:
                 logging.info("Executing cmd: %s", cmd)
-                retcode = subprocess.Popen(
-                    cmd, shell=True, stderr=log, stdout=log
-                ).wait()
-                if retcode == 0:
-                    logging.info("Run %s group successfully", test_group)
-                else:
-                    logging.info("Some tests failed")
+                # ignore retcode, since it meaningful due to pipe to tee
+                subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -692,7 +713,7 @@ class ClickhouseIntegrationTestsRunner:
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
                     str(self.path()),
-                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.gz",
+                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
                 )
                 self._compress_logs(
                     os.path.join(repo_path, "tests/integration"),
@@ -736,7 +757,7 @@ class ClickhouseIntegrationTestsRunner:
 
         tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
         if not tests_to_run:
-            logging.info("No tests to run found")
+            logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         self._install_clickhouse(build_path)
@@ -810,6 +831,10 @@ class ClickhouseIntegrationTestsRunner:
             )
 
         self._install_clickhouse(build_path)
+
+        logging.info("Pulling images")
+        runner._pre_pull_images(repo_path)
+
         logging.info(
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
@@ -978,8 +1003,21 @@ if __name__ == "__main__":
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
 
     logging.info("Running tests")
+
+    # Avoid overlaps with previous runs
+    logging.info("Clearing dmesg before run")
+    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        "dmesg --clear", shell=True
+    )
+
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
+
+    # Dump dmesg (to capture possible OOMs)
+    logging.info("Dumping dmesg")
+    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        "dmesg -T", shell=True
+    )
 
     status = (state, description)
     out_results_file = os.path.join(str(runner.path()), "test_results.tsv")

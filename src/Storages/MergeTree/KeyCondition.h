@@ -19,7 +19,7 @@ namespace DB
 class ASTFunction;
 class Context;
 class IFunction;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
@@ -60,13 +60,10 @@ private:
     static bool less(const Field & lhs, const Field & rhs);
 
 public:
-    FieldRef left = NEGATIVE_INFINITY;   /// the left border
-    FieldRef right = POSITIVE_INFINITY;  /// the right border
-    bool left_included = false;           /// includes the left border
-    bool right_included = false;          /// includes the right border
-
-    /// The whole universe (not null).
-    Range() {} /// NOLINT
+    FieldRef left;        /// the left border
+    FieldRef right;       /// the right border
+    bool left_included;   /// includes the left border
+    bool right_included;  /// includes the right border
 
     /// One point.
     Range(const FieldRef & point) /// NOLINT
@@ -82,9 +79,19 @@ public:
         shrinkToIncludedIfPossible();
     }
 
-    static Range createRightBounded(const FieldRef & right_point, bool right_included)
+    static Range createWholeUniverse()
     {
-        Range r;
+        return Range(NEGATIVE_INFINITY, true, POSITIVE_INFINITY, true);
+    }
+
+    static Range createWholeUniverseWithoutNull()
+    {
+        return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
+    }
+
+    static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false)
+    {
+        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
         r.right = right_point;
         r.right_included = right_included;
         r.shrinkToIncludedIfPossible();
@@ -94,9 +101,9 @@ public:
         return r;
     }
 
-    static Range createLeftBounded(const FieldRef & left_point, bool left_included)
+    static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false)
     {
-        Range r;
+        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
         r.left = left_point;
         r.left_included = left_included;
         r.shrinkToIncludedIfPossible();
@@ -236,7 +243,7 @@ public:
 
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        ActionDAGNodes dag_nodes,
+        ActionsDAGPtr filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -279,9 +286,6 @@ public:
 
     bool alwaysFalse() const;
 
-    /// Get the maximum number of the key element used in the condition.
-    size_t getMaxKeyColumn() const;
-
     bool hasMonotonicFunctionsChain() const;
 
     /// Impose an additional condition: the value in the column `column` must be in the range `range`.
@@ -289,6 +293,9 @@ public:
     bool addCondition(const String & column, const Range & range);
 
     String toString() const;
+
+    /// Get the key indices of key names used in the condition.
+    const std::vector<size_t> & getKeyIndices() const { return key_indices; }
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -367,7 +374,7 @@ private:
         Function function = FUNCTION_UNKNOWN;
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
-        Range range;
+        Range range = Range::createWholeUniverse();
         size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
@@ -414,12 +421,13 @@ private:
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
     bool transformConstantWithValidFunctions(
+        ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
+        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
@@ -470,6 +478,8 @@ private:
     RPN rpn;
 
     ColumnIndices key_columns;
+    std::vector<size_t> key_indices;
+
     /// Expression which is used for key condition.
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.

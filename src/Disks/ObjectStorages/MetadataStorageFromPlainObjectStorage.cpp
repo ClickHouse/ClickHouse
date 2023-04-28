@@ -23,7 +23,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
 {
 }
 
-MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction() const
+MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
 {
     return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this);
 }
@@ -39,8 +39,11 @@ std::filesystem::path MetadataStorageFromPlainObjectStorage::getAbsolutePath(con
 
 bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) const
 {
-    auto object = StoredObject::create(*object_storage, getAbsolutePath(path));
-    return object_storage->exists(object);
+    RelativePathsWithSize children;
+    /// NOTE: exists() cannot be used here since it works only for existing
+    /// key, and does not work for some intermediate path.
+    object_storage->findAllFiles(getAbsolutePath(path), children, 1);
+    return !children.empty();
 }
 
 bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
@@ -66,7 +69,7 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
     RelativePathsWithSize children;
-    object_storage->findAllFiles(getAbsolutePath(path), children);
+    object_storage->findAllFiles(getAbsolutePath(path), children, 1);
     if (children.empty())
         return 0;
     if (children.size() != 1)
@@ -85,6 +88,11 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
         result.push_back(path_size.relative_path);
     for (const auto & directory : directories)
         result.push_back(directory);
+    for (auto & row : result)
+    {
+        chassert(row.starts_with(object_storage_root_path));
+        row.erase(0, object_storage_root_path.size());
+    }
     return result;
 }
 
@@ -100,7 +108,7 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
 {
     std::string blob_name = object_storage->generateBlobNameForPath(path);
     size_t object_size = getFileSize(blob_name);
-    auto object = StoredObject::create(*object_storage, getAbsolutePath(blob_name), object_size, /* exists */true);
+    auto object = StoredObject::create(*object_storage, getAbsolutePath(blob_name), object_size, path, /* exists */true);
     return {std::move(object)};
 }
 

@@ -334,9 +334,19 @@
 
     <max_thread_pool_size>10000</max_thread_pool_size>
 
-    <!-- Number of workers to recycle connections in background (see also drain_timeout).
-         If the pool is full, connection will be drained synchronously. -->
-    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
+    <!-- Configure other thread pools: -->
+    <!--
+    <background_buffer_flush_schedule_pool_size>16</background_buffer_flush_schedule_pool_size>
+    <background_pool_size>16</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+    <background_merges_mutations_scheduling_policy>round_robin</background_merges_mutations_scheduling_policy>
+    <background_move_pool_size>8</background_move_pool_size>
+    <background_fetches_pool_size>8</background_fetches_pool_size>
+    <background_common_pool_size>8</background_common_pool_size>
+    <background_schedule_pool_size>128</background_schedule_pool_size>
+    <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
+    <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -465,6 +475,35 @@
     <allow_plaintext_password>1</allow_plaintext_password>
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
+
+    <!-- When a user does not specify a password type in the CREATE USER query, the default password type is used.
+         Accepted values are: 'plaintext_password', 'sha256_password', and 'double_sha1_password'.
+      -->
+    <default_password_type>sha256_password</default_password_type>
+
+    <!-- Complexity requirements for user passwords. -->
+    <!-- <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+        <rule>
+            <pattern>\p{Ll}</pattern>
+            <message>contain at least 1 lowercase character</message>
+        </rule>
+        <rule>
+            <pattern>\p{Lu}</pattern>
+            <message>contain at least 1 uppercase character</message>
+        </rule>
+        <rule>
+            <pattern>[^\p{L}\p{N}]</pattern>
+            <message>contain at least 1 special character</message>
+        </rule>
+    </password_complexity> -->
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
@@ -669,6 +708,9 @@
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+
+        <!-- Number of seconds since last access a role is stored in the Role Cache -->
+        <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
@@ -817,6 +859,51 @@
                 </replica>
             </shard-->
         </test_cluster_one_shard_three_replicas_localhost>
+	<parallel_replicas>
+		<shard>
+            <internal_replication>false</internal_replication>
+            <replica>
+                <host>127.0.0.1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.2</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.3</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.4</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.5</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.6</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.7</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.8</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.9</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.10</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+	</parallel_replicas>
         <test_cluster_two_shards_localhost>
              <shard>
                  <replica>
@@ -1049,6 +1136,9 @@
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+
+        <!-- example of using a different storage policy for a system table -->
+        <!-- storage_policy>local_ssd</storage_policy -->
     </query_log>
 
     <!-- Trace log. Stores stack traces collected by query profilers.
@@ -1205,6 +1295,10 @@
 
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+
+    <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
+     If not specified they will be stored locally. -->
+    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
@@ -1426,6 +1520,14 @@
     </rocksdb>
     -->
 
+    <!-- Configuration for the query cache -->
+    <!-- <query_cache> -->
+    <!--     <max_size_in_bytes>1073741824</max_size_in_bytes> -->
+    <!--     <max_entries>1024</max_entries> -->
+    <!--     <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes> -->
+    <!--     <max_entry_size_in_rows>30000000</max_entry_size_in_rows> -->
+    <!-- </query_cache> -->
+
     <!-- Uncomment if enable merge tree metadata cache -->
     <!--merge_tree_metadata_cache>
         <lru_cache_size>268435456</lru_cache_size>
@@ -1439,5 +1541,9 @@
          if the user has access to these tables.
          I don't recommend to change this setting.
     <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
+    -->
+
+    <!-- On Linux systems this can control the behavior of OOM killer.
+    <oom_score>-1000</oom_score>
     -->
 </clickhouse>
