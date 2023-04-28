@@ -48,7 +48,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
                             cond_arg->getName(), toString(i + 1), name);
     }
 
-    AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionWindowFunnel, Data>(*arguments[0], arguments, params));
+    AggregateFunctionPtr res(createWithOptionSignedIntegerType<AggregateFunctionWindowFunnel, Data>(*arguments[0], arguments, params));
     WhichDataType which(arguments.front().get());
     if (res)
         return res;
