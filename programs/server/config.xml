@@ -476,6 +476,11 @@
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
 
+    <!-- When a user does not specify a password type in the CREATE USER query, the default password type is used.
+         Accepted values are: 'plaintext_password', 'sha256_password', and 'double_sha1_password'.
+      -->
+    <default_password_type>sha256_password</default_password_type>
+
     <!-- Complexity requirements for user passwords. -->
     <!-- <password_complexity>
         <rule>
