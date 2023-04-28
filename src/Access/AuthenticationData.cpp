@@ -44,7 +44,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
     ::DB::encodeSHA256(text, hash.data());
     return hash;
 #else
-    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
 #endif
 }
 
@@ -60,9 +60,9 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 {
 #if USE_BCRYPT
     if (text.size() > 72)
-        throw DB::Exception(
-            "bcrypt does not support passwords with a length of more than 72 bytes",
-            DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "bcrypt does not support passwords with a length of more than 72 bytes");
 
     char salt[BCRYPT_HASHSIZE];
     Digest hash;
@@ -70,17 +70,17 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 
     int ret = bcrypt_gensalt(workfactor, salt);
     if (ret != 0)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
 
     ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));
     if (ret != 0)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
 
     return hash;
 #else
-    throw DB::Exception(
-        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library",
-        DB::ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library");
 #endif
 }
 
@@ -89,12 +89,12 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 #if USE_BCRYPT
     int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
     if (ret == -1)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_checkpw returned {}", ret);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_checkpw returned {}", ret);
     return (ret == 0);
 #else
-    throw DB::Exception(
-        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library",
-        DB::ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "bcrypt passwords support is disabled, because ClickHouse was built without bcrypt library");
 #endif
 }
 
@@ -210,8 +210,15 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
 
         case AuthenticationType::BCRYPT_PASSWORD:
         {
-            /// TODO: check size
+            /// Depending on the workfactor the resulting hash can be 59 or 60 characters long.
+            /// However the library we use to encode it requires hash string to be 64 characters long,
+            ///  so we also allow the hash of this length.
+            if (hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
+                                "but must be 59 or 60 bytes.", hash.size());
             password_hash = hash;
+            password_hash.resize(64);
             return;
         }
 
@@ -278,7 +285,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         case AuthenticationType::BCRYPT_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
             break;
         }
         case AuthenticationType::LDAP:
@@ -391,7 +398,16 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     if (query.contains_hash)
     {
         String value = checkAndGetLiteralArgument<String>(args[0], "hash");
-        auth_data.setPasswordHashHex(value);
+
+        if (query.type == AuthenticationType::BCRYPT_PASSWORD)
+        {
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value));
+            return auth_data;
+        }
+        else
+        {
+            auth_data.setPasswordHashHex(value);
+        }
 
         if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
         {

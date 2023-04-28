@@ -160,7 +160,7 @@ public:
 
     /// Workfactor for bcrypt encoded passwords
     void setBcryptWorkfactor(int workfactor_);
-    int getBcryptWorkfactor();
+    int getBcryptWorkfactor() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there two users A, B and a row policy is defined only for A, then

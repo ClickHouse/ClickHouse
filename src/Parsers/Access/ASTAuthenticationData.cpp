@@ -87,6 +87,15 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                 password = true;
                 break;
             }
+            case AuthenticationType::BCRYPT_PASSWORD:
+            {
+                if (contains_hash)
+                    auth_type_name = "bcrypt_hash";
+
+                prefix = "BY";
+                password = true;
+                break;
+            }
             case AuthenticationType::LDAP:
             {
                 prefix = "SERVER";

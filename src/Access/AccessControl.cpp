@@ -701,11 +701,13 @@ void AccessControl::setBcryptWorkfactor(int workfactor_)
 {
     if (workfactor_ < 4)
         bcrypt_workfactor = 4;
+    else if (workfactor_ > 31)
+        bcrypt_workfactor = 31;
     else
         bcrypt_workfactor = workfactor_;
 }
 
-int AccessControl::getBcryptWorkfactor()
+int AccessControl::getBcryptWorkfactor() const
 {
     return bcrypt_workfactor;
 }
