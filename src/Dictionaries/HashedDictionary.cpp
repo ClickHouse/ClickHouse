@@ -957,6 +957,15 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
 
     for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
+        /// bucket_count should be a sum over all shards (CollectionsHolder),
+        /// but it should not be a sum over all attributes, since it is used to
+        /// calculate load_factor like this:
+        ///
+        ///    element_count / bucket_count
+        ///
+        /// While element_count is a sum over all shards, not over all attributes.
+        bucket_count = 0;
+
         getAttributeContainers(attribute_index, [&](const auto & containers)
         {
             for (const auto & container : containers)
@@ -973,12 +982,12 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
                     /// and since this is sparsehash, empty cells should not be significant,
                     /// and since items cannot be removed from the dictionary, deleted is also not important.
                     bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
-                    bucket_count = container.bucket_count();
+                    bucket_count += container.bucket_count();
                 }
                 else
                 {
                     bytes_allocated += container.getBufferSizeInBytes();
-                    bucket_count = container.getBufferSizeInCells();
+                    bucket_count += container.getBufferSizeInCells();
                 }
             }
         });
@@ -1002,12 +1011,12 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
             if constexpr (sparse)
             {
                 bytes_allocated += container.size() * (sizeof(KeyType));
-                bucket_count = container.bucket_count();
+                bucket_count += container.bucket_count();
             }
             else
             {
                 bytes_allocated += container.getBufferSizeInBytes();
-                bucket_count = container.getBufferSizeInCells();
+                bucket_count += container.getBufferSizeInCells();
             }
         }
     }
