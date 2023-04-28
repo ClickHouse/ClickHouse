@@ -71,7 +71,7 @@ def new_password(len=16):
     )
 
 
-show_secrets = "SETTINGS display_secrets_in_show_and_select_query"
+show_secrets = "SETTINGS display_secrets_in_show_and_select"
 
 
 def test_create_alter_user():

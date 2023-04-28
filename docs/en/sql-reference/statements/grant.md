@@ -188,7 +188,7 @@ Hierarchy of privileges:
     - `HDFS`
     - `S3`
 - [dictGet](#grant-dictget)
-- [displaySecretsInShowSelect](#grant-display-secrets)
+- [displaySecretsInShowAndSelect](#grant-display-secrets)
 
 Examples of how this hierarchy is treated:
 
@@ -475,11 +475,13 @@ Privilege level: `DICTIONARY`.
 - `GRANT dictGet ON mydictionary TO john`
 
 
-### displaySecretsInShowSelect {#grant-display-secrets}
+### displaySecretsInShowAndSelect {#grant-display-secrets}
 
-Allows a user to view secrets in `SHOW` and `SELECT` queries if
-[`display_secrets_in_show_and_select_query`](../../operations/settings/server-configuration-parameters/settings#display_secrets_in_show_and_select_query)
-setting is turned on. Otherwise this privilege does nothing.
+Allows a user to view secrets in `SHOW` and `SELECT` queries if both
+[`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
+and
+[`display_secrets_in_show_and_select` format setting](../../operations/settings/formats#display_secrets_in_show_and_select)
+are turned on.
 
 ### ALL
 

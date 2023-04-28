@@ -74,7 +74,7 @@ namespace DB
     M(UInt64, background_schedule_pool_size, 128, "The maximum number of threads that will be used for constantly executing some lightweight periodic operations.", 0) \
     M(UInt64, background_message_broker_schedule_pool_size, 16, "The maximum number of threads that will be used for executing background operations for message streaming.", 0) \
     M(UInt64, background_distributed_schedule_pool_size, 16, "The maximum number of threads that will be used for executing distributed sends.", 0) \
-    M(Bool, display_secrets_in_show_and_select_query, false, "Do not hide secrets in SHOW and SELECT queries. User must also have 'displaySecretsInShowSelect' privilege", IMPORTANT) /* Although formally this is a format setting, it may introduce security issues, so it's better to add it at a server level */ \
+    M(Bool, display_secrets_in_show_and_select, false, "Allow showing secrets in SHOW and SELECT queries via a format setting and a grant", IMPORTANT)
 
 
 DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, SERVER_SETTINGS)
