@@ -7,9 +7,11 @@ sidebar_label: SHOW
 # SHOW Statements
 
 N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
-[`display_secrets_in_show_and_select_query`](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select_query)
+[`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
+is turned on,
+[`display_secrets_in_show_and_select` format setting](../../operations/settings/formats#display_secrets_in_show_and_select)
 is turned on and user has
-[`displaySecretsInShowSelect`](grant.md#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](grant.md#grant-display-secrets) privilege.
 
 ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 

@@ -683,7 +683,7 @@ public:
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
 
-    bool displaySecretsInShowSelect() const;
+    bool displaySecretsInShowAndSelect() const;
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 

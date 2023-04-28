@@ -2057,16 +2057,15 @@ Possible values:
 
 Default value: `10000`.
 
-## display_secrets_in_show_and_select_query {#display_secrets_in_show_and_select_query}
+## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
 
 Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
 table functions, and dictionaries.
-User wishing to see secrets must also have
-[`displaySecretsInShowSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
-:::info Warning Turning this setting on allows users with all privileges to view secrets immediately.
-Please grant/revoke [`displaySecretsInShowSelect`](../../sql-reference/statements/grant#grant-display-secrets)
-privilege first and turn this setting on after that :::
+User wishing to see secrets must also have
+[`display_secrets_in_show_and_select` format setting](../settings/formats#display_secrets_in_show_and_select)
+turned on and a
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 
 Possible values:
 
