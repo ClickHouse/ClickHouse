@@ -655,7 +655,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     {
         auto locked_key = deletion_info.getMetadata().tryLock();
         if (!locked_key)
-            continue;
+            continue; /// key could become invalid after we released the key lock above, just skip it.
 
         for (auto it = deletion_info.begin(); it != deletion_info.end();)
         {
