@@ -34,8 +34,11 @@ void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
 void registerStorageOSS(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
-void registerStorageDeltaLake(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
+
+#if USE_PARQUET
+void registerStorageDeltaLake(StorageFactory & factory);
+#endif
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
 #endif
@@ -127,8 +130,11 @@ void registerStorages()
     registerStorageCOS(factory);
     registerStorageOSS(factory);
     registerStorageHudi(factory);
-    registerStorageDeltaLake(factory);
     registerStorageS3Queue(factory);
+
+    #if USE_PARQUET
+    registerStorageDeltaLake(factory);
+    #endif
 
     #if USE_AVRO
     registerStorageIceberg(factory);

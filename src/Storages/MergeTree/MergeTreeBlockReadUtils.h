@@ -64,7 +64,7 @@ struct MergeTreeReadTask
     /// Used to save current range processing status
     MergeTreeRangeReader range_reader;
     /// Range readers for multiple filtering steps: row level security, PREWHERE etc.
-    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but noit a vector
+    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but not a vector
     std::deque<MergeTreeRangeReader> pre_range_readers;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;

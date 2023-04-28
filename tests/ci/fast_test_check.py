@@ -112,6 +112,9 @@ def main():
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
+        status = rerun_helper.get_finished_status()
+        if status is not None and status.state != "success":
+            sys.exit(1)
         sys.exit(0)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")

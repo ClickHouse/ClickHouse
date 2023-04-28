@@ -38,6 +38,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 
 
 namespace DB
@@ -373,11 +374,11 @@ MutationsInterpreter::MutationsInterpreter(
     ContextPtr context_,
     bool can_execute_,
     bool return_all_columns_,
-    bool return_deleted_rows_)
+    bool return_mutated_rows_)
     : MutationsInterpreter(
         Source(std::move(storage_)),
         metadata_snapshot_, std::move(commands_), std::move(context_),
-        can_execute_, return_all_columns_, return_deleted_rows_)
+        can_execute_, return_all_columns_, return_mutated_rows_)
 {
     if (can_execute_ && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
     {
@@ -396,11 +397,11 @@ MutationsInterpreter::MutationsInterpreter(
     ContextPtr context_,
     bool can_execute_,
     bool return_all_columns_,
-    bool return_deleted_rows_)
+    bool return_mutated_rows_)
     : MutationsInterpreter(
         Source(storage_, std::move(source_part_)),
         metadata_snapshot_, std::move(commands_), std::move(context_),
-        can_execute_, return_all_columns_, return_deleted_rows_)
+        can_execute_, return_all_columns_, return_mutated_rows_)
 {
 }
 
@@ -411,7 +412,7 @@ MutationsInterpreter::MutationsInterpreter(
     ContextPtr context_,
     bool can_execute_,
     bool return_all_columns_,
-    bool return_deleted_rows_)
+    bool return_mutated_rows_)
     : source(std::move(source_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
@@ -419,7 +420,7 @@ MutationsInterpreter::MutationsInterpreter(
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
     , return_all_columns(return_all_columns_)
-    , return_deleted_rows(return_deleted_rows_)
+    , return_mutated_rows(return_mutated_rows_)
 {
     prepare(!can_execute);
 }
@@ -600,7 +601,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (auto & command : commands)
     {
         // we can return deleted rows only if it's the only present command
-        assert(command.type == MutationCommand::DELETE || !return_deleted_rows);
+        assert(command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE || !return_mutated_rows);
 
         if (command.type == MutationCommand::DELETE)
         {
@@ -610,7 +611,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             auto predicate  = getPartitionAndPredicateExpressionForMutationCommand(command);
 
-            if (!return_deleted_rows)
+            if (!return_mutated_rows)
                 predicate = makeASTFunction("isZeroOrNull", predicate);
 
             stages.back().filters.push_back(predicate);
@@ -697,6 +698,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                     type_literal);
 
                 stages.back().column_to_updated.emplace(column, updated_column);
+
+                if (condition && return_mutated_rows)
+                    stages.back().filters.push_back(condition);
             }
 
             if (!affected_materialized.empty())
@@ -973,10 +977,15 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
 
-        for (const auto & ast : stage.filters)
+        if (!stage.filters.empty())
         {
+            auto ast = stage.filters.front();
+            if (stage.filters.size() > 1)
+                ast = makeASTForLogicalAnd(std::move(stage.filters));
+
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
+
             stage.analyzer->appendExpression(actions_chain, ast, dry_run);
             stage.filter_column_names.push_back(ast->getColumnName());
         }
