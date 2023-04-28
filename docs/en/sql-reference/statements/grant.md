@@ -480,7 +480,7 @@ Privilege level: `DICTIONARY`.
 Allows a user to view secrets in `SHOW` and `SELECT` queries if both
 [`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
 and
-[`display_secrets_in_show_and_select` format setting](../../operations/settings/formats#display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 are turned on.
 
 ### ALL

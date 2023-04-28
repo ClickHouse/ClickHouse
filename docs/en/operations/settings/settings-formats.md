@@ -7,7 +7,7 @@ toc_max_heading_level: 2
 
 # Format settings {#format-settings}
 
-## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
+## format_display_secrets_in_show_and_select {#format_display_secrets_in_show_and_select}
 
 Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
 table functions, and dictionaries.
