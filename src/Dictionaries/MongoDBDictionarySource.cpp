@@ -144,8 +144,8 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     }
     else
     {
-        // Connect with host/port/user/etc through constructing
-        std::string uri_constructed("mongodb://" + host + ":" + std::to_string(port) + "/" + db + "?" + options);
+        // Connect with host/port/user/etc through constructing the uri
+        std::string uri_constructed("mongodb://" + host + ":" + std::to_string(port) + "/" + db + (options.empty() ? "" : "?" + options));
         connection->connect(uri_constructed, socket_factory);
 
         if (!user.empty())
