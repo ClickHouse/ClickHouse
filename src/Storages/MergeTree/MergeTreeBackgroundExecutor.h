@@ -260,15 +260,8 @@ public:
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
-        CurrentMetrics::Metric max_tasks_metric_);
-
-    MergeTreeBackgroundExecutor(
-        String name_,
-        size_t threads_count_,
-        size_t max_tasks_count_,
-        CurrentMetrics::Metric metric_,
         CurrentMetrics::Metric max_tasks_metric_,
-        std::string_view policy);
+        std::string_view policy = {});
 
     ~MergeTreeBackgroundExecutor();
 
