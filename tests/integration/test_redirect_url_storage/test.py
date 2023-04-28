@@ -2,6 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 from helpers.network import PartitionManager
+import lz4.frame
 import threading
 import time
 
@@ -67,6 +68,47 @@ def test_url_with_globs_and_failover(started_cluster):
         "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{0|1|2|3}_{1..3}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data"
     )
     assert result == "1\n2\n3\n" or result == "4\n5\n6\n"
+
+
+def test_url_with_globs_skip_missing(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage_2", "10\n")
+
+    result = node1.query(
+        "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{1..2}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data"
+    )
+    assert result == "10\n"
+
+
+def test_url_with_globs_dont_skip_missing(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage_2", "10\n")
+
+    with pytest.raises(Exception):
+        result = node1.query(
+            "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{1..2}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String') as data order by data settings http_skip_not_found_url_for_globs = 0"
+        )
+        assert result == "10\n"
+
+
+def test_url_with_globs_skip_missing_all(started_cluster):
+    result = node1.query(
+        "select count(*) from url('http://hdfs1:50075/webhdfs/v1/does_not_exist_{3..4}?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String')"
+    )
+    assert result == "0\n"
+
+
+def test_url_with_globs_skip_missing_compressed(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage_2.lz4", lz4.frame.compress(b"10\n"))
+
+    result = node1.query(
+        "select * from url('http://hdfs1:50075/webhdfs/v1/simple_storage_{1..2}.lz4?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'data String', 'Lz4') as data order by data"
+    )
+    assert result == "10\n"
 
 
 def test_url_with_redirect_not_allowed(started_cluster):
@@ -151,7 +193,7 @@ def test_url_reconnect(started_cluster):
             result = node1.query(
                 "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32') settings http_max_tries = 10, http_retry_max_backoff_ms=1000"
             )
-            assert (int(result), 6581218782194912115)
+            assert int(result) == 6581218782194912115
 
         thread = threading.Thread(target=select)
         thread.start()
@@ -161,5 +203,5 @@ def test_url_reconnect(started_cluster):
 
         thread.join()
 
-        assert (int(result), 6581218782194912115)
+        assert int(result) == 6581218782194912115
         assert node1.contains_in_log("Timeout: connect timed out")
