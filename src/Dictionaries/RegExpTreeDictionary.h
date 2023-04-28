@@ -10,7 +10,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
-#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>

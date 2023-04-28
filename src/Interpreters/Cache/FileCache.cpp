@@ -23,22 +23,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileCache::FileCache(
-    const String & cache_base_path_,
-    const FileCacheSettings & cache_settings_)
-    : cache_base_path(cache_base_path_)
-    , max_size(cache_settings_.max_size)
-    , max_element_size(cache_settings_.max_elements)
-    , max_file_segment_size(cache_settings_.max_file_segment_size)
-    , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
-    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
-    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
-    , enable_bypass_cache_with_threashold(cache_settings_.enable_bypass_cache_with_threashold)
-    , bypass_cache_threashold(cache_settings_.bypass_cache_threashold)
+FileCache::FileCache(const FileCacheSettings & settings)
+    : cache_base_path(settings.base_path)
+    , max_size(settings.max_size)
+    , max_element_size(settings.max_elements)
+    , max_file_segment_size(settings.max_file_segment_size)
+    , allow_persistent_files(settings.do_not_evict_index_and_mark_files)
+    , enable_cache_hits_threshold(settings.enable_cache_hits_threshold)
+    , enable_filesystem_query_cache_limit(settings.enable_filesystem_query_cache_limit)
+    , enable_bypass_cache_with_threashold(settings.enable_bypass_cache_with_threashold)
+    , bypass_cache_threashold(settings.bypass_cache_threashold)
     , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
-    , max_stash_element_size(cache_settings_.max_elements)
+    , max_stash_element_size(settings.max_elements)
 {
 }
 
@@ -499,7 +497,7 @@ FileCache::FileSegmentCell * FileCache::addCell(
     /// Create a file segment cell and put it in `files` map by [key][offset].
 
     if (!size)
-        return nullptr; /// Empty files are not cached.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero size files are not allowed");
 
     if (files[key].contains(offset))
         throw Exception(
@@ -507,53 +505,62 @@ FileCache::FileSegmentCell * FileCache::addCell(
             "Cache cell already exists for key: `{}`, offset: {}, size: {}.\nCurrent cache structure: {}",
             key.toString(), offset, size, dumpStructureUnlocked(key, cache_lock));
 
-    auto skip_or_download = [&]() -> FileSegmentPtr
+    FileSegment::State result_state = state;
+    if (state == FileSegment::State::EMPTY && enable_cache_hits_threshold)
     {
-        FileSegment::State result_state = state;
-        if (state == FileSegment::State::EMPTY && enable_cache_hits_threshold)
+        auto record = stash_records.find({key, offset});
+
+        if (record == stash_records.end())
         {
-            auto record = stash_records.find({key, offset});
+            auto priority_iter = stash_priority->add(key, offset, 0, cache_lock);
+            stash_records.insert({{key, offset}, priority_iter});
 
-            if (record == stash_records.end())
+            if (stash_priority->getElementsNum(cache_lock) > max_stash_element_size)
             {
-                auto priority_iter = stash_priority->add(key, offset, 0, cache_lock);
-                stash_records.insert({{key, offset}, priority_iter});
-
-                if (stash_priority->getElementsNum(cache_lock) > max_stash_element_size)
-                {
-                    auto remove_priority_iter = stash_priority->getLowestPriorityWriteIterator(cache_lock);
-                    stash_records.erase({remove_priority_iter->key(), remove_priority_iter->offset()});
-                    remove_priority_iter->removeAndGetNext(cache_lock);
-                }
-
-                /// For segments that do not reach the download threshold,
-                /// we do not download them, but directly read them
-                result_state = FileSegment::State::SKIP_CACHE;
+                auto remove_priority_iter = stash_priority->getLowestPriorityWriteIterator(cache_lock);
+                stash_records.erase({remove_priority_iter->key(), remove_priority_iter->offset()});
+                remove_priority_iter->removeAndGetNext(cache_lock);
             }
-            else
-            {
-                auto priority_iter = record->second;
-                priority_iter->use(cache_lock);
 
-                result_state = priority_iter->hits() >= enable_cache_hits_threshold
-                    ? FileSegment::State::EMPTY
-                    : FileSegment::State::SKIP_CACHE;
-            }
+            /// For segments that do not reach the download threshold,
+            /// we do not download them, but directly read them
+            result_state = FileSegment::State::SKIP_CACHE;
         }
+        else
+        {
+            auto priority_iter = record->second;
+            priority_iter->use(cache_lock);
 
-        return std::make_shared<FileSegment>(offset, size, key, this, result_state, settings);
-    };
+            result_state = priority_iter->hits() >= enable_cache_hits_threshold
+                ? FileSegment::State::EMPTY
+                : FileSegment::State::SKIP_CACHE;
+        }
+    }
 
-    FileSegmentCell cell(skip_or_download(), this, cache_lock);
     auto & offsets = files[key];
-
     if (offsets.empty())
     {
         auto key_path = getPathInLocalCache(key);
 
         if (!fs::exists(key_path))
-            fs::create_directories(key_path);
+        {
+            try
+            {
+                fs::create_directories(key_path);
+            }
+            catch (...)
+            {
+                /// Avoid errors like
+                /// std::__1::__fs::filesystem::filesystem_error: filesystem error: in create_directories: No space left on device
+                /// and mark file segment with SKIP_CACHE state
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                result_state = FileSegment::State::SKIP_CACHE;
+            }
+        }
     }
+
+    auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, result_state, settings);
+    FileSegmentCell cell(std::move(file_segment), this, cache_lock);
 
     auto [it, inserted] = offsets.insert({offset, std::move(cell)});
     if (!inserted)
@@ -721,7 +728,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         {
             auto queue_iterator = cell_for_reserve->queue_iterator;
             if (queue_iterator)
-                queue_iterator->incrementSize(size, cache_lock);
+                queue_iterator->updateSize(size, cache_lock);
             else
                 cell_for_reserve->queue_iterator = main_priority->add(key, offset, size, cache_lock);
         }
@@ -838,7 +845,7 @@ bool FileCache::tryReserveForMainList(
         /// If queue iterator already exists, we need to update the size after each space reservation.
         auto queue_iterator = cell_for_reserve->queue_iterator;
         if (queue_iterator)
-            queue_iterator->incrementSize(size, cache_lock);
+            queue_iterator->updateSize(size, cache_lock);
         else
             cell_for_reserve->queue_iterator = main_priority->add(key, offset, size, cache_lock);
     }
@@ -1154,7 +1161,14 @@ void FileCache::reduceSizeToDownloaded(
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, create_settings);
 
-    assert(file_segment->reserved_size == downloaded_size);
+    chassert(cell->queue_iterator);
+    chassert(cell->queue_iterator->size() >= downloaded_size);
+    const int64_t diff = cell->queue_iterator->size() - downloaded_size;
+    if (diff > 0)
+        cell->queue_iterator->updateSize(-diff, cache_lock);
+
+    chassert(file_segment->reserved_size == downloaded_size);
+    chassert(file_segment->reserved_size == cell->queue_iterator->size());
 }
 
 bool FileCache::isLastFileSegmentHolder(
@@ -1452,7 +1466,7 @@ void FileCache::QueryContext::reserve(const Key & key, size_t offset, size_t siz
             auto queue_iter = priority->add(key, offset, 0, cache_lock);
             record = records.insert({{key, offset}, queue_iter}).first;
         }
-        record->second->incrementSize(size, cache_lock);
+        record->second->updateSize(size, cache_lock);
     }
     cache_size += size;
 }
