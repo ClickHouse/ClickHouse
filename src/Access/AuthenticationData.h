@@ -65,6 +65,7 @@ public:
 
     struct Util
     {
+        static String digestToString(const Digest & text) { return String(text.data(), text.data() + text.size()); }
         static Digest stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
         static Digest encodeSHA256(std::string_view text);
         static Digest encodeSHA1(std::string_view text);
