@@ -355,7 +355,14 @@ def test_move_replace_partition_to_another_table(cluster):
 
     # Number of objects in HDFS should be unchanged.
     hdfs_objects = fs.listdir("/clickhouse")
-    assert len(hdfs_objects) == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
+    for obj in hdfs_objects:
+        print("Object in HDFS after move", obj)
+    assert (
+        len(hdfs_objects)
+        == FILES_OVERHEAD * 2
+        + FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+    )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
     node.query(
@@ -370,7 +377,20 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
     hdfs_objects = fs.listdir("/clickhouse")
+<<<<<<< HEAD
     assert len(hdfs_objects) == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6 - FILES_OVERHEAD_METADATA_VERSION * 2
+=======
+    hdfs_objects = fs.listdir("/clickhouse")
+    for obj in hdfs_objects:
+        print("Object in HDFS after insert", obj)
+
+    assert (
+        len(hdfs_objects)
+        == FILES_OVERHEAD * 2
+        + FILES_OVERHEAD_PER_PART_WIDE * 6
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+    )
+>>>>>>> 870d328ff4d (Add more debug to test (it's not flaky on my setup))
 
     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-03' FROM hdfs_clone")
     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-05' FROM hdfs_clone")
@@ -390,4 +410,17 @@ def test_move_replace_partition_to_another_table(cluster):
 
     # Data should remain in hdfs
     hdfs_objects = fs.listdir("/clickhouse")
+<<<<<<< HEAD
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
+=======
+
+    for obj in hdfs_objects:
+        print("Object in HDFS after drop", obj)
+
+    assert (
+        len(hdfs_objects)
+        == FILES_OVERHEAD
+        + FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+    )
+>>>>>>> 870d328ff4d (Add more debug to test (it's not flaky on my setup))
