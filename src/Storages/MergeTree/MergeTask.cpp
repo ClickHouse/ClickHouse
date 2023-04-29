@@ -922,8 +922,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     ctx->blocks_are_granules_size = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical);
 
     /// There is no sense to have the block size bigger than one granule for merge operations.
-    UInt64 merge_block_size_rows = data_settings->merge_max_block_size ? data_settings->merge_max_block_size : data_settings->index_granularity;
-    UInt64 merge_block_size_bytes = data_settings->merge_max_block_size_bytes ? data_settings->merge_max_block_size_bytes : data_settings->index_granularity_bytes;
+    const UInt64 merge_block_size_rows = data_settings->merge_max_block_size;
+    const UInt64 merge_block_size_bytes = data_settings->merge_max_block_size_bytes;
 
     switch (ctx->merging_params.mode)
     {
