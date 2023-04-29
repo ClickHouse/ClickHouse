@@ -144,38 +144,17 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
-Pipe StorageMemory::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
-    size_t num_streams)
-{
-    return ReadFromMemoryStorageStep::makePipe(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
-}
-
 void StorageMemory::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t /*max_block_size*/,
     size_t num_streams)
 {
-    // @TODO it looks like IStorage::readFromPipe. different only step's type.
-    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    if (pipe.empty())
-    {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
-        return;
-    }
-    auto read_step = std::make_unique<ReadFromMemoryStorageStep>(std::move(pipe));
-    query_plan.addStep(std::move(read_step));
+    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(query_plan, query_info, context, column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries));
 }
 
 
