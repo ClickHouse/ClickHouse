@@ -32,6 +32,8 @@ public:
         const bool parse_till_newline_as_one_string = false;
     };
 
+    // We only need an offset on the intial run to determine the schema, we don't need it for successive runs to parse fields.
+    template <bool with_offset>
     Result parseField(PeekableReadBuffer & in, size_t index);
     const FormatSettings::EscapingRule & getEscapingRule() const { return rule; }
     void transformTypesIfPossible(DataTypePtr & first, DataTypePtr & second)
