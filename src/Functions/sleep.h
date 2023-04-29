@@ -113,7 +113,7 @@ public:
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             if (max_microseconds && seconds * 1e6 > max_microseconds)
-                throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is 3 seconds. Requested: {}", toString(seconds));
+                throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {}", max_microseconds, seconds);
 
             if (!dry_run)
             {
@@ -122,8 +122,8 @@ public:
 
                 if (max_microseconds && microseconds > max_microseconds)
                     throw Exception(ErrorCodes::TOO_SLOW,
-                        "The maximum sleep time is 3 seconds. Requested: {} microseconds per block (of size {})",
-                        microseconds, size);
+                        "The maximum sleep time is {} microseconds. Requested: {} microseconds per block (of size {})",
+                        max_microseconds, microseconds, size);
 
                 sleepForMicroseconds(microseconds);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
