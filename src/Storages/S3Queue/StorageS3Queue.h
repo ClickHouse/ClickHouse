@@ -4,28 +4,28 @@
 
 #if USE_AWS_S3
 
-#include <Core/Types.h>
+#    include <Core/Types.h>
 
-#include <Compression/CompressionInfo.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#    include <Compression/CompressionInfo.h>
+#    include <Common/ZooKeeper/ZooKeeper.h>
 
-#include <Core/BackgroundSchedulePool.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageS3Settings.h>
-#include <Storages/S3Queue/S3QueueSettings.h>
-#include <Storages/S3Queue/S3QueueSource.h>
+#    include <Core/BackgroundSchedulePool.h>
+#    include <Storages/IStorage.h>
+#    include <Storages/S3Queue/S3QueueSettings.h>
+#    include <Storages/S3Queue/S3QueueSource.h>
+#    include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Poco/URI.h>
-#include <Common/logger_useful.h>
-#include <IO/S3/getObjectInfo.h>
-#include <IO/CompressionMethod.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
-#include <Storages/Cache/SchemaCache.h>
-#include <Storages/StorageConfiguration.h>
-#include <Storages/StorageS3.h>
+#    include <IO/CompressionMethod.h>
+#    include <IO/S3/getObjectInfo.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/threadPoolCallbackRunner.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/ISource.h>
+#    include <Storages/Cache/SchemaCache.h>
+#    include <Storages/StorageConfiguration.h>
+#    include <Storages/StorageS3.h>
+#    include <Poco/URI.h>
+#    include <Common/logger_useful.h>
 
 namespace Aws::S3
 {
@@ -36,14 +36,12 @@ namespace DB
 {
 
 
-
 class StorageS3Queue : public IStorage, WithContext
 {
 public:
     using Configuration = typename StorageS3::Configuration;
     StorageS3Queue(
-        const String & zookeper_path_,
-        const String & mode_,
+        std::unique_ptr<S3QueueSettings> s3queue_settings_,
         const Configuration & configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -65,11 +63,17 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override {
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Write is not supported by storage {}", getName());
     }
 
-    void truncate(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*local_context*/, TableExclusiveLockHolder &) override {
+    void truncate(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*local_context*/,
+        TableExclusiveLockHolder &) override
+    {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
     }
 
@@ -77,16 +81,10 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    static ColumnsDescription getTableStructureFromData(
-        Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
-    {
-        return StorageS3::getTableStructureFromData(configuration, format_settings, ctx);
-    }
-
     const auto & getFormatName() const { return format_name; }
 
 private:
-
+    std::unique_ptr<S3QueueSettings> s3queue_settings;
     Configuration s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
@@ -117,23 +115,15 @@ private:
     struct TaskContext
     {
         BackgroundSchedulePool::TaskHolder holder;
-        std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
-        {
-        }
+        std::atomic<bool> stream_cancelled{false};
+        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
     };
     std::shared_ptr<TaskContext> task;
 
     bool supportsSubsetOfColumns() const override;
     static Names getVirtualColumnNames();
 
-    String mode;
-
-    static const String default_zookeeper_name;
-    const String zookeeper_name;
-    const String zookeeper_path;
-    const String replica_name;
-    const String replica_path;
+    String zookeeper_path;
 
     zkutil::ZooKeeperPtr current_zookeeper;
     mutable std::mutex current_zookeeper_mutex;
@@ -144,20 +134,19 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
     // Return default or custom zookeeper name for table
-    const String & getZooKeeperName() const { return zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
     using KeysWithInfo = StorageS3QueueSource::KeysWithInfo;
 
-    std::shared_ptr<StorageS3QueueSource::IIterator> createFileIterator(
-        ContextPtr local_context,
-        ASTPtr query,
-        KeysWithInfo * read_keys = nullptr);
+    std::shared_ptr<StorageS3QueueSource::IIterator>
+    createFileIterator(ContextPtr local_context, ASTPtr query, KeysWithInfo * read_keys = nullptr);
 
     static std::unordered_set<String> parseCollection(String & files);
     std::unordered_set<String> getExcludedFiles();
 
     bool streamToViews();
+
+    Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
 };
 
 }

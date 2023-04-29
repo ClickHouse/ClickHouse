@@ -202,4 +202,8 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
      {"zlib", FormatSettings::ORCCompression::ZLIB},
      {"lz4", FormatSettings::ORCCompression::LZ4}})
 
+IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
+                       {{"ordered", S3QueueMode::ORDERED},
+                        {"unordered", S3QueueMode::UNORDERED}})
+
 }
