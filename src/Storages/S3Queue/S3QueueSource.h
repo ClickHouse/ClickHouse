@@ -4,25 +4,25 @@
 
 #if USE_AWS_S3
 
-#include <Core/Types.h>
+#    include <Core/Types.h>
 
-#include <Compression/CompressionInfo.h>
+#    include <Compression/CompressionInfo.h>
 
-#include <Storages/IStorage.h>
-#include <Storages/StorageS3Settings.h>
-#include <Storages/StorageS3.h>
+#    include <Storages/IStorage.h>
+#    include <Storages/StorageS3.h>
+#    include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Poco/URI.h>
-#include <Common/logger_useful.h>
-#include <IO/S3/getObjectInfo.h>
-#include <IO/CompressionMethod.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
-#include <Storages/Cache/SchemaCache.h>
-#include <Storages/StorageConfiguration.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#    include <IO/CompressionMethod.h>
+#    include <IO/S3/getObjectInfo.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/threadPoolCallbackRunner.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/ISource.h>
+#    include <Storages/Cache/SchemaCache.h>
+#    include <Storages/StorageConfiguration.h>
+#    include <Poco/URI.h>
+#    include <Common/ZooKeeper/ZooKeeper.h>
+#    include <Common/logger_useful.h>
 
 
 namespace DB
@@ -36,7 +36,7 @@ public:
     using DisclosedGlobIterator = StorageS3Source::DisclosedGlobIterator;
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
     using KeyWithInfo = StorageS3Source::KeyWithInfo;
-
+    using ReadBufferOrFactory = StorageS3Source::ReadBufferOrFactory;
     class QueueGlobIterator : public IIterator
     {
     public:
@@ -53,6 +53,7 @@ public:
         size_t getTotalSize() const override;
 
         Strings setProcessing(String & mode, std::unordered_set<String> & exclude_keys);
+
     private:
         size_t max_poll_size = 10;
         const String bucket;
@@ -134,12 +135,11 @@ private:
     ReaderHolder createReader();
     std::future<ReaderHolder> createReaderAsync();
 
-    std::unique_ptr<ReadBuffer> createS3ReadBuffer(const String & key, size_t object_size);
+    ReadBufferOrFactory createS3ReadBuffer(const String & key, size_t object_size);
     std::unique_ptr<ReadBuffer> createAsyncS3ReadBuffer(const String & key, const ReadSettings & read_settings, size_t object_size);
 
     void setFileProcessed(const String & file_path);
     void setFileFailed(const String & file_path);
-
 };
 
 }

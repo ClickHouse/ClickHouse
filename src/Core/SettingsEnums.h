@@ -218,4 +218,12 @@ enum class ParallelReplicasCustomKeyFilterType : uint8_t
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
+
+enum class S3QueueMode
+{
+    ORDERED,
+    UNORDERED,
+};
+
+DECLARE_SETTING_ENUM(S3QueueMode)
 }
