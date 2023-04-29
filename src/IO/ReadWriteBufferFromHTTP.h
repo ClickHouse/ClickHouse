@@ -22,7 +22,7 @@
 #include <Poco/URIStreamFactory.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
-#include <Server/ENetPacketMap.h>
+#include <Server/UDPReplicationPack.h>
 #include "config.h"
 #include "config_version.h"
 
@@ -185,7 +185,7 @@ namespace detail
                 if (protocol == "enet")
                 {
                     #if USE_ENET
-                    ENetPack request;
+                    UDPReplicationPack request;
 
                     for (auto & [header, value] : http_header_entries)
                         request.set(header, value);
@@ -268,7 +268,7 @@ namespace detail
 
                     enet_host_flush(client);
 
-                    ENetPack resp;
+                    UDPReplicationPack resp;
 
                     std::string data;
 
@@ -297,6 +297,7 @@ namespace detail
 
                     std::cout << "\n\n";
                     for (auto [key, value]: resp.data) {
+                        response.set(key, value);
                         std::cout << key << ' ' << value << '\n';
                     }
                     std::cout << "\n\n";

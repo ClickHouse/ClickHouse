@@ -229,7 +229,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 }
 
 #if USE_ENET
-void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack & response)
+void Service::processQuery(const UDPReplicationPack & params, WriteBuffer & out, UDPReplicationPack & response)
 {
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 
@@ -241,7 +241,7 @@ void Service::processQuery(const ENetPack & params, WriteBuffer & out, ENetPack 
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.set("server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)));
+    response.set("Set-Cookie", "server_protocol_version=" + toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)));
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -798,7 +798,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     auto output_buffer_getter = [](IDataPartStorage & part_storage, const String & file_name, size_t file_size)
     {
-        //std::cout << "Check filename: " << file_name << "\n\n";
+        std::cout << "Check filename: " << file_name << "\n\n";
         return part_storage.writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
     };
 

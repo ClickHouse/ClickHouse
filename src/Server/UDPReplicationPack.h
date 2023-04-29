@@ -8,7 +8,7 @@ namespace DB
 {
 
 #if USE_ENET
-class ENetPack
+class UDPReplicationPack
 {
     public:
         void set(std::string key, std::string val)

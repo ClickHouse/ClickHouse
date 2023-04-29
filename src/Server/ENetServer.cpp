@@ -2,7 +2,7 @@
 
 #include <Server/ENetServer.h>
 
-#include <Server/ENetPacketMap.h>
+#include <Server/UDPReplicationPack.h>
 
 #include <Poco/Net/TCPServer.h>
 #include <Poco/ThreadPool.h>
@@ -14,7 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <IO/WriteBufferENet.h>
+#include <IO/WriteBufferUDPReplication.h>
 
 #if USE_ENET
 
@@ -80,8 +80,8 @@ void ENetServer::run()
 
                 case ENET_EVENT_TYPE_RECEIVE:
                     {
-                        ENetPack pck;
-                        ENetPack resp_pck;
+                        UDPReplicationPack pck;
+                        UDPReplicationPack resp_pck;
                         pck.deserialize(reinterpret_cast<char *>(event.packet->data), event.packet->dataLength);
 
                         enet_packet_destroy (event.packet);
@@ -96,7 +96,7 @@ void ENetServer::run()
                         std::stringbuf buf(data);
                         std::ostream data_stream(&buf);
 
-                        WriteBufferENet out(data_stream);
+                        WriteBufferUDPReplication out(data_stream, resp_pck);
 
                         std::shared_lock lock(endpoint->rwlock);
                         if (endpoint->blocker.isCancelled())

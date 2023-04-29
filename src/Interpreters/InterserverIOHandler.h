@@ -17,7 +17,7 @@
 #include "config.h"
 
 #if USE_ENET
-#   include <Server/ENetPacketMap.h>
+#   include <Server/UDPReplicationPack.h>
 #endif
 
 
@@ -47,7 +47,7 @@ public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
     #if USE_ENET
-    virtual void processQuery(const ENetPack & params, WriteBuffer & out, ENetPack & response) = 0;
+    virtual void processQuery(const UDPReplicationPack & params, WriteBuffer & out, UDPReplicationPack & response) = 0;
     #endif
     virtual ~InterserverIOEndpoint() = default;
 

@@ -10,7 +10,7 @@
 #include <Common/Throttler.h>
 
 #if USE_ENET
-#   include <Server/ENetPacketMap.h>
+#   include <Server/UDPReplicationPack.h>
 #endif
 
 
@@ -42,7 +42,7 @@ public:
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
     #if USE_ENET
-    void processQuery(const ENetPack & params, WriteBuffer & out, ENetPack & response) override;
+    void processQuery(const UDPReplicationPack & params, WriteBuffer & out, UDPReplicationPack & response) override;
     #endif
 
 

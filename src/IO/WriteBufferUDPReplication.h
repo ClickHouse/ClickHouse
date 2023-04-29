@@ -9,6 +9,9 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/Progress.h>
+
+#include <Server/UDPReplicationPack.h>
 
 
 namespace DB
@@ -20,10 +23,10 @@ namespace DB
   *
   * Derived classes must implement the nextImpl() method.
   */
-class WriteBufferENet : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferUDPReplication : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    WriteBufferENet(std::ostream & _out) : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE), out_str(&_out)
+    WriteBufferUDPReplication(std::ostream & _out, UDPReplicationPack & _resp) : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE), out_str(&_out), resp(&_resp)
     {
     }
 
@@ -34,9 +37,11 @@ public:
 
 private:
     std::ostream* out_str;
+    UDPReplicationPack * resp;
     std::ostringstream res_str;
     std::mutex mutex;
     std::unique_ptr<WriteBufferFromOStream> out;
+    Progress accumulated_progress;
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
@@ -55,7 +60,32 @@ private:
         res_str << out_str->rdbuf();
     }
 
-using WriteBufferENetPtr = std::shared_ptr<WriteBufferENet>;
+    void writeSummary()
+    {
+        WriteBufferFromOwnString progress_string_writer;
+        accumulated_progress.writeJSON(progress_string_writer);
+
+        resp->set("X-ClickHouse-Summary: ", progress_string_writer.str());
+    }
+
+    void finalizeImpl() override
+    {
+      next();
+      if (!offset())
+      {
+          std::lock_guard lock(mutex);
+          writeSummary();
+      }
+    }
+
+    void onProgress(const Progress & progress)
+    {
+      std::cout << " onPROGRESS onPROGRESS\n\n\n\n";
+      std::lock_guard lock(mutex);
+      accumulated_progress.incrementPiecewiseAtomically(progress);
+    }
+
+using WriteBufferENetPtr = std::shared_ptr<WriteBufferUDPReplication>;
 
 };
 
