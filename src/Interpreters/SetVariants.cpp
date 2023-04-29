@@ -62,7 +62,7 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 }
 
 template <typename Variant>
-typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool is_prob)
 {
     /// Check if at least one of the specified keys is nullable.
     /// Create a set of nested key columns from the corresponding key columns.
@@ -72,6 +72,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     nested_key_columns.reserve(key_columns.size());
     bool has_nullable_key = false;
 
+    
     for (const auto & col : key_columns)
     {
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
@@ -84,6 +85,15 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     size_t keys_size = nested_key_columns.size();
+
+     if (is_prob) {
+        if (keys_size == 1 && nested_key_columns[0]->isNumeric() && !nested_key_columns[0]->lowCardinality()) {
+            size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
+            if (size_of_field == 4)
+                return Type::prob_key32;
+        }
+        throw Exception("Logical error probal in: numeric column has sizeOfField 32.", ErrorCodes::LOGICAL_ERROR);
+    }
 
     bool all_fixed = true;
     size_t keys_bytes = 0;

@@ -18,6 +18,7 @@ void registerStorageFile(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory);
+void registerStorageProbSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
@@ -107,6 +108,7 @@ void registerStorages()
     registerStorageURL(factory);
     registerStorageDictionary(factory);
     registerStorageSet(factory);
+    registerStorageProbSet(factory);
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);

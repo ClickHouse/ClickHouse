@@ -4091,7 +4091,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
-        if (table_node && dynamic_cast<StorageSet *>(table_node->getStorage().get()) != nullptr)
+        if (table_node && dynamic_cast<StorageSet<false> *>(table_node->getStorage().get()) != nullptr)
         {
             /// If table is already prepared set, we do not replace it with subquery
         }

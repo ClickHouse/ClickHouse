@@ -135,43 +135,6 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 }
 
 
-StorageSet::StorageSet(
-    DiskPtr disk_,
-    const String & relative_path_,
-    const StorageID & table_id_,
-    const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    const String & comment,
-    bool persistent_)
-    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
-    , set(std::make_shared<Set>(SizeLimits(), false, true))
-{
-    Block header = getInMemoryMetadataPtr()->getSampleBlock();
-    set->setHeader(header.getColumnsWithTypeAndName());
-
-    restore();
-}
-
-
-void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
-void StorageSet::finishInsert() { set->finishInsert(); }
-
-size_t StorageSet::getSize(ContextPtr) const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
-
-void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
-{
-    disk->removeRecursive(path);
-    disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
-
-    Block header = metadata_snapshot->getSampleBlock();
-
-    increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false, true);
-    set->setHeader(header.getColumnsWithTypeAndName());
-}
 
 
 void StorageSetOrJoinBase::restore()
@@ -252,9 +215,31 @@ void registerStorageSet(StorageFactory & factory)
             set_settings.loadFromQuery(*args.storage_def);
 
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
-        return std::make_shared<StorageSet>(
+        return std::make_shared<StorageSet<false>>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    
+}
+
+void registerStorageProbSet(StorageFactory & factory)
+{
+    factory.registerStorage("ProbSet", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        bool has_settings = args.storage_def->settings;
+        SetSettings set_settings;
+        if (has_settings)
+            set_settings.loadFromQuery(*args.storage_def);
+
+        DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
+        return std::make_shared<StorageSet<true>>(
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    
 }
 
 

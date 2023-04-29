@@ -31,6 +31,7 @@ public:
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
+        std::cout << "VISIT IN PLANNER\n";
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
@@ -48,7 +49,7 @@ public:
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
-        StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
+        StorageSet<false> * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet<false> *>(second_argument_table->getStorage().get()) : nullptr;
 
         if (storage_set)
         {

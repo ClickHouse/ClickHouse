@@ -899,7 +899,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
             if (action.node->result_name == column_name && action.node->children.size() > 1)
             {
                 auto name = action.node->function_base->getName();
-                if ((name == "in" || name == "globalIn"))
+                if ((name == "in" || name == "globalIn" || name == "probalIn"))
                 {
                     set_to_check = action.node->children[1]->result_name;
                     break;

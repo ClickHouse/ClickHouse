@@ -488,7 +488,7 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (storage->getName() != "Set")
         return nullptr;
-    const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
+    const auto storage_set = std::dynamic_pointer_cast<StorageSet<false>>(storage);
     return storage_set->getSet();
 }
 

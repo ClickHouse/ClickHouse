@@ -5,6 +5,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/ProbHashSet.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/FixedClearableHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
@@ -23,7 +24,7 @@ namespace ErrorCodes
 
 
 /// For the case where there is one numeric key.
-template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
+template <typename FieldType, typename TData, bool use_cache = true, bool is_prob = false>    /// UInt8/16/32/64 for any types with corresponding bit width.
 struct SetMethodOneNumber
 {
     using Data = TData;
@@ -32,8 +33,33 @@ struct SetMethodOneNumber
     Data data;
 
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
-        void, FieldType, use_cache>;
+        void, FieldType, use_cache, false, is_prob>;
 };
+
+
+// template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
+// struct SetMethodOneNumber
+// {
+//     using Data = TData;
+//     using Key = typename Data::key_type;
+
+//     Data data;
+
+//     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
+//         void, FieldType, use_cache>;
+// };
+
+// template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
+// struct SetMethodOneNumberForProb
+// {
+//     using Data = TData;
+//     using Key = typename Data::key_type;
+
+//     Data data;
+
+//     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
+//         void, FieldType, use_cache>;
+// };
 
 /// For the case where there is one string key.
 template <typename TData>
@@ -211,6 +237,7 @@ struct NonClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+     std::unique_ptr<SetMethodOneNumber<UInt32, ProbHashSet<UInt32, HashCRC32<UInt32>>, false, true>>          prob_key32;
 };
 
 struct ClearableSet
@@ -233,6 +260,7 @@ struct ClearableSet
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
       *  since when you use it, the key values themselves are not stored.
       */
+    std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>           prob_key32;
 };
 
 template <typename Variant>
@@ -251,7 +279,8 @@ struct SetVariantsTemplate: public Variant
         M(keys256)              \
         M(nullable_keys128)     \
         M(nullable_keys256)     \
-        M(hashed)
+        M(hashed)               \
+        M(prob_key32)
 
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)
@@ -270,7 +299,7 @@ struct SetVariantsTemplate: public Variant
 
     bool empty() const { return type == Type::EMPTY; }
 
-    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool is_prob = false);
 
     void init(Type type_);
 

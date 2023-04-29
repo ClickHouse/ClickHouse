@@ -103,7 +103,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-void Set::setHeader(const ColumnsWithTypeAndName & header)
+void Set::setHeader(const ColumnsWithTypeAndName & header, bool is_prob)
 {
     std::lock_guard lock(rwlock);
 
@@ -162,7 +162,9 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data.init(data.chooseMethod(key_columns, key_sizes));
+    
+    data.init(data.chooseMethod(key_columns, key_sizes, is_prob));
+    
 }
 
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)

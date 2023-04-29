@@ -24,14 +24,14 @@ class Chunk;
 
 /** Data structure for implementation of IN expression.
   */
-class Set
+class ProbSet
 {
 public:
     /// 'fill_set_elements': in addition to hash table
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
+    ProbSet(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
         : log(&Poco::Logger::get("Set")),
         limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
@@ -43,7 +43,7 @@ public:
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    void setHeader(const ColumnsWithTypeAndName & header, bool is_prob = false);
+    void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromBlock(const Columns & columns);
@@ -133,46 +133,46 @@ private:
       */
     mutable std::shared_mutex rwlock;
 
-    template <typename Method>
-    void insertFromBlockImpl(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        size_t rows,
-        SetVariants & variants,
-        ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+    // template <typename Method>
+    // void insertFromBlockImpl(
+    //     Method & method,
+    //     const ColumnRawPtrs & key_columns,
+    //     size_t rows,
+    //     SetVariants & variants,
+    //     ConstNullMapPtr null_map,
+    //     ColumnUInt8::Container * out_filter);
 
-    template <typename Method, bool has_null_map, bool build_filter>
-    void insertFromBlockImplCase(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        size_t rows,
-        SetVariants & variants,
-        ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+    // template <typename Method, bool has_null_map, bool build_filter>
+    // void insertFromBlockImplCase(
+    //     Method & method,
+    //     const ColumnRawPtrs & key_columns,
+    //     size_t rows,
+    //     SetVariants & variants,
+    //     ConstNullMapPtr null_map,
+    //     ColumnUInt8::Container * out_filter);
 
-    template <typename Method>
-    void executeImpl(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        ColumnUInt8::Container & vec_res,
-        bool negative,
-        size_t rows,
-        ConstNullMapPtr null_map) const;
+    // template <typename Method>
+    // void executeImpl(
+    //     Method & method,
+    //     const ColumnRawPtrs & key_columns,
+    //     ColumnUInt8::Container & vec_res,
+    //     bool negative,
+    //     size_t rows,
+    //     ConstNullMapPtr null_map) const;
 
-    template <typename Method, bool has_null_map>
-    void executeImplCase(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        ColumnUInt8::Container & vec_res,
-        bool negative,
-        size_t rows,
-        ConstNullMapPtr null_map) const;
+    // template <typename Method, bool has_null_map>
+    // void executeImplCase(
+    //     Method & method,
+    //     const ColumnRawPtrs & key_columns,
+    //     ColumnUInt8::Container & vec_res,
+    //     bool negative,
+    //     size_t rows,
+    //     ConstNullMapPtr null_map) const;
 };
 
-using SetPtr = std::shared_ptr<Set>;
-using ConstSetPtr = std::shared_ptr<const Set>;
-using Sets = std::vector<SetPtr>;
+using ProbSetPtr = std::shared_ptr<ProbSet>;
+//using ConstSetPtr = std::shared_ptr<const Set>;
+using ProbSets = std::vector<ProbSetPtr>;
 
 
 class IFunction;
@@ -182,51 +182,52 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   * Single field is stored in column for more optimal inplace comparisons with other regular columns.
   * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
   */
-struct FieldValue
-{
-    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
-    void update(const Field & x);
+// struct FieldValue
+// {
+//     FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+//     void update(const Field & x);
 
-    bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
-    bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
-    bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
+//     bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
+//     bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
+//     bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
 
-    Field value; // Null, -Inf, +Inf
+//     Field value; // Null, -Inf, +Inf
 
-    // If value is Null, uses the actual value in column
-    MutableColumnPtr column;
-};
+//     // If value is Null, uses the actual value in column
+//     MutableColumnPtr column;
+// };
 
 
-/// Class for checkInRange function.
-class MergeTreeSetIndex
-{
-public:
-    /** Mapping for tuple positions from Set::set_elements to
-      * position of pk index and functions chain applied to this column.
-      */
-    struct KeyTuplePositionMapping
-    {
-        size_t tuple_index;
-        size_t key_index;
-        std::vector<FunctionBasePtr> functions;
-    };
+// /// Class for checkInRange function.
+// class MergeTreeSetIndex
+// {
+// public:
+//     /** Mapping for tuple positions from Set::set_elements to
+//       * position of pk index and functions chain applied to this column.
+//       */
+//     struct KeyTuplePositionMapping
+//     {
+//         size_t tuple_index;
+//         size_t key_index;
+//         std::vector<FunctionBasePtr> functions;
+//     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+//     MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
-    size_t size() const { return ordered_set.at(0)->size(); }
+//     size_t size() const { return ordered_set.at(0)->size(); }
 
-    bool hasMonotonicFunctionsChain() const;
+//     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+//     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
-private:
-    // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
-    bool has_all_keys;
-    Columns ordered_set;
-    std::vector<KeyTuplePositionMapping> indexes_mapping;
+// private:
+//     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
+//     bool has_all_keys;
+//     Columns ordered_set;
+//     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
-    using FieldValues = std::vector<FieldValue>;
-};
+//     using FieldValues = std::vector<FieldValue>;
+// };
 
+// } cmake .. -D CMAKE_C_COMPILER=/usr/bin/clang-15 -D CMAKE_CXX_COMPILER=/usr/bin/clang-15
 }

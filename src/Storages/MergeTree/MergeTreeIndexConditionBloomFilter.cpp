@@ -364,7 +364,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
-        if (function_name == "in"  || function_name == "globalIn")
+        if (function_name == "in"  || function_name == "globalIn" || function_name == "probalIn")
             out.function = RPNElement::FUNCTION_IN;
 
         if (function_name == "notIn"  || function_name == "globalNotIn")
@@ -463,7 +463,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
                 return false;
             }
 
-            if (function_name == "in"  || function_name == "globalIn")
+            if (function_name == "in"  || function_name == "globalIn" || function_name == "probalIn")
                 out.function = RPNElement::FUNCTION_IN;
 
             if (function_name == "notIn"  || function_name == "globalNotIn")

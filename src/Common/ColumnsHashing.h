@@ -29,12 +29,14 @@ namespace ColumnsHashing
 
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
-template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false>
+template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool is_prob = false>
 struct HashMethodOneNumber
-    : public columns_hashing_impl::HashMethodBase<HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, is_prob>, Value, Mapped, use_cache, need_offset, is_prob>
 {
-    using Self = HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, is_prob>;
+    //static constexpr bool consecutive_keys_optimization = use_cache && is_prob;
+    //static constexpr bool need_offset_ =  need_offset && is_prob;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, is_prob>;
 
     static constexpr bool has_cheap_key_calculation = true;
 

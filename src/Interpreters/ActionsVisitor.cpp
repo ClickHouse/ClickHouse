@@ -54,6 +54,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -1375,15 +1376,24 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
+            std::cout << "AAAAAABBBB\n";
             auto table_id = data.getContext()->resolveStorageID(right_in_operand);
             StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.getContext());
 
             if (table)
             {
-                StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
+                StorageSet<false> * storage_set = dynamic_cast<StorageSet<false> *>(table.get());
                 if (storage_set)
                 {
                     SetPtr set = storage_set->getSet();
+                    data.prepared_sets->set(set_key, set);
+                    return set;
+                }
+                StorageSet<true> * storage_prob_set = dynamic_cast<StorageSet<true> *>(table.get());
+                if (storage_prob_set)
+                {
+                    std::cout << "Prob_SET\n";
+                    SetPtr set = storage_prob_set->getSet();
                     data.prepared_sets->set(set_key, set);
                     return set;
                 }

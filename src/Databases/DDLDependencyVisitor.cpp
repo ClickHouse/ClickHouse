@@ -182,7 +182,7 @@ namespace
                 /// joinGet(join_storage_table_name, `value_column`, join_keys)
                 addQualifiedNameFromArgument(function, 0);
             }
-            else if (function.name == "in" || function.name == "notIn" || function.name == "globalIn" || function.name == "globalNotIn")
+            else if (function.name == "in" || function.name == "notIn" || function.name == "globalIn" || function.name == "globalNotIn" || function.name == "probalIn" )
             {
                 /// in(x, table_name) - function for evaluating (x IN table_name)
                 addQualifiedNameFromArgument(function, 1);

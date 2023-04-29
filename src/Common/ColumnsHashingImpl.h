@@ -140,13 +140,13 @@ public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 
-template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false>
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool is_prob = false>
 class HashMethodBase
 {
 public:
     using EmplaceResult = EmplaceResultImpl<Mapped>;
     using FindResult = FindResultImpl<Mapped, need_offset>;
-    static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
+    static constexpr bool has_mapped = !std::is_same_v<Mapped, void> && !is_prob;
     using Cache = LastElementCache<Value, consecutive_keys_optimization>;
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
