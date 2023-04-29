@@ -112,7 +112,7 @@ public:
         if (size > 0)
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
-            if (seconds * 1e6 > max_microseconds)
+            if (max_microseconds && seconds * 1e6 > max_microseconds)
                 throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is 3 seconds. Requested: {}", toString(seconds));
 
             if (!dry_run)
@@ -120,7 +120,7 @@ public:
                 UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
                 UInt64 microseconds = static_cast<UInt64>(seconds * count * 1e6);
 
-                if (microseconds > max_microseconds)
+                if (max_microseconds && microseconds > max_microseconds)
                     throw Exception(ErrorCodes::TOO_SLOW,
                         "The maximum sleep time is 3 seconds. Requested: {} microseconds per block (of size {})",
                         microseconds, size);
