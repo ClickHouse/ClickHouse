@@ -39,7 +39,17 @@ services:
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
+      # SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: BASIC
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:19092
+      SCHEMA_REGISTRY_AUTHENTICATION_METHOD: BASIC
+      # SCHEMA_REGISTRY_BASIC_AUTH_CREDENTIALS_SOURCE: USER_INFO
+      # SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO: fred:letmein
+      # SCHEMA_REGISTRY_SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO: fred:letmein
+      SCHEMA_REGISTRY_AUTHENTICATION_ROLES: schemaadmin, schemauser
+      SCHEMA_REGISTRY_AUTHENTICATION_REALM: RealmFooBar
+      SCHEMA_REGISTRY_OPTS: "-Djava.security.auth.login.config=/etc/schema-registry/secrets/schema_registry_jaas.conf"
+    volumes:
+      - ${SCHEMA_REGISTRY_DIR:-}/secrets:/etc/schema-registry/secrets
     depends_on:
       - kafka_zookeeper
       - kafka1

@@ -1159,10 +1159,13 @@ class ClickHouseCluster:
         ]
         return self.base_kerberized_hdfs_cmd
 
-    def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
+    def setup_kafka_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
         env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
+        env_variables["SCHEMA_REGISTRY_DIR"] = instance.path + "/"
         env_variables["SCHEMA_REGISTRY_EXTERNAL_PORT"] = str(self.schema_registry_port)
         env_variables["SCHEMA_REGISTRY_INTERNAL_PORT"] = "8081"
         self.base_cmd.extend(
@@ -1498,6 +1501,7 @@ class ClickHouseCluster:
         with_kafka=False,
         with_kerberized_kafka=False,
         with_kerberos_kdc=False,
+        with_secrets=False,
         with_rabbitmq=False,
         with_nats=False,
         clickhouse_path_dir=None,
@@ -1604,6 +1608,7 @@ class ClickHouseCluster:
             with_nats=with_nats,
             with_nginx=with_nginx,
             with_kerberized_hdfs=with_kerberized_hdfs,
+            with_secrets=with_secrets or with_kerberized_hdfs or with_kerberos_kdc or with_kerberized_kafka,
             with_mongo=with_mongo or with_mongo_secure,
             with_meili=with_meili,
             with_redis=with_redis,
@@ -3135,6 +3140,7 @@ class ClickHouseInstance:
         with_nats,
         with_nginx,
         with_kerberized_hdfs,
+        with_secrets,
         with_mongo,
         with_meili,
         with_redis,
@@ -3197,7 +3203,7 @@ class ClickHouseInstance:
             if clickhouse_path_dir
             else None
         )
-        self.kerberos_secrets_dir = p.abspath(p.join(base_path, "secrets"))
+        self.secrets_dir = p.abspath(p.join(base_path, "secrets"))
         self.macros = macros if macros is not None else {}
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
@@ -3220,6 +3226,7 @@ class ClickHouseInstance:
         self.with_nats = with_nats
         self.with_nginx = with_nginx
         self.with_kerberized_hdfs = with_kerberized_hdfs
+        self.with_secrets = with_secrets
         self.with_mongo = with_mongo
         self.with_meili = with_meili
         self.with_redis = with_redis
@@ -4217,17 +4224,16 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        if (
-            self.with_kerberized_kafka
-            or self.with_kerberized_hdfs
-            or self.with_kerberos_kdc
-        ):
+        if self.with_secrets:
             if self.with_kerberos_kdc:
                 base_secrets_dir = self.cluster.instances_dir
             else:
                 base_secrets_dir = self.path
+            from_dir=self.secrets_dir
+            to_dir=p.abspath(p.join(base_secrets_dir, "secrets"))
+            logging.debug(f"Copy secret from {from_dir} to {to_dir}")
             shutil.copytree(
-                self.kerberos_secrets_dir,
+                self.secrets_dir,
                 p.abspath(p.join(base_secrets_dir, "secrets")),
                 dirs_exist_ok=True,
             )
