@@ -40,6 +40,7 @@ namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
+    extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -444,7 +445,8 @@ try
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
-        total_rows += executor.execute(*buffer);
+        size_t num_rows = executor.execute(*buffer);
+        total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
 
         /// Keep buffer, because it still can be used
@@ -459,6 +461,7 @@ try
             elem.query = key.query;
             elem.query_id = entry->query_id;
             elem.bytes = entry->bytes.size();
+            elem.rows = num_rows;
             elem.exception = current_exception;
             current_exception.clear();
 
@@ -479,6 +482,7 @@ try
 
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
+    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
 
     auto finish_entries = [&]
     {
