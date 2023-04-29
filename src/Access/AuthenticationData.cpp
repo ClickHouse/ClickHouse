@@ -213,6 +213,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
             /// Depending on the workfactor the resulting hash can be 59 or 60 characters long.
             /// However the library we use to encode it requires hash string to be 64 characters long,
             ///  so we also allow the hash of this length.
+
             if (hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
