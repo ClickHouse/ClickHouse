@@ -184,7 +184,7 @@ public:
     }
 
     UInt64 getSize() const override { return reservation->getSize(); }
-    UInt64 getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
+    std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
     DiskPtr getDisk(size_t i) const override
     {

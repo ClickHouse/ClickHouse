@@ -97,7 +97,8 @@ static void loadDiskLocalConfig(const String & name,
             tmp_path = context->getPath();
 
         // Create tmp disk for getting total disk space.
-        keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
+        auto total_space_of_local_disk = DiskLocal("tmp", tmp_path, 0).getTotalSpace();
+        keep_free_space_bytes = total_space_of_local_disk ? static_cast<UInt64>(*total_space_of_local_disk * ratio) : 0;
     }
 }
 
@@ -128,7 +129,7 @@ public:
     {}
 
     UInt64 getSize() const override { return size; }
-    UInt64 getUnreservedSpace() const override { return unreserved_space; }
+    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
     DiskPtr getDisk(size_t i) const override
     {
@@ -225,8 +226,11 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(DiskLocal::reservation_mutex);
 
-    UInt64 available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+    auto available_space = getAvailableSpace();
+
+    UInt64 unreserved_space = available_space
+        ? *available_space - std::min(*available_space, reserved_bytes)
+        : std::numeric_limits<UInt64>::max();
 
     if (bytes == 0)
     {
@@ -237,12 +241,24 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
 
     if (unreserved_space >= bytes)
     {
-        LOG_TRACE(
-            logger,
-            "Reserved {} on local disk {}, having unreserved {}.",
-            ReadableSize(bytes),
-            backQuote(name),
-            ReadableSize(unreserved_space));
+        if (available_space)
+        {
+            LOG_TRACE(
+                logger,
+                "Reserved {} on local disk {}, having unreserved {}.",
+                ReadableSize(bytes),
+                backQuote(name),
+                ReadableSize(unreserved_space));
+        }
+        else
+        {
+            LOG_TRACE(
+                logger,
+                "Reserved {} on local disk {}.",
+                ReadableSize(bytes),
+                backQuote(name));
+        }
+
         ++reservation_count;
         reserved_bytes += bytes;
         return {unreserved_space - bytes};
@@ -268,14 +284,14 @@ static UInt64 getTotalSpaceByName(const String & name, const String & disk_path,
     return total_size - keep_free_space_bytes;
 }
 
-UInt64 DiskLocal::getTotalSpace() const
+std::optional<UInt64> DiskLocal::getTotalSpace() const
 {
     if (broken || readonly)
         return 0;
     return getTotalSpaceByName(name, disk_path, keep_free_space_bytes);
 }
 
-UInt64 DiskLocal::getAvailableSpace() const
+std::optional<UInt64> DiskLocal::getAvailableSpace() const
 {
     if (broken || readonly)
         return 0;
@@ -292,10 +308,10 @@ UInt64 DiskLocal::getAvailableSpace() const
     return total_size - keep_free_space_bytes;
 }
 
-UInt64 DiskLocal::getUnreservedSpace() const
+std::optional<UInt64> DiskLocal::getUnreservedSpace() const
 {
     std::lock_guard lock(DiskLocal::reservation_mutex);
-    auto available_space = getAvailableSpace();
+    auto available_space = *getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;
 }

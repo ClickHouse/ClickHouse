@@ -256,17 +256,17 @@ public:
         return std::make_shared<FakeDiskTransaction>(*this);
     }
 
-    UInt64 getTotalSpace() const override
+    std::optional<UInt64> getTotalSpace() const override
     {
         return delegate->getTotalSpace();
     }
 
-    UInt64 getAvailableSpace() const override
+    std::optional<UInt64> getAvailableSpace() const override
     {
         return delegate->getAvailableSpace();
     }
 
-    UInt64 getUnreservedSpace() const override
+    std::optional<UInt64> getUnreservedSpace() const override
     {
         return delegate->getUnreservedSpace();
     }
