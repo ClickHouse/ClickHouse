@@ -1049,7 +1049,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
         {
-            disable_reason = PreformattedMessage::create("Some parts have different mutation version");
+            disable_reason = PreformattedMessage::create("Some parts have different mutation versions");
             return false;
         }
 
@@ -1534,8 +1534,14 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())
+    {
+
+        LOG_TRACE(log, "getCurrentMutationVersion: {}", 0);
         return 0;
+    }
+
     --it;
+    LOG_TRACE(log, "getCurrentMutationVersion: {}", it->first);
     return it->first;
 }
 
