@@ -607,15 +607,10 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
-<<<<<<< HEAD
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
-    /// Validate partition IDs (if any) before starting mutation
-    getPartitionIdsAffectedByCommands(commands, query_context);
-=======
     // /// Validate partition IDs (if any) before starting mutation
     // getPartitionIdsAffectedByCommands(commands, query_context);
->>>>>>> 1043c4dc0f1 (simplified_partition_mutations: start tests)
 
     Int64 version;
     {
@@ -963,7 +958,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
         {
-            disable_reason = "Some parts have different mutation version";
+            disable_reason = "Some parts have different mutation versions";
             return false;
         }
 
@@ -1463,8 +1458,14 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())
+    {
+
+        LOG_TRACE(log, "getCurrentMutationVersion: {}", 0);
         return 0;
+    }
+
     --it;
+    LOG_TRACE(log, "getCurrentMutationVersion: {}", it->first);
     return it->first;
 }
 

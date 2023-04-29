@@ -180,6 +180,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
 
         const auto & partition_ast = command.partition->as<ASTPartition &>();
 
+        // partition_ast.all  ??
         if (!partition_ast.value)
         {
             /// Looks like we do not know format version
@@ -218,8 +219,8 @@ bool MergeTreeMutationEntry::affectsPartition(const String & partition_id) const
 {
     bool affected = !partition_ids.has_value() ||
         std::binary_search(partition_ids->begin(), partition_ids->end(), partition_id);
-    LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
-        partition_id, affected?"":"not ", block_number);
+    // LOG_TRACE(&Poco::Logger::get("MergeTreeMutationEntry"), "Partition {} {}affected by mutation {}",
+    //     partition_id, affected?"":"not ", block_number);
     return affected;
 }
 
