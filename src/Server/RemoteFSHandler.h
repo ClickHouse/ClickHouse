@@ -75,7 +75,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     void receiveHello();
-    void receivePacket();
+    void receiveRequest();
     void receivePath(std::string &path);
     [[noreturn]] void receiveUnexpectedHello();
 
@@ -85,6 +85,6 @@ private:
     void writeFile();
 
     void sendHello();
-    void sendError(std::string errorMsg);
+    void sendException(const Exception & e);
 };
 }

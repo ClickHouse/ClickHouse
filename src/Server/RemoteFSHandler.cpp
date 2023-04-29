@@ -49,7 +49,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
-#include "Core/Protocol.h"
+#include "Core/RemoteFSProtocol.h"
 #include "RemoteFSHandler.h"
 #include "Storages/MergeTree/RequestResponse.h"
 
@@ -65,46 +65,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
-
-enum
-{
-    Hello = 0,
-    Ping = 1,
-    GetTotalSpace = 2,
-    GetAvailableSpace = 3,
-    Exists = 5,
-    IsFile = 6,
-    IsDirectory = 7,
-    GetFileSize = 8,
-    CreateDirectory = 9,
-    CreateDirectories = 10,
-    ClearDirectory = 11,
-    MoveDirectory = 12,
-    IterateDirectory = 13,
-    EndIterateDirectory = 113,
-    CreateFile = 14,
-    MoveFile = 15,
-    ReplaceFile = 16,
-    Copy = 17,
-    CopyDirectoryContent = 18, // TODO: fix test
-    ListFiles = 19,
-    EndListFiles = 119,
-    ReadFile = 20, // TODO: improve
-    WriteFile = 21, // TODO: improve
-    EndWriteFile = 121,
-    RemoveFile = 22,
-    RemoveFileIfExists = 23,
-    RemoveDirectory = 24,
-    RemoveRecursive = 25,
-    SetLastModified = 26,
-    GetLastModified = 27,
-    GetLastChanged = 28,
-    SetReadOnly = 29, // TODO fix test
-    CreateHardLink = 30,
-    TruncateFile = 31,
-    DataPacket = 55,
-    Error = 255
-};
 
 
 RemoteFSHandler::RemoteFSHandler(
@@ -178,7 +138,7 @@ void RemoteFSHandler::run()
         if (e.code() == ErrorCodes::UNKNOWN_DISK)
         {
             LOG_TRACE(log, "Got error {}", e.message());
-            sendError(e.message());
+            sendException(e.message());
             return;
         }
         throw;
@@ -209,12 +169,12 @@ void RemoteFSHandler::run()
 
         try
         {
-            receivePacket();
+            receiveRequest();
         }
         catch (...)
         {
             // TODO: split on different cases
-            sendError(getCurrentExceptionMessage(false));
+            sendException(getCurrentExceptionMessage(false));
         }
     }
 }
@@ -236,7 +196,7 @@ void RemoteFSHandler::receiveHello()
 
     readVarUInt(packet_type, *in);
     LOG_TRACE(log, "Received hello");
-    if (packet_type != Hello)
+    if (packet_type != RemoteFSProtocol::Hello)
     {
         throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
     }
@@ -245,7 +205,7 @@ void RemoteFSHandler::receiveHello()
     disk = server.context()->getDisk(disk_name);
 }
 
-void RemoteFSHandler::receivePacket()
+void RemoteFSHandler::receiveRequest()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -260,184 +220,184 @@ void RemoteFSHandler::receivePacket()
 
     switch (packet_type)
     {
-        case Hello:
+        case RemoteFSProtocol::Hello:
             receiveUnexpectedHello();
-        case Ping:
-            writeVarUInt(Ping, *out);
+        case RemoteFSProtocol::Ping:
+            writeVarUInt(RemoteFSProtocol::Ping, *out);
             out->next();
             break;
-        case GetTotalSpace:
-            writeVarUInt(GetTotalSpace, *out);
+        case RemoteFSProtocol::GetTotalSpace:
+            writeVarUInt(RemoteFSProtocol::GetTotalSpace, *out);
             writeVarUInt(disk->getTotalSpace(), *out);
             out->next();
             break;
-        case GetAvailableSpace:
-            writeVarUInt(GetAvailableSpace, *out);
+        case RemoteFSProtocol::GetAvailableSpace:
+            writeVarUInt(RemoteFSProtocol::GetAvailableSpace, *out);
             writeVarUInt(disk->getAvailableSpace(), *out);
             out->next();
             break;
-        case Exists:
+        case RemoteFSProtocol::Exists:
             receivePath(path);
             bool_var = disk->exists(path);
-            writeVarUInt(Exists, *out);
+            writeVarUInt(RemoteFSProtocol::Exists, *out);
             writeBoolText(bool_var, *out);
             out->next();
             break;
-        case IsFile:
+        case RemoteFSProtocol::IsFile:
             receivePath(path);
             bool_var = disk->isFile(path);
-            writeVarUInt(IsFile, *out);
+            writeVarUInt(RemoteFSProtocol::IsFile, *out);
             writeBoolText(bool_var, *out);
             out->next();
             break;
-        case IsDirectory:
+        case RemoteFSProtocol::IsDirectory:
             receivePath(path);
             bool_var = disk->isDirectory(path);
-            writeVarUInt(IsDirectory, *out);
+            writeVarUInt(RemoteFSProtocol::IsDirectory, *out);
             writeBoolText(bool_var, *out);
             out->next();
             break;
-        case GetFileSize:
+        case RemoteFSProtocol::GetFileSize:
             receivePath(path);
             size_t_var = disk->getFileSize(path);
-            writeVarUInt(GetFileSize, *out);
+            writeVarUInt(RemoteFSProtocol::GetFileSize, *out);
             writeVarUInt(size_t_var, *out);
             out->next();
             break;
-        case CreateDirectory:
+        case RemoteFSProtocol::CreateDirectory:
             receivePath(path);
             disk->createDirectory(path);
-            writeVarUInt(CreateDirectory, *out);
+            writeVarUInt(RemoteFSProtocol::CreateDirectory, *out);
             out->next();
             break;
-        case CreateDirectories:
+        case RemoteFSProtocol::CreateDirectories:
             receivePath(path);
             disk->createDirectories(path);
-            writeVarUInt(CreateDirectories, *out);
+            writeVarUInt(RemoteFSProtocol::CreateDirectories, *out);
             out->next();
             break;
-        case ClearDirectory:
+        case RemoteFSProtocol::ClearDirectory:
             receivePath(path);
             disk->clearDirectory(path);
-            writeVarUInt(ClearDirectory, *out);
+            writeVarUInt(RemoteFSProtocol::ClearDirectory, *out);
             out->next();
             break;
-        case MoveDirectory:
+        case RemoteFSProtocol::MoveDirectory:
             receivePath(path);
             receivePath(path2);
             disk->moveDirectory(path, path2);
-            writeVarUInt(MoveDirectory, *out);
+            writeVarUInt(RemoteFSProtocol::MoveDirectory, *out);
             out->next();
             break;
-        case IterateDirectory:
+        case RemoteFSProtocol::IterateDirectory:
             iterateDirectory();
             break;
-        case CreateFile:
+        case RemoteFSProtocol::CreateFile:
             receivePath(path);
             disk->createFile(path);
-            writeVarUInt(CreateFile, *out);
+            writeVarUInt(RemoteFSProtocol::CreateFile, *out);
             out->next();
             break;
-        case MoveFile:
+        case RemoteFSProtocol::MoveFile:
             receivePath(path);
             receivePath(path2);
             disk->moveFile(path, path2);
-            writeVarUInt(MoveFile, *out);
+            writeVarUInt(RemoteFSProtocol::MoveFile, *out);
             out->next();
             break;
-        case ReplaceFile:
+        case RemoteFSProtocol::ReplaceFile:
             receivePath(path);
             receivePath(path2);
             disk->replaceFile(path, path2);
-            writeVarUInt(ReplaceFile, *out);
+            writeVarUInt(RemoteFSProtocol::ReplaceFile, *out);
             out->next();
             break;
-        case Copy:
+        case RemoteFSProtocol::Copy:
             receivePath(path);
             receivePath(path2);
             disk->copy(path, disk, path2);
-            writeVarUInt(Copy, *out);
+            writeVarUInt(RemoteFSProtocol::Copy, *out);
             out->next();
             break;
-        case CopyDirectoryContent:
+        case RemoteFSProtocol::CopyDirectoryContent:
             receivePath(path);
             receivePath(path2);
             disk->copyDirectoryContent(path, disk, path2);
-            writeVarUInt(CopyDirectoryContent, *out);
+            writeVarUInt(RemoteFSProtocol::CopyDirectoryContent, *out);
             out->next();
             break;
-        case ListFiles:
+        case RemoteFSProtocol::ListFiles:
             listFiles();
             break;
-        case ReadFile:
+        case RemoteFSProtocol::ReadFile:
             readFile();
             break;
-        case WriteFile:
+        case RemoteFSProtocol::WriteFile:
             writeFile();
             break;
-        case RemoveFile:
+        case RemoteFSProtocol::RemoveFile:
             receivePath(path);
             disk->removeFile(path);
-            writeVarUInt(RemoveFile, *out);
+            writeVarUInt(RemoteFSProtocol::RemoveFile, *out);
             out->next();
             break;
-        case RemoveFileIfExists:
+        case RemoteFSProtocol::RemoveFileIfExists:
             receivePath(path);
             disk->removeFileIfExists(path);
-            writeVarUInt(RemoveFileIfExists, *out);
+            writeVarUInt(RemoteFSProtocol::RemoveFileIfExists, *out);
             out->next();
             break;
-        case RemoveDirectory:
+        case RemoteFSProtocol::RemoveDirectory:
             receivePath(path);
             disk->removeDirectory(path);
-            writeVarUInt(RemoveDirectory, *out);
+            writeVarUInt(RemoteFSProtocol::RemoveDirectory, *out);
             out->next();
             break;
-        case RemoveRecursive:
+        case RemoteFSProtocol::RemoveRecursive:
             receivePath(path);
             disk->removeRecursive(path);
-            writeVarUInt(RemoveRecursive, *out);
+            writeVarUInt(RemoteFSProtocol::RemoveRecursive, *out);
             out->next();
             break;
-        case SetLastModified:
+        case RemoteFSProtocol::SetLastModified:
             receivePath(path);
             readVarUInt(time_var, *in);
             disk->setLastModified(path, Poco::Timestamp::fromEpochTime(time_var));
-            writeVarUInt(SetLastModified, *out);
+            writeVarUInt(RemoteFSProtocol::SetLastModified, *out);
             out->next();
             break;
-        case GetLastModified:
+        case RemoteFSProtocol::GetLastModified:
             receivePath(path);
             time_var = disk->getLastModified(path).epochTime();
-            writeVarUInt(GetLastModified, *out);
+            writeVarUInt(RemoteFSProtocol::GetLastModified, *out);
             writeVarUInt(time_var, *out);
             out->next();
             break;
-        case GetLastChanged:
+        case RemoteFSProtocol::GetLastChanged:
             receivePath(path);
             time_var = disk->getLastChanged(path);
-            writeVarUInt(GetLastChanged, *out);
+            writeVarUInt(RemoteFSProtocol::GetLastChanged, *out);
             writeVarUInt(time_var, *out);
             out->next();
             break;
-        case SetReadOnly:
+        case RemoteFSProtocol::SetReadOnly:
             receivePath(path);
             disk->setReadOnly(path);
-            writeVarUInt(SetReadOnly, *out);
+            writeVarUInt(RemoteFSProtocol::SetReadOnly, *out);
             out->next();
             break;
-        case CreateHardLink:
+        case RemoteFSProtocol::CreateHardLink:
             receivePath(path);
             receivePath(path2);
             disk->createHardLink(path, path2);
-            writeVarUInt(CreateHardLink, *out);
+            writeVarUInt(RemoteFSProtocol::CreateHardLink, *out);
             out->next();
             break;
-        case TruncateFile:
+        case RemoteFSProtocol::TruncateFile:
             receivePath(path);
             readVarUInt(size_t_var, *in);
             disk->truncateFile(path, size_t_var);
-            writeVarUInt(TruncateFile, *out);
+            writeVarUInt(RemoteFSProtocol::TruncateFile, *out);
             out->next();
             break;
         default:
@@ -467,10 +427,10 @@ void RemoteFSHandler::iterateDirectory()
     for (auto iter = disk->iterateDirectory(path); iter->isValid(); iter->next())
     {
         LOG_TRACE(log, "Writing dir entry {}", iter->path());
-        writeVarUInt(DataPacket, *out);
+        writeVarUInt(RemoteFSProtocol::DataPacket, *out);
         writeStringBinary(iter->path(), *out);
     }
-    writeVarUInt(EndIterateDirectory, *out);
+    writeVarUInt(RemoteFSProtocol::EndIterateDirectory, *out);
     out->next();
 }
 
@@ -483,30 +443,32 @@ void RemoteFSHandler::listFiles()
     for (auto & file : files)
     {
         LOG_TRACE(log, "Writing file name {}", file);
-        writeVarUInt(DataPacket, *out);
+        writeVarUInt(RemoteFSProtocol::DataPacket, *out);
         writeStringBinary(file, *out);
     }
     disk->listFiles(path, files);
-    writeVarUInt(EndListFiles, *out);
+    writeVarUInt(RemoteFSProtocol::EndListFiles, *out);
     out->next();
 }
 
 void RemoteFSHandler::readFile()
 {
     std::string str_data;
-    receivePath(str_data); // Read path
     size_t offset;
+    size_t size;
+    receivePath(str_data);
     readVarUInt(offset, *in);
     LOG_TRACE(log, "Received offset {}", offset);
-    size_t size;
     readVarUInt(size, *in);
     LOG_TRACE(log, "Received size {}", size);
+
     auto read_buf = disk->readFile(str_data);
     read_buf->seek(offset, SEEK_SET);
     str_data.resize(size);
     auto bytes_read = read_buf->read(str_data.data(), size);
     str_data.resize(bytes_read);
-    writeVarUInt(ReadFile, *out);
+
+    writeVarUInt(RemoteFSProtocol::ReadFile, *out);
     writeStringBinary(str_data, *out);
     out->next();
 }
@@ -514,35 +476,37 @@ void RemoteFSHandler::readFile()
 void RemoteFSHandler::writeFile()
 {
     std::string str_data;
-    receivePath(str_data);
     size_t buf_size;
+    uint mode_raw;
+    receivePath(str_data);
     readVarUInt(buf_size, *in);
     LOG_TRACE(log, "Received buf_size {}", buf_size);
-    uint mode_raw;
     readVarUInt(mode_raw, *in);
     WriteMode mode = WriteMode(mode_raw);
     LOG_TRACE(log, "Received mode {}", mode);
+
     auto write_buf = disk->writeFile(str_data, buf_size, mode);
-    writeVarUInt(WriteFile, *out);
+    writeVarUInt(RemoteFSProtocol::WriteFile, *out);
     out->next();
-    UInt64 packet_type = 0;
+
+    UInt64 packet_type;
     while (true)
     {
         readVarUInt(packet_type, *in);
         switch (packet_type)
         {
-            case DataPacket:
+            case RemoteFSProtocol::DataPacket:
                 readStringBinary(str_data, *in);
                 LOG_TRACE(log, "Received data {}", str_data);
                 writeString(str_data, *write_buf);
                 write_buf->next(); // TODO maybe remove this line
-                writeVarUInt(DataPacket, *out);
+                writeVarUInt(RemoteFSProtocol::DataPacket, *out);
                 out->next();
                 break;
-            case EndWriteFile:
+            case RemoteFSProtocol::EndWriteFile:
                 LOG_TRACE(log, "Close file");
                 write_buf->sync();
-                writeVarUInt(EndWriteFile, *out);
+                writeVarUInt(RemoteFSProtocol::EndWriteFile, *out);
                 out->next();
                 return;
             default:
@@ -553,15 +517,15 @@ void RemoteFSHandler::writeFile()
 
 void RemoteFSHandler::sendHello()
 {
-    writeVarUInt(Hello, *out);
+    writeVarUInt(RemoteFSProtocol::Hello, *out);
     out->next();
 }
 
 
-void RemoteFSHandler::sendError(std::string errorMsg)
+void RemoteFSHandler::sendException(const Exception & e)
 {
-    writeVarUInt(Error, *out);
-    writeStringBinary(errorMsg, *out);
+    writeVarUInt(RemoteFSProtocol::Exception, *out);
+    writeException(e, *out, false);
     out->next();
 }
 
