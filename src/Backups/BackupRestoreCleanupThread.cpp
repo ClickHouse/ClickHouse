@@ -21,7 +21,7 @@ BackupRestoreCleanupThread::BackupRestoreCleanupThread(
     , consecutive_failed_checks_to_be_stale(consecutive_failed_checks_to_be_stale_)
 {
     task = pool_.createTask("BackupRestoreCleanupThread", [this]{ run(); });
-    LOG_INFO(log, "Clenup thread initialized");
+    LOG_INFO(log, "Cleanup thread initialized");
 }
 
 void BackupRestoreCleanupThread::run()
@@ -84,13 +84,13 @@ void BackupRestoreCleanupThread::runImpl()
 
         const auto full_path_for_current_operation = root_zookeeper_path + "/" + operation_name;
 
-        /// Modify the mtime of the node
+        /// Modify the mtime of the node to let [Zoo]Keeper decide which time is now
         Coordination::Stat root_stat;
         zk->set(full_path_for_current_operation, "");
         zk->get(full_path_for_current_operation, &root_stat);
 
-        /// Let the Keeper decide what time is now
         const auto now = static_cast<UInt64>(root_stat.mtime);
+        /// We use the creation time as a fallback if `/stage` node doesn't exist.
         auto last_active_time = static_cast<UInt64>(root_stat.ctime);
 
         if (zk->exists(path_to_stage_for_current_backup))

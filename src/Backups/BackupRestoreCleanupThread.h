@@ -11,6 +11,19 @@
 namespace DB
 {
 
+
+/// Background garbage collection job which cleans up stale nodes from [ZooKeeper]
+/// created by backup or restore operation and didn't finish by whatever reason.
+/// e.g. server crash or similar.
+/// Has several parameters:
+/// - path in [Zoo]Keeper (/clickhouse/backups)
+/// - check_period_ms - how often does this task executes in background
+/// - timeout_to_cleanup_ms - after how much time from the last possible activity we can consider
+///     a backup or restore operation as stale or dead and remove corresponding nodes
+/// - consecutive_failed_checks_to_be_stale - how many checks should be performed before deletion.
+///
+/// So, nodes from [Zoo]Keeper will be deleted iff a certain time is passed and we checked several times
+/// whether this operation is active.
 class BackupRestoreCleanupThread
 {
 public:

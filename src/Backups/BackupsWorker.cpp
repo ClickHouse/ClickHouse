@@ -197,10 +197,12 @@ std::unique_ptr<BackupsWorker> BackupsWorker::createFromContext(ContextPtr globa
 
     auto result = std::make_unique<BackupsWorker>(backup_restore_settings);
 
+    /// Cleanup thread is needed only clean stale nodes from [Zoo]Keeper created by previously run backup or restore operations
+    /// and which were failed by whatever reason.
     if (global_context->hasZooKeeper())
     {
         result->backup_restore_cleanup_thread.emplace(
-            [global_context = global_context] { return global_context->getZooKeeper(); }, /// Circular dependency on Context?
+            [global_context = global_context] { return global_context->getZooKeeper(); },
             global_context->getSchedulePool(),
             backup_restore_settings.root_zookeeper_path,
             backup_restore_settings.stale_backups_restores_check_period_ms,

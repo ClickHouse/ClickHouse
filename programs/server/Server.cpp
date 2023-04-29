@@ -1467,7 +1467,8 @@ try
     /// This is needed to load proper values of background_pool_size etc.
     global_context->initializeBackgroundExecutorsIfNeeded();
 
-    /// Initialize BackupsWorker and a cleanup thread if we have ZooKeeper.
+    /// Initialize BackupsWorker
+    /// Cleanup thread will be initialized inside in case when a server is configured with [Zoo]Keeper.
     global_context->initializeBackupsWorker();
 
     if (settings.async_insert_threads)
