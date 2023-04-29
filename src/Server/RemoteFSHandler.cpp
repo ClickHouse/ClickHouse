@@ -87,7 +87,7 @@ enum
     ReplaceFile = 16,
     Copy = 17,
     CopyDirectoryContent = 18, // TODO: fix test
-    ListFiles = 19, // TODO: later
+    ListFiles = 19,
     EndListFiles = 119,
     ReadFile = 20, // TODO: improve
     WriteFile = 21, // TODO: improve
@@ -254,9 +254,9 @@ void RemoteFSHandler::receivePacket()
 
     std::string path;
     std::string path2;
-    bool boolVar;
-    size_t sizeTVar;
-    time_t timeVar;
+    bool bool_var;
+    size_t size_t_var;
+    time_t time_var;
 
     switch (packet_type)
     {
@@ -278,30 +278,30 @@ void RemoteFSHandler::receivePacket()
             break;
         case Exists:
             receivePath(path);
-            boolVar = disk->exists(path);
+            bool_var = disk->exists(path);
             writeVarUInt(Exists, *out);
-            writeBoolText(boolVar, *out);
+            writeBoolText(bool_var, *out);
             out->next();
             break;
         case IsFile:
             receivePath(path);
-            boolVar = disk->isFile(path);
+            bool_var = disk->isFile(path);
             writeVarUInt(IsFile, *out);
-            writeBoolText(boolVar, *out);
+            writeBoolText(bool_var, *out);
             out->next();
             break;
         case IsDirectory:
             receivePath(path);
-            boolVar = disk->isDirectory(path);
+            bool_var = disk->isDirectory(path);
             writeVarUInt(IsDirectory, *out);
-            writeBoolText(boolVar, *out);
+            writeBoolText(bool_var, *out);
             out->next();
             break;
         case GetFileSize:
             receivePath(path);
-            sizeTVar = disk->getFileSize(path);
+            size_t_var = disk->getFileSize(path);
             writeVarUInt(GetFileSize, *out);
-            writeVarUInt(sizeTVar, *out);
+            writeVarUInt(size_t_var, *out);
             out->next();
             break;
         case CreateDirectory:
@@ -401,23 +401,23 @@ void RemoteFSHandler::receivePacket()
             break;
         case SetLastModified:
             receivePath(path);
-            readVarUInt(timeVar, *in);
-            disk->setLastModified(path, Poco::Timestamp::fromEpochTime(timeVar));
+            readVarUInt(time_var, *in);
+            disk->setLastModified(path, Poco::Timestamp::fromEpochTime(time_var));
             writeVarUInt(SetLastModified, *out);
             out->next();
             break;
         case GetLastModified:
             receivePath(path);
-            timeVar = disk->getLastModified(path).epochTime();
+            time_var = disk->getLastModified(path).epochTime();
             writeVarUInt(GetLastModified, *out);
-            writeVarUInt(timeVar, *out);
+            writeVarUInt(time_var, *out);
             out->next();
             break;
         case GetLastChanged:
             receivePath(path);
-            timeVar = disk->getLastChanged(path);
+            time_var = disk->getLastChanged(path);
             writeVarUInt(GetLastChanged, *out);
-            writeVarUInt(timeVar, *out);
+            writeVarUInt(time_var, *out);
             out->next();
             break;
         case SetReadOnly:
@@ -435,8 +435,8 @@ void RemoteFSHandler::receivePacket()
             break;
         case TruncateFile:
             receivePath(path);
-            readVarUInt(sizeTVar, *in);
-            disk->truncateFile(path, sizeTVar);
+            readVarUInt(size_t_var, *in);
+            disk->truncateFile(path, size_t_var);
             writeVarUInt(TruncateFile, *out);
             out->next();
             break;
@@ -480,11 +480,11 @@ void RemoteFSHandler::listFiles()
     receivePath(path);
     std::vector<String> files;
     disk->listFiles(path, files);
-    for (auto iter = files.begin(); iter != files.end(); iter++)
+    for (auto & file : files)
     {
-        LOG_TRACE(log, "Writing file name {}", *iter);
+        LOG_TRACE(log, "Writing file name {}", file);
         writeVarUInt(DataPacket, *out);
-        writeStringBinary(*iter, *out);
+        writeStringBinary(file, *out);
     }
     disk->listFiles(path, files);
     writeVarUInt(EndListFiles, *out);
@@ -493,36 +493,36 @@ void RemoteFSHandler::listFiles()
 
 void RemoteFSHandler::readFile()
 {
-    std::string strData;
-    receivePath(strData); // Read path
+    std::string str_data;
+    receivePath(str_data); // Read path
     size_t offset;
     readVarUInt(offset, *in);
     LOG_TRACE(log, "Received offset {}", offset);
     size_t size;
     readVarUInt(size, *in);
     LOG_TRACE(log, "Received size {}", size);
-    auto readBuf = disk->readFile(strData);
-    readBuf->seek(offset, SEEK_SET);
-    strData.resize(size);
-    auto bytes_read = readBuf->read(strData.data(), size);
-    strData.resize(bytes_read);
+    auto read_buf = disk->readFile(str_data);
+    read_buf->seek(offset, SEEK_SET);
+    str_data.resize(size);
+    auto bytes_read = read_buf->read(str_data.data(), size);
+    str_data.resize(bytes_read);
     writeVarUInt(ReadFile, *out);
-    writeStringBinary(strData, *out);
+    writeStringBinary(str_data, *out);
     out->next();
 }
 
 void RemoteFSHandler::writeFile()
 {
-    std::string strData;
-    receivePath(strData);
+    std::string str_data;
+    receivePath(str_data);
     size_t buf_size;
     readVarUInt(buf_size, *in);
     LOG_TRACE(log, "Received buf_size {}", buf_size);
-    uint modeRaw;
-    readVarUInt(modeRaw, *in);
-    WriteMode mode = WriteMode(modeRaw);
+    uint mode_raw;
+    readVarUInt(mode_raw, *in);
+    WriteMode mode = WriteMode(mode_raw);
     LOG_TRACE(log, "Received mode {}", mode);
-    auto writeBuf = disk->writeFile(strData, buf_size, mode);
+    auto write_buf = disk->writeFile(str_data, buf_size, mode);
     writeVarUInt(WriteFile, *out);
     out->next();
     UInt64 packet_type = 0;
@@ -532,16 +532,16 @@ void RemoteFSHandler::writeFile()
         switch (packet_type)
         {
             case DataPacket:
-                readStringBinary(strData, *in);
-                LOG_TRACE(log, "Received data {}", strData);
-                writeString(strData, *writeBuf);
-                writeBuf->next(); // TODO maybe remove this line
+                readStringBinary(str_data, *in);
+                LOG_TRACE(log, "Received data {}", str_data);
+                writeString(str_data, *write_buf);
+                write_buf->next(); // TODO maybe remove this line
                 writeVarUInt(DataPacket, *out);
                 out->next();
                 break;
             case EndWriteFile:
                 LOG_TRACE(log, "Close file");
-                writeBuf->sync();
+                write_buf->sync();
                 writeVarUInt(EndWriteFile, *out);
                 out->next();
                 return;
