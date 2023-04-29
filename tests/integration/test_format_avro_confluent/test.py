@@ -14,7 +14,7 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("dummy", with_kafka=True)
+        cluster.add_instance("dummy", with_kafka=True, with_secrets=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -39,10 +39,13 @@ def run_query(instance, query, data=None, settings=None):
 
 def test_select(started_cluster):
     # type: (ClickHouseCluster) -> None
+    input("Cluster created, press any key to destroy...")
 
-    schema_registry_client = CachedSchemaRegistryClient(
-        "http://localhost:{}".format(started_cluster.schema_registry_port)
-    )
+    reg_url="http://localhost:{}".format(
+            started_cluster.schema_registry_port)
+    arg={'url':reg_url,'basic.auth.credentials.source':'USER_INFO','basic.auth.user.info':'schemauser:letmein'}
+
+    schema_registry_client = CachedSchemaRegistryClient(arg)
     serializer = MessageSerializer(schema_registry_client)
 
     schema = avro.schema.make_avsc_object(
@@ -62,7 +65,12 @@ def test_select(started_cluster):
     data = buf.getvalue()
 
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
-    schema_registry_url = "http://{}:{}".format(
+    # schema_registry_url = "http://{}:{}@{}:{}".format(
+    #     'schemauser', 'letmein',
+    #     started_cluster.schema_registry_host, 8081
+    # )
+    schema_registry_url = "http://{}:{}@{}:{}".format(
+        'schemauser', 'letmein',
         started_cluster.schema_registry_host, 8081
     )
 
