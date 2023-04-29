@@ -336,7 +336,7 @@ InputFormatPtr FormatFactory::getInputImpl(
         auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
-        
+
         ParallelParsingInputFormat::Params params{
             *buf, sample, parser_creator, creators.file_segmentation_engine, name, max_parsing_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
