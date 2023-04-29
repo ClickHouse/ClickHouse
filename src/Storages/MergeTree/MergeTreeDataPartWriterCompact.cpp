@@ -32,23 +32,23 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
             settings_.query_write_settings))
-    , plain_hashing(*plain_file)
+    , plain_hashing(*plain_file, settings_.cryptographic_mode)
 {
     marks_file = data_part_->getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
             4096,
             settings_.query_write_settings);
 
-    marks_file_hashing = std::make_unique<CryptoHashingWriteBuffer>(*marks_file);
+    marks_file_hashing = std::make_unique<AbstractHashingWriteBuffer>(*marks_file, settings_.cryptographic_mode);
 
     if (data_part_->index_granularity_info.mark_type.compressed)
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
-            *marks_file_hashing,
+            marks_file_hashing->getBuf(),
             getMarksCompressionCodec(settings_.marks_compression_codec),
             settings_.marks_compress_block_size);
 
-        marks_source_hashing = std::make_unique<CryptoHashingWriteBuffer>(*marks_compressor);
+        marks_source_hashing = std::make_unique<AbstractHashingWriteBuffer>(*marks_compressor, settings_.cryptographic_mode);
     }
 
     const auto & storage_columns = metadata_snapshot->getColumns();
@@ -79,7 +79,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         UInt64 codec_id = compression_codec->getHash();
         auto & stream = streams_by_codec[codec_id];
         if (!stream)
-            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
+            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec, settings.cryptographic_mode);
 
         compressed_streams.emplace(stream_name, stream);
     };
@@ -195,7 +195,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
 void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
 {
-    WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
+    WriteBuffer & marks_out = marks_source_hashing ? marks_source_hashing->getBuf() : marks_file_hashing->getBuf();
 
     for (const auto & granule : granules)
     {
@@ -224,7 +224,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
                 prev_stream = result_stream;
 
-                return &result_stream->hashing_buf;
+                return &result_stream->hashing_buf.getBuf();
             };
 
 
@@ -264,7 +264,7 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
         assert(stream->hashing_buf.offset() == 0);
 #endif
 
-    WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
+    WriteBuffer & marks_out = marks_source_hashing ? marks_source_hashing->getBuf() : marks_file_hashing->getBuf();
 
     if (with_final_mark && data_written)
     {

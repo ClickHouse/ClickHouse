@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/AbstractHashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>

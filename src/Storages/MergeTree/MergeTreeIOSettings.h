@@ -57,6 +57,7 @@ struct MergeTreeWriterSettings
         , can_use_adaptive_granularity(can_use_adaptive_granularity_)
         , rewrite_primary_key(rewrite_primary_key_)
         , blocks_are_granules_size(blocks_are_granules_size_)
+        , cryptographic_mode(storage_settings->cryptographic_mode)
         , query_write_settings(query_write_settings_)
     {
     }
@@ -74,6 +75,7 @@ struct MergeTreeWriterSettings
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
     bool blocks_are_granules_size;
+    bool cryptographic_mode;
     WriteSettings query_write_settings;
 };
 

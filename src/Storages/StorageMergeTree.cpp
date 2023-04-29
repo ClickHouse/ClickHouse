@@ -2080,9 +2080,9 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         }
     }
 
-    if (cryptographic_mode) {
-        results.emplace_back("root hash", true, merkle_tree.root().to_string());
-    }
+    //if (cryptographic_mode) {
+    //    results.emplace_back("root hash", true, merkle_tree.root().to_string());
+    //}
 
     return results;
 }

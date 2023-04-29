@@ -322,8 +322,8 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         writeBinary(desc.file_size, out);
 
         auto file_in = desc.input_buffer_getter();
-        CryptoHashingWriteBuffer hashing_out(out);
-        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
+        AbstractHashingWriteBuffer hashing_out(out, data.getSettings()->cryptographic_mode);
+        copyDataWithThrottler(*file_in, hashing_out.getBuf(), blocker.getCounter(), data.getSendsThrottler());
 
         if (blocker.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
@@ -762,8 +762,10 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
                 absolute_file_path, data_part_storage->getRelativePath());
 
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
-        CryptoHashingWriteBuffer hashing_out(*written_files.back());
-        copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
+
+        AbstractHashingWriteBuffer hashing_out(*written_files.back(), data.getSettings()->cryptographic_mode);
+        copyDataWithThrottler(in, hashing_out.getBuf(), file_size, blocker.getCounter(), throttler);
+        MergeTreeDataPartChecksum::uint128 hash = hashing_out.getHash();
 
         if (blocker.isCancelled())
         {
@@ -776,7 +778,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
         MergeTreeDataPartChecksum::uint128 expected_hash;
         readPODBinary(expected_hash, in);
 
-        if (expected_hash != hashing_out.getHash())
+        if (expected_hash != hash)
             throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
                 "Checksum mismatch for file {} transferred from {}",
                 (fs::path(data_part_storage->getFullPath()) / file_name).string(),

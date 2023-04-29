@@ -72,6 +72,17 @@ public:
         }
     }
 
+    size_t count() {
+        if (cryptographic_mode)
+        {
+            return cryptoBuf->count();
+        }
+        else
+        {
+            return hashingBuf->count();
+        }
+    }
+
     WriteBuffer& getBuf() {
         if (cryptographic_mode)
         {
@@ -80,6 +91,30 @@ public:
         else
         {
             return *hashingBuf;
+        }
+    }
+
+    inline void next() {
+        if (cryptographic_mode) {
+            cryptoBuf->next();
+        } else {
+            hashingBuf->next();
+        }
+    }
+
+    inline void nextIfAtEnd() {
+        if (cryptographic_mode) {
+            cryptoBuf->nextIfAtEnd();
+        } else {
+            hashingBuf->nextIfAtEnd();
+        }
+    }
+
+    size_t offset() const {
+        if (cryptographic_mode) {
+            return cryptoBuf->offset();
+        } else {
+            return hashingBuf->offset();
         }
     }
 

@@ -57,18 +57,19 @@ MergeTreeDataPartWriterOnDisk::Stream::Stream(
     size_t max_compress_block_size_,
     const CompressionCodecPtr & marks_compression_codec_,
     size_t marks_compress_block_size_,
-    const WriteSettings & query_write_settings) :
+    const WriteSettings & query_write_settings,
+    bool cryptographic_mode) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
-    plain_hashing(*plain_file),
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_),
-    compressed_hashing(compressor),
+    plain_hashing(*plain_file, cryptographic_mode),
+    compressor(plain_hashing.getBuf(), compression_codec_, max_compress_block_size_),
+    compressed_hashing(compressor, cryptographic_mode),
     marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
-    marks_hashing(*marks_file),
-    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_),
-    marks_compressed_hashing(marks_compressor),
+    marks_hashing(*marks_file, cryptographic_mode),
+    marks_compressor(marks_hashing.getBuf(), marks_compression_codec_, marks_compress_block_size_),
+    marks_compressed_hashing(marks_compressor, cryptographic_mode),
     compress_marks(MarkType(marks_file_extension).compressed)
 {
 }
@@ -175,6 +176,7 @@ static size_t computeIndexGranularityImpl(
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
 {
     const auto storage_settings = storage.getSettings();
+
     return computeIndexGranularityImpl(
             block,
             storage_settings->index_granularity_bytes,
@@ -185,19 +187,20 @@ size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & bloc
 
 void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
+    const auto storage_settings = storage.getSettings();
     if (metadata_snapshot->hasPrimaryKey())
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
         index_file_stream = data_part->getDataPartStorage().writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
-        index_file_hashing_stream = std::make_unique<CryptoHashingWriteBuffer>(*index_file_stream);
+        index_file_hashing_stream = std::make_unique<AbstractHashingWriteBuffer>(*index_file_stream, storage_settings->cryptographic_mode);
 
         if (compress_primary_key)
         {
             ParserCodec codec_parser;
             auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.primary_key_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
             CompressionCodecPtr primary_key_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
-            index_compressor_stream = std::make_unique<CompressedWriteBuffer>(*index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
-            index_source_hashing_stream = std::make_unique<CryptoHashingWriteBuffer>(*index_compressor_stream);
+            index_compressor_stream = std::make_unique<CompressedWriteBuffer>(index_file_hashing_stream->getBuf(), primary_key_compression_codec, settings.primary_key_compress_block_size);
+            index_source_hashing_stream = std::make_unique<AbstractHashingWriteBuffer>(*index_compressor_stream, storage_settings->cryptographic_mode);
         }
     }
 }
@@ -219,7 +222,8 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
                         marks_compression_codec, settings.marks_compress_block_size,
-                        settings.query_write_settings));
+                        settings.query_write_settings,
+                        settings.cryptographic_mode));
 
         GinIndexStorePtr store = nullptr;
         if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
@@ -263,7 +267,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
                     const auto & primary_column = primary_index_block.getByPosition(j);
                     index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
                     primary_column.type->getDefaultSerialization()->serializeBinary(
-                        *primary_column.column, granule.start_row, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
+                        *primary_column.column, granule.start_row, compress_primary_key ? index_source_hashing_stream->getBuf() : index_file_hashing_stream->getBuf(), {});
                 }
             }
         }
@@ -281,7 +285,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
     {
         const auto index_helper = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
-        WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
+        WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing.getBuf() : stream.marks_hashing.getBuf();
 
         GinIndexStorePtr store;
         if (typeid_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
@@ -297,7 +301,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         {
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
-                skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
+                skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing.getBuf());
                 skip_index_accumulated_marks[i] = 0;
             }
 
@@ -341,7 +345,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
                 size_t last_row_number = column.size() - 1;
                 index_columns[j]->insertFrom(column, last_row_number);
                 index_types[j]->getDefaultSerialization()->serializeBinary(
-                    column, last_row_number, compress_primary_key ? *index_source_hashing_stream : *index_file_hashing_stream, {});
+                    column, last_row_number, compress_primary_key ? index_source_hashing_stream->getBuf() : index_file_hashing_stream->getBuf(), {});
             }
             last_block_index_columns.clear();
         }
@@ -387,7 +391,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
     {
         auto & stream = *skip_indices_streams[i];
         if (!skip_indices_aggregators[i]->empty())
-            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
+            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing.getBuf());
 
         /// Register additional files written only by the inverted index. Required because otherwise DROP TABLE complains about unknown
         /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
