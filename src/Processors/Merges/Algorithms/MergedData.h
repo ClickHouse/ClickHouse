@@ -118,8 +118,14 @@ public:
             return true;
 
         /// Never return more than max_block_size_bytes
-        if (max_block_size_bytes && total_allocated_bytes >= max_block_size_bytes)
-            return true;
+        if (max_block_size_bytes)
+        {
+            size_t merged_bytes = 0;
+            for (const auto & column : columns)
+                merged_bytes += column->allocatedBytes();
+            if (merged_bytes >= max_block_size_bytes)
+                return true;
+        }
 
         if (!use_average_block_size)
             return false;
