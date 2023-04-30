@@ -443,7 +443,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine->arguments && !engine->arguments->children.empty())
         {
             if (engine->arguments->children.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires exactly 1 argument: filesystem_path");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires at most 1 argument: filesystem_path");
 
             const auto & arguments = engine->arguments->children;
             init_path = safeGetLiteralValue<String>(arguments[0], engine_name);

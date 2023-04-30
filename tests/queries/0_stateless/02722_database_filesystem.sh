@@ -21,6 +21,7 @@ tmp_dir=${CLICKHOUSE_TEST_UNIQUE_NAME}
 mkdir $tmp_dir
 cp ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv ${tmp_dir}/tmp.csv
 cp ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv ${CLICKHOUSE_USER_FILES_PATH}/tmp/tmp.csv
+cp ${CLICKHOUSE_USER_FILES_PATH}/tmp.csv ${CLICKHOUSE_USER_FILES_PATH}/tmp.myext
 
 #################
 echo "Test 1: create filesystem database and check implicit calls"
@@ -35,24 +36,35 @@ ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp/tmp.csv\`;"
 ${CLICKHOUSE_LOCAL} -q "SELECT COUNT(*) FROM \"${tmp_dir}/tmp.csv\""
 
 #################
-echo "Test 2: check DatabaseFilesystem access rights on server"
-# Allows list files only inside user_files
+echo "Test 2: check DatabaseFilesystem access rights and errors handling on server"
+# DATABASE_ACCESS_DENIED: Allows list files only inside user_files
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../tmp.csv\`;" 2>&1| grep -F "Code: 291" > /dev/null && echo "OK"
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`/tmp/tmp.csv\`;" 2>&1| grep -F "Code: 291" > /dev/null && echo "OK"
-
 ${CLICKHOUSE_CLIENT} --multiline --multiquery --query """
 USE test1;
 SELECT COUNT(*) FROM \"../${tmp_dir}/tmp.csv\";
 """ 2>&1| grep -F "Code: 291" > /dev/null && echo "OK"
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../../../../../../tmp.csv\`;" 2>&1| grep -F "Code: 291" > /dev/null && echo "OK"
+
+# BAD_ARGUMENTS: path should be inside user_files
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test2;
 CREATE DATABASE test2 ENGINE = Filesystem('/tmp');
-SELECT COUNT(*) FROM test2.\`tmp.csv\`;
-""" 2>&1| grep -F "Code: 291" > /dev/null && echo "OK"
+""" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK"
+
+# BAD_ARGUMENTS: .../user_files/relative_unknown_dir does not exists
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
+DROP DATABASE IF EXISTS test2;
+CREATE DATABASE test2 ENGINE = Filesystem('relative_unknown_dir');
+""" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK"
+
+# FILE_DOESNT_EXIST: unknown file
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp2.csv\`;" 2>&1| grep -F "Code: 107" > /dev/null && echo "OK"
+
+# BAD_ARGUMENTS: Cannot determine the file format by it's extension
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp.myext\`;" 2>&1| grep -F "Code: 36" > /dev/null && echo "OK"
 
 # Clean
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE test1;"
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE test2;"
 rm -rd $tmp_dir
 rm -rd $CLICKHOUSE_USER_FILES_PATH
