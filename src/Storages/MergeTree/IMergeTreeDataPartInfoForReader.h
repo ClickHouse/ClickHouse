@@ -40,8 +40,6 @@ public:
 
     virtual DataPartStoragePtr getDataPartStorage() const = 0;
 
-    virtual DataPartPtr getDataPart() const = 0;
-
     virtual const NamesAndTypesList & getColumns() const = 0;
 
     virtual const ColumnsDescription & getColumnsDescription() const = 0;

@@ -25,8 +25,6 @@ public:
 
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
-    DataPartPtr getDataPart() const override { return data_part; }
-
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
 
     const ColumnsDescription & getColumnsDescription() const override { return data_part->getColumnsDescription(); }
