@@ -224,14 +224,22 @@ def test_attach_detach_partition(cluster):
     wait_for_delete_empty_parts(node, "hdfs_test")
     wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_hdfs_objects(
-        cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 - FILES_OVERHEAD_METADATA_VERSION
+        cluster,
+        FILES_OVERHEAD
+        + FILES_OVERHEAD_PER_PART_WIDE * 2
+        - FILES_OVERHEAD_METADATA_VERSION,
     )
 
     node.query("ALTER TABLE hdfs_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
     hdfs_objects = fs.listdir("/clickhouse")
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 - FILES_OVERHEAD_METADATA_VERSION
+    assert (
+        len(hdfs_objects)
+        == FILES_OVERHEAD
+        + FILES_OVERHEAD_PER_PART_WIDE * 2
+        - FILES_OVERHEAD_METADATA_VERSION
+    )
 
     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
@@ -396,7 +404,10 @@ def test_move_replace_partition_to_another_table(cluster):
 
     # Wait for outdated partitions deletion.
     wait_for_delete_hdfs_objects(
-        cluster, FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
+        cluster,
+        FILES_OVERHEAD * 2
+        + FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
     node.query("DROP TABLE hdfs_clone NO DELAY")
