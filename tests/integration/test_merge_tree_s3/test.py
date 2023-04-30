@@ -444,8 +444,13 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     )
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
+
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    for obj in s3_objects:
+        print("Object at start", obj.object_name)
+
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        len(s3_objects)
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
     )
 
@@ -457,10 +462,16 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert node.query("SELECT sum(id) FROM s3_clone FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_clone FORMAT Values") == "(8192)"
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    for obj in s3_objects:
+        print("Object after move partition", obj.object_name)
+
     # Number of objects in S3 should be unchanged.
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
+        len(s3_objects)
+        == FILES_OVERHEAD * 2
+        + FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -472,9 +483,15 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     )
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    for obj in s3_objects:
+        print("Object after insert", obj.object_name)
+
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6 - FILES_OVERHEAD_METADATA_VERSION * 2
+        len(s3_objects)
+        == FILES_OVERHEAD * 2
+        + FILES_OVERHEAD_PER_PART_WIDE * 6
+        - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     node.query("ALTER TABLE s3_test REPLACE PARTITION '2020-01-03' FROM s3_clone")
@@ -492,17 +509,29 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     node.query("DROP TABLE s3_clone NO DELAY")
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    for obj in s3_objects:
+        print("Object after drop", obj.object_name)
+
     # Data should remain in S3
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
+        len(s3_objects)
+        == FILES_OVERHEAD
+        + FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     node.query("ALTER TABLE s3_test FREEZE")
     # Number S3 objects should be unchanged.
+    s3_objects = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    for obj in s3_objects:
+        print("Object after freeze", obj.object_name)
+
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 2
+        len(s3_objects)
+        == FILES_OVERHEAD
+        + FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 2
     )
 
     node.query("DROP TABLE s3_test NO DELAY")
