@@ -49,6 +49,10 @@
 #include <Databases/SQLite/DatabaseSQLite.h>
 #endif
 
+#if USE_AWS_S3
+#include <Databases/DatabaseS3.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -133,13 +137,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
 
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem"};
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3"};
 
     static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
@@ -451,6 +455,27 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         return std::make_shared<DatabaseFilesystem>(database_name, init_path, context);
     }
+#if USE_AWS_S3
+    else if (engine_name == "S3")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        std::string key_id;
+        std::string secret_key;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 database requires 0 or 2 argument: [access_key_id, secret_access_key]");
+
+            const auto & arguments = engine->arguments->children;
+            key_id = safeGetLiteralValue<String>(arguments[0], engine_name);
+            secret_key = safeGetLiteralValue<String>(arguments[1], engine_name);
+        }
+
+        return std::make_shared<DatabaseS3>(database_name, key_id, secret_key, context);
+    }
+#endif
 
     throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
 }

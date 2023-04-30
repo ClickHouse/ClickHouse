@@ -51,12 +51,18 @@
 #include <base/argsToConfig.h>
 #include <filesystem>
 
+#include "config.h"
+
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
+#endif
+
+#if USE_AWS_S3
+#include <Databases/DatabaseS3.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -155,6 +161,9 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
     auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
     databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
     databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
+#if USE_AWS_S3
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseS3>(name_, "", "", context_));
+#endif
     return databaseCombiner;
 }
 
