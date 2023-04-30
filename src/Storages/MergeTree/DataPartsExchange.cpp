@@ -947,6 +947,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             new_data_part->checksums.checkEqual(data_checksums, false);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
+
     if (zero_copy_temporary_lock_holder)
         zero_copy_temporary_lock_holder->setAlreadyRemoved();
 
