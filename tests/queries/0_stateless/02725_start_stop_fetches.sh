@@ -49,15 +49,15 @@ export -f nemesis_thread2
 
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c thread & >/dev/null
-timeout $TIMEOUT bash -c thread & >/dev/null
-timeout $TIMEOUT bash -c thread & >/dev/null
-timeout $TIMEOUT bash -c nemesis_thread1 & >/dev/null
-timeout $TIMEOUT bash -c nemesis_thread1 & >/dev/null
-timeout $TIMEOUT bash -c nemesis_thread1 & >/dev/null
-timeout $TIMEOUT bash -c nemesis_thread2 & >/dev/null
-timeout $TIMEOUT bash -c nemesis_thread2 & >/dev/null
-timeout $TIMEOUT bash -c nemesis_thread2 & >/dev/null
+timeout $TIMEOUT bash -c thread 2>/dev/null &
+timeout $TIMEOUT bash -c thread 2>/dev/null &
+timeout $TIMEOUT bash -c thread 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
+timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
 
 wait
 
