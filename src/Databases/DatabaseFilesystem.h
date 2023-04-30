@@ -49,6 +49,8 @@ protected:
 
     void addTable(const std::string & table_name, StoragePtr table_storage) const;
 
+    bool checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const;
+
 
 private:
     String path;
