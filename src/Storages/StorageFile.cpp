@@ -608,7 +608,7 @@ public:
                     read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
                 const Settings & settings = context->getSettingsRef();
-                chassert(storage->paths.size());
+                chassert(!storage->paths.empty());
                 const auto max_parsing_threads = std::max(settings.max_threads/storage->paths.size(),1UL);
                 auto format
                     = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, max_parsing_threads);
