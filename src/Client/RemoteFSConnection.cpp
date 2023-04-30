@@ -1,8 +1,25 @@
 #include <Client/RemoteFSConnection.h>
+#include <Common/DNSResolver.h>
+#include <Common/NetException.h>
+
+#include "Core/RemoteFSProtocol.h"
+
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <Poco/Net/NetException.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int UNEXPECTED_PACKET_FROM_SERVER;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
+}
 
 RemoteFSConnection::RemoteFSConnection(const String & host_, UInt16 port_,
     const String & disk_name_)
@@ -23,7 +40,7 @@ void RemoteFSConnection::connect(const ConnectionTimeouts & timeouts)
         LOG_TRACE(log_wrapper.get(), "Connecting. Disk: {}", disk_name);
 
         auto addresses = DNSResolver::instance().resolveAddressList(host, port);
-        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        const auto & connection_timeout = timeouts.connection_timeout;
 
         for (auto it = addresses.begin(); it != addresses.end();)
         {
@@ -97,7 +114,7 @@ void RemoteFSConnection::connect(const ConnectionTimeouts & timeouts)
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
-        const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+        const auto & connection_timeout = timeouts.connection_timeout;
         throw NetException(
             ErrorCodes::SOCKET_TIMEOUT,
             "{} ({}, connection timeout {} ms)",
@@ -171,7 +188,7 @@ void RemoteFSConnection::receiveHello()
     readVarUInt(packet_type, *in);
     if (packet_type == RemoteFSProtocol::Hello)
     {
-        return
+        return;
     }
     else if (packet_type == RemoteFSProtocol::Exception)
         receiveException()->rethrow();
@@ -192,7 +209,7 @@ void RemoteFSConnection::throwUnexpectedPacket(UInt64 packet_type, const char * 
 {
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
-                       getDescription(), expected, String(Protocol::Server::toString(packet_type)));
+                       getDescription(), expected, packet_type);
 }
 
 }

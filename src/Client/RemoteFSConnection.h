@@ -1,6 +1,15 @@
 #pragma once
 
+#include <Common/logger_useful.h>
+
 #include <Poco/Net/StreamSocket.h>
+
+#include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+
+namespace DB
+{
 
 class RemoteFSConnection
 {
@@ -10,16 +19,10 @@ public:
     RemoteFSConnection(const String & host_, UInt16 port_,
         const String & disk_name_);
 
-    ~RemoteFSConnection() override;
-
-    /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
-    void setThrottler(const ThrottlerPtr & throttler_) override
-    {
-        throttler = throttler_;
-    }
+    ~RemoteFSConnection();
 
     /// For log and exception messages.
-    const String & getDescription() const override;
+    const String & getDescription() const;
     const String & getHost() const;
     UInt16 getPort() const;
 
@@ -28,24 +31,17 @@ public:
     // TODO check if needed
     // void forceConnected(const ConnectionTimeouts & timeouts) override; 
 
-    bool isConnected() const override { return connected; }
+    bool isConnected() const { return connected; }
 
-    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) { return connected && ping(timeouts); }
 
-    void disconnect() override;
+    void disconnect();
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
     Poco::Net::Socket * getSocket() { return socket.get(); }
 
-    /// Each time read from socket blocks and async_callback is set, it will be called. You can poll socket inside it.
-    void setAsyncCallback(AsyncCallback async_callback_)
-    {
-        async_callback = std::move(async_callback_);
-        if (in)
-            in->setAsyncCallback(std::move(async_callback));
-    }
 private:
     String host;
     UInt16 port;
@@ -72,7 +68,7 @@ private:
     class LoggerWrapper
     {
     public:
-        explicit LoggerWrapper(Connection & parent_)
+        explicit LoggerWrapper(RemoteFSConnection & parent_)
             : log(nullptr), parent(parent_)
         {
         }
@@ -87,7 +83,7 @@ private:
 
     private:
         std::atomic<Poco::Logger *> log;
-        Connection & parent;
+        RemoteFSConnection & parent;
     };
 
     LoggerWrapper log_wrapper;
@@ -98,10 +94,9 @@ private:
 
     bool ping(const ConnectionTimeouts & timeouts);
 
-    Block receiveData();
-    Block receiveLogData();
-
     std::unique_ptr<Exception> receiveException() const;
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
+
+}

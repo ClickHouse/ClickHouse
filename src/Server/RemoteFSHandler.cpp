@@ -138,7 +138,7 @@ void RemoteFSHandler::run()
         if (e.code() == ErrorCodes::UNKNOWN_DISK)
         {
             LOG_TRACE(log, "Got error {}", e.message());
-            sendException(e.message());
+            sendException(e);
             return;
         }
         throw;
@@ -171,10 +171,15 @@ void RemoteFSHandler::run()
         {
             receiveRequest();
         }
+        catch (const Exception & e)
+        {
+            sendException(e);
+        }
         catch (...)
         {
             // TODO: split on different cases
-            sendException(getCurrentExceptionMessage(false));
+            LOG_ERROR(log, "Got exception {}", getCurrentExceptionMessage(false));
+            throw;
         }
     }
 }
