@@ -25,7 +25,7 @@ namespace CurrentMetrics
 
 namespace DB::ErrorCodes
 {
-    extern const int ASYNC_LOAD_SCHEDULE_FAILED;
+    extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
 }
