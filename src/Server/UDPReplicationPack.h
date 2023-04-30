@@ -7,7 +7,6 @@
 namespace DB
 {
 
-#if USE_ENET
 class UDPReplicationPack
 {
     public:
@@ -75,6 +74,5 @@ class UDPReplicationPack
     public:
         std::map<std::string, std::string> data;
 };
-#endif
 
 }
