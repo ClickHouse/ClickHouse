@@ -48,7 +48,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
-#include <Functions/EntropyLeardnedHash.h>
+#include <Functions/EntropyLearnedHash.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
@@ -1581,6 +1581,71 @@ struct URLHierarchyHashImpl
 };
 
 
+class FunctionTrainEntropyLearnedHash : public IFunction
+{
+public:
+    static constexpr auto name = "trainEntropyLearnedHash";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTrainEntropyLearnedHash>(); }
+
+    String getName() const override { return name; }
+
+    // TODO What is it? I have to read what all these methods are being used to, maybe here: https://clickhouse.com/docs/en/development/architecture
+    bool isVariadic() const override { return true; }
+
+    // TODO Why URLHash returns 0 here?
+    size_t getNumberOfArguments() const override { return 2; }
+
+    // TODO What is it?
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    // TODO What is it?
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return std::make_shared<void>();
+    }
+
+    // TODO What is it?
+    bool useDefaultImplementationForConstants() const override { return true; }
+    // TODO What is it?
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    {
+        const auto arg_count = arguments.size();
+
+        if (arg_count != 2) {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into FunctionTrainEntropyLearnedHash::execute with unexpected number of arguments");
+        }
+
+        const auto * col_untyped = arguments.front().column.get();
+        // TODO: how to extract the second argument, the id of the dataset? arguments variable consists from ColumnWithTypeAndName's, it is a some representation of column, not just string. For now I assume that it will be a column with a single row, contining the id.
+        const EntropyLearnedHashing::IDsManager::IDType dataset_id{checkAndGetColumn<ColumnString>(arguments.back().column.get())->getDataAt(0).data()};
+
+        if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped)) {
+            const auto size = col_from->size();
+            // For now I will return an empty column
+            auto col_to = ColumnUInt64::create(0);
+
+            ColumnString::Offset current_offset = 0;
+            std::vector<EntropyLearnedHashing::Key> train_data;
+            for (size_t i = 0; i < size; ++i) 
+            {
+                StringRef string_ref = col_from->getDataAt(i);
+                train_data.emplace_back(string_ref.data(), string_ref.size());
+            }
+
+            auto positions = EntropyLearnedHashing::ChooseBytes(train_data);
+            EntropyLearnedHashing::IDsManager::instance().positions_by_id[dataset_id] = positions;
+
+            return col_to;
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", 
+                arguments[0].column->getName(), getName());
+    }
+};
+
+
 class FunctionURLHash : public IFunction
 {
 public:
@@ -1727,12 +1792,10 @@ struct ImplEntropyLearnedHash
     using ReturnType = UInt64;
 
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(h1, h2)); }
-    static auto apply(const char * s, const size_t len) 
+    static auto apply(const char * s, [[maybe_unused]] const size_t len) 
     {
-        UNUSED(len);
-        // TODO: make also a function, which would set positions by training the method on some dataset
-        const auto ids_manager_ptr = EntropyLearnedHashing::IDsManager::getInstance();
-        const auto& positions = ids_manager_ptr->positions_by_id[ids_manager_ptr->default_id];
+        const auto& ids_manager = EntropyLearnedHashing::IDsManager::instance();
+        const auto& positions = ids_manager.positions_by_id[ids_manager.default_id];
         EntropyLearnedHashing::Key key(s);
         EntropyLearnedHashing::Key subkey = EntropyLearnedHashing::getPartialKey(key, positions);
         // TODO: replace hardcoded cityhash by specified hash function

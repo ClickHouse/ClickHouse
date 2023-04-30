@@ -1,4 +1,4 @@
-#include "EntropyLeardnedHash.h"
+#include "EntropyLearnedHash.h"
 #include <algorithm>
 #include <cstring>
 #include <map>
@@ -10,7 +10,7 @@ namespace
 {
 bool AreAllPartialKeysUnique(const std::vector<EntropyLearnedHashing::Key> & data, const std::vector<size_t> & positions)
 {
-    static std::unordered_set<EntropyLearnedHashing::Key> partial_keys;
+    std::unordered_set<EntropyLearnedHashing::Key> partial_keys;
     partial_keys.reserve(data.size());
     for (const auto & key : data)
     {
@@ -26,14 +26,14 @@ std::pair<size_t, size_t> NextByte(const std::vector<EntropyLearnedHashing::Key>
     size_t min_collisions = std::numeric_limits<size_t>::max();
     size_t best_position = 0;
 
+    std::unordered_map<EntropyLearnedHashing::Key, size_t> count_table;
     for (size_t i = 0; i < max_len; ++i)
     {
-        static std::unordered_map<EntropyLearnedHashing::Key, size_t> count_table;
+        count_table.clear();
         count_table.reserve(keys.size());
 
         chosen_bytes.push_back(i);
         size_t collisions = 0;
-        // TODO: check collisions is really sum of a_i^(a_i - 1)/2, not sum of a_i^2
         for (const auto & key : keys)
         {
             auto partial_key = EntropyLearnedHashing::getPartialKey(key, chosen_bytes);
@@ -72,6 +72,12 @@ Key getPartialKey(const Key & key, const std::vector<size_t> & positions)
             result_key.push_back(key[position]);
     }
     return Key(std::move(result_key));
+}
+
+IDsManager & IDsManager::instance()
+{
+    static IDsManager instance;
+    return instance;
 }
 
 std::pair<std::vector<size_t>, std::vector<size_t>> ChooseBytes(const std::vector<Key> & train_data)

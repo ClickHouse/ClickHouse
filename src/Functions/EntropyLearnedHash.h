@@ -1,38 +1,30 @@
 #pragma once
 
 // Reference to the paper about entropy-learned hashing:
-// https://bhentsch.github.io/doc/EntropyLearnedHashing.pdf
+// https://dl.acm.org/doi/10.1145/3514221.3517894
 
 #include <cstdint>
 #include <limits>
 #include <map>
 #include <string>
 #include <vector>
+#include <base/base/types.h>
 
 // Key is a byte string
 namespace EntropyLearnedHashing
 {
-using Key = std::string;
+using Key = String;
 
 [[nodiscard]] Key getPartialKey(const std::string & key, const std::vector<size_t> & positions);
 
 class IDsManager
 {
-private:
-    static IDsManager * instance_ptr;
-    IDsManager() { }
-    IDsManager(const IDsManager &);
-    IDsManager & operator=(IDsManager &);
-
 public:
-    static IDsManager * getInstance()
-    {
-        if (!IDsManager::instance_ptr)
-            IDsManager::instance_ptr = new IDsManager();
-        return IDsManager::instance_ptr;
-    }
+    static IDsManager & instance();
 
+    // IDType is a type of an identifier of the dataset
     using IDType = std::string;
+    // positions_by_id contains calculated best sets of positions to choose from keys for each id
     std::map<IDType, std::vector<size_t>> positions_by_id;
     static IDType default_id;
 };
