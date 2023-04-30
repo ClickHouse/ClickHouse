@@ -1474,6 +1474,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 
     while (true)
     {
+        LOG_DEBUG(log, "Committing part {} to zookeeper", part->name);
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
 
@@ -1506,7 +1507,10 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         Coordination::Responses responses;
         Coordination::Error e = zookeeper->tryMulti(ops, responses);
         if (e == Coordination::Error::ZOK)
+        {
+            LOG_DEBUG(log, "Part {} committed to zookeeper", part->name);
             return transaction.commit();
+        }
 
         if (e == Coordination::Error::ZNODEEXISTS)
         {
@@ -8136,6 +8140,7 @@ zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTempora
     createZeroCopyLockNode(
         std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), zookeeper_node, zkutil::CreateMode::Ephemeral, false);
 
+    LOG_TRACE(log, "Zookeeper temporary ephemeral lock {} created", zookeeper_node);
     return zkutil::EphemeralNodeHolder::existing(zookeeper_node, *zookeeper);
 }
 
@@ -8144,6 +8149,7 @@ void StorageReplicatedMergeTree::lockSharedData(
     bool replace_existing_lock,
     std::optional<HardlinkedFiles> hardlinked_files) const
 {
+    LOG_DEBUG(log, "Trying to create zero-copy lock for part {}", part.name);
     auto zookeeper = tryGetZooKeeper();
     if (zookeeper)
         return lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_existing_lock, hardlinked_files);
@@ -9035,30 +9041,49 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     bool created = false;
     for (int attempts = 5; attempts > 0; --attempts)
     {
-        try
+        Coordination::Requests ops;
+        Coordination::Responses responses;
+        getZeroCopyLockNodeCreaetOps(zookeeper, zookeeper_node, ops, mode, replace_existing_lock, path_to_set_hardlinked_files, hardlinked_files);
+        auto error = zookeeper->tryMulti(ops, responses);
+        if (error == Coordination::Error::ZOK)
         {
-            Coordination::Requests ops;
-            Coordination::Responses responses;
-            getZeroCopyLockNodeCreaetOps(zookeeper, zookeeper_node, ops, mode, replace_existing_lock, path_to_set_hardlinked_files, hardlinked_files);
-            auto error = zookeeper->tryMulti(ops, responses);
-            if (error == Coordination::Error::ZOK)
-            {
-                created = true;
-                break;
-            }
-            else if (error == Coordination::Error::ZNONODE && mode != zkutil::CreateMode::Persistent)
-            {
-                throw Exception(ErrorCodes::NOT_FOUND_NODE,
-                                "Cannot create ephemeral zero copy lock {} because part was unlocked from zookeeper", zookeeper_node);
-            }
+            created = true;
+            break;
         }
-        catch (const zkutil::KeeperException & e)
+        else if (mode == zkutil::CreateMode::Persistent)
         {
-            if (e.code == Coordination::Error::ZNONODE)
+            if (error == Coordination::Error::ZNONODE)
                 continue;
 
-            throw;
+            if (error == Coordination::Error::ZNODEEXISTS)
+            {
+                size_t failed_op = zkutil::getFailedOpIndex(error, responses);
+                /// Part was locked before, unfortunately it's possible during moves
+                if (ops[failed_op]->getPath() == zookeeper_node)
+                {
+                    created = true;
+                    break;
+                }
+                continue;
+            }
         }
+        else if (mode == zkutil::CreateMode::Ephemeral)
+        {
+            /// It is super rare case when we had part, but it was lost and we were unable to unlock it from keeper.
+            /// Now we are trying to fetch it from other replica and unlocking.
+            if (error == Coordination::Error::ZNODEEXISTS)
+            {
+                size_t failed_op = zkutil::getFailedOpIndex(error, responses);
+                if (ops[failed_op]->getPath() == zookeeper_node)
+                {
+                    LOG_WARNING(&Poco::Logger::get("ZeroCopyLocks"), "Replacing persistent lock with ephemeral for path {}. It can happen only in case of local part loss", zookeeper_node);
+                    replace_existing_lock = true;
+                    continue;
+                }
+            }
+        }
+
+        zkutil::KeeperMultiException::check(error, ops, responses);
     }
 
     if (!created)
