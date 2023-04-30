@@ -1,6 +1,5 @@
 #include <Databases/DatabaseFilesystem.h>
 
-#include <Common/filesystemHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -11,6 +10,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/filesystemHelpers.h>
 
 #include <filesystem>
 
@@ -67,7 +67,8 @@ void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr tab
             getEngineName());
 }
 
-bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const {
+bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
+{
     // If run in Local mode, no need for path checking.
     bool need_check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
     std::string user_files_path = fs::canonical(fs::path(context_->getUserFilesPath())).string();
@@ -82,7 +83,8 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     }
 
     // Check if the corresponding file exists
-    if (!fs::exists(table_path) || !fs::is_regular_file(table_path)) {
+    if (!fs::exists(table_path) || !fs::is_regular_file(table_path))
+    {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist ({})", table_path);
         else
