@@ -134,7 +134,8 @@ public:
     // WARNING: Jobs will never be removed() and are going to be stored as finished jobs until ~AsyncLoader().
     void detach();
 
-    // Return the final jobs in this tasks. This jobs subset should be used as `dependencies` for dependent jobs or tasks.
+    // Return the final jobs in this tasks. This job subset should be used as `dependencies` for dependent jobs or tasks:
+    //   auto load_task = loadSomethingAsync(async_loader, load_after_task.goals(), something);
     const LoadJobSet & goals() const { return goal_jobs.empty() ? jobs : goal_jobs; }
 
 private:
@@ -150,6 +151,37 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
     return std::make_shared<LoadTask>(loader, std::move(jobs), std::move(goals));
 }
 
+inline void waitLoad(const LoadJobSet & jobs)
+{
+    for (const auto & job : jobs)
+        job->wait();
+}
+
+inline void waitLoad(const LoadTaskPtrs & tasks)
+{
+    for (const auto & task : tasks)
+        waitLoad(task->goals());
+}
+
+inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
+{
+    LoadJobSet result;
+    for (const auto & task : tasks)
+        result.insert(task->goals().begin(), task->goals().end());
+    return result;
+}
+
+inline LoadJobSet joinJobs(const LoadJobSet & jobs1, const LoadJobSet & jobs2)
+{
+    if (jobs1.empty())
+        return jobs2;
+    if (jobs2.empty())
+        return jobs1;
+    LoadJobSet result;
+    result.insert(jobs1.begin(), jobs1.end());
+    result.insert(jobs2.begin(), jobs2.end());
+    return result;
+}
 
 // `AsyncLoader` is a scheduler for DAG of `LoadJob`s. It tracks dependencies and priorities of jobs.
 // Basic usage example:
@@ -168,7 +200,7 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
 //
 // AsyncLoader tracks state of all scheduled jobs. Job lifecycle is the following:
 // 1)  Job is constructed with PENDING status and initial priority. The job is placed into a task.
-// 2)  The task is scheduled with all its jobs. A scheduled job may be ready (i.e. have all its dependencies finished) or blocked.
+// 2)  The task is scheduled with all its jobs and their dependencies. A scheduled job may be ready (i.e. have all its dependencies finished) or blocked.
 // 3a) When all dependencies are successfully executed, the job became ready. A ready job is enqueued into the ready queue.
 // 3b) If at least one of the job dependencies is failed or canceled, then this job is canceled (with all it's dependent jobs as well).
 //     On cancellation an ASYNC_LOAD_CANCELED exception is generated and saved inside LoadJob object. The job status is changed to CANCELED.
@@ -189,8 +221,8 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
 // Note that to avoid priority inversion `job_func` should use `self->priority()` to schedule new jobs in AsyncLoader or any other pool.
 // Value stored in load job priority field is atomic and can be increased even during job execution.
 //
-// When task is scheduled it can contain dependencies on previously scheduled jobs. These jobs can have any status.
-// The only forbidden thing is a dependency on job, that was not scheduled in AsyncLoader yet: all the dependent jobs are immediately canceled.
+// When a task is scheduled it can contain dependencies on previously scheduled jobs. These jobs can have any status. If job A being scheduled depends on
+// another job B that is not yet scheduled, then job B will also be scheduled (even if the task does not contain it).
 class AsyncLoader : private boost::noncopyable
 {
 private:
@@ -241,7 +273,7 @@ public:
 
     AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_);
 
-    // WARNING: all LoadTask instances returned by `schedule()` should be destructed before AsyncLoader.
+    // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
     // Start workers to execute scheduled load jobs.
@@ -256,11 +288,11 @@ public:
     //  - or canceled using ~Task() or remove() later.
     void stop();
 
-    // Schedule all jobs of given task.
-    // Higher priority jobs (with greater `priority` value) are executed earlier.
+    // Schedule all jobs of given `task` and their dependencies (if any, not scheduled yet).
+    // Higher priority jobs (with greater `job->priority()` value) are executed earlier.
     // All dependencies of a scheduled job inherit its priority if it is higher. This way higher priority job
-    // never wait for (blocked by) lower priority jobs (no priority inversion).
-    // Task destructor ensures that all the `jobs` are finished (OK, FAILED or CANCELED)
+    // never wait for (blocked by) lower priority jobs. No priority inversion is possible.
+    // Note that `task` destructor ensures that all its jobs are finished (OK, FAILED or CANCELED)
     // and are removed from AsyncLoader, so it is thread-safe to destroy them.
     void schedule(LoadTask & task);
     void schedule(const LoadTaskPtr & task);
@@ -284,7 +316,8 @@ private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     String checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock);
     void finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr & job, LoadStatus status, std::exception_ptr exception_from_job = {});
-    void scheduleImpl(const LoadJobSet & jobs);
+    void scheduleImpl(const LoadJobSet & input_jobs);
+    void gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     void prioritize(const LoadJobPtr & job, ssize_t new_priority, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
     void spawn(std::unique_lock<std::mutex> &);

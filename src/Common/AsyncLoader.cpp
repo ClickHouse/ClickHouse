@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ASYNC_LOAD_SCHEDULE_FAILED;
+    extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
 }
@@ -210,7 +210,7 @@ void AsyncLoader::schedule(const std::vector<LoadTaskPtr> & tasks)
     scheduleImpl(all_jobs);
 }
 
-void AsyncLoader::scheduleImpl(const LoadJobSet & jobs)
+void AsyncLoader::scheduleImpl(const LoadJobSet & input_jobs)
 {
     std::unique_lock lock{mutex};
 
@@ -222,14 +222,12 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & jobs)
         old_jobs = finished_jobs.size();
     }
 
-    // Sanity checks
-    for (const auto & job : jobs)
-    {
-        if (job->status() != LoadStatus::PENDING)
-            throw Exception(ErrorCodes::ASYNC_LOAD_SCHEDULE_FAILED, "Trying to schedule already finished load job '{}'", job->name);
-        if (scheduled_jobs.contains(job))
-            throw Exception(ErrorCodes::ASYNC_LOAD_SCHEDULE_FAILED, "Load job '{}' has been already scheduled", job->name);
-    }
+    // Make set of jobs to schedule:
+    // 1) exclude already scheduled or finished jobs
+    // 2) include pending dependencies, that are not yet scheduled
+    LoadJobSet jobs;
+    for (const auto & job : input_jobs)
+        gatherNotScheduled(job, jobs, lock);
 
     // Ensure scheduled_jobs graph will have no cycles. The only way to get a cycle is to add a cycle, assuming old jobs cannot reference new ones.
     checkCycle(jobs, lock);
@@ -285,22 +283,10 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & jobs)
                 if (dep_status == LoadStatus::OK)
                     continue; // Dependency on already successfully finished job -- it's okay.
 
-                if (dep_status == LoadStatus::PENDING)
-                {
-                    // Dependency on not scheduled pending job -- it's bad.
-                    // Probably, there is an error in `jobs` set: not all jobs were passed to `schedule()` call.
-                    // We are not going to run any dependent job, so cancel them all.
-                    std::exception_ptr e;
-                    NOEXCEPT_SCOPE({
-                        ALLOW_ALLOCATIONS_IN_SCOPE;
-                        e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
-                            "Load job '{}' -> Load job '{}': not scheduled pending load job (it must be also scheduled), all dependent load jobs are canceled",
-                            job->name,
-                            dep->name));
-                    });
-                    finish(lock, job, LoadStatus::CANCELED, e);
-                    break; // This job is now finished, stop its dependencies processing
-                }
+                // Dependency on not scheduled pending job -- it's bad.
+                // Probably, there is an error in `jobs` set, `gatherNotScheduled()` should have fixed it.
+                chassert(dep_status != LoadStatus::PENDING);
+
                 if (dep_status == LoadStatus::FAILED || dep_status == LoadStatus::CANCELED)
                 {
                     // Dependency on already failed or canceled job -- it's okay. Cancel all dependent jobs.
@@ -321,6 +307,16 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & jobs)
         {
             // Job was already canceled on previous iteration of this cycle -- skip
         }
+    }
+}
+
+void AsyncLoader::gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock)
+{
+    if (job->status() == LoadStatus::PENDING && !scheduled_jobs.contains(job) && !jobs.contains(job))
+    {
+        jobs.insert(job);
+        for (const auto & dep : job->dependencies)
+            gatherNotScheduled(dep, jobs, lock);
     }
 }
 
@@ -427,7 +423,7 @@ String AsyncLoader::checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, Lo
         if (auto chain = checkCycleImpl(dep, left, visited, lock); !chain.empty())
         {
             if (!visited.contains(job)) // Check for cycle end
-                throw Exception(ErrorCodes::ASYNC_LOAD_SCHEDULE_FAILED, "Load job dependency cycle detected: {} -> {}", job->name, chain);
+                throw Exception(ErrorCodes::ASYNC_LOAD_CYCLE, "Load job dependency cycle detected: {} -> {}", job->name, chain);
             else
                 return fmt::format("{} -> {}", job->name, chain); // chain is not a cycle yet -- continue building
         }
