@@ -151,16 +151,51 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
     return std::make_shared<LoadTask>(loader, std::move(jobs), std::move(goals));
 }
 
+inline void scheduleLoad(const LoadTaskPtr & task)
+{
+    task->schedule();
+}
+
+inline void scheduleLoad(const LoadTaskPtrs & tasks)
+{
+    for (const auto & task : tasks)
+        task->schedule();
+}
+
+template <class... Args>
+inline void scheduleLoad(Args && ... args)
+{
+    (scheduleLoad(std::forward<Args>(args)), ...);
+}
+
 inline void waitLoad(const LoadJobSet & jobs)
 {
     for (const auto & job : jobs)
         job->wait();
 }
 
+inline void waitLoad(const LoadTaskPtr & task)
+{
+    waitLoad(task->goals());
+}
+
 inline void waitLoad(const LoadTaskPtrs & tasks)
 {
     for (const auto & task : tasks)
         waitLoad(task->goals());
+}
+
+template <class... Args>
+inline void waitLoad(Args && ... args)
+{
+    (waitLoad(std::forward<Args>(args)), ...);
+}
+
+template <class... Args>
+inline void scheduleAndWaitLoad(Args && ... args)
+{
+    scheduleLoad(std::forward<Args>(args)...);
+    waitLoad(std::forward<Args>(args)...);
 }
 
 inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
@@ -180,6 +215,19 @@ inline LoadJobSet joinJobs(const LoadJobSet & jobs1, const LoadJobSet & jobs2)
     LoadJobSet result;
     result.insert(jobs1.begin(), jobs1.end());
     result.insert(jobs2.begin(), jobs2.end());
+    return result;
+}
+
+inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & tasks2)
+{
+    if (tasks1.empty())
+        return tasks2;
+    if (tasks2.empty())
+        return tasks1;
+    LoadTaskPtrs result;
+    result.reserve(tasks1.size() + tasks2.size());
+    result.insert(result.end(), tasks1.begin(), tasks1.end());
+    result.insert(result.end(), tasks2.begin(), tasks2.end());
     return result;
 }
 
