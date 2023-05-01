@@ -17,14 +17,71 @@ ranged_tester = None
 test_name = "mongo"
 
 
-def setup_module(module):
-    global cluster
-    global node
-    global simple_tester
-    global complex_tester
-    global ranged_tester
+@pytest.fixture(scope="module")
+def secure_connection(request):
+    return request.param
 
-    cluster = ClickHouseCluster(__file__)
+
+@pytest.fixture(scope="module")
+def cluster(secure_connection):
+    return ClickHouseCluster(__file__)
+
+
+@pytest.fixture(scope="module")
+def source(secure_connection, cluster):
+    return SourceMongo(
+        "MongoDB",
+        "localhost",
+        cluster.mongo_port,
+        cluster.mongo_host,
+        "27017",
+        "root",
+        "clickhouse",
+        secure=secure_connection,
+    )
+
+
+@pytest.fixture(scope="module")
+def simple_tester(source):
+    tester = SimpleLayoutTester(test_name)
+    tester.cleanup()
+    tester.create_dictionaries(source)
+    return tester
+
+
+@pytest.fixture(scope="module")
+def complex_tester(source):
+    tester = ComplexLayoutTester(test_name)
+    tester.create_dictionaries(source)
+    return tester
+
+
+@pytest.fixture(scope="module")
+def ranged_tester(source):
+    tester = RangedLayoutTester(test_name)
+    tester.create_dictionaries(source)
+    return tester
+
+
+@pytest.fixture(scope="module")
+def main_config(secure_connection):
+    main_config = []
+    if secure_connection:
+        main_config.append(os.path.join("configs", "disable_ssl_verification.xml"))
+    else:
+        main_config.append(os.path.join("configs", "ssl_verification.xml"))
+    return main_config
+
+
+@pytest.fixture(scope="module")
+def started_cluster(
+    secure_connection,
+    cluster,
+    main_config,
+    simple_tester,
+    ranged_tester,
+    complex_tester,
+):
     SOURCE = SourceMongo(
         "MongoDB",
         "localhost",
@@ -33,35 +90,18 @@ def setup_module(module):
         "27017",
         "root",
         "clickhouse",
+        secure=secure_connection,
     )
-
-    simple_tester = SimpleLayoutTester(test_name)
-    simple_tester.cleanup()
-    simple_tester.create_dictionaries(SOURCE)
-
-    complex_tester = ComplexLayoutTester(test_name)
-    complex_tester.create_dictionaries(SOURCE)
-
-    ranged_tester = RangedLayoutTester(test_name)
-    ranged_tester.create_dictionaries(SOURCE)
-    # Since that all .xml configs were created
-
-    main_configs = []
-    main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))
-
     dictionaries = simple_tester.list_dictionaries()
 
     node = cluster.add_instance(
-        "node", main_configs=main_configs, dictionaries=dictionaries, with_mongo=True
+        "node",
+        main_configs=main_config,
+        dictionaries=dictionaries,
+        with_mongo=True,
+        with_mongo_secure=secure_connection,
     )
 
-
-def teardown_module(module):
-    simple_tester.cleanup()
-
-
-@pytest.fixture(scope="module")
-def started_cluster():
     try:
         cluster.start()
 
@@ -75,16 +115,25 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
-def test_simple(started_cluster, layout_name):
-    simple_tester.execute(layout_name, node)
+def test_simple(secure_connection, started_cluster, layout_name, simple_tester):
+    simple_tester.execute(layout_name, started_cluster.instances["node"])
 
 
+@pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
-def test_complex(started_cluster, layout_name):
-    complex_tester.execute(layout_name, node)
+def test_complex(secure_connection, started_cluster, layout_name, complex_tester):
+    complex_tester.execute(layout_name, started_cluster.instances["node"])
 
 
+@pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
-def test_ranged(started_cluster, layout_name):
-    ranged_tester.execute(layout_name, node)
+def test_ranged(secure_connection, started_cluster, layout_name, ranged_tester):
+    ranged_tester.execute(layout_name, started_cluster.instances["node"])
+
+
+@pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
+@pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
+def test_simple_ssl(secure_connection, started_cluster, layout_name, simple_tester):
+    simple_tester.execute(layout_name, started_cluster.instances["node"])
