@@ -1091,8 +1091,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                    if (all_columns.hasAlias(column_name))
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+                if (all_columns.hasAlias(column_name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
             }
             auto column_default = all_columns.getDefault(column_name);
