@@ -40,11 +40,11 @@ def _flatten_list(lst):
 
 
 class S3Helper:
-    def __init__(self, host=S3_URL, download_host=S3_DOWNLOAD):
+    def __init__(self):
         self.session = boto3.session.Session(region_name="us-east-1")
-        self.client = self.session.client("s3", endpoint_url=host)
-        self.host = host
-        self.download_host = download_host
+        self.client = self.session.client("s3", endpoint_url=S3_URL)
+        self.host = S3_URL
+        self.download_host = S3_DOWNLOAD
 
     def _upload_file_to_s3(self, bucket_name: str, file_path: str, s3_path: str) -> str:
         logging.debug(
