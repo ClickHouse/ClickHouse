@@ -10,6 +10,7 @@
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -415,6 +416,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
 
     disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
     disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+    disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
