@@ -224,7 +224,8 @@ namespace detail
 
                     sockaddr_in serv_addr;
                     serv_addr.sin_family = AF_INET;
-                    serv_addr.sin_port = htons(uri_.getPort());
+                    //serv_addr.sin_port = htons(uri_.getPort());
+                    serv_addr.sin_port = htons(9019);
                     inet_pton(AF_INET, uri_.getHost().c_str(), &serv_addr.sin_addr);
 
                     memset(&(serv_addr.sin_zero), '\0', 8);
@@ -265,22 +266,34 @@ namespace detail
 
                     auto data = resp.deserialize(reinterpret_cast<char*>(raw_data), data_size);
 
-                    LOG_INFO(log, "Received UDT packet: {}", data);
+                    response.setVersion("HTTP/1.1");
+                    response.set("Keep-Alive", "timeout=3");
 
-                    std::cout << "\n\n";
+                    LOG_INFO(log, "Received UDT packet");
+
                     for (auto [key, value]: resp.data) {
-                        response.set(key, value);
-                        std::cout << key << ' ' << value << '\n';
+                        if (key == "server_protocol_version")
+                        {
+                            response.set("Set-Cookie", key + '=' + value);
+                        }
+                        else
+                        {
+                            response.set(key, value);
+                        }
                     }
-                    std::cout << "\n\n";
 
                     std::istringstream* result_istr;
-                    
+
                     result_istr = new std::istringstream(data);
 
                     response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
 
                     UDT::close(client);
+
+                    response.getCookies(cookies);
+
+                    if constexpr (!for_object_info)
+                        content_encoding = response.get("Content-Encoding", "");
 
                     return result_istr;
                     #else

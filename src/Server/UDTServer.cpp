@@ -110,12 +110,16 @@ void UDTServer::run()
             endpoint->processQuery(pck, out, resp_pck);
         }
 
+        resp_pck.set("Connection", "Keep-Alive");
+
+        resp_pck.set("Transfer-Encoding", "chunked");
+
         out.finalize();
 
         auto response_str = resp_pck.serialize();
         response_str += "\r" + out.res();
 
-        LOG_INFO(logger, "Sending UDT response {}", response_str);
+        LOG_INFO(logger, "Sending UDT response");
 
         unsigned char response_cstr[response_str.size()];
 

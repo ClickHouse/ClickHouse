@@ -241,7 +241,7 @@ void Service::processQuery(const UDPReplicationPack & params, WriteBuffer & out,
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.set("Set-Cookie", "server_protocol_version=" + toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)));
+    response.set("server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)));
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -535,8 +535,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost("127.0.0.1");
-    //uri.setPort(port);
-    uri.setPort(9019);
+    uri.setPort(port);
+    //uri.setPort(9019);
     uri.setQueryParameters(
     {
         {"endpoint",                getEndpointId(replica_path)},
