@@ -22,7 +22,7 @@ void startupSystemTables();
 void maybeConvertSystemDatabase(ContextMutablePtr context);
 
 /// Converts all databases (except system) from Ordinary to Atomic if convert_ordinary_to_atomic flag exists
-/// Waits for `load_metadata` task before convertions
+/// Waits for `load_metadata` task before conversions
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context);
 
 }
