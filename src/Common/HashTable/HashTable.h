@@ -771,6 +771,14 @@ public:
         alloc(grower);
     }
 
+    explicit HashTable(const Grower & grower_)
+        : grower(grower_)
+    {
+        if (Cell::need_zero_value_storage)
+            this->zeroValue()->setZero();
+        alloc(grower);
+    }
+
     HashTable(size_t reserve_for_num_elements) /// NOLINT
     {
         if (Cell::need_zero_value_storage)
