@@ -731,7 +731,13 @@ The names given to the described entities can be found in the system tables, [sy
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
-Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory.
+Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in a file in the `config.d` directory.
+
+:::tip
+Disks can also be declared in the `SETTINGS` section of a query.  This is useful
+for adhoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
+See [dynamic storage](#dynamic-storage) for more details.
+:::
 
 Configuration structure:
 
@@ -875,6 +881,87 @@ The `default` storage policy implies using only one volume, which consists of on
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
+
+### Dynamic Storage
+
+This example query shows how to attach a table stored at a URL and configure the
+remote storage within the query. The web storage is not configured in the ClickHouse
+configuration files; all the settings are in the CREATE/ATTACH query.
+
+:::note
+The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
+:::
+
+```sql
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+  # highlight-end
+```
+
+### Nested Dynamic Storage
+
+This example query builds on the above dynamic disk configuration and shows how to
+use a local disk to cache data from a table stored at a URL. Neither the cache disk
+nor the web storage is configured in the ClickHouse configuration files; both are
+configured in the CREATE/ATTACH query settings.
+
+In the settings highlighted below notice that the disk of `type=web` is nested within 
+the disk of `type=cache`.
+
+```sql
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+  # highlight-end
+```
 
 ### Details {#details}
 
