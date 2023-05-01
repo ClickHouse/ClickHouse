@@ -48,9 +48,9 @@ static Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTP
 
 template <typename TSessionFactory>
 UpdatableSession<TSessionFactory>::UpdatableSession(const Poco::URI & uri, UInt64 max_redirects_, std::shared_ptr<TSessionFactory> session_factory_)
-    : max_redirects{max_redirects_}
+    : session_factory(std::move(session_factory_))
+    , max_redirects{max_redirects_}
     , initial_uri(uri)
-    , session_factory(std::move(session_factory_))
 {
     session = session_factory->buildNewSession(uri);
 }
@@ -108,7 +108,7 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::prepareRequest(Poco::Net:
     else if (method == Poco::Net::HTTPRequest::HTTP_POST)
         request.setContentLength(0);    /// No callback - no body
 
-    for (auto & [header, value] : http_header_entries)
+    for (const auto & [header, value] : http_header_entries)
         request.set(header, value);
 
     if (range)
@@ -635,7 +635,7 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
             if (e.code() == POCO_EMFILE)
                 throw;
 
-            if (auto h = dynamic_cast<const HTTPException*>(&e);
+            if (const auto h = dynamic_cast<const HTTPException*>(&e);
                 h && !isRetriableError(static_cast<Poco::Net::HTTPResponse::HTTPStatus>(h->getHTTPStatus())))
                 throw;
 

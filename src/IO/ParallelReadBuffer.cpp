@@ -178,7 +178,7 @@ bool ParallelReadBuffer::nextImpl()
             return false;
         }
 
-        auto w = read_workers.front().get();
+        auto * w = read_workers.front().get();
 
         std::unique_lock lock{w->worker_mutex};
 
@@ -293,7 +293,7 @@ void ParallelReadBuffer::finishAndWait()
 
 std::unique_ptr<ParallelReadBuffer> wrapInParallelReadBufferIfSupported(ReadBuffer & buf, size_t max_working_readers, size_t range_step, size_t file_size)
 {
-    auto seekable = dynamic_cast<SeekableReadBuffer*>(&buf);
+    auto * seekable = dynamic_cast<SeekableReadBuffer*>(&buf);
     if (!seekable || !seekable->supportsReadAt())
         return nullptr;
 

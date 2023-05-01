@@ -48,11 +48,11 @@ public:
     std::shared_ptr<UpdatableSession<TSessionFactory>> clone(const Poco::URI & uri);
 
 private:
+    std::shared_ptr<TSessionFactory> session_factory;
     SessionPtr session;
     UInt64 redirects{0};
     UInt64 max_redirects;
     Poco::URI initial_uri;
-    std::shared_ptr<TSessionFactory> session_factory;
 };
 
 
