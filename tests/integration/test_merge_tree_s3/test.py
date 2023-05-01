@@ -452,7 +452,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
 
     assert (
-        len(list_objects(cluster,  "data/", "Objects at start"))
+        len(list_objects(cluster, "data/", "Objects at start"))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
     )
     create_table(node, "s3_clone")
@@ -686,6 +686,7 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
     node.query(
         "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3';"
     )
+    node.query("SYSTEM STOP MERGES s3_test")
     node.query(
         "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000000"
     )
@@ -701,6 +702,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
     node.query(
         "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY value SETTINGS storage_policy='s3_with_cache_and_jbod';"
     )
+    node.query("SYSTEM STOP MERGES s3_test")
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(100000000)"
     )
