@@ -72,5 +72,7 @@ for i in $(seq 1 $NUM_REPLICAS); do
 done
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE r$i"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE r$i" 2>/dev/null &
 done
+
+wait
