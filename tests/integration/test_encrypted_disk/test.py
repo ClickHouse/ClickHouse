@@ -1,6 +1,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+import os.path
 from helpers.test_tools import assert_eq_with_retry
 
 
@@ -9,8 +10,9 @@ FIRST_PART_NAME = "all_1_1_0"
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/storage.xml"],
+    main_configs=["configs/storage.xml", "configs/allow_backup_path.xml"],
     tmpfs=["/disk:size=100M"],
+    external_dirs=["/backups/"],
     with_minio=True,
     stay_alive=True,
 )
@@ -31,6 +33,15 @@ def cleanup_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS encrypted_test SYNC")
+
+
+backup_id_counter = 0
+
+
+def new_backup_name():
+    global backup_id_counter
+    backup_id_counter += 1
+    return f"backup{backup_id_counter}"
 
 
 @pytest.mark.parametrize(
@@ -295,3 +306,116 @@ def test_restart():
         assert node.query(select_query) == "(0,'data'),(1,'data')"
 
         node.query("DROP TABLE encrypted_test SYNC;")
+
+
+@pytest.mark.parametrize(
+    "storage_policy,backup_type,storage_policy2",
+    [
+        ("encrypted_policy", "S3", "encrypted_policy"),
+        ("encrypted_policy", "S3", "s3_encrypted_default_path"),
+        ("s3_encrypted_default_path", "S3", "s3_encrypted_default_path"),
+        ("s3_encrypted_default_path", "S3", "encrypted_policy"),
+        ("s3_encrypted_default_path", "File", "encrypted_policy"),
+        ("local_policy", "File", "encrypted_policy"),
+    ],
+)
+def test_backup_restore(storage_policy, backup_type, storage_policy2):
+    node.query(
+        f"""
+        CREATE TABLE encrypted_test (
+            id Int64,
+            data String
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy='{storage_policy}'
+        """
+    )
+
+    node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
+    select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
+    assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+    backup_name = new_backup_name()
+    if backup_type == "S3":
+        backup_destination = (
+            f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', 'minio123')"
+        )
+    elif backup_type == "File":
+        backup_destination = f"File('/backups/{backup_name}/')"
+
+    node.query(f"BACKUP TABLE encrypted_test TO {backup_destination}")
+
+    if backup_type == "File" and storage_policy.find("encrypted") != -1:
+        root_path = os.path.join(node.cluster.instances_dir, "backups", backup_name)
+        with open(
+            f"{root_path}/data/default/encrypted_test/all_1_1_0/data.bin", "rb"
+        ) as file:
+            assert file.read().startswith(b"ENC")
+        with open(f"{root_path}/metadata/default/encrypted_test.sql") as file:
+            assert file.read().startswith("CREATE TABLE default.encrypted_test")
+        with open(f"{root_path}/.backup") as file:
+            assert file.read().find("<encrypted_by_disk>true</encrypted_by_disk>") != -1
+
+    node.query(f"DROP TABLE encrypted_test SYNC")
+
+    if storage_policy != storage_policy2:
+        node.query(
+            f"""
+            CREATE TABLE encrypted_test (
+                id Int64,
+                data String
+            ) ENGINE=MergeTree()
+            ORDER BY id
+            SETTINGS storage_policy='{storage_policy2}'
+            """
+        )
+
+    node.query(
+        f"RESTORE TABLE encrypted_test FROM {backup_destination} SETTINGS allow_different_table_def={int(storage_policy != storage_policy2)}"
+    )
+
+    assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+
+def test_cannot_restore_encrypted_files_to_unencrypted_disk():
+    node.query(
+        """
+        CREATE TABLE encrypted_test (
+            id Int64,
+            data String
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy='encrypted_policy'
+        """
+    )
+
+    node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
+    assert (
+        node.query("SELECT * FROM encrypted_test ORDER BY id FORMAT Values")
+        == "(0,'data'),(1,'data')"
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = (
+        f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', 'minio123')"
+    )
+    node.query(f"BACKUP TABLE encrypted_test TO {backup_destination}")
+
+    node.query(f"DROP TABLE encrypted_test SYNC")
+
+    node.query(
+        f"""
+        CREATE TABLE encrypted_test (
+            id Int64,
+            data String
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy='local_policy'
+        """
+    )
+
+    expected_error = "can be restored only to an encrypted disk"
+    assert expected_error in node.query_and_get_error(
+        f"RESTORE TABLE encrypted_test FROM {backup_destination} SETTINGS allow_different_table_def=1"
+    )
+>>>>>>> 9c08fb30995 (Add tests.)
