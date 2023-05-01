@@ -1,8 +1,6 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Disks/IDisk.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Poco/File.h>
-#include <Common/filesystemHelpers.h>
+#include <Disks/DiskEncrypted.h>
 
 
 namespace DB
@@ -18,25 +16,12 @@ BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     , file_path(file_path_)
     , data_source_description(disk->getDataSourceDescription())
     , settings(settings_)
-    , file_size(data_source_description.is_encrypted ? std::optional<UInt64>{} : file_size_)
-    , checksum(data_source_description.is_encrypted ? std::optional<UInt128>{} : checksum_)
+    , file_size(file_size_)
+    , checksum(checksum_)
 {
 }
 
 BackupEntryFromImmutableFile::~BackupEntryFromImmutableFile() = default;
-
-UInt64 BackupEntryFromImmutableFile::getSize() const
-{
-    std::lock_guard lock{get_file_size_mutex};
-    if (!file_size)
-    {
-        if (data_source_description.is_encrypted)
-            file_size = disk->getEncryptedFileSize(file_path);
-        else
-            file_size = disk->getFileSize(file_path);
-    }
-    return *file_size;
-}
 
 std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
 {
@@ -44,6 +29,45 @@ std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer(
         return disk->readEncryptedFile(file_path, settings);
     else
         return disk->readFile(file_path, settings);
+}
+
+UInt64 BackupEntryFromImmutableFile::getSize() const
+{
+    std::lock_guard lock{size_and_checksum_mutex};
+    if (!file_size_adjusted)
+    {
+        if (!file_size)
+            file_size = disk->getFileSize(file_path);
+        if (data_source_description.is_encrypted)
+            *file_size = DiskEncrypted::convertFileSizeToEncryptedFileSize(*file_size);
+        file_size_adjusted = true;
+    }
+    return *file_size;
+}
+
+UInt128 BackupEntryFromImmutableFile::getChecksum() const
+{
+    std::lock_guard lock{size_and_checksum_mutex};
+    if (!checksum_adjusted)
+    {
+        /// TODO: We should not just ignore `checksum` if `data_source_description.is_encrypted == true`, we should use it somehow.
+        if (!checksum || data_source_description.is_encrypted)
+            checksum = BackupEntryWithChecksumCalculation<IBackupEntry>::getChecksum();
+        checksum_adjusted = true;
+    }
+    return *checksum;
+}
+
+std::optional<UInt128> BackupEntryFromImmutableFile::getPartialChecksum(size_t prefix_length) const
+{
+    if (prefix_length == 0)
+        return 0;
+
+    if (prefix_length >= getSize())
+        return getChecksum();
+
+    /// For immutable files we don't use partial checksums.
+    return std::nullopt;
 }
 
 }

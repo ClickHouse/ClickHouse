@@ -15,15 +15,16 @@ public:
     BackupEntryWrappedWith(BackupEntryPtr entry_, T && custom_value_) : entry(entry_), custom_value(std::move(custom_value_)) { }
     ~BackupEntryWrappedWith() override = default;
 
-    UInt64 getSize() const override { return entry->getSize(); }
-    std::optional<UInt128> getChecksum() const override { return entry->getChecksum(); }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return entry->getReadBuffer(); }
+    UInt64 getSize() const override { return entry->getSize(); }
+    UInt128 getChecksum() const override { return entry->getChecksum(); }
+    std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override { return entry->getPartialChecksum(prefix_length); }
+    DataSourceDescription getDataSourceDescription() const override { return entry->getDataSourceDescription(); }
     bool isEncryptedByDisk() const override { return entry->isEncryptedByDisk(); }
     bool isFromFile() const override { return entry->isFromFile(); }
     bool isFromImmutableFile() const override { return entry->isFromImmutableFile(); }
     String getFilePath() const override { return entry->getFilePath(); }
     DiskPtr getDisk() const override { return entry->getDisk(); }
-    DataSourceDescription getDataSourceDescription() const override { return entry->getDataSourceDescription(); }
 
 private:
     BackupEntryPtr entry;

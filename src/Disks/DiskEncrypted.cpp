@@ -348,6 +348,13 @@ size_t DiskEncrypted::getFileSize(const String & path) const
     return size > FileEncryption::Header::kSize ? (size - FileEncryption::Header::kSize) : 0;
 }
 
+size_t DiskEncrypted::convertFileSizeToEncryptedFileSize(size_t file_size)
+{
+    if (file_size)
+        return file_size + FileEncryption::Header::kSize;
+    return 0;
+}
+
 void DiskEncrypted::truncateFile(const String & path, size_t size)
 {
     auto wrapped_path = wrappedPath(path);

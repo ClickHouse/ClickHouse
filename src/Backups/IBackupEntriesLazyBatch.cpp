@@ -17,11 +17,12 @@ class IBackupEntriesLazyBatch::BackupEntryFromBatch : public IBackupEntry
 public:
     BackupEntryFromBatch(const std::shared_ptr<IBackupEntriesLazyBatch> & batch_, size_t index_) : batch(batch_), index(index_) { }
 
-    UInt64 getSize() const override { return getInternalBackupEntry()->getSize(); }
-    std::optional<UInt128> getChecksum() const override { return getInternalBackupEntry()->getChecksum(); }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return getInternalBackupEntry()->getReadBuffer(); }
-    bool isEncryptedByDisk() const override { return getInternalBackupEntry()->isEncryptedByDisk(); }
+    UInt64 getSize() const override { return getInternalBackupEntry()->getSize(); }
+    UInt128 getChecksum() const override { return getInternalBackupEntry()->getChecksum(); }
+    std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override { return getInternalBackupEntry()->getPartialChecksum(prefix_length); }
     DataSourceDescription getDataSourceDescription() const override { return getInternalBackupEntry()->getDataSourceDescription(); }
+    bool isEncryptedByDisk() const override { return getInternalBackupEntry()->isEncryptedByDisk(); }
     bool isFromFile() const override { return getInternalBackupEntry()->isFromFile(); }
     bool isFromImmutableFile() const override { return getInternalBackupEntry()->isFromImmutableFile(); }
     String getFilePath() const override { return getInternalBackupEntry()->getFilePath(); }

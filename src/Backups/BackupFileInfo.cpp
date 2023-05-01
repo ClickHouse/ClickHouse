@@ -7,7 +7,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include <IO/HashingReadBuffer.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -49,44 +49,19 @@ namespace
     struct ChecksumsForNewEntry
     {
         UInt128 full_checksum;
-        UInt128 prefix_checksum;
+        std::optional<UInt128> prefix_checksum;
     };
 
     /// Calculate checksum for backup entry if it's empty.
     /// Also able to calculate additional checksum of some prefix.
     ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, size_t prefix_size)
     {
+        ChecksumsForNewEntry res;
+        /// The partial checksum should be calculated before the full checksum to enable optimization in BackupEntryWithChecksumCalculation.
         if (prefix_size > 0)
-        {
-            auto read_buffer = entry->getReadBuffer();
-            HashingReadBuffer hashing_read_buffer(*read_buffer);
-            hashing_read_buffer.ignore(prefix_size);
-            auto prefix_checksum = hashing_read_buffer.getHash();
-            if (entry->getChecksum() == std::nullopt)
-            {
-                hashing_read_buffer.ignoreAll();
-                auto full_checksum = hashing_read_buffer.getHash();
-                return ChecksumsForNewEntry{full_checksum, prefix_checksum};
-            }
-            else
-            {
-                return ChecksumsForNewEntry{*(entry->getChecksum()), prefix_checksum};
-            }
-        }
-        else
-        {
-            if (entry->getChecksum() == std::nullopt)
-            {
-                auto read_buffer = entry->getReadBuffer();
-                HashingReadBuffer hashing_read_buffer(*read_buffer);
-                hashing_read_buffer.ignoreAll();
-                return ChecksumsForNewEntry{hashing_read_buffer.getHash(), 0};
-            }
-            else
-            {
-                return ChecksumsForNewEntry{*(entry->getChecksum()), 0};
-            }
-        }
+            res.prefix_checksum = entry->getPartialChecksum(prefix_size);
+        res.full_checksum = entry->getChecksum();
+        return res;
     }
 
     /// We store entries' file names in the backup without leading slashes.

@@ -9278,10 +9278,9 @@ void StorageReplicatedMergeTree::backupData(
                 auto & hash = part_names_with_hashes_calculating[part_name];
                 if (relative_path.ends_with(".bin"))
                 {
-                    auto checksum = backup_entry->getChecksum();
                     hash.update(relative_path);
                     hash.update(backup_entry->getSize());
-                    hash.update(*checksum);
+                    hash.update(backup_entry->getChecksum());
                 }
                 continue;
             }
