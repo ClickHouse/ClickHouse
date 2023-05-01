@@ -7,6 +7,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Disks/WriteMode.h>
 
 namespace DB
 {
@@ -27,14 +28,42 @@ public:
     UInt16 getPort() const;
 
     // TODO send requests
+    UInt64 getTotalSpace();
+    UInt64 getAvailableSpace();
+    bool exists(const String & path);
+    bool isFile(const String & path);
+    bool isDirectory(const String & path);
+    size_t getFileSize(const String & path);
+    void createDirectory(const String & path);
+    void createDirectories(const String & path);
+    void clearDirectory(const String & path);
+    void moveDirectory(const String & from_path, const String & to_path);
+    void startIterateDirectory(const String & path);
+    bool nextDirectoryIteratorEntry(String & entry);
+    void createFile(const String & path);
+    void moveFile(const String & from_path, const String & to_path);
+    void replaceFile(const String & from_path, const String & to_path);
+    void copy(const String & from_path, const String & to_path);
+    void copyDirectoryContent(const String & from_dir, const String & to_dir);
+    void listFiles(const String & path, std::vector<String> & file_names);
+    String readFile(const String & path, size_t offset, size_t size);
+    void startWriteFile(const String & path, size_t buf_size, WriteMode mode);
+    void writeDataPacket(String data_packet);
+    void endWriteFile();
+    void removeFile(const String & path);
+    void removeFileIfExists(const String & path);
+    void removeDirectory(const String & path);
+    void removeRecursive(const String & path);
+    void setLastModified(const String & path, const Poco::Timestamp & timestamp);
+    Poco::Timestamp getLastModified(const String & path);
+    time_t getLastChanged(const String & path);
+    void setReadOnly(const String & path);
+    void createHardLink(const String & src_path, const String & dst_path);
+    void truncateFile(const String & path, size_t size);
 
-    // TODO check if needed
-    // void forceConnected(const ConnectionTimeouts & timeouts) override; 
-
+    void forceConnected(const ConnectionTimeouts & timeouts); 
     bool isConnected() const { return connected; }
-
     bool checkConnected(const ConnectionTimeouts & timeouts) { return connected && ping(timeouts); }
-
     void disconnect();
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
@@ -91,6 +120,8 @@ private:
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
+
+    void receiveAndCheckPacketType(UInt64 expected_packet_type, const char * expected_packet_name);
 
     bool ping(const ConnectionTimeouts & timeouts);
 

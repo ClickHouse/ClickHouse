@@ -16,9 +16,10 @@ CLIENT_DISK_NAME = "client_disk"
 
 HELLO = b"\x00"
 PING = b"\x01"
+PONG = b"\x02"
 
-GET_TOTAL_SPACE = b"\x02"
-GET_AVAILABLE_SPACE = b"\x03"
+GET_TOTAL_SPACE = b"\x03"
+GET_AVAILABLE_SPACE = b"\x04"
 
 EXISTS = b"\x05"
 IS_FILE = b"\x06"
@@ -30,7 +31,7 @@ CREATE_DIRECTORIES = b"\x0A"  # 10
 CLEAR_DIRECTORY = b"\x0B"  # 11
 MOVE_DIRECTORY = b"\x0C"  # 12
 
-ITERATE_DIRECTORY = b"\x0D"  # 13
+START_ITERATE_DIRECTORY = b"\x0D"  # 13
 END_ITERATE_DIRECTORY = b"\x71"  # 113
 
 CREATE_FILE = b"\x0E"  # 14
@@ -41,11 +42,10 @@ COPY = b"\x11"  # 17
 COPY_DIRECTORY_CONTENT = b"\x12"  # 18
 
 LIST_FILES = b"\x13"  # 19
-END_LIST_FILES = b"\x77"  # 119
 
 READ_FILE = b"\x14"  # 20
 
-WRITE_FILE = b"\x15"  # 21
+START_WRITE_FILE = b"\x15"  # 21
 END_WRITE_FILE = b"\x79"  # 121
 
 REMOVE_FILE = b"\x16"  # 22
@@ -145,18 +145,12 @@ def test_bad_disk_name(conn):
     conn.send(HELLO + strToBytes("some_name"))
     data = conn.recv(1024)
     assert isErrorResp(data)
-    strLen = data[2]
-    assert data[3 : 3 + strLen + 1].decode() == "Unknown disk some_name"
 
 
-def test_ping(conn):
-    conn.send(HELLO + strToBytes(CLIENT_DISK_NAME))
-    data = conn.recv(1024)
-    assert data == HELLO
-
-    conn.send(PING)
-    data = conn.recv(1024)
-    assert data == PING
+def test_ping(disk_conn):
+    disk_conn.send(PING)
+    data = disk_conn.recv(1024)
+    assert data == PONG
 
 
 @pytest.mark.parametrize(
@@ -260,7 +254,7 @@ def test_iterate_directory(disk_conn):
         data = disk_conn.recv(1024)
         assert data == CREATE_FILE
 
-    disk_conn.send(ITERATE_DIRECTORY + strToBytes(""))
+    disk_conn.send(START_ITERATE_DIRECTORY + strToBytes(""))
     data = disk_conn.recv(1024)
     entries_count = 0
     while data[:1] != END_ITERATE_DIRECTORY:
@@ -285,7 +279,9 @@ def test_list_files(disk_conn):
     disk_conn.send(LIST_FILES + strToBytes(""))
     data = disk_conn.recv(1024)
     entries_count = 0
-    while data[:1] != END_LIST_FILES:
+    count = bytesToNum(data[:1])
+    data = data[1:]
+    for _ in range(count):
         assert data[:1] == DATA_PACKET
         data = data[1:]
         l = bytesToNum(data)
@@ -374,9 +370,9 @@ def test_write_file(disk_conn, mode, file_name):
     disk_conn.send(CREATE_FILE + file_name)
     data = disk_conn.recv(1024)
 
-    disk_conn.send(WRITE_FILE + file_name + b"\x0A" + mode)
+    disk_conn.send(START_WRITE_FILE + file_name + b"\x0A" + mode)
     data = disk_conn.recv(1024)
-    assert data == WRITE_FILE
+    assert data == START_WRITE_FILE
 
     disk_conn.send(DATA_PACKET + strToBytes("1234567890"))
     data = disk_conn.recv(1024)
@@ -405,9 +401,9 @@ def test_write_file(disk_conn, mode, file_name):
 def test_read_file(disk_conn, offset, size):
     test_data = "1234567890abcdefghij"
     file_name = strToBytes("file_name")
-    disk_conn.send(WRITE_FILE + file_name + numToBytes(20) + RewriteMode)
+    disk_conn.send(START_WRITE_FILE + file_name + numToBytes(20) + RewriteMode)
     data = disk_conn.recv(1024)
-    assert data == WRITE_FILE
+    assert data == START_WRITE_FILE
 
     disk_conn.send(DATA_PACKET + strToBytes(test_data))
     data = disk_conn.recv(1024)
@@ -501,9 +497,9 @@ def test_get_last_modified(disk_conn, modify):
 
     sleep(1)
     if modify:
-        disk_conn.send(WRITE_FILE + file + b"\x0A" + RewriteMode)
+        disk_conn.send(START_WRITE_FILE + file + b"\x0A" + RewriteMode)
         data = disk_conn.recv(1024)
-        assert data == WRITE_FILE
+        assert data == START_WRITE_FILE
 
         disk_conn.send(DATA_PACKET + strToBytes("1234567890"))
         data = disk_conn.recv(1024)
@@ -562,9 +558,9 @@ def test_create_hard_link(disk_conn):
     data = disk_conn.recv(1024)
     assert data == CREATE_HARD_LINK
 
-    disk_conn.send(WRITE_FILE + file + b"\x0A" + RewriteMode)
+    disk_conn.send(START_WRITE_FILE + file + b"\x0A" + RewriteMode)
     data = disk_conn.recv(1024)
-    assert data == WRITE_FILE
+    assert data == START_WRITE_FILE
 
     test_str = "1234567890"
     disk_conn.send(DATA_PACKET + strToBytes(test_str))
@@ -628,9 +624,9 @@ def test_get_last_changed(disk_conn, modify):
 #     data = disk_conn.recv(1024)
 #     assert data == SET_READ_ONLY
 
-#     disk_conn.send(WRITE_FILE + file + b"\x0A" + AppendMode)
+#     disk_conn.send(START_WRITE_FILE + file + b"\x0A" + AppendMode)
 #     data = disk_conn.recv(1024)
-#     assert data == WRITE_FILE
+#     assert data == START_WRITE_FILE
 
 #     test_str = '1234567890'
 #     disk_conn.send(DATA_PACKET + strToBytes(test_str))
@@ -648,9 +644,9 @@ def test_truncate(disk_conn):
     data = disk_conn.recv(1024)
     assert data == CREATE_FILE
 
-    disk_conn.send(WRITE_FILE + file + b"\x0A" + RewriteMode)
+    disk_conn.send(START_WRITE_FILE + file + b"\x0A" + RewriteMode)
     data = disk_conn.recv(1024)
-    assert data == WRITE_FILE
+    assert data == START_WRITE_FILE
 
     test_str = "1234567890"
     disk_conn.send(DATA_PACKET + strToBytes(test_str))

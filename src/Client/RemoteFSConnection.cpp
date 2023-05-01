@@ -6,6 +6,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/TimeoutSetter.h>
 
 #include <Poco/Net/NetException.h>
 
@@ -134,6 +135,19 @@ void RemoteFSConnection::disconnect()
     connected = false;
 }
 
+void RemoteFSConnection::forceConnected(const ConnectionTimeouts & timeouts)
+{
+    if (!connected)
+    {   
+        connect(timeouts);
+    }
+    else if (!ping(timeouts))
+    {
+        LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
+        connect(timeouts);
+    }
+}
+
 const String & RemoteFSConnection::getDescription() const
 {
     return description;
@@ -167,6 +181,421 @@ void RemoteFSConnection::setDescription()
     }
 }
 
+UInt64 RemoteFSConnection::getTotalSpace() 
+{
+    LOG_TRACE(log_wrapper.get(), "Send GetTotalSpace");
+    writeVarUInt(RemoteFSProtocol::GetTotalSpace, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::GetTotalSpace, "GetTotalSpace");
+
+    UInt64 res;
+    readVarUInt(res, *in);
+    return res;
+}
+
+UInt64 RemoteFSConnection::getAvailableSpace()
+{
+    LOG_TRACE(log_wrapper.get(), "Send GetAvailableSpace");
+    writeVarUInt(RemoteFSProtocol::GetAvailableSpace, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::GetAvailableSpace, "GetAvailableSpace");
+
+    UInt64 res;
+    readVarUInt(res, *in);
+    return res;
+}
+
+bool RemoteFSConnection::exists(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send Exists");
+    writeVarUInt(RemoteFSProtocol::Exists, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::Exists, "Exists");
+
+    bool res;
+    readBoolText(res, *in);
+    return res;
+}
+
+bool RemoteFSConnection::isFile(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send IsFile");
+    writeVarUInt(RemoteFSProtocol::IsFile, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::IsFile, "IsFile");
+
+    bool res;
+    readBoolText(res, *in);
+    return res;
+}
+
+bool RemoteFSConnection::isDirectory(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send IsDirectory");
+    writeVarUInt(RemoteFSProtocol::IsDirectory, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::IsDirectory, "IsDirectory");
+
+    bool res;
+    readBoolText(res, *in);
+    return res;
+}
+
+size_t RemoteFSConnection::getFileSize(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send GetFileSize");
+    writeVarUInt(RemoteFSProtocol::GetFileSize, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::GetFileSize, "GetFileSize");
+
+    size_t res;
+    readVarUInt(res, *in);
+    return res;
+}
+
+void RemoteFSConnection::createDirectory(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send CreateDirectory");
+    writeVarUInt(RemoteFSProtocol::CreateDirectory, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::CreateDirectory, "CreateDirectory");
+}
+
+void RemoteFSConnection::createDirectories(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send CreateDirectories");
+    writeVarUInt(RemoteFSProtocol::CreateDirectories, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::CreateDirectories, "CreateDirectories");
+}
+
+void RemoteFSConnection::clearDirectory(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send ClearDirectory");
+    writeVarUInt(RemoteFSProtocol::ClearDirectory, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::ClearDirectory, "ClearDirectory");
+}
+
+void RemoteFSConnection::moveDirectory(const String & from_path, const String & to_path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send MoveDirectory");
+    writeVarUInt(RemoteFSProtocol::MoveDirectory, *out);
+    writeStringBinary(from_path, *out);
+    writeStringBinary(to_path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::MoveDirectory, "MoveDirectory");
+}
+
+void RemoteFSConnection::startIterateDirectory(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send StartIterateDirectory");
+    writeVarUInt(RemoteFSProtocol::StartIterateDirectory, *out);
+    writeStringBinary(path, *out);
+    out->next();
+}
+
+bool RemoteFSConnection::nextDirectoryIteratorEntry(String & entry)
+{
+    UInt64 packet_type;
+    readVarUInt(packet_type, *in);
+    switch (packet_type) 
+    {
+        case RemoteFSProtocol::DataPacket:
+            readStringBinary(entry, *in);
+            return true;
+        case RemoteFSProtocol::EndIterateDirectory:
+            return false;
+        case RemoteFSProtocol::Exception:
+            receiveException()->rethrow();
+            break;
+        default:
+            /// Close connection, to not stay in unsynchronised state.
+            disconnect();
+            throwUnexpectedPacket(packet_type, "DataPacket or EndIterateDirectory");
+    }
+    return false;
+}
+
+void RemoteFSConnection::createFile(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send CreateFile");
+    writeVarUInt(RemoteFSProtocol::CreateFile, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::CreateFile, "CreateFile");
+}
+
+void RemoteFSConnection::moveFile(const String & from_path, const String & to_path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send MoveFile");
+    writeVarUInt(RemoteFSProtocol::MoveFile, *out);
+    writeStringBinary(from_path, *out);
+    writeStringBinary(to_path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::MoveFile, "MoveFile");
+}
+
+void RemoteFSConnection::replaceFile(const String & from_path, const String & to_path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send ReplaceFile");
+    writeVarUInt(RemoteFSProtocol::ReplaceFile, *out);
+    writeStringBinary(from_path, *out);
+    writeStringBinary(to_path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::ReplaceFile, "ReplaceFile");
+}
+
+void RemoteFSConnection::copy(const String & from_path, const String & to_path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send Copy");
+    writeVarUInt(RemoteFSProtocol::Copy, *out);
+    writeStringBinary(from_path, *out);
+    writeStringBinary(to_path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::Copy, "Copy");
+}
+
+void RemoteFSConnection::copyDirectoryContent(const String & from_dir, const String & to_dir)
+{
+    LOG_TRACE(log_wrapper.get(), "Send CopyDirectoryContent");
+    writeVarUInt(RemoteFSProtocol::CopyDirectoryContent, *out);
+    writeStringBinary(from_dir, *out);
+    writeStringBinary(to_dir, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::CopyDirectoryContent, "CopyDirectoryContent");
+}
+
+void RemoteFSConnection::listFiles(const String & path, std::vector<String> & file_names)
+{
+    LOG_TRACE(log_wrapper.get(), "Send ListFiles");
+    writeVarUInt(RemoteFSProtocol::ListFiles, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    size_t count;
+    readVarUInt(count, *in);
+    file_names.clear();
+    file_names.reserve(count);
+    for (size_t i = 0; i < count; i++) 
+    {
+        receiveAndCheckPacketType(RemoteFSProtocol::DataPacket, "DataPacket");
+        String entry;
+        readStringBinary(entry, *in);
+        file_names.emplace_back(entry);
+    }
+}
+
+String RemoteFSConnection::readFile(const String & path, size_t offset, size_t size)
+{
+    LOG_TRACE(log_wrapper.get(), "Send ReadFile");
+    writeVarUInt(RemoteFSProtocol::ReadFile, *out);
+    writeStringBinary(path, *out);
+    writeVarUInt(offset, *out);
+    writeVarUInt(size, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::ReadFile, "ReadFile");
+    String data;
+    readStringBinary(data, *in);
+    return data;
+}
+
+void RemoteFSConnection::startWriteFile(const String & path, size_t buf_size, WriteMode mode)
+{
+    LOG_TRACE(log_wrapper.get(), "Send StartWriteFile");
+    writeVarUInt(RemoteFSProtocol::StartWriteFile, *out);
+    writeStringBinary(path, *out);
+    writeVarUInt(buf_size, *out);
+    writeVarUInt(UInt64(mode), *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::StartWriteFile, "StartWriteFile");
+}
+
+void RemoteFSConnection::writeDataPacket(String data_packet)
+{
+    LOG_TRACE(log_wrapper.get(), "Send DataPacket");
+    writeVarUInt(RemoteFSProtocol::DataPacket, *out);
+    writeStringBinary(data_packet, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::DataPacket, "DataPacket");
+}
+
+void RemoteFSConnection::endWriteFile()
+{
+    LOG_TRACE(log_wrapper.get(), "Send EndWriteFile");
+    writeVarUInt(RemoteFSProtocol::EndWriteFile, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::EndWriteFile, "EndWriteFile");
+}
+
+void RemoteFSConnection::removeFile(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send RemoveFile");
+    writeVarUInt(RemoteFSProtocol::RemoveFile, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::RemoveFile, "RemoveFile");
+}
+
+void RemoteFSConnection::removeFileIfExists(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send RemoveFileIfExists");
+    writeVarUInt(RemoteFSProtocol::RemoveFileIfExists, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::RemoveFileIfExists, "RemoveFileIfExists");
+}
+
+void RemoteFSConnection::removeDirectory(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send RemoveDirectory");
+    writeVarUInt(RemoteFSProtocol::RemoveDirectory, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::RemoveDirectory, "RemoveDirectory");
+}
+
+void RemoteFSConnection::removeRecursive(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send RemoveRecursive");
+    writeVarUInt(RemoteFSProtocol::RemoveRecursive, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::RemoveRecursive, "RemoveRecursive");
+}
+
+void RemoteFSConnection::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+{
+    LOG_TRACE(log_wrapper.get(), "Send SetLastModified");
+    writeVarUInt(RemoteFSProtocol::SetLastModified, *out);
+    writeStringBinary(path, *out);
+    writeVarUInt(timestamp.epochTime(), *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::SetLastModified, "SetLastModified");
+}
+
+Poco::Timestamp RemoteFSConnection::getLastModified(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send GetLastModified");
+    writeVarUInt(RemoteFSProtocol::GetLastModified, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::GetLastModified, "GetLastModified");
+    time_t epoch_time;
+    readVarUInt(epoch_time, *in);
+    return Poco::Timestamp::fromEpochTime(epoch_time);
+}
+
+time_t RemoteFSConnection::getLastChanged(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send GetLastChanged");
+    writeVarUInt(RemoteFSProtocol::GetLastChanged, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::GetLastChanged, "GetLastChanged");
+    time_t res;
+    readVarUInt(res, *in);
+    return res;
+}
+
+void RemoteFSConnection::setReadOnly(const String & path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send SetReadOnly");
+    writeVarUInt(RemoteFSProtocol::SetReadOnly, *out);
+    writeStringBinary(path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::SetReadOnly, "SetReadOnly");
+}
+
+void RemoteFSConnection::createHardLink(const String & src_path, const String & dst_path)
+{
+    LOG_TRACE(log_wrapper.get(), "Send CreateHardLink");
+    writeVarUInt(RemoteFSProtocol::CreateHardLink, *out);
+    writeStringBinary(src_path, *out);
+    writeStringBinary(dst_path, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::CreateHardLink, "CreateHardLink");
+}
+
+void RemoteFSConnection::truncateFile(const String & path, size_t size)
+{
+    LOG_TRACE(log_wrapper.get(), "Send TruncateFile");
+    writeVarUInt(RemoteFSProtocol::TruncateFile, *out);
+    writeStringBinary(path, *out);
+    writeVarUInt(size, *out);
+    out->next();
+
+    receiveAndCheckPacketType(RemoteFSProtocol::TruncateFile, "TruncateFile");
+}
+
+bool RemoteFSConnection::ping(const ConnectionTimeouts & timeouts)
+{
+    try
+    {
+        TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
+
+        UInt64 pong = 0;
+        LOG_TRACE(log_wrapper.get(), "Send ping");
+        writeVarUInt(RemoteFSProtocol::Ping, *out);
+        out->next();
+
+        if (in->eof())
+            return false;
+
+        readVarUInt(pong, *in);
+
+        if (pong != RemoteFSProtocol::Pong)
+            throwUnexpectedPacket(pong, "Pong");
+        LOG_TRACE(log_wrapper.get(), "Got pong");
+    }
+    catch (const Poco::Exception & e)
+    {
+        /// Explicitly disconnect since ping() can receive EndOfStream,
+        /// and in this case this ping() will return false,
+        /// while next ping() may return true.
+        disconnect();
+        LOG_TRACE(log_wrapper.get(), fmt::runtime(e.displayText()));
+        return false;
+    }
+
+    return true;
+}
+
 void RemoteFSConnection::sendHello()
 {
     writeVarUInt(RemoteFSProtocol::Hello, *out);
@@ -197,6 +626,26 @@ void RemoteFSConnection::receiveHello()
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
+    }
+}
+
+void RemoteFSConnection::receiveAndCheckPacketType(UInt64 expected_packet_type, const char * expected_packet_name)
+{
+    UInt64 packet_type;
+    readVarUInt(packet_type, *in);
+    if (packet_type == expected_packet_type) 
+    {
+        return;
+    }
+    else if (packet_type == RemoteFSProtocol::Exception) 
+    {
+        receiveException()->rethrow();
+    }
+    else 
+    {
+        /// Close connection, to not stay in unsynchronised state.
+        disconnect();
+        throwUnexpectedPacket(packet_type, expected_packet_name);
     }
 }
 

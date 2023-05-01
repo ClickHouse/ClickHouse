@@ -175,6 +175,10 @@ void RemoteFSHandler::run()
         {
             sendException(e);
         }
+        catch (const fs::filesystem_error & e)
+        {
+            sendException(Exception(Exception::CreateFromSTDTag{}, e));
+        }
         catch (...)
         {
             // TODO: split on different cases
@@ -207,6 +211,7 @@ void RemoteFSHandler::receiveHello()
     }
     std::string disk_name;
     readStringBinary(disk_name, *in);
+    LOG_TRACE(log, "Received disk name {}", disk_name);
     disk = server.context()->getDisk(disk_name);
 }
 
@@ -228,7 +233,7 @@ void RemoteFSHandler::receiveRequest()
         case RemoteFSProtocol::Hello:
             receiveUnexpectedHello();
         case RemoteFSProtocol::Ping:
-            writeVarUInt(RemoteFSProtocol::Ping, *out);
+            writeVarUInt(RemoteFSProtocol::Pong, *out);
             out->next();
             break;
         case RemoteFSProtocol::GetTotalSpace:
@@ -294,7 +299,7 @@ void RemoteFSHandler::receiveRequest()
             writeVarUInt(RemoteFSProtocol::MoveDirectory, *out);
             out->next();
             break;
-        case RemoteFSProtocol::IterateDirectory:
+        case RemoteFSProtocol::StartIterateDirectory:
             iterateDirectory();
             break;
         case RemoteFSProtocol::CreateFile:
@@ -337,7 +342,7 @@ void RemoteFSHandler::receiveRequest()
         case RemoteFSProtocol::ReadFile:
             readFile();
             break;
-        case RemoteFSProtocol::WriteFile:
+        case RemoteFSProtocol::StartWriteFile:
             writeFile();
             break;
         case RemoteFSProtocol::RemoveFile:
@@ -445,14 +450,13 @@ void RemoteFSHandler::listFiles()
     receivePath(path);
     std::vector<String> files;
     disk->listFiles(path, files);
+    writeVarUInt(files.size(), *out);
     for (auto & file : files)
     {
         LOG_TRACE(log, "Writing file name {}", file);
         writeVarUInt(RemoteFSProtocol::DataPacket, *out);
         writeStringBinary(file, *out);
     }
-    disk->listFiles(path, files);
-    writeVarUInt(RemoteFSProtocol::EndListFiles, *out);
     out->next();
 }
 
@@ -491,7 +495,7 @@ void RemoteFSHandler::writeFile()
     LOG_TRACE(log, "Received mode {}", mode);
 
     auto write_buf = disk->writeFile(str_data, buf_size, mode);
-    writeVarUInt(RemoteFSProtocol::WriteFile, *out);
+    writeVarUInt(RemoteFSProtocol::StartWriteFile, *out);
     out->next();
 
     UInt64 packet_type;

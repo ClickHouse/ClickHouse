@@ -9,8 +9,9 @@ namespace RemoteFSProtocol
     {
         Hello = 0,
         Ping = 1,
-        GetTotalSpace = 2,
-        GetAvailableSpace = 3,
+        Pong = 2,
+        GetTotalSpace = 3,
+        GetAvailableSpace = 4,
         Exists = 5,
         IsFile = 6,
         IsDirectory = 7,
@@ -19,7 +20,7 @@ namespace RemoteFSProtocol
         CreateDirectories = 10,
         ClearDirectory = 11,
         MoveDirectory = 12,
-        IterateDirectory = 13,
+        StartIterateDirectory = 13,
         EndIterateDirectory = 113,
         CreateFile = 14,
         MoveFile = 15,
@@ -27,9 +28,8 @@ namespace RemoteFSProtocol
         Copy = 17,
         CopyDirectoryContent = 18, // TODO: fix test
         ListFiles = 19,
-        EndListFiles = 119,
         ReadFile = 20, // TODO: improve
-        WriteFile = 21, // TODO: improve
+        StartWriteFile = 21, // TODO: improve
         EndWriteFile = 121,
         RemoveFile = 22,
         RemoveFileIfExists = 23,
