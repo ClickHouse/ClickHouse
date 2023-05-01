@@ -662,7 +662,7 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 bool ColumnsDescription::hasAlias(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return it->default_desc.kind == ColumnDefaultKind::Alias;
+    return it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Alias;
 }
 
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
