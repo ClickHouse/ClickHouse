@@ -131,8 +131,6 @@ namespace CurrentMetrics
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsCleanerThreads;
     extern const Metric MergeTreePartsCleanerThreadsActive;
-    extern const Metric OutdatedPartsLoadingThreads;
-    extern const Metric OutdatedPartsLoadingThreadsActive;
 }
 
 
@@ -1907,7 +1905,7 @@ try
 
             if (is_async && outdated_data_parts_loading_canceled)
             {
-                /// Wait for every sheduled task
+                /// Wait for every scheduled task
                 for (auto & future : parts_futures)
                     future.wait();
 
@@ -1941,7 +1939,7 @@ try
         }, 0));
     }
 
-    /// Wait for every sheduled task
+    /// Wait for every scheduled task
     for (auto & future : parts_futures)
         future.wait();
 
