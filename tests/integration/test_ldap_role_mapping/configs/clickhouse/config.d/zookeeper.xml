@@ -1,5 +1,0 @@
-<clickhouse>
-    <zookeeper>
-        <session_timeout_ms replace="1">15000</session_timeout_ms>
-    </zookeeper>
-</clickhouse>

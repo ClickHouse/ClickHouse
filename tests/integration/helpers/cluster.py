@@ -506,7 +506,7 @@ class ClickHouseCluster:
         self.keberos_kdc_docker_id = self.get_instance_docker_id(self.kerberos_kdc_host)
 
         #available when with_ldap == True
-        self.ldap_host = "ldap"
+        self.ldap_host = "openldap"
         self.ldap_docker_id = self.get_instance_docker_id(self.ldap_host)
 
         # available when with_mongo == True
@@ -1163,8 +1163,8 @@ class ClickHouseCluster:
         return self.base_kerberos_kdc_cmd
     
     def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_ldap_kdc = True    
-        env_variables["LDAP_DIR"] = instance.path + "/"    
+        self.with_ldap = True    
+        env_variables["LDAP_DIR"] = self.instances_dir + "/"    
         self.base_cmd.extend(
             [
                 "--file",
@@ -2316,7 +2316,7 @@ class ClickHouseCluster:
                 logging.debug("Waiting for Kerberos KDC to start up")
                 time.sleep(1)
 
-    def wait_ldap_to_start(self, ldap_docker_id, max_retries=50):
+    def wait_ldap_is_available(self, ldap_docker_id, max_retries=50):
         retries = 0
         while True:
             if check_ldap_is_available(ldap_docker_id):
@@ -4281,7 +4281,7 @@ class ClickHouseInstance:
             depends_on.append("kerberoskdc")
 
         if self.with_ldap:
-            depends_on.append("ldap")
+            depends_on.append("openldap")
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")

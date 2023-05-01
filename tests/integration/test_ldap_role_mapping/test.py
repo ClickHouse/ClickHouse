@@ -10,11 +10,8 @@ cluster = ClickHouseCluster(__file__)
 cluster.add_instance(
     "instance1",
     main_configs=["configs/clickhouse/config.d/logger.xml",
-                #   "configs/clickhouse/config.d/zookeeper.xml",
                   "configs/clickhouse/config.d/ldap_servers.xml",
-                #   "configs/clickhouse/config.d/user_directories.xml",
                   "configs/clickhouse/config.d/remote_servers.xml"],
-    user_configs=["configs/clickhouse/users.xml",],
     macros={"shard": 1, "replica": "instance1"},
     stay_alive=True,
     with_ldap=True,
@@ -23,11 +20,8 @@ cluster.add_instance(
 cluster.add_instance(
     "instance2",
     main_configs=["configs/clickhouse/config.d/logger.xml",
-                #   "configs/clickhouse/config.d/zookeeper.xml",
                   "configs/clickhouse/config.d/ldap_servers.xml",
-                #   "configs/clickhouse/config.d/user_directories.xml",
                   "configs/clickhouse/config.d/remote_servers.xml"],
-    user_configs=["configs/clickhouse/users.xml",],
     macros={"shard": 1, "replica": "instance2"},
     stay_alive=True,
     with_ldap=True,
@@ -36,11 +30,8 @@ cluster.add_instance(
 cluster.add_instance(
     "instance3",
     main_configs=["configs/clickhouse/config.d/logger.xml",
-                #   "configs/clickhouse/config.d/zookeeper.xml",
                   "configs/clickhouse/config.d/ldap_servers.xml",
-                #   "configs/clickhouse/config.d/user_directories.xml",
                   "configs/clickhouse/config.d/remote_servers.xml"],
-    user_configs=["configs/clickhouse/users.xml",],
     macros={"shard": 1, "replica": "instance3"},
     stay_alive=True,
     with_ldap=True,
@@ -51,7 +42,7 @@ instances = [cluster.instances["instance1"], cluster.instances["instance2"], clu
 
 
 ldap_server = {
-    "host": "my_ldap_server",
+    "host": "openldap",
     "port": "389",
     "enable_tls": "no",
     "bind_dn": "cn={user_name},ou=users,dc=company,dc=com",
@@ -77,6 +68,8 @@ def create_table(node, on_cluster, name=None):
     if name is None:
         name = f"tbl_{getuid()}"
     
+    node.query(f"DROP TABLE IF EXISTS {name} ON CLUSTER {on_cluster} SYNC")
+
     node.query(
         f"CREATE TABLE {name} ON CLUSTER {on_cluster} (d Date, a String, b UInt8, x String, y Int8) "
         f"ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{name}', '{{replica}}') "
@@ -88,6 +81,8 @@ def create_table(node, on_cluster, name=None):
 def create_distributed_table(node, on_cluster, over, name=None):
     if name is None:
         name = f"dis_tbl_{getuid()}"
+
+    node.query(f"DROP TABLE IF EXISTS {name} ON CLUSTER {on_cluster} SYNC")
 
     node.query(
         f"CREATE TABLE {name} ON CLUSTER {on_cluster} AS {over} "
@@ -111,6 +106,19 @@ def revoke_select(cluster, privilege, role_or_user, node):
     node.query(f"REVOKE ON CLUSTER {cluster} {privilege} FROM {role_or_user}")
 
 
+def fix_ldap_permissions_command():
+    ldif = (
+        "dn: olcDatabase={1}mdb,cn=config\n"
+        "changetype: modify\n"
+        "delete: olcAccess\n"
+        "-\n"
+        "add: olcAccess\n"
+        'olcAccess: to attrs=userPassword,shadowLastChange by self write by dn=\\"cn=admin,dc=company,dc=com\\" write by anonymous auth by * none\n'
+        'olcAccess: to * by self write by dn=\\"cn=admin,dc=company,dc=com\\" read by users read by * none'
+    )
+
+    return f'echo -e "{ldif}" | ldapmodify -Y EXTERNAL -Q -H ldapi:///'
+
 def add_user_to_ldap_command(
     cn,
     userpassword,
@@ -125,7 +133,7 @@ def add_user_to_ldap_command(
     if givenname is None:
         givenname = "John"
     if homedirectory is None:
-        homedirectory = "/home/users"
+        homedirectory = f"/home/{cn}"
     if sn is None:
         sn = "User"
     if uidnumber is None:
@@ -161,83 +169,18 @@ def add_user_to_ldap_command(
     return f'echo -e "{ldif}" | ldapadd -x -H ldap://localhost -D "cn=admin,dc=company,dc=com" -w admin'
 
 
-def rm_user_from_ldap_command(user):
-    return f"ldapdelete -x -H ldap://localhost -D \"cn=admin,dc=company,dc=com\" -w admin \"{user['dn']}\""
-
-
-def add_ldap_group_command(cn, gidnumber=None, _gidnumber=[600]):
-    """Add new group entry to LDAP."""
-    _gidnumber[0] += 1
-
-    if gidnumber is None:
-        gidnumber = _gidnumber[0]
-
-    group = {
-        "dn": f"cn={cn},ou=groups,dc=company,dc=com",
-        "objectclass": ["top", "groupOfUniqueNames"],
-        "uniquemember": "cn=admin,dc=company,dc=com",
-        "_server": cluster.ldap_host,
-    }
-
-    lines = []
-
-    for key, value in list(group.items()):
-        if key.startswith("_"):
-            continue
-        elif type(value) is list:
-            for v in value:
-                lines.append(f"{key}: {v}")
-        else:
-            lines.append(f"{key}: {value}")
-
-    ldif = "\n".join(lines)
-
-    return f'echo -e "{ldif}" | ldapadd -x -H ldap://localhost -D "cn=admin,dc=company,dc=com" -w admin'
-
-
-def add_ldap_user_to_group_command(user, group_cn):
-    """Add user to a group in LDAP."""
-    ldif = (
-        f"dn: {group_cn['dn']}\n"
-        "changetype: modify\n"
-        "add: uniquemember\n"
-        f"uniquemember: {user['dn']}"
-    )
-
-    return f'echo -e "{ldif}" | ldapmodify -x -H ldap://localhost -D "cn=admin,dc=company,dc=com" -w admin'
-
 def add_rbac_user(user, node):
     username = user.get("username", None) or user["cn"]
     password = user.get("password", None) or user["userpassword"]
     node.query(f"CREATE USER OR REPLACE {username} IDENTIFIED WITH PLAINTEXT_PASSWORD BY '{password}'")
-
-
-def rm_rbac_users(user, node):
-    username = user.get("username", None) or user["cn"]
-    node.query(f"DROP USER IF EXISTS {username}")
     
 
 def add_rbac_role(role, node):
+    node.query(f"DROP ROLE IF EXISTS {role}")
     node.query(f"CREATE ROLE OR REPLACE {role}")
 
 
-def rm_rbac_roles(role, node):
-    node.query(f"DROP ROLE IF EXISTS {role}")
-
-
-
-
-
-
-
-
-
 def outline_test_select_using_mapped_role(cluster, role_name, role_mapped, user):
-    """Check accessing normal and distributed table using
-    a user and the specified role that is either granted
-    rights to access the tables or not and is or is not assigned to the user
-    from all cluster nodes.
-    """
     # default cluster node
     node = instances[0]
 
@@ -260,118 +203,106 @@ def outline_test_select_using_mapped_role(cluster, role_name, role_mapped, user)
 
     # no privilege on source table
     for instance in instances:
-        assert instance.query_and_get_error(f"SELECT * FROM {src_table}", settings=query_settings) == 241
+        assert "Not enough privileges" in instance.query_and_get_error(f"SELECT * FROM {src_table}", settings=query_settings)
 
-    with "privilege on source table":
-        grant_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {src_table}",
-            role_or_user=role_name,
-            node=node,
-        )
+    # with privilege on source table
+    grant_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {src_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
-        # user should be able to read from the source table
-        for instance in instance:
-                if role_mapped:
-                    instance.query(f"SELECT * FROM {src_table}", settings=query_settings)
-                else:
-                    instance.query_and_get_error(f"SELECT * FROM {src_table}", settings=query_settings) == 241
-
-        revoke_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {src_table}",
-            role_or_user=role_name,
-            node=node,
-        )
-
-    with "privilege only on distributed table":
-        grant_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {dist_table}",
-            role_or_user=role_name,
-            node=node,
-        )
-
-        # user should still not be able to read from distributed table
-        for instance in instances:
-            instance.query_and_get_error(f"SELECT * FROM {dist_table}", settings=query_settings) == 241
-
-        revoke_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {dist_table}",
-            role_or_user=role_name,
-            node=node,
-        )
-
-    with "privilege only on source but not on distributed table":
-        grant_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {src_table}",
-            role_or_user=role_name,
-            node=node,
-        )
-
-        # user should still not be able to read from distributed table
-        for instance in instances:
-            instance.query_and_get_error(f"SELECT * FROM {dist_table}", settings=query_settings) == 241
-
-        revoke_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {src_table}",
-            role_or_user=role_name,
-            node=node,
-        )
-
-    with "privilege on source and distributed":
-        grant_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {src_table}",
-            role_or_user=role_name,
-            node=node,
-        )
-
-        grant_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {dist_table}",
-            role_or_user=role_name,
-            node=node,
-        )
-
-        # user should be able to read from the distributed table
-        for instance in instances:
+    # user should be able to read from the source table
+    for instance in instances:
             if role_mapped:
-                instance.query(f"SELECT * FROM {dist_table}", settings=query_settings)
+                instance.query(f"SELECT * FROM {src_table}", settings=query_settings)
             else:
-                instance.query_and_get_error(f"SELECT * FROM {dist_table}", settings=query_settings) == 241
-        
-        revoke_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {src_table}",
-            role_or_user=role_name,
-            node=node,
-        )
+                instance.query_and_get_error(f"SELECT * FROM {src_table}", settings=query_settings) == 241
 
-        revoke_select(
-            cluster=cluster,
-            privilege=f"SELECT ON {dist_table}",
-            role_or_user=role_name,
-            node=node,
-        )
+    revoke_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {src_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
+    # privilege only on distributed table
+    grant_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {dist_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
+    # user should still not be able to read from distributed table
+    for instance in instances:
+        instance.query_and_get_error(f"SELECT * FROM {dist_table}", settings=query_settings) == 241
 
+    revoke_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {dist_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
+    # privilege only on source but not on distributed table
+    grant_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {src_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
+    # user should still not be able to read from distributed table
+    for instance in instances:
+        instance.query_and_get_error(f"SELECT * FROM {dist_table}", settings=query_settings) == 241
 
+    revoke_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {src_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
+    # privilege on source and distributed
+    grant_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {src_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
+    grant_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {dist_table}",
+        role_or_user=role_name,
+        node=node,
+    )
+
+    # user should be able to read from the distributed table
+    for instance in instances:
+        if role_mapped:
+            instance.query(f"SELECT * FROM {dist_table}", settings=query_settings)
+        else:
+            instance.query_and_get_error(f"SELECT * FROM {dist_table}", settings=query_settings) == 241
+    
+    revoke_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {src_table}",
+        role_or_user=role_name,
+        node=node,
+    )
+
+    revoke_select(
+        cluster=cluster,
+        privilege=f"SELECT ON {dist_table}",
+        role_or_user=role_name,
+        node=node,
+    )
 
 
 def execute_tests(role_name, role_mapped, ldap_user, local_user):
-    """Execute all scenarios on cluster with or without secret
-    for LDAP and local users, using a role that might be
-    mapped or not.
-    """
     for cluster_type in ["with_secret", "without_secret"]:
             for user in [ldap_user, local_user]:
                 if role_mapped and user["type"] == "local user":
@@ -386,125 +317,7 @@ def execute_tests(role_name, role_mapped, ldap_user, local_user):
                 )
 
 
-def outline_using_external_user_directory(ldap_servers, mapping, ldap_roles_or_groups, rbac_roles, mapped_roles):
-    """Check using simple and distributed table access when using
-    LDAP external user directory or LDAP authenticated existing RBAC users
-    with and without cluster secret.
-
-    Where mapping can be one of the following:
-        'static' or 'dynamic' or 'dynamic and static'
-    """
-    ldap_user = {
-        "type": "ldap user",
-        "server": "my_ldap_server",
-        "username": "myuser",
-        "password": "myuser",
-        "dn": "cn=myuser,ou=users,dc=company,dc=com",
-    }
-
-    local_user = {
-        "type": "local user",
-        "username": "local_user1",
-        "password": "local_user1",
-    }
-
-    role_mappings = [
-        {
-            "base_dn": "ou=groups,dc=company,dc=com",
-            "attribute": "cn",
-            "search_filter": "(&(objectClass=groupOfUniqueNames)(uniquemember={bind_dn}))",
-            "prefix": "clickhouse_",
-        }
-    ]
-
-    if mapping in ["dynamic", "dynamic and static"]:
-        # add LDAP groups
-        for name in ldap_servers:
-            for group_name in ldap_roles_or_groups:
-                # adding {group_name}
-                cluster.exec_in_container(cluster.ldap_docker_id, 
-                                          add_ldap_group_command(cn=group_name), 
-                                          detach=True)
-
-                # add LDAP user to the group
-                cluster.exec_in_container(cluster.ldap_docker_id, add_ldap_user_to_group_command(
-                    user=ldap_user,
-                    group_cn=f"cn={group_name},ou=groups,dc=company,dc=com",
-                ), detach=True)
-
-    # add LDAP external user directory configuration with {mapping} role mapping
-    for name in self.context.cluster.nodes["clickhouse"]:
-        if mapping == "dynamic":
-            By(
-                f"on node {name}",
-                test=add_ldap_external_user_directory,
-                parallel=True,
-            )(
-                server="my_ldap_server",
-                role_mappings=role_mappings,
-                restart=True,
-                node=cluster_node(name),
-            )
-        elif mapping == "dynamic and static":
-            By(
-                f"on node {name}",
-                test=add_ldap_external_user_directory,
-                parallel=True,
-            )(
-                server="my_ldap_server",
-                role_mappings=role_mappings,
-                roles=ldap_roles_or_groups,
-                restart=True,
-                node=cluster_node(name),
-            )
-        else:
-            By(
-                f"on node {name}",
-                test=add_ldap_external_user_directory,
-                parallel=True,
-            )(
-                server="my_ldap_server",
-                roles=ldap_roles_or_groups,
-                restart=True,
-                node=cluster_node(name),
-            )
-
-    with And("I add local RBAC user"):
-        for name in self.context.cluster.nodes["clickhouse"]:
-            with By(f"on node {name}"):
-                add_rbac_user(user=local_user, node=cluster_node(name))
-
-    with And("I add RBAC roles on cluster"):
-        for name in self.context.cluster.nodes["clickhouse"]:
-            with By(f"on node {name}"):
-                add_rbac_role(roles=rbac_roles, node=cluster_node(name))
-
-    for role_name in rbac_roles:
-        execute_tests(
-            role_name=role_name,
-            role_mapped=(role_name in mapped_roles),
-            ldap_user=ldap_user,
-            local_user=local_user,
-        )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_using_authenticated_users(started_cluster):
-    """Check using simple and distributed table access when using
-    LDAP authenticated existing users with and without cluster secret.
-    """
     role_name = f"role_{getuid()}"
 
     ldap_user = {
@@ -513,7 +326,8 @@ def test_using_authenticated_users(started_cluster):
         "username": "myuser",
         "userpassword": "myuser",
         "password": "myuser",
-        "server": "my_ldap_server",
+        "server": "openldap",
+        "uidnumber": 1101,
     }
 
     local_user = {
@@ -522,10 +336,27 @@ def test_using_authenticated_users(started_cluster):
         "password": "local_user2",
     }
 
-    # add LDAP user
-    cluster.exec_in_container(cluster.ldap_docker_id, [add_user_to_ldap_command(
-            cn=ldap_user["cn"], userpassword=ldap_user["userpassword"]), ], detach=True)
+    # fix_ldap_permissions
+    cluster.exec_in_container(cluster.ldap_docker_id, 
+        [
+            "bash",
+            "-c",
+            fix_ldap_permissions_command() 
+        ]
+    )
 
+
+    # add LDAP user
+    cluster.exec_in_container(cluster.ldap_docker_id, 
+        [
+            "bash",
+            "-c",
+            add_user_to_ldap_command(
+            cn=ldap_user["cn"], userpassword=ldap_user["userpassword"], uidnumber=ldap_user["uidnumber"]), 
+        ]
+    )
+
+    # cluster.exec_in_container(cluster.ldap_docker_id, ["ldapsearch -x -LLL uid=*"])
     # add local RBAC user
     for instance in instances:
         add_rbac_user(user=local_user, node=instance)
@@ -536,7 +367,9 @@ def test_using_authenticated_users(started_cluster):
 
     # create LDAP-auth user and grant role
     for instance in instances:
-        instance.query(f"CREATE USER OR REPLACE {ldap_user['username']} IDENTIFIED WITH ldap SERVER '{ldap_user['server']}'")
+        instance.query(f"CREATE USER OR REPLACE {ldap_user['username']} IDENTIFIED WITH LDAP SERVER '{ldap_user['server']}'")
+
+    for instance in instances:
         instance.query(f"GRANT {role_name} TO {ldap_user['username']}")
 
     # grant role to local RBAC user
@@ -549,8 +382,3 @@ def test_using_authenticated_users(started_cluster):
         ldap_user=ldap_user,
         local_user=local_user,
     )
-
-
-#TODO: fix up this ass
-def test_using_external_user_directory():
-    return

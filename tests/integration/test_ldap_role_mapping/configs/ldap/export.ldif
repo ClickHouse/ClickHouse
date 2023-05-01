@@ -49,16 +49,16 @@ objectclass: organizationalUnit
 objectclass: top
 ou: users
 
-# Entry 7: cn=user1,ou=users,dc=company,dc=com
-dn: cn=user1,ou=users,dc=company,dc=com
-cn: user1
-gidnumber: 501
-givenname: John
-homedirectory: /home/users/user1
-objectclass: inetOrgPerson
-objectclass: posixAccount
-objectclass: top
-sn: User
-uid: user1
-uidnumber: 1101
-userpassword: user1
+# Entry 7: cn=myuser,ou=users,dc=company,dc=com
+# dn: cn=myuser,ou=users,dc=company,dc=com
+# cn: myuser
+# gidnumber: 501
+# givenname: John
+# homedirectory: /home/users/myuser
+# objectclass: inetOrgPerson
+# objectclass: posixAccount
+# objectclass: top
+# sn: User
+# uid: myuser
+# uidnumber: 1101
+# userpassword: myuser

@@ -285,7 +285,6 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/integration-tests-runner",
             "clickhouse/kerberized-hadoop",
             "clickhouse/kerberos-kdc",
-            "clickhouse/ldap",
             "clickhouse/mysql-golang-client",
             "clickhouse/mysql-java-client",
             "clickhouse/mysql-js-client",
