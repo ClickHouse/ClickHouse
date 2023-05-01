@@ -74,7 +74,7 @@ UInt64 BackupWriterDisk::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBuffer> BackupWriterDisk::readFile(const String & file_name, size_t expected_file_size)
 {
-    return disk->readFile(file_name, read_settings, {}, expected_file_size);
+    return disk->readFile(root_path / file_name, read_settings.adjustBufferSize(expected_file_size));
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_name)

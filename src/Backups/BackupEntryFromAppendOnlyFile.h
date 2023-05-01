@@ -34,8 +34,8 @@ private:
     const DiskPtr disk;
     const String file_path;
     const DataSourceDescription data_source_description;
-    const ReadSettings settings;
     const UInt64 size;
+    const ReadSettings settings;
 };
 
 }
