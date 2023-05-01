@@ -461,6 +461,7 @@ void DataPartStorageOnDiskBase::rename(
 
     if (volume->getDisk()->exists(to))
     {
+        /// FIXME it should be logical error
         if (remove_new_dir_if_exists)
         {
             Names files;
@@ -471,7 +472,8 @@ void DataPartStorageOnDiskBase::rename(
                     "Part directory {} already exists and contains {} files. Removing it.",
                     fullPath(volume->getDisk(), to), files.size());
 
-            executeWriteOperation([&](auto & disk) { disk.removeRecursive(to); });
+            /// Do not remove blobs if they exist
+            executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(to, true, {}); });
         }
         else
         {
