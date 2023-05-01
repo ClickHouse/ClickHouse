@@ -59,6 +59,8 @@ def test_create_insert(started_cluster):
     node2.query("INSERT INTO tbl VALUES (1, 'str1')")  # Test deduplication
     node3.query("INSERT INTO tbl VALUES (2, 'str2')")
 
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'test_cluster' tbl")
+
     for node in [node1, node2, node3]:
         expected = [[1, "str1"], [2, "str2"]]
         assert node.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)

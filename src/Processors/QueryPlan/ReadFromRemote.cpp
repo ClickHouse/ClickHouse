@@ -137,6 +137,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
+    const bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
+
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
@@ -149,7 +151,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             main_table = main_table, table_func_ptr = table_func_ptr,
             scalars = scalars, external_tables = external_tables,
             stage = stage, local_delay = shard.local_delay,
-            add_agg_info, add_totals, add_extremes, async_read]() mutable
+            add_agg_info, add_totals, add_extremes, async_read, async_query_sending]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = context->getSettingsRef();
@@ -203,7 +205,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
 
-            auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
+            auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
             QueryPipelineBuilder builder;
             builder.init(std::move(pipe));
             return builder;
@@ -220,6 +222,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
+    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
     if (stage == QueryProcessingStage::Complete)
     {
         add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
@@ -242,7 +245,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     if (!table_func_ptr)
         remote_query_executor->setMainTable(main_table);
 
-    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
+    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
@@ -328,7 +331,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         all_replicas_count = cluster->getShardsInfo().size();
     }
 
-    /// Find local shard
+    /// Find local shard. It might happen that there is no local shard, but that's fine
     for (const auto & shard: cluster->getShardsInfo())
     {
         if (shard.isLocal())
@@ -342,9 +345,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             addPipeForSingeReplica(pipes, shard.pool, replica_info);
         }
     }
-
-    if (pipes.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No local shard");
 
     auto current_shard = cluster->getShardsInfo().begin();
     while (pipes.size() != all_replicas_count)
@@ -381,6 +381,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef().async_socket_for_remote;
+    bool async_query_sending = context->getSettingsRef().async_query_sending_for_remote;
 
     if (stage == QueryProcessingStage::Complete)
     {
@@ -399,7 +400,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
 
     remote_query_executor->setLogger(log);
 
-    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read));
+    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 

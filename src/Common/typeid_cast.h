@@ -18,9 +18,6 @@ namespace DB
     }
 }
 
-template<typename T, typename ... U>
-concept is_any_of = (std::same_as<T, U> || ...);
-
 
 /** Checks type by comparing typeid.
   * The exact match of the type is checked. That is, cast to the ancestor will be unsuccessful.

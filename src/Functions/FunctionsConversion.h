@@ -41,6 +41,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/Concepts.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
@@ -3097,12 +3098,18 @@ private:
             return &ConvertImplGenericFromString<ColumnString>::execute;
         }
 
+        DataTypePtr from_type_holder;
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
         const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
 
         /// Convert from Map
         if (from_type_map)
-            from_type = checkAndGetDataType<DataTypeArray>(from_type_map->getNestedType().get());
+        {
+            /// Recreate array of unnamed tuples because otherwise it may work
+            /// unexpectedly while converting to array of named tuples.
+            from_type_holder = from_type_map->getNestedTypeWithUnnamedTuple();
+            from_type = assert_cast<const DataTypeArray *>(from_type_holder.get());
+        }
 
         if (!from_type)
         {
@@ -3294,7 +3301,7 @@ private:
         };
     }
 
-    WrapperType createMapToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createMapToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3315,7 +3322,7 @@ private:
     }
 
     /// The case of: [(key1, value1), (key2, value2), ...]
-    WrapperType createArrayToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createArrayToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3341,8 +3348,12 @@ private:
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
         {
             if (from_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from tuple requeires 2 elements. "
-                    "Left type: {}, right type: {}", from_tuple->getName(), to_type->getName());
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map from tuple requires 2 elements. "
+                    "Left type: {}, right type: {}",
+                    from_tuple->getName(),
+                    to_type->getName());
 
             DataTypes from_kv_types;
             const auto & to_kv_types = to_type->getKeyValueTypes();
@@ -3363,14 +3374,18 @@ private:
         {
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from array requeires nested tuple of 2 elements. "
-                    "Left type: {}, right type: {}", from_array->getName(), to_type->getName());
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "CAST AS Map from array requires nested tuple of 2 elements. "
+                    "Left type: {}, right type: {}",
+                    from_array->getName(),
+                    to_type->getName());
 
-            return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
+            return createArrayToMapWrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }
         else if (const auto * from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get()))
         {
-            return createMapToMapWrrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
+            return createMapToMapWrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
         }
         else
         {

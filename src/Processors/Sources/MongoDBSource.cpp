@@ -17,7 +17,6 @@
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <Poco/URI.h>
-#include <Poco/Version.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>

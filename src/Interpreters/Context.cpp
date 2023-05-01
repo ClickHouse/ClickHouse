@@ -43,6 +43,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -172,6 +173,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
@@ -219,7 +222,11 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    TemporaryDataOnDiskScopePtr temp_data_on_disk;          /// Temporary files that occur when processing the request accounted here.
+
+    /// All temporary files that occur when processing the requests accounted here.
+    /// Child scopes for more fine-grained accounting are created per user/query/etc.
+    /// Initialized once during server startup.
+    TemporaryDataOnDiskScopePtr root_temp_data_on_disk;
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -320,8 +327,8 @@ struct ContextSharedPart : boost::noncopyable
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
-    mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
     std::unique_ptr<ClusterDiscovery> cluster_discovery;
+    mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
 
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
@@ -752,25 +759,35 @@ Strings Context::getWarnings() const
 }
 
 /// TODO: remove, use `getTempDataOnDisk`
-VolumePtr Context::getTemporaryVolume() const
+VolumePtr Context::getGlobalTemporaryVolume() const
 {
     auto lock = getLock();
-    if (shared->temp_data_on_disk)
-        return shared->temp_data_on_disk->getVolume();
+    /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
+    /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
+    if (shared->root_temp_data_on_disk)
+        return shared->root_temp_data_on_disk->getVolume();
     return nullptr;
 }
 
 TemporaryDataOnDiskScopePtr Context::getTempDataOnDisk() const
 {
-    auto lock = getLock();
     if (this->temp_data_on_disk)
         return this->temp_data_on_disk;
-    return shared->temp_data_on_disk;
+
+    auto lock = getLock();
+    return shared->root_temp_data_on_disk;
+}
+
+TemporaryDataOnDiskScopePtr Context::getSharedTempDataOnDisk() const
+{
+    auto lock = getLock();
+    return shared->root_temp_data_on_disk;
 }
 
 void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
 {
-    auto lock = getLock();
+    /// It's set from `ProcessList::insert` in `executeQueryImpl` before query execution
+    /// so no races with `getTempDataOnDisk` which is called from query execution.
     this->temp_data_on_disk = std::move(temp_data_on_disk_);
 }
 
@@ -780,7 +797,7 @@ void Context::setPath(const String & path)
 
     shared->path = path;
 
-    if (shared->tmp_path.empty() && !shared->temp_data_on_disk)
+    if (shared->tmp_path.empty() && !shared->root_temp_data_on_disk)
         shared->tmp_path = shared->path + "tmp/";
 
     if (shared->flags_path.empty())
@@ -836,6 +853,11 @@ static VolumePtr createLocalSingleDiskVolume(const std::string & path)
 
 void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 {
+    auto lock = getLock();
+
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
+
     shared->tmp_path = path;
     if (!shared->tmp_path.ends_with('/'))
         shared->tmp_path += '/';
@@ -847,17 +869,23 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
         setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
 }
 
 void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
 {
-    std::lock_guard lock(shared->storage_policies_mutex);
+    StoragePolicyPtr tmp_policy;
+    {
+        /// lock in required only for accessing `shared->merge_tree_storage_policy_selector`
+        /// StoragePolicy itself is immutable.
+        std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
+        tmp_policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
+    }
 
-     StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
     if (tmp_policy->getVolumes().size() != 1)
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
+
     VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
@@ -882,9 +910,13 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
         setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
-}
+    auto lock = getLock();
 
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
+
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+}
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
 {
@@ -892,11 +924,11 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     if (!disk_ptr)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
 
-    const auto * disk_object_storage_ptr = dynamic_cast<const DiskObjectStorage *>(disk_ptr.get());
-    if (!disk_object_storage_ptr)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' does not use cache", cache_disk_name);
+    auto lock = getLock();
+    if (shared->root_temp_data_on_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
-    auto file_cache = disk_object_storage_ptr->getCache();
+    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
     if (!file_cache)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
 
@@ -904,7 +936,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     shared->tmp_path = file_cache->getBasePath();
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path);
-    shared->temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
 }
 
 void Context::setFlagsPath(const String & path)
@@ -1361,6 +1393,22 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     }
 }
 
+static bool findIdentifier(const ASTFunction * function)
+{
+    if (!function || !function->arguments)
+        return false;
+    if (const auto * arguments = function->arguments->as<ASTExpressionList>())
+    {
+        for (const auto & argument : arguments->children)
+        {
+            if (argument->as<ASTIdentifier>())
+                return true;
+            if (const auto * f = argument->as<ASTFunction>(); f && findIdentifier(f))
+                return true;
+        }
+    }
+    return false;
+}
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
@@ -1407,62 +1455,125 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             }
             throw;
         }
-        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
+
+        uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
+        if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & structure_hint = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            const auto & insert_structure = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            DB::ColumnsDescription structure_hint;
+
             bool use_columns_from_insert_query = true;
 
-            /// use_structure_from_insertion_table_in_table_functions=2 means `auto`
-            if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
+            /// Insert table matches columns against SELECT expression by position, so we want to map
+            /// insert table columns to table function columns through names from SELECT expression.
+
+            auto insert_column = insert_structure.begin();
+            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
+            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+            bool asterisk = false;
+            const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
+            const auto * expression = expression_list.begin();
+
+            /// We want to go through SELECT expression list and correspond each expression to column in insert table
+            /// which type will be used as a hint for the file structure inference.
+            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
-                const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
-                std::unordered_set<String> virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-                Names columns_names;
-                bool have_asterisk = false;
-                /// First, check if we have only identifiers, asterisk and literals in select expression,
-                /// and if no, we cannot use the structure from insertion table.
-                for (const auto & expression : expression_list->children)
+                if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
-                    if (auto * identifier = expression->as<ASTIdentifier>())
+                    if (!virtual_column_names.contains(identifier->name()))
                     {
-                        columns_names.push_back(identifier->name());
-                    }
-                    else if (expression->as<ASTAsterisk>())
-                    {
-                        have_asterisk = true;
-                    }
-                    else if (!expression->as<ASTLiteral>())
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                }
+                        if (asterisk)
+                        {
+                            if (use_structure_from_insertion_table_in_table_functions == 1)
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
 
-                /// Check that all identifiers are column names from insertion table and not virtual column names from storage.
-                for (const auto & column_name : columns_names)
-                {
-                    if (!structure_hint.has(column_name) || virtual_column_names.contains(column_name))
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                }
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
 
-                /// If we don't have asterisk but only subset of columns, we should use
-                /// structure from insertion table only in case when table function
-                /// supports reading subset of columns from data.
-                if (use_columns_from_insert_query && !have_asterisk && !columns_names.empty())
-                {
-                    /// For input function we should check if input format supports reading subset of columns.
-                    if (table_function_ptr->getName() == "input")
-                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                        structure_hint.add({ identifier->name(), insert_column->type });
+                    }
+
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
                     else
-                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                        ++insert_column;
+                }
+                else if ((*expression)->as<ASTAsterisk>())
+                {
+                    if (asterisk)
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+                    if (!structure_hint.empty())
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+
+                    asterisk = true;
+                }
+                else if (auto * func = (*expression)->as<ASTFunction>())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(func))
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
+                else
+                {
+                    /// Once we hit asterisk we want to find end of the range covered by asterisk
+                    /// contributing every further SELECT expression to the tail of insert structure
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
                 }
             }
 
+            if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
+            {
+                /// For input function we should check if input format supports reading subset of columns.
+                if (table_function_ptr->getName() == "input")
+                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                else
+                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+            }
+
             if (use_columns_from_insert_query)
-                table_function_ptr->setStructureHint(structure_hint);
+            {
+                if (expression == expression_list.end())
+                {
+                    /// Append tail of insert structure to the hint
+                    if (asterisk)
+                    {
+                        for (; insert_column != insert_structure_end; ++insert_column)
+                            structure_hint.add({ insert_column->name, insert_column->type });
+                    }
+
+                    if (!structure_hint.empty())
+                        table_function_ptr->setStructureHint(structure_hint);
+
+                } else if (use_structure_from_insertion_table_in_table_functions == 1)
+                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+            }
         }
 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
@@ -1960,9 +2071,9 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
     const auto & config = getConfigRef();
-    const auto & settings = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings.restore_threads);
+    const auto & settings_ = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings_.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings_.restore_threads);
 
     if (!shared->backups_worker)
         shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
@@ -2855,11 +2966,19 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters()->getCluster(cluster_name);
-    if (res)
-        return res;
-    if (!cluster_name.empty())
+    std::shared_ptr<Cluster> res = nullptr;
+
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        res = getClustersImpl(lock)->getCluster(cluster_name);
+
+        if (res == nullptr && shared->cluster_discovery)
+            res = shared->cluster_discovery->getCluster(cluster_name);
+    }
+
+    if (res == nullptr && !cluster_name.empty())
         res = tryGetReplicatedDatabaseCluster(cluster_name);
+
     return res;
 }
 
@@ -2890,10 +3009,23 @@ void Context::reloadClusterConfig() const
     }
 }
 
-
-std::shared_ptr<Clusters> Context::getClusters() const
+std::map<String, ClusterPtr> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
+
+    auto clusters = getClustersImpl(lock)->getContainer();
+
+    if (shared->cluster_discovery)
+    {
+        const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
+        for (const auto & [name, cluster] : cluster_discovery_map)
+            clusters.emplace(name, cluster);
+    }
+    return clusters;
+}
+
+std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> & /* lock */) const
+{
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
@@ -2905,6 +3037,7 @@ std::shared_ptr<Clusters> Context::getClusters() const
 
 void Context::startClusterDiscovery()
 {
+    std::lock_guard lock(shared->clusters_mutex);
     if (!shared->cluster_discovery)
         return;
     shared->cluster_discovery->start();
@@ -3460,7 +3593,7 @@ void Context::shutdown()
     }
 
     /// Special volumes might also use disks that require shutdown.
-    auto & tmp_data = shared->temp_data_on_disk;
+    auto & tmp_data = shared->root_temp_data_on_disk;
     if (tmp_data && tmp_data->getVolume())
     {
         auto & disks = tmp_data->getVolume()->getDisks();
@@ -4152,6 +4285,7 @@ ReadSettings Context::getReadSettings() const
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.remote_fs_buffer_size = settings.max_read_buffer_size;
+    res.prefetch_buffer_size = settings.prefetch_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;
@@ -4171,10 +4305,10 @@ ReadSettings Context::getReadSettings() const
 
 ReadSettings Context::getBackupReadSettings() const
 {
-    ReadSettings settings = getReadSettings();
-    settings.remote_throttler = getBackupsThrottler();
-    settings.local_throttler = getBackupsThrottler();
-    return settings;
+    ReadSettings settings_ = getReadSettings();
+    settings_.remote_throttler = getBackupsThrottler();
+    settings_.local_throttler = getBackupsThrottler();
+    return settings_;
 }
 
 WriteSettings Context::getWriteSettings() const
@@ -4203,14 +4337,14 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 
 Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
 
     using enum Context::ParallelReplicasMode;
-    if (!settings.parallel_replicas_custom_key.value.empty())
+    if (!settings_.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings.allow_experimental_parallel_reading_from_replicas
-        && !settings.use_hedged_requests)
+    if (settings_.allow_experimental_parallel_reading_from_replicas
+        && !settings_.use_hedged_requests)
         return READ_TASKS;
 
     return SAMPLE_KEY;
@@ -4218,18 +4352,28 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings.max_parallel_replicas > 1
+        && settings_.max_parallel_replicas > 1
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings = getSettingsRef();
+    const auto & settings_ = getSettingsRef();
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
-        && settings.max_parallel_replicas > 1
+        && settings_.max_parallel_replicas > 1
         && getClientInfo().collaborate_with_initiator;
+}
+
+void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
+{
+    prepared_sets_cache = cache;
+}
+
+PreparedSetsCachePtr Context::getPreparedSetsCache() const
+{
+    return prepared_sets_cache;
 }
 
 UInt64 Context::getClientProtocolVersion() const
