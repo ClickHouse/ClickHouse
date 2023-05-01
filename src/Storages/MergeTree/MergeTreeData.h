@@ -32,6 +32,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -1402,7 +1403,6 @@ protected:
 
     mutable std::mutex outdated_data_parts_mutex;
     mutable std::condition_variable outdated_data_parts_cv;
-    std::unique_ptr<ThreadPool> outdated_data_parts_threadpool;
 
     BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);

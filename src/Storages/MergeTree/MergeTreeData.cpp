@@ -48,6 +48,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/SharedThreadPools.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -1892,8 +1893,11 @@ try
     if (is_async)
         shared_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-    bool use_thread_pool = false;
     size_t num_loaded_parts = 0;
+
+    auto runner = threadPoolCallbackRunner<void>(OutdatedPartsLoadingThreadPool::get(), "OutdatedParts");
+    std::vector<std::future<void>> parts_futures;
+
     while (true)
     {
         PartLoadingTree::NodePtr part;
@@ -1901,10 +1905,12 @@ try
         {
             std::lock_guard lock(outdated_data_parts_mutex);
 
-            use_thread_pool |= static_cast<bool>(outdated_data_parts_threadpool);
-
             if (is_async && outdated_data_parts_loading_canceled)
             {
+                /// Wait for every sheduled task
+                for (auto & future : parts_futures)
+                    future.wait();
+
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
                     "Loaded {} parts, {} left unloaded", num_loaded_parts, outdated_unloaded_data_parts.size());
@@ -1918,7 +1924,7 @@ try
             outdated_unloaded_data_parts.pop_back();
         }
 
-        auto routine = [&]()
+        parts_futures.push_back(runner([&, part = part]()
         {
             auto res = loadDataPartWithRetries(
             part->info, part->name, part->disk,
@@ -1932,16 +1938,12 @@ try
                 res.part->remove();
             else
                 preparePartForRemoval(res.part);
-        };
-
-        if (use_thread_pool)
-            outdated_data_parts_threadpool->scheduleOrThrow(routine);
-        else
-            routine();
+        }, 0));
     }
 
-    if (use_thread_pool)
-        outdated_data_parts_threadpool->wait();
+    /// Wait for every sheduled task
+    for (auto & future : parts_futures)
+        future.wait();
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts, is_async ? "asynchronously" : "synchronously");
@@ -1967,15 +1969,9 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
     if (isStaticStorage())
         return;
 
-    std::unique_lock lock(outdated_data_parts_mutex);
-
-    if (!outdated_data_parts_threadpool)
-        outdated_data_parts_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::OutdatedPartsLoadingThreads,
-            CurrentMetrics::OutdatedPartsLoadingThreadsActive,
-            settings->max_part_loading_threads);
-
     LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
+
+    std::unique_lock lock(outdated_data_parts_mutex);
 
     outdated_data_parts_cv.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
