@@ -376,9 +376,9 @@ class ClickHouseCluster:
         #
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
+        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
-        self.env_variables["SPARK_PATH"] = os.environ.get("SPARK_HOME")
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(

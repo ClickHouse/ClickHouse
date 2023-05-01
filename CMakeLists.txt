@@ -176,6 +176,12 @@ if (OS_DARWIN)
     set (ENABLE_CURL_BUILD OFF)
 endif ()
 
+option(ENABLE_ISAL_LIBRARY "Enable ISA-L library ON by default except on aarch64." ON)
+if (ARCH_AARCH64)
+    # Disable ISA-L libray on aarch64.
+    set (ENABLE_ISAL_LIBRARY OFF)
+endif ()
+
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # Can be lld or ld-lld or lld-13 or /path/to/lld.
     if (LINKER_NAME MATCHES "lld")
@@ -393,7 +399,11 @@ else()
 endif ()
 
 option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
-if (NOT OS_LINUX AND NOT OS_ANDROID)
+# We use mmap for allocations more heavily in debug builds, 
+# but GWP-ASan also wants to use mmap frequently, 
+# and due to a large number of memory mappings, 
+# it does not work together well.
+if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
     set(ENABLE_GWP_ASAN OFF)
 endif ()
 
@@ -417,8 +427,11 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X))
+if (NOT SANITIZE)
+    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+endif()
+
+if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
     # Slightly more efficient code can be generated
     # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")

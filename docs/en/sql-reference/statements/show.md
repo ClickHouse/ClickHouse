@@ -6,13 +6,15 @@ sidebar_label: SHOW
 
 # SHOW Statements
 
-## SHOW CREATE TABLE
+## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW [CREATE] [TEMPORARY] TABLE|DICTIONARY|VIEW|DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
+Returns a single column of type String containing the CREATE query used for creating the specified object.
+
+`SHOW TABLE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
 
 Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
@@ -94,7 +96,7 @@ Result:
 
 **See also**
 
--   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+- [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST
 
@@ -193,8 +195,8 @@ Result:
 
 **See also**
 
--   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
+- [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
+- [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW COLUMNS
 
@@ -242,7 +244,7 @@ Result:
 
 **See also**
 
--    [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
+- [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
 
 ## SHOW DICTIONARIES
 
@@ -558,7 +560,7 @@ Result:
 
 **See Also**
 
--   [system.settings](../../operations/system-tables/settings.md) table
+- [system.settings](../../operations/system-tables/settings.md) table
 
 ## SHOW ENGINES
 
@@ -570,4 +572,4 @@ Outputs the content of the [system.table_engines](../../operations/system-tables
 
 **See Also**
 
--   [system.table_engines](../../operations/system-tables/table_engines.md) table
+- [system.table_engines](../../operations/system-tables/table_engines.md) table
