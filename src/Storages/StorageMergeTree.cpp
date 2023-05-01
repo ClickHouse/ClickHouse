@@ -339,7 +339,7 @@ void StorageMergeTree::alter(
             if (prev_mutation != 0)
             {
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
-                waitForMutation(prev_mutation);
+                waitForMutation(prev_mutation, /* from_another_mutation */ true);
                 LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
             }
         }
@@ -535,19 +535,19 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
     mutation_wait_event.notify_all();
 }
 
-void StorageMergeTree::waitForMutation(Int64 version)
+void StorageMergeTree::waitForMutation(Int64 version, bool wait_for_another_mutation)
 {
     String mutation_id = MergeTreeMutationEntry::versionToFileName(version);
-    waitForMutation(version, mutation_id);
+    waitForMutation(version, mutation_id, wait_for_another_mutation);
 }
 
-void StorageMergeTree::waitForMutation(const String & mutation_id)
+void StorageMergeTree::waitForMutation(const String & mutation_id, bool wait_for_another_mutation)
 {
     Int64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
-    waitForMutation(version, mutation_id);
+    waitForMutation(version, mutation_id, wait_for_another_mutation);
 }
 
-void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id)
+void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation)
 {
     LOG_INFO(log, "Waiting mutation: {}", mutation_id);
     {
@@ -567,7 +567,7 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
     std::set<String> mutation_ids;
     mutation_ids.insert(mutation_id);
 
-    auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids);
+    auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids, wait_for_another_mutation);
     checkMutationStatus(mutation_status, mutation_ids);
 
     LOG_INFO(log, "Mutation {} done", mutation_id);
@@ -617,7 +617,8 @@ bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
 
 }
 
-std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids) const
+std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
+    Int64 mutation_version, std::set<String> * mutation_ids, bool from_another_mutation) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
@@ -631,7 +632,9 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     const auto & mutation_entry = current_mutation_it->second;
 
     auto txn = tryGetTransactionForMutation(mutation_entry, log);
-    assert(txn || mutation_entry.tid.isPrehistoric());
+    /// There's no way a transaction may finish before a mutation that was started by the transaction.
+    /// But sometimes we need to check status of an unrelated mutation, in this case we don't care about transactions.
+    assert(txn || mutation_entry.tid.isPrehistoric() || from_another_mutation);
     auto data_parts = getVisibleDataPartsVector(txn);
     for (const auto & data_part : data_parts)
     {
@@ -656,7 +659,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                             mutation_ids->insert(it->second.file_name);
                 }
             }
-            else if (txn)
+            else if (txn && !from_another_mutation)
             {
                 /// Part is locked by concurrent transaction, most likely it will never be mutated
                 TIDHash part_locked = data_part->version.removal_tid_lock.load();

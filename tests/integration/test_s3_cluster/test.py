@@ -247,9 +247,10 @@ def test_skip_unavailable_shards(started_cluster):
     assert result == "10\n"
 
 
-def test_unskip_unavailable_shards(started_cluster):
+def test_unset_skip_unavailable_shards(started_cluster):
+    # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
     node = started_cluster.instances["s0_0_0"]
-    error = node.query_and_get_error(
+    result = node.query(
         """
     SELECT count(*) from s3Cluster(
         'cluster_non_existent_port',
@@ -258,7 +259,7 @@ def test_unskip_unavailable_shards(started_cluster):
     """
     )
 
-    assert "NETWORK_ERROR" in error
+    assert result == "10\n"
 
 
 def test_distributed_insert_select_with_replicated(started_cluster):
