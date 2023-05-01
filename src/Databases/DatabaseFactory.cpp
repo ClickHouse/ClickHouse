@@ -53,6 +53,10 @@
 #include <Databases/DatabaseS3.h>
 #endif
 
+#if USE_HDFS
+#include <Databases/DatabaseHDFS.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -137,13 +141,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
 
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3"};
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
 
     static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
@@ -437,6 +441,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
     }
 #endif
+
     else if (engine_name == "Filesystem")
     {
         const ASTFunction * engine = engine_define->engine;
@@ -455,6 +460,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         return std::make_shared<DatabaseFilesystem>(database_name, init_path, context);
     }
+
 #if USE_AWS_S3
     else if (engine_name == "S3")
     {
@@ -474,6 +480,27 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         }
 
         return std::make_shared<DatabaseS3>(database_name, key_id, secret_key, context);
+    }
+#endif
+
+#if USE_HDFS
+    else if (engine_name == "HDFS")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        /// If source_url is empty, then table name must contain full url
+        std::string source_url;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS database requires at most 1 argument: source_url");
+
+            const auto & arguments = engine->arguments->children;
+            source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
+        }
+
+        return std::make_shared<DatabaseHDFS>(database_name, source_url, context);
     }
 #endif
 
