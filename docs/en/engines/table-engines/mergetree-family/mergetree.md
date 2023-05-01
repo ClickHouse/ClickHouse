@@ -886,7 +886,7 @@ The number of threads performing background moves of data parts can be changed b
 
 This example query shows how to attach a table stored at a URL and configure the
 remote storage within the query. The web storage is not configured in the ClickHouse
-configuration files; all the settings are in the ATTACH query.
+configuration files; all the settings are in the CREATE/ATTACH query.
 
 ```sql
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
@@ -921,7 +921,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 This example query builds on the above dynamic disk configuration and shows how to
 use a local disk to cache data from a table stored at a URL. Neither the cache disk
 nor the web storage is configured in the ClickHouse configuration files; both are
-configured in the ATTACH query settings.
+configured in the CREATE/ATTACH query settings.
 
 In the settings highlighted below notice that the disk of `type=web` is nested within 
 the disk of `type=cache`.
