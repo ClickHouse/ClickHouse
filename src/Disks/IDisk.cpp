@@ -67,6 +67,16 @@ size_t IDisk::getEncryptedFileSize(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
+size_t IDisk::getEncryptedFileSize(size_t) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
+UInt128 IDisk::getEncryptedFileIV(const String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
+}
+
 
 using ResultsCollector = std::vector<std::future<void>>;
 

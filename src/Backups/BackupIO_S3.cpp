@@ -205,7 +205,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 /* src_key= */ blob_path[1],
                 start_pos,
                 length,
-                s3_uri.endpoint,
+                s3_uri.bucket,
                 fs::path(s3_uri.key) / path_in_backup,
                 request_settings,
                 {},

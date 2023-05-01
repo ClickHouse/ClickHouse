@@ -6,6 +6,17 @@
 namespace DB
 {
 
+namespace
+{
+    /// We mix the checksum calculated for non-encrypted data with IV generated to encrypt the file
+    /// to generate kind of a checksum for encrypted data. Of course it differs from the CityHash properly calculated for encrypted data.
+    UInt128 combineChecksums(UInt128 checksum1, UInt128 checksum2)
+    {
+        chassert(std::size(checksum2.items) == 2);
+        return CityHash_v1_0_2::CityHash128WithSeed(reinterpret_cast<const char *>(&checksum1), sizeof(checksum1), {checksum2.items[0], checksum2.items[1]});
+    }
+}
+
 BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const DiskPtr & disk_,
     const String & file_path_,
@@ -37,9 +48,9 @@ UInt64 BackupEntryFromImmutableFile::getSize() const
     if (!file_size_adjusted)
     {
         if (!file_size)
-            file_size = disk->getFileSize(file_path);
-        if (data_source_description.is_encrypted)
-            *file_size = DiskEncrypted::convertFileSizeToEncryptedFileSize(*file_size);
+            file_size = data_source_description.is_encrypted ? disk->getEncryptedFileSize(file_path) : disk->getFileSize(file_path);
+        else if (data_source_description.is_encrypted)
+            file_size = disk->getEncryptedFileSize(*file_size);
         file_size_adjusted = true;
     }
     return *file_size;
@@ -50,9 +61,10 @@ UInt128 BackupEntryFromImmutableFile::getChecksum() const
     std::lock_guard lock{size_and_checksum_mutex};
     if (!checksum_adjusted)
     {
-        /// TODO: We should not just ignore `checksum` if `data_source_description.is_encrypted == true`, we should use it somehow.
-        if (!checksum || data_source_description.is_encrypted)
+        if (!checksum)
             checksum = BackupEntryWithChecksumCalculation<IBackupEntry>::getChecksum();
+        else if (data_source_description.is_encrypted)
+            checksum = combineChecksums(*checksum, disk->getEncryptedFileIV(file_path));
         checksum_adjusted = true;
     }
     return *checksum;

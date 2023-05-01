@@ -223,6 +223,10 @@ public:
         return delegate->getFileSize(wrapped_path);
     }
 
+    size_t getEncryptedFileSize(size_t unencrypted_size) const override;
+
+    UInt128 getEncryptedFileIV(const String & path) const override;
+
     static size_t convertFileSizeToEncryptedFileSize(size_t file_size);
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override
