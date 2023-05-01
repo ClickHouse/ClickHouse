@@ -3,7 +3,6 @@
 #include <condition_variable>
 #include <memory>
 #include <optional>
-#include <Core/BackgroundSchedulePool.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>

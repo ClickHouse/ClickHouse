@@ -28,6 +28,7 @@ struct S3Settings
     {
         struct PartUploadSettings
         {
+            size_t strict_upload_part_size = 0;
             size_t min_upload_part_size = 16 * 1024 * 1024;
             size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
             size_t upload_part_size_multiply_factor = 2;
@@ -63,8 +64,11 @@ struct S3Settings
         size_t max_connections = 1024;
         bool check_objects_after_upload = false;
         size_t max_unexpected_write_error_retries = 4;
+        size_t list_object_keys_size = 1000;
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
+
+        bool throw_on_zero_files_match = false;
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
 

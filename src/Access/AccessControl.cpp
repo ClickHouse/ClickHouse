@@ -126,10 +126,10 @@ public:
         std::lock_guard lock{mutex};
         if (!registered_prefixes.empty())
         {
-            throw Exception(
-                "Setting " + String{setting_name} + " is neither a builtin setting nor started with the prefix '"
-                    + boost::algorithm::join(registered_prefixes, "' or '") + "' registered for user-defined settings",
-                ErrorCodes::UNKNOWN_SETTING);
+            throw Exception(ErrorCodes::UNKNOWN_SETTING,
+                            "Setting {} is neither a builtin setting nor started with the prefix '{}"
+                            "' registered for user-defined settings",
+                            String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
         else
             BaseSettingsHelpers::throwSettingNotFound(setting_name);
@@ -247,7 +247,7 @@ private:
 AccessControl::AccessControl()
     : MultipleAccessStorage("user directories"),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
-      role_cache(std::make_unique<RoleCache>(*this)),
+      role_cache(std::make_unique<RoleCache>(*this, 600)),
       row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
       quota_cache(std::make_unique<QuotaCache>(*this)),
       settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
@@ -271,6 +271,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
+    setDefaultPasswordTypeFromConfig(config_.getString("default_password_type", "sha256_password"));
     setPasswordComplexityRulesFromConfig(config_);
 
     /// Optional improvements in access control system.
@@ -282,6 +283,8 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
+
+    role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
 }
 
 
@@ -450,7 +453,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
             addReplicatedStorage(name, zookeeper_path, get_zookeeper_function, allow_backup);
         }
         else
-            throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown storage type '{}' at {} in config", type, prefix);
     }
 }
 
@@ -575,7 +578,9 @@ UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Ne
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
         /// only the log will show the exact reason.
-        throw Exception(message.str(), ErrorCodes::AUTHENTICATION_FAILED);
+        throw Exception(PreformattedMessage{message.str(),
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name.{}"},
+                        ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 
@@ -647,6 +652,27 @@ void AccessControl::setPlaintextPasswordAllowed(bool allow_plaintext_password_)
 bool AccessControl::isPlaintextPasswordAllowed() const
 {
     return allow_plaintext_password;
+}
+
+void AccessControl::setDefaultPasswordTypeFromConfig(const String & type_)
+{
+    for (auto check_type : collections::range(AuthenticationType::MAX))
+    {
+        const auto & info = AuthenticationTypeInfo::get(check_type);
+
+        if (type_ == info.name && info.is_password)
+        {
+            default_password_type = check_type;
+            return;
+        }
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown password type in 'default_password_type' in config");
+}
+
+AuthenticationType AccessControl::getDefaultPasswordType() const
+{
+    return default_password_type;
 }
 
 void AccessControl::setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_)

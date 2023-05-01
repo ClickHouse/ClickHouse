@@ -130,11 +130,13 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
+    ADDITIONAL_OPTIONS+=('--report-logs-stats')
+
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-            --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-        | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a test_output/test_result.txt
+        --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+    | ts '%Y-%m-%d %H:%M:%S' \
+    | tee -a test_output/test_result.txt
     set -e
 }
 
@@ -167,7 +169,8 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
-rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
+rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
+rg -A50 -Fa "============" /var/log/clickhouse-server/stderr.log ||:
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst &
 
 # Compress tables.
@@ -213,8 +216,8 @@ fi
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
-    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
+    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server2.log ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
     # FIXME: remove once only github actions will be left

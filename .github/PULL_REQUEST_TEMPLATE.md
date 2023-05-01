@@ -7,11 +7,11 @@ tests/ci/run_check.py
 ### Changelog category (leave one):
 - New Feature
 - Improvement
-- Bug Fix (user-visible misbehavior in official stable or prestable release)
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
+- Bug Fix (user-visible misbehavior in an official stable release)
 - Not for changelog (changelog entry is not required)
 
 
@@ -19,6 +19,9 @@ tests/ci/run_check.py
 ...
 
 ### Documentation entry for user-facing changes
+
+- [ ] Documentation is written (mandatory for new features)
+
 <!---
 Directly edit documentation source files in the "docs" folder with the same pull-request as code changes
 

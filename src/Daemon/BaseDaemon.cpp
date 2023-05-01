@@ -1,11 +1,10 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 #include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -64,7 +63,7 @@
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
-#   pragma GCC diagnostic ignored "-Wunused-macros"
+#   pragma clang diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
@@ -133,6 +132,8 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 }
 
 
+static std::atomic_flag fatal_error_printed;
+
 /** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
@@ -158,7 +159,16 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
+        /// Under MSan full stack unwinding with DWARF info about inline functions takes 101 seconds in one case.
+        for (size_t i = 0; i < 300; ++i)
+        {
+            /// We will synchronize with the thread printing the messages with an atomic variable to finish earlier.
+            if (fatal_error_printed.test())
+                break;
+
+            /// This coarse method of synchronization is perfectly ok for fatal signals.
+            sleepForSeconds(1);
+        }
         call_default_signal_handler(sig);
     }
 
@@ -278,7 +288,7 @@ private:
             if (next_pos != std::string_view::npos)
                 size = next_pos - pos;
 
-            LOG_FATAL(log, "{}", message.substr(pos, size));
+            LOG_FATAL(log, fmt::runtime(message.substr(pos, size)));
             pos = next_pos;
         }
     }
@@ -300,15 +310,13 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = std::string(thread_ptr->getQueryId());
-
-            if (auto thread_group = thread_ptr->getThreadGroup())
-            {
-                query = DB::toOneLineQuery(thread_group->query);
-            }
+            query_id = thread_ptr->getQueryId();
+            query = thread_ptr->getQueryForLog();
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
+            {
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
+            }
         }
 
         std::string signal_description = "Unknown signal";
@@ -360,7 +368,7 @@ private:
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, fmt::runtime(s)); });
+        stack_trace.toStringEveryLine([&](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
@@ -406,6 +414,8 @@ private:
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
             thread_ptr->onFatalError();
+
+        fatal_error_printed.test_and_set();
     }
 };
 
@@ -568,6 +578,7 @@ std::string BaseDaemon::getDefaultConfigFileName() const
 
 void BaseDaemon::closeFDs()
 {
+    /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
     fs::path proc_path{"/dev/fd"};
 #else
@@ -584,7 +595,13 @@ void BaseDaemon::closeFDs()
         for (const auto & fd : fds)
         {
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                /// NOTE: it is OK to ignore error here since at least one fd
+                /// is already closed (for proc_path), and there can be some
+                /// tricky cases, likely.
+                (void)err;
+            }
         }
     }
     else
@@ -597,8 +614,16 @@ void BaseDaemon::closeFDs()
 #endif
             max_fd = 256; /// bad fallback
         for (int fd = 3; fd < max_fd; ++fd)
+        {
             if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                /// NOTE: it is OK to get EBADF here, since it is simply
+                /// iterator over all possible fds, without any checks does
+                /// this process has this fd or not.
+                (void)err;
+            }
+        }
     }
 }
 
@@ -701,7 +726,10 @@ void BaseDaemon::initialize(Application & self)
             if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                chassert(!err || errno == EINTR);
+            }
         }
 
         if (!freopen(stderr_path.c_str(), "a+", stderr))
@@ -933,7 +961,7 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+        throw DB::Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
@@ -974,6 +1002,11 @@ void BaseDaemon::setupWatchdog()
     std::string original_process_name;
     if (argv0)
         original_process_name = argv0;
+
+    bool restart = false;
+    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
+    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
+        restart = true;
 
     while (true)
     {
@@ -1099,9 +1132,13 @@ void BaseDaemon::setupWatchdog()
             _exit(WEXITSTATUS(status));
         }
 
+        int exit_code;
+
         if (WIFSIGNALED(status))
         {
             int sig = WTERMSIG(status);
+
+            exit_code = 128 + sig;
 
             if (sig == SIGKILL)
             {
@@ -1114,22 +1151,24 @@ void BaseDaemon::setupWatchdog()
                 logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-                    _exit(128 + sig);
+                    _exit(exit_code);
             }
         }
         else
         {
+            // According to POSIX, this should never happen.
             logger().fatal("Child process was not exited normally by unknown reason.");
+            exit_code = 42;
         }
 
-        /// Automatic restart is not enabled but you can play with it.
-#if 1
-        _exit(WEXITSTATUS(status));
-#else
-        logger().information("Will restart.");
-        if (argv0)
-            memcpy(argv0, original_process_name.c_str(), original_process_name.size());
-#endif
+        if (restart)
+        {
+            logger().information("Will restart.");
+            if (argv0)
+                memcpy(argv0, original_process_name.c_str(), original_process_name.size());
+        }
+        else
+            _exit(exit_code);
     }
 }
 

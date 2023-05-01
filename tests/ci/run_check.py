@@ -7,17 +7,21 @@ from typing import Tuple
 from github import Github
 
 from commit_status_helper import (
+    CI_STATUS_NAME,
+    NotSet,
+    create_ci_report,
+    format_description,
     get_commit,
+    post_commit_status,
     post_labels,
     remove_labels,
-    reset_mergeable_check,
+    set_mergeable_check,
 )
-from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
+from docs_check import NAME as DOCS_NAME
+from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
-
-NAME = "Run Check"
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -26,14 +30,18 @@ TRUSTED_ORG_IDS = {
 OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
 DO_NOT_TEST_LABEL = "do not test"
+FEATURE_LABEL = "pr-feature"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 
 # They are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
 # updated accordingly
+# The following lists are append only, try to avoid editing them
+# They atill could be cleaned out after the decent time though.
 LABELS = {
     "pr-backward-incompatible": ["Backward Incompatible Change"],
     "pr-bugfix": [
         "Bug Fix",
+        "Bug Fix (user-visible misbehavior in an official stable release)",
         "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
         "Bug Fix (user-visible misbehavior in official stable or prestable release)",
     ],
@@ -83,7 +91,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # Returns whether we should look into individual checks for this PR. If not, it
 # can be skipped entirely.
 # Returns can_run, description, labels_state
-def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
+def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
     # Consider the labels and whether the user is trusted.
     print("Got labels", pr_info.labels)
     if FORCE_TESTS_LABEL in pr_info.labels:
@@ -94,6 +102,13 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
         print(f"Label '{DO_NOT_TEST_LABEL}' set, skipping remaining checks")
         return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
+    if OK_SKIP_LABELS.intersection(pr_info.labels):
+        return (
+            True,
+            "Don't try new checks for release/backports/cherry-picks",
+            "success",
+        )
+
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
@@ -101,13 +116,6 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
             f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
         )
         return False, "Needs 'can be tested' label", "failure"
-
-    if OK_SKIP_LABELS.intersection(pr_info.labels):
-        return (
-            False,
-            "Don't try new checks for release/backports/cherry-picks",
-            "success",
-        )
 
     return True, "No special conditions apply", "pending"
 
@@ -128,6 +136,7 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
 
     category = ""
     entry = ""
+    description_error = ""
 
     i = 0
     while i < len(lines):
@@ -157,7 +166,7 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
                     + second_category
                     + "'"
                 )
-                return result_status[:140], category
+                return result_status, category
 
         elif re.match(
             r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
@@ -175,30 +184,43 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
             entry = " ".join(entry_lines)
             # Don't accept changelog entries like '...'.
             entry = re.sub(r"[#>*_.\- ]", "", entry)
+            # Don't accept changelog entries like 'Close #12345'.
+            entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
         else:
             i += 1
 
     if not category:
-        return "Changelog category is empty", category
-
+        description_error = "Changelog category is empty"
     # Filter out the PR categories that are not for changelog.
-    if re.match(
+    elif re.match(
         r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
         category,
     ):
-        return "", category
+        pass  # to not check the rest of the conditions
+    elif category not in CATEGORY_TO_LABEL:
+        description_error, category = f"Category '{category}' is not valid", ""
+    elif not entry:
+        description_error = f"Changelog entry required for category '{category}'"
 
-    if not entry:
-        return f"Changelog entry required for category '{category}'", category
-
-    return "", category
+    return description_error, category
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
-    can_run, description, labels_state = should_run_checks_for_pr(pr_info)
+    # The case for special branches like backports and releases without created
+    # PRs, like merged backport branches that are reset immediately after merge
+    if pr_info.number == 0:
+        print("::notice ::Cannot run, no PR exists for the commit")
+        sys.exit(1)
+
+    can_run, description, labels_state = should_run_ci_for_pr(pr_info)
+    if can_run and OK_SKIP_LABELS.intersection(pr_info.labels):
+        print("::notice :: Early finish the check, running in a special PR")
+        sys.exit(0)
+
+    description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
@@ -231,7 +253,17 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    reset_mergeable_check(commit, "skipped")
+    if FEATURE_LABEL in pr_info.labels:
+        print(f"The '{FEATURE_LABEL}' in the labels, expect the 'Docs Check' status")
+        post_commit_status(  # do not pass pr_info here intentionally
+            commit,
+            "pending",
+            NotSet,
+            f"expect adding docs for {FEATURE_LABEL}",
+            DOCS_NAME,
+        )
+    else:
+        set_mergeable_check(commit, "skipped")
 
     if description_error:
         print(
@@ -239,7 +271,7 @@ if __name__ == "__main__":
             f"{description_error}"
         )
         logging.info(
-            "PR body doesn't match the template: (start)\n%s\n(end)\n" "Reason: %s",
+            "PR body doesn't match the template: (start)\n%s\n(end)\nReason: %s",
             pr_info.body,
             description_error,
         )
@@ -247,23 +279,29 @@ if __name__ == "__main__":
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
             "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
         )
-        commit.create_status(
-            context=NAME,
-            description=description_error[:139],
-            state="failure",
-            target_url=url,
+        post_commit_status(
+            commit,
+            "failure",
+            url,
+            format_description(description_error),
+            CI_STATUS_NAME,
+            pr_info,
         )
         sys.exit(1)
 
-    url = GITHUB_RUN_URL
+    ci_report_url = create_ci_report(pr_info, [])
     if not can_run:
         print("::notice ::Cannot run")
-        commit.create_status(
-            context=NAME, description=description, state=labels_state, target_url=url
+        post_commit_status(
+            commit, labels_state, ci_report_url, description, CI_STATUS_NAME, pr_info
         )
         sys.exit(1)
     else:
         print("::notice ::Can run")
-        commit.create_status(
-            context=NAME, description=description, state="pending", target_url=url
+        post_commit_status(
+            commit, "pending", ci_report_url, description, CI_STATUS_NAME, pr_info
         )
+
+
+if __name__ == "__main__":
+    main()

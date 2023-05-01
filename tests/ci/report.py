@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+from ast import literal_eval
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Tuple
+from html import escape
+import csv
 import os
 import datetime
 
@@ -167,6 +173,81 @@ HTML_TEST_PART = """
 BASE_HEADERS = ["Test name", "Test status"]
 
 
+@dataclass
+class TestResult:
+    name: str
+    status: str
+    # the following fields are optional
+    time: Optional[float] = None
+    log_files: Optional[List[Path]] = None
+    raw_logs: Optional[str] = None
+    # the field for uploaded logs URLs
+    log_urls: Optional[List[str]] = None
+
+    def set_raw_logs(self, raw_logs: str) -> None:
+        self.raw_logs = raw_logs
+
+    def set_log_files(self, log_files_literal: str) -> None:
+        self.log_files = []  # type: Optional[List[Path]]
+        log_paths = literal_eval(log_files_literal)
+        if not isinstance(log_paths, list):
+            raise ValueError(
+                f"Malformed input: must be a list literal: {log_files_literal}"
+            )
+        for log_path in log_paths:
+            file = Path(log_path)
+            assert file.exists(), file
+            self.log_files.append(file)
+
+
+TestResults = List[TestResult]
+
+
+def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestResults:
+    results = []  # type: TestResults
+    with open(results_path, "r", encoding="utf-8") as descriptor:
+        reader = csv.reader(descriptor, delimiter="\t")
+        for line in reader:
+            name = line[0]
+            status = line[1]
+            time = None
+            if len(line) >= 3 and line[2] and line[2] != "\\N":
+                # The value can be emtpy, but when it's not,
+                # it's the time spent on the test
+                try:
+                    time = float(line[2])
+                except ValueError:
+                    pass
+
+            result = TestResult(name, status, time)
+            if len(line) == 4 and line[3]:
+                # The value can be emtpy, but when it's not,
+                # the 4th value is a pythonic list, e.g. ['file1', 'file2']
+                if with_raw_logs:
+                    # Python does not support TSV, so we unescape manually
+                    result.set_raw_logs(
+                        line[3].replace("\\t", "\t").replace("\\n", "\n")
+                    )
+                else:
+                    result.set_log_files(line[3])
+
+            results.append(result)
+
+    return results
+
+
+@dataclass
+class BuildResult:
+    compiler: str
+    build_type: str
+    sanitizer: str
+    status: str
+    elapsed_seconds: int
+
+
+BuildResults = List[BuildResult]
+
+
 class ReportColorTheme:
     class ReportColor:
         yellow = "#FFB400"
@@ -178,21 +259,27 @@ class ReportColorTheme:
     bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
 
 
-def _format_header(header, branch_name, branch_url=None):
-    result = " ".join([w.capitalize() for w in header.split(" ")])
+ColorTheme = Tuple[str, str, str]
+
+
+def _format_header(
+    header: str, branch_name: str, branch_url: Optional[str] = None
+) -> str:
+    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
+    # capitalizes the first letter and doesn't touch the rest of the word
+    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
     result = result.replace("Clickhouse", "ClickHouse")
     result = result.replace("clickhouse", "ClickHouse")
     if "ClickHouse" not in result:
-        result = "ClickHouse " + result
-    result += " for "
+        result = f"ClickHouse {result}"
     if branch_url:
-        result += f'<a href="{branch_url}">{branch_name}</a>'
+        result = f'{result} for <a href="{branch_url}">{branch_name}</a>'
     else:
-        result += branch_name
+        result = f"{result} for {branch_name}"
     return result
 
 
-def _get_status_style(status, colortheme=None):
+def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
     ok_statuses = ("OK", "success", "PASSED")
     fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout")
 
@@ -230,80 +317,81 @@ def _get_html_url(url):
 
 
 def create_test_html_report(
-    header,
-    test_result,
-    raw_log_url,
-    task_url,
-    job_url,
-    branch_url,
-    branch_name,
-    commit_url,
-    additional_urls=None,
-    with_raw_logs=False,
-    statuscolors=None,
-):
+    header: str,
+    test_results: TestResults,
+    raw_log_url: str,
+    task_url: str,
+    job_url: str,
+    branch_url: str,
+    branch_name: str,
+    commit_url: str,
+    additional_urls: Optional[List[str]] = None,
+    statuscolors: Optional[ColorTheme] = None,
+) -> str:
     if additional_urls is None:
         additional_urls = []
 
-    if test_result:
+    if test_results:
         rows_part = ""
         num_fails = 0
         has_test_time = False
-        has_test_logs = False
+        has_log_urls = False
 
-        if with_raw_logs:
-            # Display entires with logs at the top (they correspond to failed tests)
-            test_result.sort(key=lambda result: len(result) <= 3)
+        # Display entires with logs at the top (they correspond to failed tests)
+        test_results.sort(
+            key=lambda result: result.raw_logs is None and result.log_files is None
+        )
 
-        for result in test_result:
-            test_name = result[0]
-            test_status = result[1]
-
-            test_logs = None
-            test_time = None
-            if len(result) > 2:
-                test_time = result[2]
-                has_test_time = True
-
-            if len(result) > 3:
-                test_logs = result[3]
-                has_test_logs = True
+        for test_result in test_results:
+            colspan = 0
+            if test_result.log_files is not None:
+                has_log_urls = True
 
             row = "<tr>"
-            is_fail = test_status in ("FAIL", "FLAKY")
-            if is_fail and with_raw_logs and test_logs is not None:
+            is_fail = test_result.status in ("FAIL", "FLAKY")
+            if is_fail and test_result.raw_logs is not None:
                 row = '<tr class="failed">'
-            row += "<td>" + test_name + "</td>"
-            style = _get_status_style(test_status, colortheme=statuscolors)
+            row += "<td>" + test_result.name + "</td>"
+            colspan += 1
+            style = _get_status_style(test_result.status, colortheme=statuscolors)
 
             # Allow to quickly scroll to the first failure.
-            is_fail_id = ""
+            fail_id = ""
             if is_fail:
                 num_fails = num_fails + 1
-                is_fail_id = 'id="fail' + str(num_fails) + '" '
+                fail_id = f'id="fail{num_fails}" '
 
-            row += f'<td {is_fail_id}style="{style}">{test_status}</td>'
+            row += f'<td {fail_id}style="{style}">{test_result.status}</td>'
+            colspan += 1
 
-            if test_time is not None:
-                row += "<td>" + test_time + "</td>"
+            if test_result.time is not None:
+                has_test_time = True
+                row += f"<td>{test_result.time}</td>"
+                colspan += 1
 
-            if test_logs is not None and not with_raw_logs:
-                test_logs_html = "<br>".join([_get_html_url(url) for url in test_logs])
+            if test_result.log_urls is not None:
+                has_log_urls = True
+                test_logs_html = "<br>".join(
+                    [_get_html_url(url) for url in test_result.log_urls]
+                )
                 row += "<td>" + test_logs_html + "</td>"
+                colspan += 1
 
             row += "</tr>"
             rows_part += row
-            if test_logs is not None and with_raw_logs:
-                row = '<tr class="failed-content">'
-                # TODO: compute colspan too
-                row += '<td colspan="3"><pre>' + test_logs + "</pre></td>"
-                row += "</tr>"
+            if test_result.raw_logs is not None:
+                raw_logs = escape(test_result.raw_logs)
+                row = (
+                    '<tr class="failed-content">'
+                    f'<td colspan="{colspan}"><pre>{raw_logs}</pre></td>'
+                    "</tr>"
+                )
                 rows_part += row
 
-        headers = BASE_HEADERS
+        headers = BASE_HEADERS.copy()
         if has_test_time:
             headers.append("Test time, sec.")
-        if has_test_logs and not with_raw_logs:
+        if has_log_urls:
             headers.append("Logs")
 
         headers_html = "".join(["<th>" + h + "</th>" for h in headers])
@@ -319,7 +407,7 @@ def create_test_html_report(
     if "?" in raw_log_name:
         raw_log_name = raw_log_name.split("?")[0]
 
-    result = HTML_BASE_TEST_TEMPLATE.format(
+    html = HTML_BASE_TEST_TEMPLATE.format(
         title=_format_header(header, branch_name),
         header=_format_header(header, branch_name, branch_url),
         raw_log_name=raw_log_name,
@@ -331,7 +419,7 @@ def create_test_html_report(
         commit_url=commit_url,
         additional_urls=additional_html_urls,
     )
-    return result
+    return html
 
 
 HTML_BASE_BUILD_TEMPLATE = """
@@ -379,17 +467,17 @@ LINK_TEMPLATE = '<a href="{url}">{text}</a>'
 
 
 def create_build_html_report(
-    header,
-    build_results,
-    build_logs_urls,
-    artifact_urls_list,
-    task_url,
-    branch_url,
-    branch_name,
-    commit_url,
-):
+    header: str,
+    build_results: BuildResults,
+    build_logs_urls: List[str],
+    artifact_urls_list: List[List[str]],
+    task_url: str,
+    branch_url: str,
+    branch_name: str,
+    commit_url: str,
+) -> str:
     rows = ""
-    for (build_result, build_log_url, artifact_urls) in zip(
+    for build_result, build_log_url, artifact_urls in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"

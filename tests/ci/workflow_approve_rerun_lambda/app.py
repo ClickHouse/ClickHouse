@@ -62,8 +62,8 @@ TRUSTED_WORKFLOW_IDS = {
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
     "DocsCheck",
-    "DocsReleaseChecks",
     "MasterCI",
+    "NightlyBuilds",
     "PullRequestCI",
     "ReleaseBranchCI",
 }
@@ -122,6 +122,10 @@ TRUSTED_CONTRIBUTORS = {
         "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
         "tylerhannan",  # ClickHouse Employee
+        "myrrc",  # Mike Kot, DoubleCloud
+        "thevar1able",  # ClickHouse Employee
+        "aalexfvk",
+        "MikhailBurdukov",
     ]
 }
 

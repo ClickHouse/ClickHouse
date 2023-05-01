@@ -75,6 +75,7 @@ add_subdirectory (Coordination)
 add_subdirectory (Bridge)
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
+add_subdirectory (Formats)
 
 
 set(dbms_headers)
@@ -102,6 +103,7 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+add_headers_and_sources(dbms Storages/DataLakes)
 add_headers_and_sources(dbms Storages/MeiliSearch)
 add_headers_and_sources(dbms Common/NamedCollections)
 
@@ -199,14 +201,10 @@ add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_co
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-if (((SANITIZE STREQUAL "thread") OR (SANITIZE STREQUAL "address")) AND COMPILER_GCC)
-    message(WARNING "Memory tracking is disabled, due to gcc sanitizers")
-else()
-    add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
-    target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
-    if (TARGET ch_contrib::jemalloc)
-        target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
-    endif()
+add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
 endif()
 
 if (TARGET ch_contrib::jemalloc)
@@ -226,13 +224,7 @@ add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
-if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
-    add_headers_and_sources(dbms Compression)
-    list(REMOVE_ITEM dbms_headers Compression/CompressionCodecEncrypted.h)
-    list(REMOVE_ITEM dbms_sources Compression/CompressionCodecEncrypted.cpp)
-else ()
-    add_object_library(clickhouse_compression Compression)
-endif ()
+add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
@@ -310,6 +302,11 @@ if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
 endif ()
 
+if (TARGET ch_contrib::gwp_asan)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::gwp_asan)
+    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
+endif()
+
 # Otherwise it will slow down stack traces printing too much.
 set_source_files_properties(
         Common/Elf.cpp
@@ -338,19 +335,18 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if (ENABLE_QPL)
-set_source_files_properties(
-        Compression/CompressionCodecDeflateQpl.cpp
-        PROPERTIES COMPILE_FLAGS "-mwaitpkg")
+    set_source_files_properties(
+            Compression/CompressionCodecDeflateQpl.cpp
+            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 endif ()
-
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
             boost::system
             ch_contrib::cityhash
+            ch_contrib::re2
+            ch_contrib::re2_st
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
@@ -363,6 +359,10 @@ endif()
 if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
 endif()
+
+if (TARGET ch_contrib::crc32-vpmsum)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
+ endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
@@ -509,6 +509,11 @@ if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
 
+if (TARGET ch_contrib::liburing)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::liburing)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LIBURING_COMPAT_INCLUDE_DIR} ${LIBURING_INCLUDE_DIR})
+endif()
+
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
 if (USE_ORC)
@@ -543,6 +548,10 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
+if (TARGET ch_contrib::ulid)
+    dbms_target_link_libraries (PUBLIC ch_contrib::ulid)
+endif()
+
 if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
@@ -566,8 +575,8 @@ if (TARGET ch_contrib::annoy)
 endif()
 
 if (TARGET ch_rust::skim)
-    # Add only -I, library is needed only for clickhouse-client/clickhouse-local
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
+    dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
@@ -596,7 +605,8 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        string_utils)
+        string_utils
+        hilite_comparator)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
@@ -604,6 +614,14 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
+    endif()
+
+    if (TARGET ch_contrib::azure_sdk)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
+    if (TARGET ch_contrib::parquet)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 
     add_check(unit_tests_dbms)

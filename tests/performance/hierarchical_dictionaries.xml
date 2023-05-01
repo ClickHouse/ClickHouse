@@ -9,6 +9,14 @@
         </substitution>
 
         <substitution>
+            <name>dictionary_shards</name>
+            <values>
+                <value>1</value>
+                <value>16</value>
+            </values>
+        </substitution>
+
+        <substitution>
             <name>func</name>
             <values>
                 <value>dictGetHierarchy</value>
@@ -26,14 +34,14 @@
     </create_query>
 
     <create_query>
-        CREATE DICTIONARY hierarchical_{dictionary_layout}_dictionary
+        CREATE DICTIONARY hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary
         (
             id UInt64,
             parent_id UInt64 HIERARCHICAL
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(DB 'default' TABLE 'hierarchical_dictionary_source_table'))
-        LAYOUT({dictionary_layout})
+        LAYOUT({dictionary_layout}(SHARDS {dictionary_shards}))
         LIFETIME(0);
     </create_query>
 
@@ -65,10 +73,10 @@
         SELECT {func}('hierarchical_flat_dictionary', number + 1) FROM numbers(1000000) FORMAT Null;
     </query>
     <query>
-        SELECT {func}('hierarchical_{dictionary_layout}_dictionary', number + 1) FROM numbers(1000000) FORMAT Null;
+        SELECT {func}('hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary', number + 1) FROM numbers(1000000) FORMAT Null;
     </query>
 
-    <drop_query>DROP DICTIONARY IF EXISTS hierarchical_{dictionary_layout}_dictionary;</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS hierarchical_{dictionary_layout}_shards{dictionary_shards}_dictionary;</drop_query>
     <drop_query>DROP DICTIONARY IF EXISTS hierarchical_flat_dictionary;</drop_query>
     <drop_query>DROP TABLE IF EXISTS hierarchical_dictionary_source_table;</drop_query>
 </test>

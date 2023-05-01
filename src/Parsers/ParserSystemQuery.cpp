@@ -253,11 +253,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
+        case Type::WAIT_LOADING_PARTS:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
+            if (res->type == Type::SYNC_REPLICA)
+            {
+                if (ParserKeyword{"STRICT"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::STRICT;
+                else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
+                else if (ParserKeyword{"PULL"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::PULL;
+            }
             break;
         }
 
@@ -377,7 +387,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral path_parser;
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
-                res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
+                res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;

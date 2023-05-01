@@ -96,6 +96,7 @@ def test_rename_replicated(started_cluster, entity):
     node2.query_with_retry(
         f"ALTER {entity.keyword} {entity.name} {entity.options} RENAME TO {entity.name}2"
     )
+    node1.query("SYSTEM RELOAD USERS")
     node1.query(f"DROP {entity.keyword} {entity.name}2 {entity.options}")
 
 

@@ -38,7 +38,7 @@ namespace
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Encryption algorithm {} is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
-            std::to_string(static_cast<int>(algorithm)));
+            static_cast<int>(algorithm));
     }
 
     void checkKeySize(const EVP_CIPHER * evp_cipher, size_t key_size)
@@ -48,7 +48,9 @@ namespace
         size_t expected_key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
         if (key_size != expected_key_size)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Got an encryption key with unexpected size {}, the size should be {}", key_size, expected_key_size);
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Got an encryption key with unexpected size {}, the size should be {}",
+                            key_size, expected_key_size);
     }
 
     void checkInitVectorSize(const EVP_CIPHER * evp_cipher)
@@ -92,7 +94,7 @@ namespace
             uint8_t * ciphertext = reinterpret_cast<uint8_t *>(out.position());
             int ciphertext_size = 0;
             if (!EVP_EncryptUpdate(evp_ctx, ciphertext, &ciphertext_size, &in[in_size], static_cast<int>(part_size)))
-                throw Exception("Failed to encrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+                throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to encrypt");
 
             in_size += part_size;
             if (ciphertext_size)
@@ -115,7 +117,7 @@ namespace
         uint8_t ciphertext[kBlockSize];
         int ciphertext_size = 0;
         if (!EVP_EncryptUpdate(evp_ctx, ciphertext, &ciphertext_size, padded_data, safe_cast<int>(padded_data_size)))
-            throw Exception("Failed to encrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to encrypt");
 
         if (!ciphertext_size)
             return 0;
@@ -135,7 +137,7 @@ namespace
         int ciphertext_size = 0;
         if (!EVP_EncryptFinal_ex(evp_ctx,
                                  ciphertext, &ciphertext_size))
-            throw Exception("Failed to finalize encrypting", ErrorCodes::DATA_ENCRYPTION_ERROR);
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize encrypting");
         if (ciphertext_size)
             out.write(reinterpret_cast<const char *>(ciphertext), ciphertext_size);
         return ciphertext_size;
@@ -147,7 +149,7 @@ namespace
         uint8_t * plaintext = reinterpret_cast<uint8_t *>(out);
         int plaintext_size = 0;
         if (!EVP_DecryptUpdate(evp_ctx, plaintext, &plaintext_size, in, safe_cast<int>(size)))
-            throw Exception("Failed to decrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to decrypt");
         return plaintext_size;
     }
 
@@ -160,7 +162,7 @@ namespace
         uint8_t plaintext[kBlockSize];
         int plaintext_size = 0;
         if (!EVP_DecryptUpdate(evp_ctx, plaintext, &plaintext_size, padded_data, safe_cast<int>(padded_data_size)))
-            throw Exception("Failed to decrypt", ErrorCodes::DATA_ENCRYPTION_ERROR);
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to decrypt");
 
         if (!plaintext_size)
             return 0;
@@ -179,7 +181,7 @@ namespace
         uint8_t plaintext[kBlockSize];
         int plaintext_size = 0;
         if (!EVP_DecryptFinal_ex(evp_ctx, plaintext, &plaintext_size))
-            throw Exception("Failed to finalize decrypting", ErrorCodes::DATA_ENCRYPTION_ERROR);
+            throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to finalize decrypting");
         if (plaintext_size)
             memcpy(out, plaintext, plaintext_size);
         return plaintext_size;
@@ -201,7 +203,7 @@ String toString(Algorithm algorithm)
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Encryption algorithm {} is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
-        std::to_string(static_cast<int>(algorithm)));
+        static_cast<int>(algorithm));
 }
 
 void parseFromString(Algorithm & algorithm, const String & str)
@@ -282,11 +284,11 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (!EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
-        throw Exception("Failed to initialize encryption context with cipher", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to initialize encryption context with cipher");
 
     if (!EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr,
                             reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())))
-        throw Exception("Failed to set key and IV for encryption", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to set key and IV for encryption");
 
     size_t in_size = 0;
     size_t out_size = 0;
@@ -311,7 +313,7 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     out_size += encryptFinal(evp_ctx, out);
 
     if (out_size != in_size)
-        throw Exception("Only part of the data was encrypted", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Only part of the data was encrypted");
     offset += in_size;
 }
 
@@ -326,11 +328,11 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (!EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr))
-        throw Exception("Failed to initialize decryption context with cipher", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to initialize decryption context with cipher");
 
     if (!EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr,
                             reinterpret_cast<const uint8_t*>(key.c_str()), reinterpret_cast<const uint8_t*>(current_iv.c_str())))
-        throw Exception("Failed to set key and IV for decryption", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Failed to set key and IV for decryption");
 
     size_t in_size = 0;
     size_t out_size = 0;
@@ -355,7 +357,7 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     out_size += decryptFinal(evp_ctx, &out[out_size]);
 
     if (out_size != in_size)
-        throw Exception("Only part of the data was decrypted", ErrorCodes::DATA_ENCRYPTION_ERROR);
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Only part of the data was decrypted");
     offset += in_size;
 }
 

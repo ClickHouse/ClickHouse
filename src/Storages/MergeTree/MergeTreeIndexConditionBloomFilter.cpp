@@ -58,7 +58,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
 
     if (!const_column && !non_const_column)
-        throw Exception("LOGICAL ERROR: hash column must be Const Column or UInt64 Column.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: hash column must be Const Column or UInt64 Column.");
 
     if (const_column)
     {
@@ -174,7 +174,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
             rpn_stack.back() = arg1 || arg2;
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     return rpn_stack[0];
@@ -245,11 +245,11 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             rpn_stack.emplace_back(false, true);
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::mayBeTrueInRange");
 
     return rpn_stack[0].can_be_true;
 }
@@ -387,7 +387,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
 
             if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
-                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
 
             bool match_with_subtype = false;
             const auto & sub_columns = tuple_column->getColumns();
@@ -574,7 +574,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (function_name == "has" || function_name == "indexOf")
         {
             if (!array_type)
-                throw Exception("First argument for function " + function_name + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
 
             /// We can treat `indexOf` function similar to `has`.
             /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
@@ -627,7 +627,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         else
         {
             if (array_type)
-                throw Exception("An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -678,7 +679,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)
-                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
 
             bool match_with_subtype = false;
             const DataTypes & subtypes = value_tuple_data_type->getElements();

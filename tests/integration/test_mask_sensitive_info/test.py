@@ -4,7 +4,13 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", with_zookeeper=True)
+node = cluster.add_instance(
+    "node",
+    main_configs=[
+        "configs/named_collections.xml",
+    ],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -21,11 +27,21 @@ def check_logs(must_contain=[], must_not_contain=[]):
     node.query("SYSTEM FLUSH LOGS")
 
     for str in must_contain:
-        escaped_str = str.replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+        escaped_str = (
+            str.replace("`", "\\`")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+            .replace("*", "\\*")
+        )
         assert node.contains_in_log(escaped_str)
 
     for str in must_not_contain:
-        escaped_str = str.replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+        escaped_str = (
+            str.replace("`", "\\`")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+            .replace("*", "\\*")
+        )
         assert not node.contains_in_log(escaped_str)
 
     for str in must_contain:
@@ -79,14 +95,14 @@ def test_create_alter_user():
 
     check_logs(
         must_contain=[
-            "CREATE USER u1 IDENTIFIED WITH sha256_password",
-            "ALTER USER u1 IDENTIFIED WITH sha256_password",
+            "CREATE USER u1 IDENTIFIED",
+            "ALTER USER u1 IDENTIFIED",
             "CREATE USER u2 IDENTIFIED WITH plaintext_password",
         ],
         must_not_contain=[
             password,
-            "IDENTIFIED WITH sha256_password BY",
-            "IDENTIFIED WITH sha256_hash BY",
+            "IDENTIFIED BY",
+            "IDENTIFIED BY",
             "IDENTIFIED WITH plaintext_password BY",
         ],
     )
@@ -106,6 +122,12 @@ def test_create_table():
         f"S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test4.csv', 'minio', '{password}', 'CSV')",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '{password}', 'CSV', 'gzip')",
+        f"MySQL(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
+        f"MySQL(named_collection_2, database = 'mysql_db', host = 'mysql57', port = 3306, password = '{password}', table = 'mysql_table', user = 'mysql_user')",
+        f"MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
+        f"PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '{password}')",
+        f"MongoDB(named_collection_5, host = 'mongo1', port = 5432, db = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '{password}')",
+        f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
     ]
 
     for i, table_engine in enumerate(table_engines):
@@ -137,6 +159,12 @@ def test_create_table():
             "CREATE TABLE table5 (x int) ENGINE = S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
             "CREATE TABLE table6 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test4.csv', 'minio', '[HIDDEN]', 'CSV')",
             "CREATE TABLE table7 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
+            "CREATE TABLE table8 (`x` int) ENGINE = MySQL(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
+            "CREATE TABLE table9 (`x` int) ENGINE = MySQL(named_collection_2, database = 'mysql_db', host = 'mysql57', port = 3306, password = '[HIDDEN]', table = 'mysql_table', user = 'mysql_user')",
+            "CREATE TABLE table10 (x int) ENGINE = MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
+            "CREATE TABLE table11 (`x` int) ENGINE = PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '[HIDDEN]')",
+            "CREATE TABLE table12 (`x` int) ENGINE = MongoDB(named_collection_5, host = 'mongo1', port = 5432, db = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '[HIDDEN]'",
+            "CREATE TABLE table13 (`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')",
         ],
         must_not_contain=[password],
     )
@@ -150,6 +178,7 @@ def test_create_database():
 
     database_engines = [
         f"MySQL('localhost:3306', 'mysql_db', 'mysql_user', '{password}') SETTINGS connect_timeout=1, connection_max_tries=1",
+        f"MySQL(named_collection_1, host = 'localhost', port = 3306, database = 'mysql_db', user = 'mysql_user', password = '{password}') SETTINGS connect_timeout=1, connection_max_tries=1",
         # f"PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '{password}')",
     ]
 
@@ -163,7 +192,8 @@ def test_create_database():
     check_logs(
         must_contain=[
             "CREATE DATABASE database0 ENGINE = MySQL('localhost:3306', 'mysql_db', 'mysql_user', '[HIDDEN]')",
-            # "CREATE DATABASE database1 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
+            "CREATE DATABASE database1 ENGINE = MySQL(named_collection_1, host = 'localhost', port = 3306, database = 'mysql_db', user = 'mysql_user', password = '[HIDDEN]')",
+            # "CREATE DATABASE database2 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -201,6 +231,11 @@ def test_table_functions():
         f"remote('127.{{2..11}}', numbers(10), 'remote_user', '{password}', rand())",
         f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', '{password}')",
         f"remoteSecure('127.{{2..11}}', 'default', 'remote_table', 'remote_user', rand())",
+        f"mysql(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '{password}')",
+        f"postgresql(named_collection_2, password = '{password}', host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user')",
+        f"s3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '{password}')",
+        f"remote(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}', sharding_key = rand())",
+        f"remoteSecure(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}')",
     ]
 
     for i, table_function in enumerate(table_functions):
@@ -249,12 +284,45 @@ def test_table_functions():
             "CREATE TABLE tablefunc22 (`x` int) AS remote('127.{2..11}', numbers(10), 'remote_user', '[HIDDEN]', rand())",
             "CREATE TABLE tablefunc23 (`x` int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc24 (x int) AS remoteSecure('127.{2..11}', 'default', 'remote_table', 'remote_user', rand())",
+            "CREATE TABLE tablefunc25 (`x` int) AS mysql(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
+            "CREATE TABLE tablefunc26 (`x` int) AS postgresql(named_collection_2, password = '[HIDDEN]', host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user')",
+            "CREATE TABLE tablefunc27 (`x` int) AS s3(named_collection_2, url = 'http://minio1:9001/root/data/test4.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]')",
+            "CREATE TABLE tablefunc28 (`x` int) AS remote(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', table = 'remote_table', user = 'remote_user', password = '[HIDDEN]', sharding_key = rand())",
+            "CREATE TABLE tablefunc29 (`x` int) AS remoteSecure(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', table = 'remote_table', user = 'remote_user', password = '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
 
     for i in range(0, len(table_functions)):
         node.query(f"DROP TABLE tablefunc{i}")
+
+
+def test_table_function_ways_to_call():
+    password = new_password()
+
+    table_function = f"s3('http://minio1:9001/root/data/testfuncw.tsv.gz', 'minio', '{password}', 'TSV', 'x int')"
+
+    queries = [
+        "CREATE TABLE tablefuncw (`x` int) AS {}",
+        "INSERT INTO FUNCTION {} SELECT * FROM numbers(10)",
+        "DESCRIBE TABLE {}",
+    ]
+
+    for query in queries:
+        # query_and_get_answer_with_error() is used here because we don't want to stop on error "Cannot connect to AWS".
+        # We test logging here and not actual work with AWS server.
+        node.query_and_get_answer_with_error(query.format(table_function))
+
+    table_function_with_hidden_arg = "s3('http://minio1:9001/root/data/testfuncw.tsv.gz', 'minio', '[HIDDEN]', 'TSV', 'x int')"
+
+    check_logs(
+        must_contain=[
+            query.format(table_function_with_hidden_arg) for query in queries
+        ],
+        must_not_contain=[password],
+    )
+
+    node.query("DROP TABLE tablefuncw")
 
 
 def test_encryption_functions():

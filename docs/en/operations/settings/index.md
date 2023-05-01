@@ -1,6 +1,6 @@
 ---
 sidebar_label: Settings Overview
-sidebar_position: 51
+sidebar_position: 1
 slug: /en/operations/settings/
 pagination_next: en/operations/settings/settings
 ---
@@ -22,9 +22,9 @@ The order of priority for defining a setting is:
 
 3. Query settings
 
-    -   When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
-    -   When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
-    -   Define settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query) clause of the SELECT query. The setting value is applied only to that query and is reset to the default or previous value after the query is executed.
+    - When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
+    - When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
+    - Define settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query) clause of the SELECT query. The setting value is applied only to that query and is reset to the default or previous value after the query is executed.
 
 View the [Settings](./settings.md) page for a description of the ClickHouse settings.
 
@@ -93,4 +93,4 @@ SELECT getSetting('custom_a');
 
 **See Also**
 
--   [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)
+- [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)

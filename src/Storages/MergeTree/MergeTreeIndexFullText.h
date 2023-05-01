@@ -131,7 +131,7 @@ private:
         const Field & value_field,
         RPNElement & out);
 
-    bool getKey(const std::string & key_column_name, size_t & key_column_num);
+    std::optional<size_t> getKeyIndex(const std::string & key_column_name);
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
     static bool createFunctionEqualsCondition(

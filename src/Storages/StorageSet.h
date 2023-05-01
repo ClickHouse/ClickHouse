@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 #include <Interpreters/Set.h>
@@ -9,6 +9,7 @@
 
 namespace DB
 {
+
 
 // class Set;
 using SetPtr_ = std::shared_ptr<Set>;

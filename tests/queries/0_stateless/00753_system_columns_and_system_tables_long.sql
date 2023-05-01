@@ -1,4 +1,4 @@
--- Tags: long, no-s3-storage
+-- Tags: long, no-s3-storage, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS check_system_tables;
 

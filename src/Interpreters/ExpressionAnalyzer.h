@@ -95,6 +95,7 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
+        const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
 
         explicit ExtractedSettings(const Settings & settings_);
@@ -119,8 +120,9 @@ public:
     ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
-    /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
+    /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.
+    ActionsDAGPtr getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
@@ -158,13 +160,15 @@ protected:
         size_t subquery_depth_,
         bool do_global_,
         bool is_explain_,
-        PreparedSetsPtr prepared_sets_);
+        PreparedSetsPtr prepared_sets_,
+        bool is_create_parameterized_view_ = false);
 
     ASTPtr query;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
     TreeRewriterResultPtr syntax;
+    bool is_create_parameterized_view;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
@@ -318,7 +322,8 @@ public:
             options_.subquery_depth,
             do_global_,
             options_.is_explain,
-            prepared_sets_)
+            prepared_sets_,
+            options_.is_create_parameterized_view)
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)

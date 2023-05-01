@@ -59,13 +59,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         if (!isNativeNumber(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName()
-                    + " of second argument of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                    arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -117,9 +115,8 @@ public:
                 return executeForSource(column_length, column_length_const,
                     length_value, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
             else
-                throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
         }
         else
         {
@@ -136,9 +133,8 @@ public:
                 return executeForSource(column_length, column_length_const,
                     length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
             else
-                throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
         }
     }
 };

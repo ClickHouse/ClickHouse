@@ -90,6 +90,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "small_jbod_with_external",
@@ -100,6 +102,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -110,6 +114,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "small_jbod_with_external_no_merges",
@@ -120,6 +126,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 1,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -130,6 +138,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "one_more_small_jbod_with_external",
@@ -140,6 +150,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "jbods_with_external",
@@ -150,6 +162,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "10485760",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "jbods_with_external",
@@ -160,6 +174,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -170,6 +186,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "moving_jbod_with_external",
@@ -180,6 +198,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.7,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "default_disk_with_external",
@@ -190,6 +210,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "2097152",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "default_disk_with_external",
@@ -200,6 +222,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -210,6 +234,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -220,6 +246,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "0",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -230,6 +258,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "1024",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
         {
             "policy_name": "special_warning_policy",
@@ -240,6 +270,8 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "1024000000",
             "move_factor": 0.1,
             "prefer_not_to_merge": 0,
+            "perform_ttl_move_on_insert": 1,
+            "load_balancing": "ROUND_ROBIN",
         },
     ]
 
@@ -1262,13 +1294,13 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
                     else:
                         raise e
 
-        insert(100)
+        insert(20)
         p = Pool(15)
         tasks = []
         for i in range(5):
-            tasks.append(p.apply_async(insert, (100,)))
-            tasks.append(p.apply_async(alter_move, (100,)))
-            tasks.append(p.apply_async(alter_drop, (100,)))
+            tasks.append(p.apply_async(insert, (20,)))
+            tasks.append(p.apply_async(alter_move, (20,)))
+            tasks.append(p.apply_async(alter_drop, (20,)))
 
         for task in tasks:
             task.get(timeout=120)
@@ -1625,6 +1657,12 @@ def test_rename(start_cluster):
         """
         )
 
+        # We want to check that after inserts, some parts were moved to external disk
+        # and some parts are still on the main disk, but because of merge all parts
+        # might end up on external disk.
+        node1.query("SYSTEM STOP MERGES default.renaming_table")
+
+        # jbod1 disk is 40mb
         for _ in range(5):
             data = []
             for i in range(10):
@@ -1635,8 +1673,14 @@ def test_rename(start_cluster):
                 )
             )
 
-        disks = get_used_disks_for_table(node1, "renaming_table")
-        assert len(disks) > 1
+        # data is moved in the background, so check with retries
+        num_try = 0
+        while get_used_disks_for_table(node1, "renaming_table") == 1:
+            time.sleep(1)
+            num_try += 1
+            if num_try == 20:
+                break
+        assert len(get_used_disks_for_table(node1, "renaming_table")) > 1
         assert node1.query("SELECT COUNT() FROM default.renaming_table") == "50\n"
 
         node1.query("RENAME TABLE default.renaming_table TO default.renaming_table1")

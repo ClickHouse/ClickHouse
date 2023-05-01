@@ -21,6 +21,7 @@
 #include <Common/Exception.h>
 #include <Common/getResource.h>
 #include <Common/XMLUtils.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
@@ -157,6 +158,19 @@ static void deleteAttributesRecursive(Node * root)
     }
 }
 
+static void mergeAttributes(Element & config_element, Element & with_element)
+{
+    auto * with_element_attributes = with_element.attributes();
+
+    for (size_t i = 0; i < with_element_attributes->length(); ++i)
+    {
+        auto * attr = with_element_attributes->item(i);
+        config_element.setAttribute(attr->nodeName(), attr->getNodeValue());
+    }
+
+    with_element_attributes->release();
+}
+
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
     const NodeListPtr with_nodes = with_root->childNodes();
@@ -211,6 +225,9 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else
                 {
+                    Element & config_element = dynamic_cast<Element &>(*config_node);
+
+                    mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
                 }
                 merged = true;

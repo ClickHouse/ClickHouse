@@ -30,10 +30,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
+#include <Storages/StorageKeeperMap.h>
 
 namespace DB
 {
@@ -98,11 +100,11 @@ DatabaseReplicated::DatabaseReplicated(
     , tables_metadata_digest(0)
 {
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
-        throw Exception("ZooKeeper path, shard and replica names must be non-empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path, shard and replica names must be non-empty");
     if (shard_name.find('/') != std::string::npos || replica_name.find('/') != std::string::npos)
-        throw Exception("Shard and replica names should not contain '/'", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '/'");
     if (shard_name.find('|') != std::string::npos || replica_name.find('|') != std::string::npos)
-        throw Exception("Shard and replica names should not contain '|'", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -271,7 +273,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
     {
         if (!getContext()->hasZooKeeper())
         {
-            throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
         }
 
         auto current_zookeeper = getContext()->getZooKeeper();
@@ -593,8 +595,10 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
                 else
                     throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                    "It's not allowed to specify explicit zookeeper_path and replica_name for ReplicatedMergeTree arguments in Replicated database. "
-                                    "If you really want to specify them explicitly, enable setting database_replicated_allow_replicated_engine_arguments.");
+                                    "It's not allowed to specify explicit zookeeper_path and replica_name "
+                                    "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
+                                    "specify them explicitly, enable setting "
+                                    "database_replicated_allow_replicated_engine_arguments.");
             }
 
             if (maybe_shard_macros && maybe_replica_macros)
@@ -621,7 +625,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
         for (const auto & command : query_alter->command_list->children)
         {
             if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
-                throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }
 
@@ -659,7 +663,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
+    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -926,7 +930,16 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     for (const auto & table_id : tables_to_create)
     {
         auto table_name = table_id.getTableName();
-        auto create_query_string = table_name_to_metadata[table_name];
+        auto metadata_it = table_name_to_metadata.find(table_name);
+        if (metadata_it == table_name_to_metadata.end())
+        {
+            /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
+            LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
+                        "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
+            continue;
+        }
+
+        const auto & create_query_string = metadata_it->second;
         if (isTableExist(table_name, getContext()))
         {
             assert(create_query_string == readMetadataFile(table_name));
@@ -1376,17 +1389,30 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (query_context->getClientInfo().is_replicated_database_internal)
         return false;
 
+    /// we never replicate KeeperMap operations for some types of queries because it doesn't make sense
+    const auto is_keeper_map_table = [&](const ASTPtr & ast)
+    {
+        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+        return table->as<StorageKeeperMap>() != nullptr;
+    };
+
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
-    {
-        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
-    }
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter() && !is_keeper_map_table(query_ptr);
 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
     {
-        return drop->table.get();
+        if (drop->table.get())
+            return drop->kind != ASTDropQuery::Truncate || !is_keeper_map_table(query_ptr);
+
+        return false;
     }
+
+    if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
+        return !is_keeper_map_table(query_ptr);
 
     return true;
 }

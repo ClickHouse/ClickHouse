@@ -54,10 +54,6 @@ if (TARGET ch_contrib::fastops)
     list (APPEND PRIVATE_LIBS ch_contrib::fastops)
 endif ()
 
-if (ENABLE_EXAMPLES)
-    add_subdirectory(examples)
-endif ()
-
 if (TARGET ch_contrib::llvm)
     list (APPEND PRIVATE_LIBS ch_contrib::llvm)
 endif ()
@@ -86,6 +82,10 @@ if (TARGET ch_contrib::rapidjson)
     list (APPEND PRIVATE_LIBS ch_contrib::rapidjson)
 endif()
 
+if (TARGET ch_contrib::crc32-vpmsum)
+    list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
+endif()
+
 add_subdirectory(GatherUtils)
 list (APPEND PRIVATE_LIBS clickhouse_functions_gatherutils)
 
@@ -102,6 +102,9 @@ endif()
 
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
+
+add_subdirectory(keyvaluepair)
+list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepairs>)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

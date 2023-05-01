@@ -20,7 +20,6 @@ NEED_RERUN_ON_EDITED = {
 }
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
-    "DocsReleaseChecks",
     "BackportPR",
 }.union(NEED_RERUN_ON_EDITED)
 
@@ -302,10 +301,20 @@ def main(event):
     action = event_data["action"]
     print("Got action", event_data["action"])
     pull_request = event_data["pull_request"]
-    labels = {label["name"] for label in pull_request["labels"]}
-    print("PR has labels", labels)
-    if action == "closed" or (action == "labeled" and "do not test" in labels):
-        print("PR merged/closed or manually labeled 'do not test' will kill workflows")
+    label = ""
+    if action == "labeled":
+        label = event_data["label"]["name"]
+        print("Added label:", label)
+
+    print("PR has labels", {label["name"] for label in pull_request["labels"]})
+    if action == "opened" or (
+        action == "labeled" and pull_request["created_at"] == pull_request["updated_at"]
+    ):
+        print("Freshly opened PR, nothing to do")
+        return
+
+    if action == "closed" or label == "do not test":
+        print("PR merged/closed or manually labeled 'do not test', will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
         )
@@ -323,48 +332,8 @@ def main(event):
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
         return
-    elif action == "edited":
-        print("PR is edited, check if it needs to rerun")
-        workflow_descriptions = get_workflows_description_for_pull_request(
-            pull_request, token
-        )
-        workflow_descriptions = (
-            workflow_descriptions
-            or get_workflow_description_fallback(pull_request, token)
-        )
-        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
-        most_recent_workflow = workflow_descriptions[-1]
-        if (
-            most_recent_workflow.status == "completed"
-            and most_recent_workflow.name in NEED_RERUN_ON_EDITED
-        ):
-            print(
-                "The PR's body is changed and workflow is finished. "
-                "Rerun to check the description"
-            )
-            exec_workflow_url([most_recent_workflow.rerun_url], token)
-            print("Rerun finished, exiting")
-            return
-    elif action == "synchronize":
-        print("PR is synchronized, going to stop old actions")
-        workflow_descriptions = get_workflows_description_for_pull_request(
-            pull_request, token
-        )
-        workflow_descriptions = (
-            workflow_descriptions
-            or get_workflow_description_fallback(pull_request, token)
-        )
-        urls_to_cancel = []
-        for workflow_description in workflow_descriptions:
-            if (
-                workflow_description.status != "completed"
-                and workflow_description.conclusion != "cancelled"
-                and workflow_description.head_sha != pull_request["head"]["sha"]
-            ):
-                urls_to_cancel.append(workflow_description.cancel_url)
-        print(f"Found {len(urls_to_cancel)} workflows to cancel")
-        exec_workflow_url(urls_to_cancel, token)
-    elif action == "labeled" and event_data["label"]["name"] == "can be tested":
+
+    if label == "can be tested":
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -401,9 +370,53 @@ def main(event):
                 break
             print("Still have strange status")
             time.sleep(3)
+        return
 
-    else:
-        print("Nothing to do")
+    if action == "edited":
+        print("PR is edited, check if it needs to rerun")
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
+        workflow_descriptions = (
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
+        )
+        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
+        most_recent_workflow = workflow_descriptions[-1]
+        if (
+            most_recent_workflow.status == "completed"
+            and most_recent_workflow.name in NEED_RERUN_ON_EDITED
+        ):
+            print(
+                "The PR's body is changed and workflow is finished. "
+                "Rerun to check the description"
+            )
+            exec_workflow_url([most_recent_workflow.rerun_url], token)
+            print("Rerun finished, exiting")
+            return
+
+    if action == "synchronize":
+        print("PR is synchronized, going to stop old actions")
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
+        workflow_descriptions = (
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
+        )
+        urls_to_cancel = []
+        for workflow_description in workflow_descriptions:
+            if (
+                workflow_description.status != "completed"
+                and workflow_description.conclusion != "cancelled"
+                and workflow_description.head_sha != pull_request["head"]["sha"]
+            ):
+                urls_to_cancel.append(workflow_description.cancel_url)
+        print(f"Found {len(urls_to_cancel)} workflows to cancel")
+        exec_workflow_url(urls_to_cancel, token)
+        return
+
+    print("Nothing to do")
 
 
 def handler(event, _):

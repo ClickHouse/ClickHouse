@@ -9,6 +9,8 @@
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Set.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -129,12 +131,53 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 
 
     if (relative_path_.empty())
-        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
 
     path = relative_path_;
 }
 
 
+StorageSet::StorageSet(
+    DiskPtr disk_,
+    const String & relative_path_,
+    const StorageID & table_id_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const String & comment,
+    bool persistent_)
+    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
+    , set(std::make_shared<Set>(SizeLimits(), false, true))
+{
+    Block header = getInMemoryMetadataPtr()->getSampleBlock();
+    set->setHeader(header.getColumnsWithTypeAndName());
+
+    restore();
+}
+
+
+void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
+void StorageSet::finishInsert() { set->finishInsert(); }
+
+size_t StorageSet::getSize(ContextPtr) const { return set->getTotalRowCount(); }
+std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
+std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
+
+void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
+{
+    if (disk->exists(path))
+        disk->removeRecursive(path);
+    else
+        LOG_INFO(&Poco::Logger::get("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
+
+    disk->createDirectories(path);
+    disk->createDirectories(fs::path(path) / "tmp/");
+
+    Block header = metadata_snapshot->getSampleBlock();
+
+    increment = 0;
+    set = std::make_shared<Set>(SizeLimits(), false, true);
+    set->setHeader(header.getColumnsWithTypeAndName());
+}
 
 
 void StorageSetOrJoinBase::restore()
@@ -205,9 +248,8 @@ void registerStorageSet(StorageFactory & factory)
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, args.engine_args.size());
 
         bool has_settings = args.storage_def->settings;
         SetSettings set_settings;

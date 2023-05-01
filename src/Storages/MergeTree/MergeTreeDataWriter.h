@@ -22,15 +22,15 @@ struct BlockWithPartition
 {
     Block block;
     Row partition;
-    ChunkOffsetsPtr offsets;
+    std::vector<size_t> offsets;
 
     BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
     {
     }
 
-    BlockWithPartition(Block && block_, Row && partition_, ChunkOffsetsPtr chunk_offsets_)
-        : block(block_), partition(std::move(partition_)), offsets(chunk_offsets_)
+    BlockWithPartition(Block && block_, Row && partition_, std::vector<size_t> && offsets_)
+        : block(block_), partition(std::move(partition_)), offsets(std::move(offsets_))
     {
     }
 };

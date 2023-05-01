@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -275,8 +276,15 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                 if (e.code() == ErrorCodes::UNKNOWN_FORMAT
                     || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
                     || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
-                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE
+                    || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
                 {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+                        "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
+                        metadata_storage.getPath() + path_to_remove,
+                        e.message());
+
                     tx->unlinkFile(path_to_remove);
                 }
                 else
@@ -294,7 +302,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void execute(MetadataTransactionPtr tx) override
     {
-        removeMetadataRecursive(tx, path);
+        /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
+        if (metadata_storage.exists(path))
+            removeMetadataRecursive(tx, path);
     }
 
     void undo() override
@@ -498,7 +508,7 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
         {
             if (metadata_storage.exists(to_path))
-                throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", to_path);
 
             if (!metadata_storage.exists(from_path))
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);
@@ -657,6 +667,44 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         std::move(create_metadata_callback),
         buf_size,
         settings);
+}
+
+
+void DiskObjectStorageTransaction::writeFileUsingCustomWriteObject(
+    const String & path,
+    WriteMode mode,
+    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+        custom_write_object_function)
+{
+    /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
+    auto blob_name = object_storage.generateBlobNameForPath(path);
+    std::optional<ObjectAttributes> object_attributes;
+
+    if (metadata_helper)
+    {
+        auto revision = metadata_helper->revision_counter + 1;
+        metadata_helper->revision_counter++;
+        object_attributes = {
+            {"path", path}
+        };
+        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
+    }
+
+    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
+
+    operations_to_execute.emplace_back(std::move(write_operation));
+
+    /// We always use mode Rewrite because we simulate append using metadata and different files
+    size_t object_size = std::move(custom_write_object_function)(object, WriteMode::Rewrite, object_attributes);
+
+    /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
+    if (mode == WriteMode::Rewrite)
+        metadata_transaction->createMetadataFile(path, blob_name, object_size);
+    else
+        metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
+
+    metadata_transaction->commit();
 }
 
 

@@ -210,7 +210,7 @@ public:
         /// Check that expression does not contain unusual actions that will break columns structure.
         for (const auto & action : expression_actions->getActions())
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
 
         std::unordered_map<std::string, DataTypePtr> arguments_map;
 
@@ -225,8 +225,7 @@ public:
         {
             auto it = arguments_map.find(captured_name);
             if (it == arguments_map.end())
-                throw Exception("Lambda captured argument " + captured_name + " not found in required columns.",
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lambda captured argument {} not found in required columns.", captured_name);
 
             captured_types.push_back(it->second);
             arguments_map.erase(it);
@@ -244,7 +243,7 @@ public:
 
         capture = std::make_shared<Capture>(Capture{
                 .captured_names = captured_names_,
-                .captured_types = std::move(captured_types), //-V1030
+                .captured_types = std::move(captured_types),
                 .lambda_arguments = lambda_arguments_,
                 .return_name = expression_return_name_,
                 .return_type = function_return_type_,

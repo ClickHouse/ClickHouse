@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <base/errnoToString.h>
+#include <base/defines.h>
 #include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -7,9 +8,10 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <sys/mman.h>
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include "Coordination/KeeperStorage.h"
 
 
@@ -45,8 +47,10 @@ KeeperStateMachine::KeeperStateMachine(
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
+    CommitCallback commit_callback_,
     const std::string & superdigest_)
-    : coordination_settings(coordination_settings_)
+    : commit_callback(commit_callback_)
+    , coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
           coordination_settings->snapshots_to_keep,
@@ -273,6 +277,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     ProfileEvents::increment(ProfileEvents::KeeperCommits);
     last_committed_idx = log_idx;
+
+    if (commit_callback)
+        commit_callback(request_for_session);
     return nullptr;
 }
 
@@ -340,7 +347,7 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
-    std::lock_guard<std::mutex> lock(snapshots_lock);
+    std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
@@ -471,13 +478,15 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        ::close(fd);
+        int err = ::close(fd);
+        chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
     return 0;
 }
 
@@ -638,6 +647,14 @@ ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
         return ClusterConfig::deserialize(*tmp);
     }
     return nullptr;
+}
+
+void KeeperStateMachine::recalculateStorageStats()
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    LOG_INFO(log, "Recalculating storage stats");
+    storage->recalculateStats();
+    LOG_INFO(log, "Done recalculating storage stats");
 }
 
 }
