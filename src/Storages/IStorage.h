@@ -514,7 +514,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
-    virtual void waitForMutation(const String & /*mutation_id*/)
+    virtual void waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }

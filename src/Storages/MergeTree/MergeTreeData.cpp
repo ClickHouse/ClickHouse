@@ -18,6 +18,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadFuzzer.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -2044,11 +2045,19 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
             {
                 if (isOldPartDirectory(disk, it->path(), deadline))
                 {
+                    ThreadFuzzer::maybeInjectSleep();
                     if (temporary_parts.contains(basename))
                     {
                         /// Actually we don't rely on temporary_directories_lifetime when removing old temporaries directories,
                         /// it's just an extra level of protection just in case we have a bug.
                         LOG_INFO(LogFrequencyLimiter(log, 10), "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
+                        continue;
+                    }
+                    else if (!disk->exists(it->path()))
+                    {
+                        /// We should recheck that the dir exists, otherwise we can get "No such file or directory"
+                        /// due to a race condition with "Renaming temporary part" (temporary part holder could be already released, so the check above is not enough)
+                        LOG_WARNING(log, "Temporary directory {} suddenly disappeared while iterating, assuming it was concurrently renamed to persistent", it->path());
                         continue;
                     }
                     else
@@ -3947,6 +3956,9 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
     else
         LOG_INFO(log, "Renaming {} to {}_{} and forgetting it.", part_to_detach->getDataPartStorage().getPartDirectory(), prefix, part_to_detach->name);
+
+    if (restore_covered)
+        waitForOutdatedPartsToBeLoaded();
 
     auto lock = lockParts();
     bool removed_active_part = false;
