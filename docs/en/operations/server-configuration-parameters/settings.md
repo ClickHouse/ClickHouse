@@ -1339,13 +1339,20 @@ Settings:
 **Example**
 
 ``` xml
- <prometheus>
-    <endpoint>/metrics</endpoint>
-    <port>9363</port>
-    <metrics>true</metrics>
-    <events>true</events>
-    <asynchronous_metrics>true</asynchronous_metrics>
-</prometheus>
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <!-- highlight-start -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+    <!-- highlight-end -->
+</clickhouse>
 ```
 
 ## query_log {#server_configuration_parameters-query-log}
