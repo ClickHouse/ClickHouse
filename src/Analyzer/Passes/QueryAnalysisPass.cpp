@@ -1205,6 +1205,29 @@ private:
 
     static std::string rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, const ContextPtr & context);
 
+    static std::optional<JoinTableSide> getColumnSideFromJoinTree(QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
+    {
+        const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
+
+        if (join_node.getLeftTableExpression().get() == column_src)
+            return JoinTableSide::Left;
+        if (join_node.getRightTableExpression().get() == column_src)
+            return JoinTableSide::Right;
+        return {};
+    }
+
+    static void convertJoinedColumnTypeToNullIfNeeded(QueryTreeNodePtr & resolved_identifier, const JoinKind & join_kind, std::optional<JoinTableSide> resolved_side)
+    {
+        if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
+            (isFull(join_kind) ||
+            (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
+            (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
+        {
+            auto & resolved_column = resolved_identifier->as<ColumnNode &>();
+            resolved_column.setColumnType(makeNullableOrLowCardinalityNullable(resolved_column.getColumnType()));
+        }
+    }
+
     /// Resolve identifier functions
 
     static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
@@ -2982,6 +3005,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     QueryTreeNodePtr resolved_identifier;
 
     JoinKind join_kind = from_join_node.getKind();
+    bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
 
     if (left_resolved_identifier && right_resolved_identifier)
     {
@@ -3027,19 +3051,31 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
                   *
                   * Otherwise we prefer column from left table.
                   */
-                if (identifier_path_part == right_column_source_alias)
-                    return right_resolved_identifier;
-                else if (!left_column_source_alias.empty() &&
-                    right_column_source_alias.empty() &&
-                    identifier_path_part != left_column_source_alias)
-                    return right_resolved_identifier;
+                bool column_resolved_using_right_alias = identifier_path_part == right_column_source_alias;
+                bool column_resolved_without_using_left_alias = !left_column_source_alias.empty()
+                                                                && right_column_source_alias.empty()
+                                                                && identifier_path_part != left_column_source_alias;
+                if (column_resolved_using_right_alias || column_resolved_without_using_left_alias)
+                {
+                    resolved_side = JoinTableSide::Right;
+                    resolved_identifier = right_resolved_identifier;
+                }
+                else
+                {
+                    resolved_side = JoinTableSide::Left;
+                    resolved_identifier = left_resolved_identifier;
+                }
             }
-
-            return left_resolved_identifier;
+            else
+            {
+                resolved_side = JoinTableSide::Left;
+                resolved_identifier = left_resolved_identifier;
+            }
         }
         else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
         {
-            return left_resolved_identifier;
+            resolved_side = JoinTableSide::Left;
+            resolved_identifier = left_resolved_identifier;
         }
         else
         {
@@ -3092,17 +3128,10 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
-    bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
-
-    if (join_use_nulls &&
-        resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
-        (isFull(join_kind) ||
-        (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
-        (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
+    if (join_use_nulls)
     {
         resolved_identifier = resolved_identifier->clone();
-        auto & resolved_column = resolved_identifier->as<ColumnNode &>();
-        resolved_column.setColumnType(makeNullableOrLowCardinalityNullable(resolved_column.getColumnType()));
+        convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side);
     }
 
     return resolved_identifier;
@@ -4000,6 +4029,22 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         matched_expression_nodes_with_names = resolveQualifiedMatcher(matcher_node, scope);
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
+
+    if (scope.context->getSettingsRef().join_use_nulls)
+    {
+        const auto * nearest_query_scope = scope.getNearestQueryScope();
+        const QueryNode * nearest_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+        const QueryTreeNodePtr & nearest_scope_join_tree = nearest_scope_query_node ? nearest_scope_query_node->getJoinTree() : nullptr;
+        const JoinNode * nearest_scope_join_node = nearest_scope_join_tree ? nearest_scope_join_tree->as<JoinNode>() : nullptr;
+        if (nearest_scope_join_node)
+        {
+            for (auto & [node, node_name] : matched_expression_nodes_with_names)
+            {
+                auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
+                convertJoinedColumnTypeToNullIfNeeded(node, nearest_scope_join_node->getKind(), join_identifier_side);
+            }
+        }
+    }
 
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
