@@ -284,6 +284,13 @@ Configuration example:
          10000 is good balance between memory and speed.
          Even for 10e10 elements and can handle all the load without starvation. -->
     <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+    <!-- Maximum load factor of the hash table, with greater values, the memory
+         is utilized more efficiently (less memory is wasted) but read/performance
+         may deteriorate.
+
+         Valid values: [0.5, 0.99]
+         Default: 0.5 -->
+    <max_load_factor>0.5</max_load_factor>
   </hashed>
 </layout>
 ```
@@ -327,6 +334,7 @@ Configuration example:
   <complex_key_hashed>
     <shards>1</shards>
     <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+    <!-- <max_load_factor>0.5</max_load_factor> -->
   </complex_key_hashed>
 </layout>
 ```
