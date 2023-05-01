@@ -290,6 +290,7 @@ class alignas(64) HashTableGrowerWithPrecalculation
     UInt8 size_degree = initial_size_degree;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
     size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
+    size_t max_size_degree_quadratic = 23;
 
 public:
     UInt8 sizeDegree() const { return size_degree; }
@@ -319,16 +320,20 @@ public:
     bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
 
     /// Increase the size of the hash table.
-    void increaseSize() { increaseSizeDegree(size_degree >= 23 ? 1 : 2); }
+    void increaseSize() { increaseSizeDegree(size_degree >= max_size_degree_quadratic ? 1 : 2); }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
-        size_degree = num_elems <= 1
-             ? initial_size_degree
-             : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
-                 ? initial_size_degree
-                 : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        if (num_elems <= 1)
+            size_degree = initial_size_degree;
+        else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
+            size_degree = initial_size_degree;
+        else
+        {
+            size_degree = static_cast<size_t>(log2(num_elems - 1));
+            size_degree += size_degree >= max_size_degree_quadratic ? 1 : 2;
+        }
         increaseSizeDegree(0);
     }
 
