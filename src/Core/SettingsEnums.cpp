@@ -206,4 +206,7 @@ IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
                        {{"ordered", S3QueueMode::ORDERED},
                         {"unordered", S3QueueMode::UNORDERED}})
 
+IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
+                       {{"keep", S3QueueAction::KEEP},
+                        {"delete", S3QueueAction::DELETE}})
 }

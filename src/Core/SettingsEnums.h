@@ -226,4 +226,13 @@ enum class S3QueueMode
 };
 
 DECLARE_SETTING_ENUM(S3QueueMode)
+
+enum class S3QueueAction
+{
+    KEEP,
+    DELETE,
+};
+
+DECLARE_SETTING_ENUM(S3QueueAction)
+
 }
