@@ -6,7 +6,7 @@ namespace DB
 {
 
 IOutputFormat::IOutputFormat(const Block & header_, WriteBuffer & out_)
-    : IProcessor({header_, header_, header_}, {}), out(out_)
+    : IProcessor({header_, header_, header_, header_}, {}), out(out_)
 {
 }
 
@@ -15,26 +15,13 @@ IOutputFormat::Status IOutputFormat::prepare()
     if (has_input)
         return Status::Ready;
 
-    for (auto kind : {Main, Totals, Extremes})
-    {
-        auto & input = getPort(kind);
+    auto status = prepareMainAndPartialResult();
+    if (status != Status::Finished)
+        return status;
 
-        if (kind != Main && !input.isConnected())
-            continue;
-
-        if (input.isFinished())
-            continue;
-
-        input.setNeeded();
-
-        if (!input.hasData())
-            return Status::NeedData;
-
-        current_chunk = input.pull(true);
-        current_block_kind = kind;
-        has_input = true;
-        return Status::Ready;
-    }
+    status = prepareTotalsAndExtremes();
+    if (status != Status::Finished)
+        return status;
 
     finished = true;
 
@@ -42,6 +29,65 @@ IOutputFormat::Status IOutputFormat::prepare()
         return Status::Ready;
 
     return Status::Finished;
+}
+
+IOutputFormat::Status IOutputFormat::prepareMainAndPartialResult()
+{
+    bool need_data = false;
+    for (auto kind : {Main, PartialResult})
+    {
+        auto & input = getPort(kind);
+
+        if (input.isFinished())
+            continue;
+
+        if (kind == PartialResult && was_main_input)
+        {
+            input.close();
+            continue;
+        }
+
+        input.setNeeded();
+        need_data = true;
+
+        if (!input.hasData())
+            continue;
+
+        setCurrentChunk(input, kind);
+        return Status::Ready;
+    }
+
+    if (need_data)
+        return Status::NeedData;
+
+    return Status::Finished;
+}
+
+IOutputFormat::Status IOutputFormat::prepareTotalsAndExtremes()
+{
+    for (auto kind : {Totals, Extremes})
+    {
+        auto & input = getPort(kind);
+
+        if (!input.isConnected() || input.isFinished())
+            continue;
+
+        input.setNeeded();
+        if (!input.hasData())
+            return Status::NeedData;
+
+        setCurrentChunk(input, kind);
+        return Status::Ready;
+    }
+
+    return Status::Finished;
+}
+
+void IOutputFormat::setCurrentChunk(InputPort & input, PortKind kind)
+{
+    current_chunk = input.pull(true);
+    current_block_kind = kind;
+    has_input = true;
 }
 
 static Chunk prepareTotals(Chunk chunk)
@@ -83,7 +129,15 @@ void IOutputFormat::work()
         case Main:
             result_rows += current_chunk.getNumRows();
             result_bytes += current_chunk.allocatedBytes();
+            if (!was_main_input && current_chunk.hasRows())
+            {
+                consume(Chunk(current_chunk.cloneEmptyColumns(), 0));
+                was_main_input = true;
+            }
             consume(std::move(current_chunk));
+            break;
+        case PartialResult:
+            consumePartialResult(std::move(current_chunk));
             break;
         case Totals:
             writeSuffixIfNeeded();
@@ -113,7 +167,16 @@ void IOutputFormat::flush()
 void IOutputFormat::write(const Block & block)
 {
     writePrefixIfNeeded();
-    consume(Chunk(block.getColumns(), block.rows(), block.info.has_partial_result));
+    consume(Chunk(block.getColumns(), block.rows()));
+
+    if (auto_flush)
+        flush();
+}
+
+void IOutputFormat::writePartialResult(const Block & block)
+{
+    writePrefixIfNeeded();
+    consumePartialResult(Chunk(block.getColumns(), block.rows()));
 
     if (auto_flush)
         flush();

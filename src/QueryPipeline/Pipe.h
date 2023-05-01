@@ -48,6 +48,9 @@ public:
     OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
     OutputPort * getTotalsPort() const { return totals_port; }
     OutputPort * getExtremesPort() const { return extremes_port; }
+    OutputPort * getPartialResultPort(size_t pos) const { return partial_result_ports.empty() ? nullptr : partial_result_ports[pos]; }
+
+    bool isPartialResultActive() { return is_partial_result_active; }
 
     /// Add processor to list, add it output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
@@ -58,9 +61,13 @@ public:
     void addTotalsSource(ProcessorPtr source);
     void addExtremesSource(ProcessorPtr source);
 
-    /// Drop totals and extremes (create NullSink for them).
+    /// Activate sending partial result during main pipeline execution
+    void activatePartialResult(UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_);
+
+    /// Drop totals, extremes and partial result (create NullSink for them).
     void dropTotals();
     void dropExtremes();
+    void dropPartialResult();
 
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
@@ -68,6 +75,8 @@ public:
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
+
+    void addPartialResultTransformIfNeeded(ProcessorPtr transform, size_t partial_result_port_id);
 
     enum class StreamType
     {
@@ -109,10 +118,17 @@ private:
     Block header;
     std::shared_ptr<Processors> processors;
 
-    /// Output ports. Totals and extremes are allowed to be empty.
+    /// If is true, then on each addition of processor also try
+    /// to add processor which will send partial result from original processor
+    bool is_partial_result_active = false;
+    UInt64 partial_result_limit = 0;
+    UInt64 partial_result_duration_ms = 0;
+
+    /// Output ports. Totals, extremes and partial results are allowed to be empty.
     OutputPortRawPtrs output_ports;
     OutputPort * totals_port = nullptr;
     OutputPort * extremes_port = nullptr;
+    OutputPortRawPtrs partial_result_ports;
 
     /// It is the max number of processors which can be executed in parallel for each step.
     /// Usually, it's the same as the number of output ports.
@@ -127,6 +143,8 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
+    
+    void addProcessor(ProcessorPtr processor);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

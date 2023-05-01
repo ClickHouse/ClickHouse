@@ -160,7 +160,6 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
     }
 
     block = lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
-    block.info.has_partial_result = chunk.hasPartialResult();
 
     if (auto chunk_info = chunk.getChunkInfo())
     {

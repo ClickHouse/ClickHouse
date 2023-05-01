@@ -75,7 +75,8 @@ public:
         std::shared_ptr<Processors> processors_,
         OutputPort * output_,
         OutputPort * totals_ = nullptr,
-        OutputPort * extremes_ = nullptr);
+        OutputPort * extremes_ = nullptr,
+        OutputPort * partial_result_ = nullptr);
 
     bool initialized() const { return !processors->empty(); }
     /// When initialized, exactly one of the following is true.
@@ -147,6 +148,7 @@ private:
     OutputPort * output = nullptr;
     OutputPort * totals = nullptr;
     OutputPort * extremes = nullptr;
+    OutputPort * partial_result = nullptr;
 
     QueryStatusPtr process_list_element;
 

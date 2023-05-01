@@ -1,5 +1,5 @@
 #include <Processors/LimitTransform.h>
-
+#include <Processors/Transforms/LimitPartialResultTransform.h>
 
 namespace DB
 {
@@ -180,16 +180,9 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         return Status::NeedData;
 
     data.current_chunk = input.pull(true);
-    if (data.current_chunk.hasPartialResult())
-    {
-        output.push(std::move(data.current_chunk));
-        return Status::PortFull;
-    }
-
     auto rows = data.current_chunk.getNumRows();
-    bool is_current_data_partial = data.current_chunk.hasPartialResult();
 
-    if (rows_before_limit_at_least && !data.input_port_has_counter && !is_current_data_partial)
+    if (rows_before_limit_at_least && !data.input_port_has_counter)
         rows_before_limit_at_least->add(rows);
 
     /// Skip block (for 'always_read_till_end' case).
@@ -213,9 +206,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 
     if (rows_read <= offset)
     {
-        if (is_current_data_partial)
-            rows_read = 0;
-
         data.current_chunk.clear();
 
         if (input.isFinished())
@@ -244,14 +234,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
 
     bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset + limit;
     /// No more data is needed.
-    if (!always_read_till_end && !limit_is_unreachable && rows_read >= offset + limit && !may_need_more_data_for_ties && !is_current_data_partial)
+    if (!always_read_till_end && !limit_is_unreachable && rows_read >= offset + limit && !may_need_more_data_for_ties)
         input.close();
-
-    if (is_current_data_partial)
-    {
-        rows_read = 0;
-        previous_row_chunk = {};
-    }
 
     output.push(std::move(data.current_chunk));
 
@@ -380,6 +364,12 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
         if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
             return false;
     return true;
+}
+
+ProcessorPtr LimitTransform::getPartialResultProcessor(ProcessorPtr /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+{
+    const auto & header = inputs.front().getHeader();
+    return std::make_shared<LimitPartialResultTransform>(header, partial_result_limit, partial_result_duration_ms, limit, offset);
 }
 
 }

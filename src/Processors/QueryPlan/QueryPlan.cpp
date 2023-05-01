@@ -168,6 +168,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
+    bool has_partial_result_setting = build_pipeline_settings.partial_result_duration_ms > 0;
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
@@ -195,6 +196,9 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         }
         else
             stack.push(Frame{.node = frame.node->children[next_child]});
+
+        if (last_pipeline && has_partial_result_setting)
+            last_pipeline->activatePartialResult(build_pipeline_settings.partial_result_limit, build_pipeline_settings.partial_result_duration_ms);
     }
 
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);

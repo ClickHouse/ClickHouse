@@ -1,4 +1,5 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/Transforms/PartialResultTransform.h>
 #include <Access/EnabledQuota.h>
 
 namespace DB
@@ -38,7 +39,7 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         return;
     }
 
-    if (chunk && !chunk.hasPartialResult())
+    if (chunk)
     {
         info.update(chunk);
 
@@ -72,6 +73,12 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
             break;
         }
     }
+}
+
+ProcessorPtr LimitsCheckingTransform::getPartialResultProcessor(ProcessorPtr /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+{
+    const auto & header = inputs.front().getHeader();
+    return std::make_shared<PartialResultTransform>(header, partial_result_limit, partial_result_duration_ms);
 }
 
 }

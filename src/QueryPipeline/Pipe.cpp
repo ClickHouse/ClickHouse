@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -167,12 +168,9 @@ Pipe::Pipe(ProcessorPtr source)
 {
     checkSource(*source);
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     output_ports.push_back(&source->getOutputs().front());
     header = output_ports.front()->getHeader();
-    processors->emplace_back(std::move(source));
+    addProcessor(std::move(source));
     max_parallel_streams = 1;
 }
 
@@ -319,6 +317,19 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
         res.processors->insert(res.processors->end(), pipe.processors->begin(), pipe.processors->end());
         res.output_ports.insert(res.output_ports.end(), pipe.output_ports.begin(), pipe.output_ports.end());
 
+        if (res.isPartialResultActive() && pipe.isPartialResultActive())
+        {
+            res.partial_result_ports.insert(
+                res.partial_result_ports.end(),
+                pipe.partial_result_ports.begin(),
+                pipe.partial_result_ports.end());
+        }
+        else
+        {
+            res.is_partial_result_active = false;
+            res.partial_result_ports.clear();
+        }
+
         res.max_parallel_streams += pipe.max_parallel_streams;
 
         if (pipe.totals_port)
@@ -352,11 +363,11 @@ void Pipe::addSource(ProcessorPtr source)
     else
         assertBlocksHaveEqualStructure(header, source_header, "Pipes");
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     output_ports.push_back(&source->getOutputs().front());
-    processors->emplace_back(std::move(source));
+    if (isPartialResultActive())
+        partial_result_ports.push_back(nullptr);
+
+    addProcessor(std::move(source));
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
@@ -374,11 +385,9 @@ void Pipe::addTotalsSource(ProcessorPtr source)
 
     assertBlocksHaveEqualStructure(header, source_header, "Pipes");
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     totals_port = &source->getOutputs().front();
-    processors->emplace_back(std::move(source));
+
+    addProcessor(std::move(source));
 }
 
 void Pipe::addExtremesSource(ProcessorPtr source)
@@ -394,11 +403,20 @@ void Pipe::addExtremesSource(ProcessorPtr source)
 
     assertBlocksHaveEqualStructure(header, source_header, "Pipes");
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     extremes_port = &source->getOutputs().front();
-    processors->emplace_back(std::move(source));
+
+    addProcessor(std::move(source));
+}
+
+void Pipe::activatePartialResult(UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
+{
+    if (!is_partial_result_active)
+    {
+        is_partial_result_active = true;
+        partial_result_limit = partial_result_limit_;
+        partial_result_duration_ms = partial_result_duration_ms_;
+        partial_result_ports.assign(output_ports.size(), nullptr);
+    }
 }
 
 static void dropPort(OutputPort *& port, Processors & processors, Processors * collected_processors)
@@ -424,6 +442,15 @@ void Pipe::dropTotals()
 void Pipe::dropExtremes()
 {
     dropPort(extremes_port, *processors, collected_processors);
+}
+
+void Pipe::dropPartialResult()
+{
+    for (auto & port : partial_result_ports)
+        dropPort(port, *processors, collected_processors);
+
+    is_partial_result_active = false;
+    partial_result_ports.clear();
 }
 
 void Pipe::addTransform(ProcessorPtr transform)
@@ -506,10 +533,7 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     if (extremes_port)
         assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
 
-    if (collected_processors)
-        collected_processors->emplace_back(transform);
-
-    processors->emplace_back(std::move(transform));
+    addProcessor(std::move(transform));
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
@@ -595,12 +619,39 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
     if (extremes_port)
         assertBlocksHaveEqualStructure(header, extremes_port->getHeader(), "Pipes");
 
-    if (collected_processors)
-        collected_processors->emplace_back(transform);
+    addProcessor(std::move(transform));
 
-    processors->emplace_back(std::move(transform));
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
+
+void Pipe::addPartialResultTransformIfNeeded(ProcessorPtr transform, size_t partial_result_port_id)
+{
+    if (isPartialResultActive())
+    {
+        auto & partial_result_port = partial_result_ports[partial_result_port_id];
+
+        if (!transform->supportPartialResultProcessor())
+        {
+            dropPort(partial_result_port, *processors, collected_processors);
+            return;
+        }
+
+        if (partial_result_port == nullptr)
+        {
+            auto source = std::make_shared<NullSource>(getHeader());
+            partial_result_port = &source->getPort();
+
+            addProcessor(std::move(source));
+        }
+
+        auto partial_result_transform = transform->getPartialResultProcessor(std::move(transform), partial_result_limit, partial_result_duration_ms);
+
+        connect(*partial_result_port, partial_result_transform->getInputs().front());
+        partial_result_port = &partial_result_transform->getOutputs().front();
+
+        addProcessor(std::move(partial_result_transform));
+    }
 }
 
 void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
@@ -610,7 +661,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
 
     Block new_header;
 
-    auto add_transform = [&](OutputPort *& port, StreamType stream_type)
+    auto add_transform = [&](OutputPort *& port, size_t partial_result_port_id, StreamType stream_type)
     {
         if (!port)
             return;
@@ -646,19 +697,22 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
         {
             connect(*port, transform->getInputs().front());
             port = &transform->getOutputs().front();
+            if (stream_type == StreamType::Main)
+                addPartialResultTransformIfNeeded(transform, partial_result_port_id);
 
-            if (collected_processors)
-                collected_processors->emplace_back(transform);
-
-            processors->emplace_back(std::move(transform));
+            addProcessor(std::move(transform));
         }
     };
 
+    size_t partial_result_port_id = 0;
     for (auto & port : output_ports)
-        add_transform(port, StreamType::Main);
+    {
+        add_transform(port, partial_result_port_id, StreamType::Main);
+        ++partial_result_port_id;
+    }
 
-    add_transform(totals_port, StreamType::Totals);
-    add_transform(extremes_port, StreamType::Extremes);
+    add_transform(totals_port, 0, StreamType::Totals);
+    add_transform(extremes_port, 0, StreamType::Extremes);
 
     header = std::move(new_header);
 }
@@ -697,16 +751,19 @@ void Pipe::addChains(std::vector<Chain> chains)
 
         auto added_processors = Chain::getProcessors(std::move(chains[i]));
         for (auto & transform : added_processors)
-        {
-            if (collected_processors)
-                collected_processors->emplace_back(transform);
-
-            processors->emplace_back(std::move(transform));
-        }
+            addProcessor(std::move(transform));
     }
 
     header = std::move(new_header);
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
+}
+
+void Pipe::addProcessor(ProcessorPtr processor)
+{
+    if (collected_processors)
+        collected_processors->emplace_back(processor);
+
+    processors->emplace_back(std::move(processor));
 }
 
 void Pipe::resize(size_t num_streams, bool force, bool strict)

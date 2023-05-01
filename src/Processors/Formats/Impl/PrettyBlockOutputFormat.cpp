@@ -140,7 +140,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        if (!chunk.hasPartialResult())
+        if (port_kind != PortKind::PartialResult)
             total_rows += chunk.getNumRows();
         return;
     }
@@ -322,7 +322,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
     writeString(bottom_separator_s, out);
 
-    if (!chunk.hasPartialResult())
+    if (port_kind != PortKind::PartialResult)
         total_rows += num_rows;
 }
 
@@ -394,6 +394,15 @@ void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
     total_rows = 0;
     writeCString("\nExtremes:\n", out);
     write(std::move(chunk), PortKind::Extremes);
+}
+
+void PrettyBlockOutputFormat::consumePartialResult(Chunk chunk)
+{
+    if (prev_partial_block_rows > 0)
+        clearLastLines(prev_partial_block_rows + 2);
+
+    prev_partial_block_rows = chunk.getNumRows();
+    write(std::move(chunk), PortKind::PartialResult);
 }
 
 

@@ -234,6 +234,14 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
     }
+    
+    virtual bool isPartialResultProcessor() const { return false; }
+    virtual bool supportPartialResultProcessor() const { return false; }
+
+    virtual ProcessorPtr getPartialResultProcessor(ProcessorPtr /*current_processor*/, UInt64 /*partial_result_limit*/, UInt64 /*partial_result_duration_ms*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getPartialResultProcessor' is not implemented for {} processor", getName());
+    }
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).

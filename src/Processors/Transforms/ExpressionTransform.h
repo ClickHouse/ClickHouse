@@ -29,6 +29,9 @@ public:
 protected:
     void transform(Chunk & chunk) override;
 
+    bool supportPartialResultProcessor() const override { return true; }
+    ProcessorPtr getPartialResultProcessor(ProcessorPtr current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
+
 private:
     ExpressionActionsPtr expression;
 };

@@ -23,7 +23,7 @@ class WriteBuffer;
 class IOutputFormat : public IProcessor
 {
 public:
-    enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
+    enum PortKind { Main = 0, Totals = 1, Extremes = 2, PartialResult = 3 };
 
     IOutputFormat(const Block & header_, WriteBuffer & out_);
 
@@ -54,6 +54,7 @@ public:
     /// TODO: separate formats and processors.
 
     void write(const Block & block);
+    void writePartialResult(const Block & block);
 
     void finalize();
 
@@ -120,6 +121,7 @@ protected:
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
+    virtual void consumePartialResult(Chunk) {}
     virtual void finalizeImpl() {}
     virtual void finalizeBuffers() {}
     virtual void writePrefix() {}
@@ -168,6 +170,7 @@ protected:
 
     Chunk current_chunk;
     PortKind current_block_kind = PortKind::Main;
+    bool was_main_input = false;
     bool has_input = false;
     bool finished = false;
     bool finalized = false;
@@ -182,6 +185,10 @@ protected:
     Statistics statistics;
 
 private:
+    IOutputFormat::Status prepareMainAndPartialResult();
+    IOutputFormat::Status prepareTotalsAndExtremes();
+    void setCurrentChunk(InputPort & input, PortKind kind);
+
     size_t rows_read_before = 0;
     bool are_totals_written = false;
 
