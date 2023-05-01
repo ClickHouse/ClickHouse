@@ -25,6 +25,7 @@ using LoadJobPtr = std::shared_ptr<LoadJob>;
 using LoadJobSet = std::unordered_set<LoadJobPtr>;
 class LoadTask;
 using LoadTaskPtr = std::shared_ptr<LoadTask>;
+using LoadTaskPtrs = std::vector<LoadTaskPtr>;
 class AsyncLoader;
 
 void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
