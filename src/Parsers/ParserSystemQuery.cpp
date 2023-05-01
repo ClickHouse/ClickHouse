@@ -140,7 +140,6 @@ enum class SystemQueryTargetType
                                     Expected & expected)
 {
     String cluster_str;
-
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
