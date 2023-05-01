@@ -23,7 +23,6 @@ namespace DB
 
 namespace FailPoints
 {
-    extern const char rmt_commit_zk_fail_before_op[];
     extern const char rmt_commit_zk_fail_after_op[];
 }
 
@@ -947,15 +946,6 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
         ThreadFuzzer::maybeInjectSleep();
 
-        fiu_do_on(FailPoints::rmt_commit_zk_fail_before_op,
-        {
-            if (!zookeeper->fault_policy)
-            {
-                zookeeper->logger = log;
-                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
-            }
-            zookeeper->fault_policy->must_fail_before_op = true;
-        });
         fiu_do_on(FailPoints::rmt_commit_zk_fail_after_op,
         {
             if (!zookeeper->fault_policy)

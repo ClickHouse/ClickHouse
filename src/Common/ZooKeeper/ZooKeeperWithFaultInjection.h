@@ -86,7 +86,6 @@ class ZooKeeperWithFaultInjection
     }
 
 public:
-
     using Ptr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
     static ZooKeeperWithFaultInjection::Ptr createInstance(

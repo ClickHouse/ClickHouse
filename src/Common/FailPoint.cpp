@@ -1,8 +1,5 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Poco/StringTokenizer.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <Common/logger_useful.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <condition_variable>
@@ -28,7 +25,6 @@ static struct InitFiu
 #endif
 
 #define APPLY_FOR_FAILPOINTS_ONCE(M) \
-    M(rmt_commit_zk_fail_before_op) \
     M(rmt_commit_zk_fail_after_op)
 
 #define APPLY_FOR_FAILPOINTS(M) \

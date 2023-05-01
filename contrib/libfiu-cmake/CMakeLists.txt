@@ -1,3 +1,8 @@
+if (NOT ENABLE_FIU)
+  message (STATUS "Not using gwp-asan")
+  return ()
+endif ()
+
 set(FIU_DIR "${ClickHouse_SOURCE_DIR}/contrib/libfiu/")
 
 set(FIU_SOURCES
@@ -10,7 +15,7 @@ set(FIU_SOURCES
 
 set(FIU_HEADERS "${FIU_DIR}/libfiu")
 
-add_library(fiu ${FIU_SOURCES})
-target_compile_definitions(fiu PUBLIC DUMMY_BACKTRACE)
-target_include_directories(fiu PUBLIC ${FIU_HEADERS})
-add_library(ch_contrib::fiu ALIAS fiu)
+add_library(_fiu ${FIU_SOURCES})
+target_compile_definitions(_fiu PUBLIC DUMMY_BACKTRACE)
+target_include_directories(_fiu PUBLIC ${FIU_HEADERS})
+add_library(ch_contrib::fiu ALIAS _fiu)
