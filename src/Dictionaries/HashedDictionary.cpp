@@ -21,26 +21,12 @@
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+#include <Dictionaries/HashedDictionaryCollectionTraits.h>
 
 namespace CurrentMetrics
 {
     extern const Metric HashedDictionaryThreads;
     extern const Metric HashedDictionaryThreadsActive;
-}
-
-namespace
-{
-
-/// NOTE: Trailing return type is explicitly specified for SFINAE.
-
-/// google::sparse_hash_map
-template <typename T> auto getKeyFromCell(const T & value) -> decltype(value->first) { return value->first; } // NOLINT
-template <typename T> auto getValueFromCell(const T & value) -> decltype(value->second) { return value->second; } // NOLINT
-
-/// HashMap
-template <typename T> auto getKeyFromCell(const T & value) -> decltype(value->getKey()) { return value->getKey(); } // NOLINT
-template <typename T> auto getValueFromCell(const T & value) -> decltype(value->getMapped()) { return value->getMapped(); } // NOLINT
-
 }
 
 namespace DB
@@ -242,10 +228,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
                 CurrentThread::attachToGroupIfDetached(thread_group);
             setThreadName("HashedDictDtor");
 
-            if constexpr (sparse)
-                container.clear();
-            else
-                container.clearAndShrink();
+            clearContainer(container);
         });
 
         ++hash_tables_count;
@@ -834,12 +817,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::resize(size_t added
     if (unlikely(attributes_size == 0))
     {
         size_t reserve_size = added_rows + no_attributes_containers.front().size();
-
-        if constexpr (sparse)
-            no_attributes_containers.front().resize(reserve_size);
-        else
-            no_attributes_containers.front().reserve(reserve_size);
-
+        resizeContainer(no_attributes_containers.front(), reserve_size);
         return;
     }
 
@@ -849,11 +827,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::resize(size_t added
         {
             auto & container = containers.front();
             size_t reserve_size = added_rows + container.size();
-
-            if constexpr (sparse)
-                container.resize(reserve_size);
-            else
-                container.reserve(reserve_size);
+            resizeContainer(container, reserve_size);
         });
     }
 }
@@ -973,25 +947,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
         {
             for (const auto & container : containers)
             {
-                using ContainerType = std::decay_t<decltype(container)>;
-                using AttributeValueType = typename ContainerType::mapped_type;
-
                 bytes_allocated += sizeof(container);
-
-                if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
-                {
-                    /// bucket_count() - Returns table size, that includes empty and deleted
-                    /// size()         - Returns table size, without empty and deleted
-                    /// and since this is sparsehash, empty cells should not be significant,
-                    /// and since items cannot be removed from the dictionary, deleted is also not important.
-                    bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
-                    bucket_count += container.bucket_count();
-                }
-                else
-                {
-                    bytes_allocated += container.getBufferSizeInBytes();
-                    bucket_count += container.getBufferSizeInCells();
-                }
+                bytes_allocated += getBufferSizeInBytes(container);
+                bucket_count += getBufferSizeInCells(container);
             }
         });
 
@@ -1010,17 +968,8 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
         for (const auto & container : no_attributes_containers)
         {
             bytes_allocated += sizeof(container);
-
-            if constexpr (sparse)
-            {
-                bytes_allocated += container.size() * (sizeof(KeyType));
-                bucket_count += container.bucket_count();
-            }
-            else
-            {
-                bytes_allocated += container.getBufferSizeInBytes();
-                bucket_count += container.getBufferSizeInCells();
-            }
+            bytes_allocated += getBufferSizeInBytes(container);
+            bucket_count += getBufferSizeInCells(container);
         }
     }
 
@@ -1078,12 +1027,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & 
             keys.reserve(keys.size() + container.size());
 
             for (const auto & key : container)
-            {
-                if constexpr (sparse)
-                    keys.emplace_back(key);
-                else
-                    keys.emplace_back(key.getKey());
-            }
+                keys.emplace_back(getSetKeyFromCell(key));
         }
     }
 
