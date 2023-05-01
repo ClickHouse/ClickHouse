@@ -38,7 +38,7 @@ protected:
     UInt64 partial_result_duration_ms;
 
     ShaphotResult partial_result = {{}, SnaphotStatus::NotReady};
-    
+
     bool finished_getting_snapshots = false;
 
     virtual void transformPartialResult(Chunk & /*chunk*/) {}

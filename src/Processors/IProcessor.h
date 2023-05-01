@@ -234,7 +234,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
     }
-    
+
     virtual bool isPartialResultProcessor() const { return false; }
     virtual bool supportPartialResultProcessor() const { return false; }
 
