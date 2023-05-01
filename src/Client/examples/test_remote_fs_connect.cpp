@@ -28,11 +28,12 @@ try
     );
     RemoteFSConnectionPool pool(2, "localhost", 9012, "test_disk");
     auto conn = pool.get(timeouts, true);
+    auto conn2 = pool.get(timeouts, true);
 
     conn->clearDirectory("");
     
     assert((conn->getAvailableSpace() != 0));
-    assert((conn->getTotalSpace() != 0));
+    assert((conn2->getTotalSpace() != 0));
 
     conn->createFile("file_name");
     assert((conn->exists("file_name") && conn->isFile("file_name")));
@@ -187,6 +188,8 @@ try
 
     conn->truncateFile("file2", 2);
     assert((conn->getFileSize("file2") == 2));
+
+    conn->clearDirectory("");
 }
 catch (const Poco::Exception & e)
 {
