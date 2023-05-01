@@ -888,6 +888,10 @@ This example query shows how to attach a table stored at a URL and configure the
 remote storage within the query. The web storage is not configured in the ClickHouse
 configuration files; all the settings are in the CREATE/ATTACH query.
 
+:::note
+The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
+:::
+
 ```sql
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 (
