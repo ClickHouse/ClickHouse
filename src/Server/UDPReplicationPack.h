@@ -45,18 +45,17 @@ class UDPReplicationPack
 
         std::string deserialize(const char * inp, size_t size)
         {
-            std::string res(inp, size);
             size_t i = 0;
             std::string prev = "";
             std::string cur = "";
-            while (i < res.size() && res[i] != '\r')
+            while (i < size && inp[i] != '\r')
             {
-                if (res[i] == '=')
+                if (inp[i] == '=')
                 {
                     prev = cur;
                     cur = "";
                 }
-                else if (res[i] == '\t')
+                else if (inp[i] == '\t')
                 {
                     data[prev] = cur;
                     cur = "";
@@ -64,11 +63,16 @@ class UDPReplicationPack
                 }
                 else
                 {
-                    cur += res[i];
+                    cur += inp[i];
                 }
                 ++i;
             }
-            return res.substr(i, res.size() - i - 1);
+            std::string payload = "";
+            if (i < size)
+            {
+                payload = std::string(&inp[i + 1], size - i - 2);
+            }
+            return payload;
         }
 
     public:

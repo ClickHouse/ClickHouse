@@ -272,7 +272,7 @@ namespace detail
 
                     std::string data;
 
-                    while (enet_host_service(client, &event, 5000) > 0)
+                    while (enet_host_service(client, &event, 1000) > 0)
                     {
                         switch (event.type)
                         {
@@ -286,6 +286,8 @@ namespace detail
                                         throw 1;
                                     }
                                     data = resp.deserialize(reinterpret_cast<char*>(event.packet->data), event.packet->dataLength);
+                                    response.setVersion("HTTP/1.1");
+                                    response.set("Keep-Alive", "timeout=3");
                                     LOG_INFO(log, "ENET RECEIVED \n{}", data);
                                     enet_packet_destroy(event.packet);
                                 }
@@ -295,12 +297,21 @@ namespace detail
                         }
                     }
 
-                    std::cout << "\n\n";
                     for (auto [key, value]: resp.data) {
-                        response.set(key, value);
-                        std::cout << key << ' ' << value << '\n';
+                        if (key == "server_protocol_version")
+                        {
+                            response.set("Set-Cookie", key + '=' + value);
+                        }
+                        else
+                        {
+                            response.set(key, value);
+                        }
                     }
-                    std::cout << "\n\n";
+
+                    response.getCookies(cookies);
+
+                    if constexpr (!for_object_info)
+                        content_encoding = response.get("Content-Encoding", "");
 
                     std::istringstream* result_istr;
                     

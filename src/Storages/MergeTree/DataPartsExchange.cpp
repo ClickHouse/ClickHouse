@@ -241,7 +241,7 @@ void Service::processQuery(const UDPReplicationPack & params, WriteBuffer & out,
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.set("Set-Cookie", "server_protocol_version=" + toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)));
+    response.set("server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)));
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -727,7 +727,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
             auto output_buffer_getter = [](IDataPartStorage & part_storage, const auto & file_name, size_t file_size)
             {
                 auto full_path = fs::path(part_storage.getFullPath()) / file_name;
-                //std::cout << std::string(file_name) << "\n\n\n";
                 return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
@@ -798,7 +797,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     auto output_buffer_getter = [](IDataPartStorage & part_storage, const String & file_name, size_t file_size)
     {
-        std::cout << "Check filename: " << file_name << "\n\n";
         return part_storage.writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
     };
 

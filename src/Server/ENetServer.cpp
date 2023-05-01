@@ -68,7 +68,7 @@ void ENetServer::run()
     while (!_stopped)
     {
         ENetEvent event;
-        while (enet_host_service(server, &event, 10000) > 0)
+        while (enet_host_service(server, &event, 5000) > 0)
         {
             switch (event.type)
             {
@@ -113,6 +113,10 @@ void ENetServer::run()
                         {
                             endpoint->processQuery(pck, out, resp_pck);
                         }
+
+                        resp_pck.set("Connection", "Keep-Alive");
+
+                        resp_pck.set("Transfer-Encoding", "chunked");
 
                         out.finalize();
 

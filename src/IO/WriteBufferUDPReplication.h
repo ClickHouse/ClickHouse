@@ -65,7 +65,7 @@ private:
         WriteBufferFromOwnString progress_string_writer;
         accumulated_progress.writeJSON(progress_string_writer);
 
-        resp->set("X-ClickHouse-Summary: ", progress_string_writer.str());
+        resp->set("X-ClickHouse-Summary", progress_string_writer.str());
     }
 
     void finalizeImpl() override
@@ -80,12 +80,11 @@ private:
 
     void onProgress(const Progress & progress)
     {
-      std::cout << " onPROGRESS onPROGRESS\n\n\n\n";
       std::lock_guard lock(mutex);
       accumulated_progress.incrementPiecewiseAtomically(progress);
     }
 
-using WriteBufferENetPtr = std::shared_ptr<WriteBufferUDPReplication>;
+using WriteBufferUDPReplicationPtr = std::shared_ptr<WriteBufferUDPReplication>;
 
 };
 
