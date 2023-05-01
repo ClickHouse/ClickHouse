@@ -16,6 +16,7 @@ static constexpr XID CLOSE_XID = 0x7FFFFFFF;
 
 enum class OpNum : int32_t
 {
+    // Zookeeper reserved operations
     Close = -11,
     Error = -1,
     Create = 1,
@@ -36,6 +37,7 @@ enum class OpNum : int32_t
 
     // CH Keeper specific operations
     FilteredList = 500,
+    RemoveRecursive = 501,
 
     SessionID = 997, /// Special internal request
 };

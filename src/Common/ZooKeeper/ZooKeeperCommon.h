@@ -2,11 +2,14 @@
 
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include "IKeeper.h"
+#include "ZooKeeperConstants.h"
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <cstddef>
 #include <map>
 #include <unordered_map>
 #include <mutex>
@@ -253,6 +256,33 @@ struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Remove; }
 
     size_t bytesSize() const override { return RemoveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, ZooKeeperRequest
+{
+    ZooKeeperRemoveRecursiveRequest() = default;
+    explicit ZooKeeperRemoveRecursiveRequest(const RemoveRecursiveRequest & base) : RemoveRecursiveRequest(base) {}
+
+    OpNum getOpNum() const override { return OpNum::Remove; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl() const override;
+
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
+
+    size_t bytesSize() const override { return RemoveRecursiveRequest::bytesSize() + sizeof(xid); }
+
+    void createLogElements(LogElements & elems) const override;
+};
+
+struct ZooKeeperRemoveRecursiveResponse final : RemoveRecursiveResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer &) override {}
+    void writeImpl(WriteBuffer &) const override {}
+    OpNum getOpNum() const override { return OpNum::RemoveRecursive; }
+
+    size_t bytesSize() const override { return RemoveRecursiveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
 struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
