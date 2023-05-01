@@ -89,6 +89,8 @@ private:
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
+    S3QueueMode mode;
+    S3QueueAction after_processing;
     uint64_t milliseconds_to_wait = 10000;
 
     String format_name;
@@ -121,8 +123,6 @@ private:
     std::shared_ptr<TaskContext> task;
 
     bool supportsSubsetOfColumns() const override;
-    static Names getVirtualColumnNames();
-
     String zookeeper_path;
 
     zkutil::ZooKeeperPtr current_zookeeper;
@@ -142,9 +142,14 @@ private:
     createFileIterator(ContextPtr local_context, ASTPtr query, KeysWithInfo * read_keys = nullptr);
 
     static std::unordered_set<String> parseCollection(String & files);
+
+    std::unordered_set<String> getFailedFiles();
+    std::unordered_set<String> getProcessedFiles();
+    String getMaxProcessedFile();
+    std::unordered_set<String> getProcessingFiles();
     std::unordered_set<String> getExcludedFiles();
 
-    bool streamToViews();
+    void streamToViews();
 
     Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
 };

@@ -52,7 +52,7 @@ public:
         KeyWithInfo next() override;
         size_t getTotalSize() const override;
 
-        Strings setProcessing(String & mode, std::unordered_set<String> & exclude_keys);
+        Strings setProcessing(S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file = "");
 
     private:
         size_t max_poll_size = 10;
@@ -83,6 +83,8 @@ public:
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
+        const S3QueueMode & mode_,
+        const S3QueueAction & action_,
         zkutil::ZooKeeperPtr current_zookeeper,
         const String & zookeeper_path_,
         size_t download_thread_num);
@@ -114,6 +116,8 @@ private:
 
     std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
+    const S3QueueMode mode;
+    const S3QueueAction action;
     size_t download_thread_num = 1;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3QueueSource");
@@ -140,6 +144,7 @@ private:
 
     void setFileProcessed(const String & file_path);
     void setFileFailed(const String & file_path);
+    void applyActionAfterProcessing(const String & file_path);
 };
 
 }

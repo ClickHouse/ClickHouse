@@ -150,13 +150,17 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     }
 }
 
-Strings StorageS3QueueSource::QueueGlobIterator::setProcessing(String & mode, std::unordered_set<String> & exclude_keys)
+Strings StorageS3QueueSource::QueueGlobIterator::setProcessing(S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file)
 {
     for (KeyWithInfo val : keys_buf)
     {
-        if (exclude_keys.find(bucket + '/' + val.key) != exclude_keys.end())
+        auto full_path = bucket + '/' + val.key;
+        if (exclude_keys.find(full_path) != exclude_keys.end())
         {
             LOG_INFO(log, "Found in exclude keys {}", val.key);
+            continue;
+        }
+        if (engine_mode == S3QueueMode::ORDERED && full_path.compare(max_file) <= 0) {
             continue;
         }
         if (processing_keys.size() < max_poll_size)
@@ -169,7 +173,7 @@ Strings StorageS3QueueSource::QueueGlobIterator::setProcessing(String & mode, st
         }
     }
 
-    if (mode == "ordered")
+    if (engine_mode == S3QueueMode::ORDERED)
     {
         std::sort(
             processing_keys.begin(),
@@ -229,6 +233,8 @@ StorageS3QueueSource::StorageS3QueueSource(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
+    const S3QueueMode & mode_,
+    const S3QueueAction & action_,
     zkutil::ZooKeeperPtr current_zookeeper,
     const String & zookeeper_path_,
     const size_t download_thread_num_)
@@ -247,6 +253,8 @@ StorageS3QueueSource::StorageS3QueueSource(
     , format_settings(format_settings_)
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
+    , mode(mode_)
+    , action(action_)
     , download_thread_num(download_thread_num_)
     , zookeeper(current_zookeeper)
     , zookeeper_path(zookeeper_path_)
@@ -418,7 +426,7 @@ Chunk StorageS3QueueSource::generate()
                 }
                 LOG_WARNING(log, "Set processed: {}", file_path);
                 setFileProcessed(file_path);
-                // TODO: Set processed
+                applyActionAfterProcessing(file_path);
                 return chunk;
             }
         }
@@ -449,14 +457,18 @@ Chunk StorageS3QueueSource::generate()
 void StorageS3QueueSource::setFileProcessed(const String & file_path)
 {
     std::lock_guard lock(mutex);
-    String processed_files = zookeeper->get(zookeeper_path + "/processed");
-    std::unordered_set<String> processed = parseCollection(processed_files);
+    if (mode == S3QueueMode::UNORDERED) {
+        String processed_files = zookeeper->get(zookeeper_path + "/processed");
+        std::unordered_set<String> processed = parseCollection(processed_files);
 
-    processed.insert(file_path);
-    Strings set_processed;
-    set_processed.insert(set_processed.end(), processed.begin(), processed.end());
+        processed.insert(file_path);
+        Strings set_processed;
+        set_processed.insert(set_processed.end(), processed.begin(), processed.end());
 
-    zookeeper->set(zookeeper_path + "/processed", toString(set_processed));
+        zookeeper->set(zookeeper_path + "/processed", toString(set_processed));
+    } else {
+        zookeeper->set(zookeeper_path + "/processed", file_path);
+    }
 }
 
 
@@ -471,6 +483,23 @@ void StorageS3QueueSource::setFileFailed(const String & file_path)
     set_failed.insert(set_failed.end(), processed.begin(), processed.end());
 
     zookeeper->set(zookeeper_path + "/failed", toString(set_failed));
+}
+
+
+void StorageS3QueueSource::applyActionAfterProcessing(const String & file_path)
+{
+    LOG_WARNING(log, "Delete {} Bucke {}", file_path, bucket);
+    S3::DeleteObjectRequest request;
+    request.SetBucket(bucket);
+    request.SetKey(file_path);
+    auto outcome = client->DeleteObject(request);
+    if (!outcome.IsSuccess() && !S3::isNotFoundError(outcome.GetError().GetErrorType()))
+    {
+        const auto & err = outcome.GetError();
+        LOG_ERROR(log, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+    } else {
+        LOG_TRACE(log, "Object with path {} was removed from S3", file_path);
+    }
 }
 
 std::unordered_set<String> StorageS3QueueSource::parseCollection(String & files)
