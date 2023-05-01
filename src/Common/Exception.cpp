@@ -150,8 +150,8 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
 std::string Exception::getStackTraceString() const
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    auto stack_trace_frames = e.get_stack_trace_frames();
-    auto stack_trace_size = e.get_stack_trace_size();
+    auto stack_trace_frames = get_stack_trace_frames();
+    auto stack_trace_size = get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
 #else
