@@ -62,7 +62,7 @@ private:
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
 
-    friend class MergeSortingPartialResult;
+    friend class MergeSortingPartialResultTransform;
     std::mutex snapshot_mutex;
 
     ProcessorPtr external_merging_sorted;

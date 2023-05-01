@@ -483,6 +483,9 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     if (extremes)
         extremes_port = extremes;
 
+    /// TODO: Add support for partial result in multithreading mode
+    dropPartialResult();
+
     size_t next_output = 0;
     for (auto & input : inputs)
     {
@@ -569,6 +572,9 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
         connect(*extremes_port, *extremes);
         extremes_port = nullptr;
     }
+
+    /// TODO: Add support for partial result in multithreading mode
+    dropPartialResult();
 
     bool found_totals = false;
     bool found_extremes = false;
@@ -733,6 +739,7 @@ void Pipe::addChains(std::vector<Chain> chains)
 
     dropTotals();
     dropExtremes();
+    dropPartialResult();
 
     size_t max_parallel_streams_for_chains = 0;
 

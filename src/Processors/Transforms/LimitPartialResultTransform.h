@@ -43,7 +43,7 @@ public:
 
             chunk.setColumns(std::move(columns), length);
         }
-    } 
+    }
 
 private:
     UInt64 limit;

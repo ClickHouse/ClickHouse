@@ -19,7 +19,7 @@ IProcessor::Status PartialResultTransform::prepare()
         input.close();
         return Status::Finished;
     }
-    
+
     if (finished_getting_snapshots)
     {
         output.finish();
@@ -40,7 +40,7 @@ IProcessor::Status PartialResultTransform::prepare()
             return Status::PortFull;
         }
     }
-            
+
     /// If input data from previous partial result processor is finished then
     /// PartialResultTransform ready to create snapshots and send them as a partial result
     if (input.isFinished())
