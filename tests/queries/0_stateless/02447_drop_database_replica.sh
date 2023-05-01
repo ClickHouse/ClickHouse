@@ -29,7 +29,7 @@ db3="${db}_3"
 $CLICKHOUSE_CLIENT --allow_experimental_database_replicated=1 -q "create database $db2 engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's1', 'r2')"
 $CLICKHOUSE_CLIENT --allow_experimental_database_replicated=1 -q "create database $db3 engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's2', 'r1')"
 $CLICKHOUSE_CLIENT -q "system sync database replica $db"
-$CLICKHOUSE_CLIENT -q "select cluster, shard_num, replica_num, database_shard_name, database_replica_name, is_active from system.clusters where cluster='$db' order by shard_num, replica_num"
+$CLICKHOUSE_CLIENT -q "select cluster, shard_num, replica_num, database_shard_name, database_replica_name, is_active from system.clusters where cluster='$db' and shard_num=1 and replica_num=1"
 $CLICKHOUSE_CLIENT -q "system drop database replica 's1|r1' from database $db2" 2>&1| grep -Fac "is active, cannot drop it"
 
 $CLICKHOUSE_CLIENT -q "detach database $db3"
