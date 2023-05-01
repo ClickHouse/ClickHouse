@@ -63,7 +63,7 @@ private:
 
     /// hashing_buf -> compressed_buf -> plain_hashing -> plain_file
     std::unique_ptr<WriteBufferFromFileBase> plain_file;
-    CryptoHashingWriteBuffer plain_hashing;
+    AbstractHashingWriteBuffer plain_hashing;
 
     /// Compressed stream which allows to write with codec.
     struct CompressedStream

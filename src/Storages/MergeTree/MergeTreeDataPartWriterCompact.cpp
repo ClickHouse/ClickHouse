@@ -32,14 +32,14 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
             settings_.query_write_settings))
-    , plain_hashing(*plain_file, settings_.cryptographic_mode)
+    , plain_hashing(*plain_file, settings.cryptographic_mode)
 {
     marks_file = data_part_->getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME + marks_file_extension_,
             4096,
             settings_.query_write_settings);
 
-    marks_file_hashing = std::make_unique<AbstractHashingWriteBuffer>(*marks_file, settings_.cryptographic_mode);
+    marks_file_hashing = std::make_unique<AbstractHashingWriteBuffer>(*marks_file, settings.cryptographic_mode);
 
     if (data_part_->index_granularity_info.mark_type.compressed)
     {
@@ -48,7 +48,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
             getMarksCompressionCodec(settings_.marks_compression_codec),
             settings_.marks_compress_block_size);
 
-        marks_source_hashing = std::make_unique<AbstractHashingWriteBuffer>(*marks_compressor, settings_.cryptographic_mode);
+        marks_source_hashing = std::make_unique<AbstractHashingWriteBuffer>(*marks_compressor, settings.cryptographic_mode);
     }
 
     const auto & storage_columns = metadata_snapshot->getColumns();
@@ -79,7 +79,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         UInt64 codec_id = compression_codec->getHash();
         auto & stream = streams_by_codec[codec_id];
         if (!stream)
-            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec, settings.cryptographic_mode);
+            stream = std::make_shared<CompressedStream>(plain_hashing.getBuf(), compression_codec, settings.cryptographic_mode);
 
         compressed_streams.emplace(stream_name, stream);
     };
@@ -224,7 +224,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
                 prev_stream = result_stream;
 
-                return &result_stream->hashing_buf.getBuf();
+                return &(result_stream->hashing_buf.getBuf());
             };
 
 
