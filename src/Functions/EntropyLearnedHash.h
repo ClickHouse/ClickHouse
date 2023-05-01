@@ -8,7 +8,7 @@
 #include <map>
 #include <string>
 #include <vector>
-#include <base/base/types.h>
+#include "../../base/base/types.h"
 
 // Key is a byte string
 namespace EntropyLearnedHashing

@@ -61,6 +61,7 @@ It returns a BLAKE3 hash as a byte array with type FixedString(32).
     },
     FunctionFactory::CaseSensitive);
 
+    factory.registerFunction<FunctionTrainEntropyLearnedHash>();
     factory.registerFunction<FunctionEntropyLearnedHash>();
 }
 }
