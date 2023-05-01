@@ -42,10 +42,13 @@ public:
         /// Result metadata for constructing the pipe.
         const Block header;
 
-        /// std::nullopt means that the associated entry can be read by other users. In general, sharing is a bad idea: First, it is
-        /// unlikely that different users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be
-        /// able to bypass row policies on some table by running the same queries as user B for whom no row policies exist.
-        const std::optional<String> username;
+        /// The user who executed the query.
+        const String user_name;
+
+        /// If the associated entry can be read by other users. In general, sharing is a bad idea: First, it is unlikely that different
+        /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
+        /// policies on some table by running the same queries as user B for whom no row policies exist.
+        bool is_shared;
 
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
@@ -55,7 +58,7 @@ public:
 
         Key(ASTPtr ast_,
             Block header_,
-            const std::optional<String> & username_,
+            const String & user_name_, bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
@@ -144,7 +147,7 @@ public:
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     Reader createReader(const Key & key);
-    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size);
+    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
     void reset();
 

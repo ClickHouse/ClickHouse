@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import atexit
 import logging
 import subprocess
 import os
@@ -8,7 +9,7 @@ import sys
 from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status, get_commit
+from commit_status_helper import post_commit_status, get_commit, update_mergeable_check
 from docker_pull_helper import get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
@@ -56,6 +57,7 @@ def main():
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")

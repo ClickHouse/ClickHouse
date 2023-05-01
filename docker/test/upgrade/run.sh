@@ -89,6 +89,11 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
 
+sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+  | sed "s|<type>local_blob_storage</type>|<type>local</type>|" \
+  > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
 start
 
 clickhouse-client --query="SELECT 'Server version: ', version()"
