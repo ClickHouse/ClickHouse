@@ -152,11 +152,6 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     if (use_external_buffer)
         local_read_settings.local_fs_buffer_size = 0;
 
-    // The buffer will unnecessarily allocate a Memory of size local_fs_buffer_size, which will then
-    // most likely be unused because we're swap()ping our own internal_buffer into
-    // implementation_buffer before each read. But we can't just set local_fs_buffer_size = 0 here
-    // because some buffer implementations actually use that memory (e.g. for prefetching).
-
     auto buf = createReadBufferFromFileBase(path, local_read_settings);
 
     if (getFileSizeFromReadBuffer(*buf) == 0)
@@ -827,7 +822,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 }
             }
 
-            if (use_external_buffer && initialized)
+            if (use_external_buffer && !internal_buffer.empty())
                 internal_buffer.resize(original_buffer_size);
 
             chassert(!file_segment.isDownloader());
