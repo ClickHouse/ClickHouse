@@ -25,7 +25,7 @@ SELECT * FROM \"http://localhost:11111/test/b.tsv\"
 """
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE test2;"
 
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"http://localhost:11111/test/c.tsv\""
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"http://localhost:11111/test/b.tsv\""
 
 #################
 echo "Test 2: check exceptions"
