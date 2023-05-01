@@ -11,11 +11,12 @@
 
 namespace DB
 {
+class RemoteFSConnection;
+
+using RemoteFSConnectionPtr = std::shared_ptr<RemoteFSConnection>;
 
 class RemoteFSConnection
 {
-    friend class MultiplexedConnections;
-
 public:
     RemoteFSConnection(const String & host_, UInt16 port_,
         const String & disk_name_);
