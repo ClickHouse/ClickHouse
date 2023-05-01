@@ -13,6 +13,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
+#include <Processors/Sources/NullSource.h>
 
 namespace DB
 {
@@ -94,17 +95,11 @@ private:
     InitializerFunc initializer_func;
 };
 
-ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(QueryPlan & query_plan_,
-                                                     const SelectQueryInfo & query_info_,
-                                                     ContextPtr context_,
-                                                     const Names & columns_to_read_,
+ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(const Names & columns_to_read_,
                                                      const StorageSnapshotPtr & storage_snapshot_,
                                                      const size_t num_streams_,
                                                      const bool delay_read_for_global_sub_queries_) :
-    SourceStepWithFilter(DataStream{}),
-    query_plan(query_plan_),
-    query_info(query_info_),
-    context(context_),
+    SourceStepWithFilter(DataStream{.header=storage_snapshot_->getSampleBlockForColumns(columns_to_read_)}),
     columns_to_read(columns_to_read_),
     storage_snapshot(storage_snapshot_),
     num_streams(num_streams_),
@@ -115,18 +110,11 @@ ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(QueryPlan & query_plan_,
 void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto pipe = makePipe();
-    if (hasOutputStream())
-    {
-        output_stream.value().header = pipe.getHeader();
-    }
 
     if (pipe.empty())
     {
-        auto header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
-
-        // @TODO discuss about query_plan and query_info lifetimes.
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
-        return;
+        assert(output_stream != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
 
     pipeline.init(std::move(pipe));
