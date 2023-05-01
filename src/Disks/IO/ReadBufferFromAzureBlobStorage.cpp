@@ -54,14 +54,6 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     }
 }
 
-SeekableReadBuffer::Range ReadBufferFromAzureBlobStorage::getRemainingReadRange() const
-{
-    return Range{
-        .left = static_cast<size_t>(offset),
-        .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt
-    };
-}
-
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
     read_until_position = position;

@@ -359,16 +359,17 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            if (query.filesystem_cache_path.empty())
+
+            if (query.filesystem_cache_name.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeIfReleasable();
+                    cache_data->cache->removeAllReleasable();
             }
             else
             {
-                auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->removeIfReleasable();
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                cache->removeAllReleasable();
             }
             break;
         }

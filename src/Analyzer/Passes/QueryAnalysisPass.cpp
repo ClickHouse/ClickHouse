@@ -118,7 +118,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
-/** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
+/** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
   * And additional documentation for each method, where special cases are described in detail.
   *
   * Each node in query must be resolved. For each query tree node resolved state is specific.
@@ -159,7 +159,7 @@ namespace ErrorCodes
   *
   * TODO: This does not supported properly before, because matchers could not be resolved from aliases.
   *
-  * Identifiers are resolved with following resules:
+  * Identifiers are resolved with following rules:
   * Resolution starts with current scope.
   * 1. Try to resolve identifier from expression scope arguments. Lambda expression arguments are greatest priority.
   * 2. Try to resolve identifier from aliases.
@@ -4081,11 +4081,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                replace_transformer_was_used = true;
-
                 auto replace_expression = replace_transformer->findReplacementExpression(column_name);
                 if (!replace_expression)
                     continue;
+
+                replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
@@ -5124,7 +5124,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             /// Create constant set column for constant folding
 
-            auto column_set = ColumnSet::create(1, std::move(set));
+            auto column_set = ColumnSet::create(1, FutureSet(std::move(set)));
             argument_columns[1].column = ColumnConst::create(std::move(column_set), 1);
         }
 
@@ -6679,7 +6679,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
-    if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.isGroupByWithTotals())
+    if (query_node_typed.isGroupByWithGroupingSets()
+        && query_node_typed.isGroupByWithTotals()
+        && query_node_typed.getGroupBy().getNodes().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");
 
     if (query_node_typed.isGroupByWithGroupingSets() && is_rollup_or_cube)

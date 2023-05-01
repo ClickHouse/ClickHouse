@@ -27,7 +27,8 @@
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB

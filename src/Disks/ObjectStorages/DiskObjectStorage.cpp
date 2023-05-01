@@ -15,6 +15,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -532,14 +533,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
 {
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
-}
-
-FileCachePtr DiskObjectStorage::getCache() const
-{
-    const auto * cached_object_storage = typeid_cast<CachedObjectStorage *>(object_storage.get());
-    if (!cached_object_storage)
-        return nullptr;
-    return cached_object_storage->getCache();
 }
 
 NameSet DiskObjectStorage::getCacheLayersNames() const
