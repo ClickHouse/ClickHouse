@@ -86,7 +86,6 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
 {
     if (objects.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
-    assert(!objects[0].getPathKeyForCache().empty());
     return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
 }
 
@@ -115,14 +114,13 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
         && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
         && fs::path(object.absolute_path).extension() != ".tmp";
 
-    auto path_key_for_cache = object.getPathKeyForCache();
     /// Need to remove even if cache_on_write == false.
-    removeCacheIfExists(path_key_for_cache);
+    removeCacheIfExists(object.absolute_path);
 
     if (cache_on_write)
     {
-        auto key = getCacheKey(path_key_for_cache);
-        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(path_key_for_cache), key.toString());
+        auto key = getCacheKey(object.absolute_path);
+        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(object.absolute_path), key.toString());
 
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
             std::move(implementation_buffer),
@@ -148,28 +146,27 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
 {
-    removeCacheIfExists(object.getPathKeyForCache());
     object_storage->removeObject(object);
 }
 
 void CachedObjectStorage::removeObjects(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.getPathKeyForCache());
+        removeCacheIfExists(object.absolute_path);
 
     object_storage->removeObjects(objects);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeCacheIfExists(object.getPathKeyForCache());
+    removeCacheIfExists(object.absolute_path);
     object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.getPathKeyForCache());
+        removeCacheIfExists(object.absolute_path);
 
     object_storage->removeObjectsIfExist(objects);
 }
