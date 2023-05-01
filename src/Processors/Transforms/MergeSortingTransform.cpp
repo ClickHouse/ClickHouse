@@ -1,4 +1,5 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/Transforms/PartialResultTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
@@ -25,6 +26,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class BufferingToFileTransform : public IAccumulatingTransform
 {
@@ -75,6 +81,58 @@ private:
     Poco::Logger * log;
 };
 
+class MergeSortingPartialResultTransform : public PartialResultTransform
+{
+public:
+    using MergeSortingTransformPtr = std::shared_ptr<MergeSortingTransform>;
+
+    MergeSortingPartialResultTransform(const Block & header, MergeSortingTransformPtr merge_sorting_transform_, UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_)
+        : PartialResultTransform(header, partial_result_limit_, partial_result_duration_ms_)
+        , merge_sorting_transform(std::move(merge_sorting_transform_))
+    {
+    }
+
+    String getName() const override { return "MergeSortingPartialResultTransform"; }
+
+    ShaphotResult getRealProcessorSnapshot() override
+    {
+        std::lock_guard lock(merge_sorting_transform->snapshot_mutex);
+        if (merge_sorting_transform->generated_prefix)
+            return {{}, SnaphotStatus::Stopped};
+
+        if (merge_sorting_transform->chunks.empty())
+            return {{}, SnaphotStatus::NotReady};
+
+        /// Sort all input data
+        merge_sorting_transform->remerge();
+        /// Add a copy of the first `partial_result_limit` rows to a generated_chunk
+        /// to send it as a partial result in the next prepare stage
+        auto generated_columns = merge_sorting_transform->chunks[0].cloneEmptyColumns();
+        size_t total_rows = 0;
+        for (const auto & merged_chunk : merge_sorting_transform->chunks)
+        {
+            size_t rows = std::min(merged_chunk.getNumRows(), partial_result_limit - total_rows);
+            if (rows == 0)
+                break;
+
+            for (size_t position = 0; position < generated_columns.size(); ++position)
+            {
+                auto column = merged_chunk.getColumns()[position];
+                generated_columns[position]->insertRangeFrom(*column, 0, rows);
+            }
+
+            total_rows += rows;
+        }
+
+        auto partial_result = Chunk(std::move(generated_columns), total_rows, merge_sorting_transform->chunks[0].getChunkInfo());
+        merge_sorting_transform->enrichChunkWithConstants(partial_result);
+        return {std::move(partial_result), SnaphotStatus::Ready};
+    }
+
+private:
+    MergeSortingTransformPtr merge_sorting_transform;
+};
+
 MergeSortingTransform::MergeSortingTransform(
     const Block & header,
     const SortDescription & description_,
@@ -85,18 +143,13 @@ MergeSortingTransform::MergeSortingTransform(
     double remerge_lowered_memory_bytes_ratio_,
     size_t max_bytes_before_external_sort_,
     TemporaryDataOnDiskPtr tmp_data_,
-    size_t min_free_disk_space_,
-    UInt64 partial_result_limit_,
-    UInt64 partial_result_duration_ms_)
+    size_t min_free_disk_space_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
-    , partial_result_limit(partial_result_limit_)
-    , partial_result_duration_ms(partial_result_duration_ms_)
-    , watch(CLOCK_MONOTONIC)
 {
 }
 
@@ -129,35 +182,6 @@ Processors MergeSortingTransform::expandPipeline()
     return std::move(processors);
 }
 
-void MergeSortingTransform::updatePartialResult()
-{
-    /// Sort all input data
-    remerge();
-    /// Add a copy of the first `partial_result_limit` rows to a generated_chunk
-    /// to send it as a partial result in the next prepare stage
-    auto generated_columns = chunks[0].cloneEmptyColumns();
-    size_t total_rows = 0;
-    for (const auto & merged_chunk : chunks)
-    {
-        size_t rows = std::min(merged_chunk.getNumRows(), partial_result_limit - total_rows);
-        if (rows == 0)
-            break;
-
-        for (size_t position = 0; position < generated_columns.size(); ++position)
-        {
-            auto column = merged_chunk.getColumns()[position];
-            generated_columns[position]->insertRangeFrom(*column, 0, rows);
-        }
-
-        total_rows += rows;
-    }
-
-    generated_chunk.setColumns(std::move(generated_columns), total_rows);
-    generated_chunk.setChunkInfo(chunks[0].getChunkInfo());
-    generated_chunk.changePartialResultStatus(true /*is_chunk_partial*/);
-    enrichChunkWithConstants(generated_chunk);
-}
-
 void MergeSortingTransform::consume(Chunk chunk)
 {
     /** Algorithm:
@@ -169,6 +193,8 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     /// If there were only const columns in sort description, then there is no need to sort.
     /// Return the chunk as is.
+    std::lock_guard lock(snapshot_mutex);
+
     if (description.empty())
     {
         generated_chunk = std::move(chunk);
@@ -191,12 +217,6 @@ void MergeSortingTransform::consume(Chunk chunk)
         && sum_bytes_in_blocks > max_bytes_before_remerge)
     {
         remerge();
-    }
-
-    if (partial_result_duration_ms && partial_result_duration_ms < watch.elapsedMilliseconds() && !chunks.empty())
-    {
-        updatePartialResult();
-        watch.restart();
     }
 
     /** If too many of them and if external sorting is enabled,
@@ -251,6 +271,8 @@ void MergeSortingTransform::serialize()
 
 void MergeSortingTransform::generate()
 {
+    std::lock_guard lock(snapshot_mutex);
+
     if (!generated_prefix)
     {
         size_t num_tmp_files = tmp_data ? tmp_data->getStreams().size() : 0;
@@ -309,6 +331,24 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+}
+
+ProcessorPtr MergeSortingTransform::getPartialResultProcessor(ProcessorPtr current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+{
+    if (getName() != current_processor->getName() || current_processor.get() != this)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "To create partial result processor variable current_processor should use " \
+            "the same class and pointer as in the original processor with class {} and pointer {}. " \
+            "But current_processor has another class {} or pointer {} then original.",
+            getName(),
+            static_cast<void*>(this),
+            current_processor->getName(),
+            static_cast<void*>(current_processor.get()));
+
+    const auto & header = inputs.front().getHeader();
+    const auto & merge_sorting_processor = std::static_pointer_cast<MergeSortingTransform>(current_processor);
+    return std::make_shared<MergeSortingPartialResultTransform>(header, std::move(merge_sorting_processor), partial_result_limit, partial_result_duration_ms);
 }
 
 }

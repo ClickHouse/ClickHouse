@@ -28,15 +28,9 @@ struct BlockInfo
       * Otherwise -1.
       */
 
-    /** has_partial_result:
-      * If user wants to receive updates containing partial results during query execution,
-      * then data will be sent with has_partial_result flag set to true.
-      */
-
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M) \
     M(bool,     is_overflows,     false,     1) \
-    M(Int32,    bucket_num,     -1,     2) \
-    M(bool,     has_partial_result,     false,     3)
+    M(Int32,    bucket_num,     -1,     2)
 
 #define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
     TYPE NAME = DEFAULT;

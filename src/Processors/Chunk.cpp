@@ -12,14 +12,14 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
 }
 
-Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_, bool has_partial_result_)
-    : columns(std::move(columns_)), num_rows(num_rows_), has_partial_result(has_partial_result_)
+Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_)
+    : columns(std::move(columns_)), num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
 }
 
-Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, bool has_partial_result_)
-    : columns(std::move(columns_)), num_rows(num_rows_), chunk_info(std::move(chunk_info_)), has_partial_result(has_partial_result_)
+Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
+    : columns(std::move(columns_)), num_rows(num_rows_), chunk_info(std::move(chunk_info_))
 {
     checkNumRowsIsConsistent();
 }
@@ -34,21 +34,21 @@ static Columns unmuteColumns(MutableColumns && mutable_columns)
     return columns;
 }
 
-Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, bool has_partial_result_)
-    : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_), has_partial_result(has_partial_result_)
+Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
+    : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
 }
 
-Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, bool has_partial_result_)
-    : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_), chunk_info(std::move(chunk_info_)), has_partial_result(has_partial_result_)
+Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
+    : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_), chunk_info(std::move(chunk_info_))
 {
     checkNumRowsIsConsistent();
 }
 
 Chunk Chunk::clone() const
 {
-    return Chunk(getColumns(), getNumRows(), chunk_info, has_partial_result);
+    return Chunk(getColumns(), getNumRows(), chunk_info);
 }
 
 void Chunk::setColumns(Columns columns_, UInt64 num_rows_)

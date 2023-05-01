@@ -33,8 +33,6 @@ SortingStep::Settings::Settings(const Context & context)
     max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
-    partial_result_limit = settings.max_rows_in_partial_result;
-    partial_result_duration_ms = settings.partial_result_update_duration_ms.totalMilliseconds();
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -219,9 +217,7 @@ void SortingStep::mergeSorting(
                 sort_settings.remerge_lowered_memory_bytes_ratio,
                 sort_settings.max_bytes_before_external_sort,
                 std::move(tmp_data_on_disk),
-                sort_settings.min_free_disk_space,
-                sort_settings.partial_result_limit,
-                sort_settings.partial_result_duration_ms);
+                sort_settings.min_free_disk_space);
         });
 }
 

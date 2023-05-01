@@ -108,8 +108,8 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
 {
     context.setTask(nullptr);
 
-    /// Take local task from queue if has one.
-    if (!queue.empty() && !context.hasAsyncTasks())
+    /// Take local task from queue if has one and it's not a processor which generates partial result.
+    if (!queue.empty() && !queue.front()->processor->isPartialResultProcessor() && !context.hasAsyncTasks())
     {
         context.setTask(queue.front());
         queue.pop();

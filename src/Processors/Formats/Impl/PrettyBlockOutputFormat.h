@@ -27,9 +27,11 @@ protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
+    void consumePartialResult(Chunk) override;
 
     size_t total_rows = 0;
     size_t terminal_width = 0;
+    size_t prev_partial_block_rows = 0;
 
     size_t row_number_width = 7; // "10000. "
 
@@ -57,6 +59,7 @@ protected:
     void resetFormatterImpl() override
     {
         total_rows = 0;
+        prev_partial_block_rows = 0;
     }
 
 private:

@@ -438,7 +438,18 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (!block)
         return;
 
-    if (!block.info.has_partial_result)
+    if (block.rows() == 0 && partial_result_mode == PartialResultMode::Active)
+    {
+        partial_result_mode = PartialResultMode::Inactive;
+        if (is_interactive)
+        {
+            progress_indication.clearProgressOutput(*tty_buf);
+            std::cout << "Full result:" << std::endl;
+            progress_indication.writeProgress(*tty_buf);
+        }
+    }
+
+    if (partial_result_mode == PartialResultMode::Inactive)
         processed_rows += block.rows();
 
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
@@ -450,35 +461,21 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (received_first_full_result && block.info.has_partial_result)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Server shouldn't send partial results after the first block with a non-empty full result");
-
-    if (!is_interactive && block.info.has_partial_result)
+    if (!is_interactive && partial_result_mode == PartialResultMode::Active)
         return;
-
-    bool first_full_result = false;
-    if (!received_first_full_result && !block.info.has_partial_result)
-    {
-        received_first_full_result = true;
-        first_full_result = true;
-    }
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput(*tty_buf);
 
-    if (is_interactive && first_full_result && has_partial_result_setting)
-        std::cout << "Full result:" << std::endl;
-
     try
     {
-        /// Clear previous partial results to write new partial results if needed
-        if (!received_first_full_result && written_first_block)
-            output_format->clearLastLines(prev_block_rows + 2);
+        if (partial_result_mode == PartialResultMode::Active)
+            output_format->writePartialResult(materializeBlock(block));
+        else
+            output_format->write(materializeBlock(block));
 
-        output_format->write(materializeBlock(block));
         written_first_block = true;
-        prev_block_rows = block.rows();
     }
     catch (const Exception &)
     {
@@ -541,6 +538,9 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 void ClientBase::initOutputFormat(const Block & block, ASTPtr parsed_query)
 try
 {
+    if (partial_result_mode == PartialResultMode::NotInit)
+        partial_result_mode = PartialResultMode::Active;
+
     if (!output_format)
     {
         /// Ignore all results when fuzzing as they can be huge.
@@ -886,10 +886,14 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
     const auto & settings = global_context->getSettingsRef();
     const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
-    has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
+    bool has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
 
-    if (is_interactive && has_partial_result_setting)
-        std::cout << "Partial result:" << std::endl;
+    if (has_partial_result_setting)
+    {
+        partial_result_mode = PartialResultMode::NotInit;
+        if (is_interactive)
+            std::cout << "Partial result:" << std::endl;
+    }
 
     int retries_left = 10;
     while (retries_left)
@@ -1645,9 +1649,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     }
 
     processed_rows = 0;
-    prev_block_rows = 0;
-    has_partial_result_setting = false;
-    received_first_full_result = false;
+    partial_result_mode = PartialResultMode::Inactive;
     written_first_block = false;
     progress_indication.resetProgress();
     profile_events.watch.restart();
