@@ -25,6 +25,7 @@ struct HashedDictionaryConfiguration
 {
     const UInt64 shards;
     const UInt64 shard_load_queue_backlog;
+    const float max_load_factor;
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
 };
