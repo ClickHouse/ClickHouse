@@ -8,9 +8,10 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-        user_configs=[
+    user_configs=[
         "configs/users.xml",
-    ],)
+    ],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -43,7 +44,8 @@ def test_memory_usage():
     response = node.get_query_request(
         "SELECT groupArray(number) FROM numbers(1000000) SETTINGS max_memory_usage_for_user={}".format(
             30 * (2**23)
-        ), user="A"
+        ),
+        user="A",
     )
 
     _, err = response.get_answer_and_error()
