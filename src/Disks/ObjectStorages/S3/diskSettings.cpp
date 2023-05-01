@@ -128,7 +128,7 @@ std::unique_ptr<S3::Client> getClient(
     if (uri.key.back() != '/')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 
-    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
+    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 1000);
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
     client_configuration.endpointOverride = uri.endpoint;

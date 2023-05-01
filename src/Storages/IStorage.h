@@ -368,6 +368,15 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Should we process blocks of data returned by the storage in parallel
+    /// even when the storage returned only one stream of data for reading?
+    /// It is beneficial, for example, when you read from a file quickly,
+    /// but then do heavy computations on returned blocks.
+    /// This is enabled by default, but in some cases shouldn't be done.
+    /// For example, when you read from system.numbers instead of system.numbers_mt,
+    /// you still expect the data to be processed sequentially.
+    virtual bool parallelizeOutputAfterReading() const { return true; }
+
 public:
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
@@ -503,7 +512,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
 
-    virtual void waitForMutation(const String & /*mutation_id*/)
+    virtual void waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }
