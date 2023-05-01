@@ -281,7 +281,12 @@ CREATE TABLE system.functions
     `alias_to` String,
     `create_query` String,
     `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
-    `description` String
+    `description` String,
+    `syntax` String,
+    `arguments` String,
+    `returned_value` String,
+    `examples` String,
+    `categories` String
 )
 ENGINE = SystemFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -850,6 +855,7 @@ CREATE TABLE system.replicas
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,
+    `zookeeper_name` String,
     `zookeeper_path` String,
     `replica_name` String,
     `replica_path` String,

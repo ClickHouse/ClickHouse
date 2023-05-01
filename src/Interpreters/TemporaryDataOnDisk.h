@@ -90,14 +90,21 @@ public:
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
     TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
 
+    /// Write raw data directly into buffer.
+    /// Differences from `createStream`:
+    ///   1) it doesn't account data in parent scope
+    ///   2) returned buffer owns resources (instead of TemporaryDataOnDisk itself)
+    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
+    WriteBufferPtr createRawStream(size_t max_file_size = 0);
+
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
 
     const StatAtomic & getStat() const { return stat; }
 
 private:
-    TemporaryFileStream & createStreamToCacheFile(const Block & header, size_t max_file_size);
-    TemporaryFileStream & createStreamToRegularFile(const Block & header, size_t max_file_size);
+    FileSegmentsHolderPtr createCacheFile(size_t max_file_size);
+    TemporaryFileOnDiskHolder createRegularFile(size_t max_file_size);
 
     mutable std::mutex mutex;
     std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
@@ -123,7 +130,7 @@ public:
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
-    TemporaryFileStream(FileSegmentsHolder && segments_, const Block & header_, TemporaryDataOnDisk * parent_);
+    TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_);
 
     size_t write(const Block & block);
     void flush();
@@ -154,7 +161,7 @@ private:
 
     /// Data can be stored in file directly or in the cache
     TemporaryFileOnDiskHolder file;
-    FileSegmentsHolder segment_holder;
+    FileSegmentsHolderPtr segment_holder;
 
     Stat stat;
 

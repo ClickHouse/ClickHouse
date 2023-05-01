@@ -70,7 +70,7 @@ def partition_complex_assert_columns_txt():
         )
 
 
-def partition_complex_assert_checksums():
+def partition_complex_assert_checksums(after_detach=False):
     # Do not check increment.txt - it can be changed by other tests with FREEZE
     cmd = [
         "bash",
@@ -80,36 +80,67 @@ def partition_complex_assert_checksums():
         " | sed 's shadow/[0-9]*/data/[a-z0-9_-]*/ shadow/1/data/test/ g' | sort | uniq",
     ]
 
-    checksums = (
-        "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition_complex/19700102_2_2_0/k.bin\n"
-        "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition_complex/19700201_1_1_0/v1.bin\n"
-        "13cae8e658e0ca4f75c56b1fc424e150\tshadow/1/data/test/partition_complex/19700102_2_2_0/minmax_p.idx\n"
-        "25daad3d9e60b45043a70c4ab7d3b1c6\tshadow/1/data/test/partition_complex/19700102_2_2_0/partition.dat\n"
-        "3726312af62aec86b64a7708d5751787\tshadow/1/data/test/partition_complex/19700201_1_1_0/partition.dat\n"
-        "37855b06a39b79a67ea4e86e4a3299aa\tshadow/1/data/test/partition_complex/19700102_2_2_0/checksums.txt\n"
-        "38e62ff37e1e5064e9a3f605dfe09d13\tshadow/1/data/test/partition_complex/19700102_2_2_0/v1.bin\n"
-        "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/k.mrk\n"
-        "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/p.mrk\n"
-        "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/v1.mrk\n"
-        "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/k.mrk\n"
-        "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.mrk\n"
-        "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/v1.mrk\n"
-        "55a54008ad1ba589aa210d2629c1df41\tshadow/1/data/test/partition_complex/19700201_1_1_0/primary.idx\n"
-        "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition_complex/19700201_1_1_0/checksums.txt\n"
-        "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns.txt\n"
-        "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns.txt\n"
-        "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.bin\n"
-        "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition_complex/19700102_2_2_0/primary.idx\n"
-        "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700102_2_2_0/default_compression_codec.txt\n"
-        "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700201_1_1_0/default_compression_codec.txt\n"
-        "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition_complex/19700102_2_2_0/count.txt\n"
-        "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition_complex/19700201_1_1_0/count.txt\n"
-        "cfcb770c3ecd0990dcceb1bde129e6c6\tshadow/1/data/test/partition_complex/19700102_2_2_0/p.bin\n"
-        "cfcd208495d565ef66e7dff9f98764da\tshadow/1/data/test/partition_complex/19700102_2_2_0/metadata_version.txt\n"
-        "cfcd208495d565ef66e7dff9f98764da\tshadow/1/data/test/partition_complex/19700201_1_1_0/metadata_version.txt\n"
-        "e2af3bef1fd129aea73a890ede1e7a30\tshadow/1/data/test/partition_complex/19700201_1_1_0/k.bin\n"
-        "f2312862cc01adf34a93151377be2ddf\tshadow/1/data/test/partition_complex/19700201_1_1_0/minmax_p.idx\n"
-    )
+    # no metadata version
+    if after_detach:
+        checksums = (
+            "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition_complex/19700102_2_2_0/k.bin\n"
+            "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition_complex/19700201_1_1_0/v1.bin\n"
+            "13cae8e658e0ca4f75c56b1fc424e150\tshadow/1/data/test/partition_complex/19700102_2_2_0/minmax_p.idx\n"
+            "25daad3d9e60b45043a70c4ab7d3b1c6\tshadow/1/data/test/partition_complex/19700102_2_2_0/partition.dat\n"
+            "3726312af62aec86b64a7708d5751787\tshadow/1/data/test/partition_complex/19700201_1_1_0/partition.dat\n"
+            "37855b06a39b79a67ea4e86e4a3299aa\tshadow/1/data/test/partition_complex/19700102_2_2_0/checksums.txt\n"
+            "38e62ff37e1e5064e9a3f605dfe09d13\tshadow/1/data/test/partition_complex/19700102_2_2_0/v1.bin\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/k.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/p.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/v1.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/k.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/v1.mrk\n"
+            "55a54008ad1ba589aa210d2629c1df41\tshadow/1/data/test/partition_complex/19700201_1_1_0/primary.idx\n"
+            "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition_complex/19700201_1_1_0/checksums.txt\n"
+            "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns.txt\n"
+            "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns.txt\n"
+            "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.bin\n"
+            "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition_complex/19700102_2_2_0/primary.idx\n"
+            "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700102_2_2_0/default_compression_codec.txt\n"
+            "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700201_1_1_0/default_compression_codec.txt\n"
+            "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition_complex/19700102_2_2_0/count.txt\n"
+            "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition_complex/19700201_1_1_0/count.txt\n"
+            "cfcb770c3ecd0990dcceb1bde129e6c6\tshadow/1/data/test/partition_complex/19700102_2_2_0/p.bin\n"
+            "e2af3bef1fd129aea73a890ede1e7a30\tshadow/1/data/test/partition_complex/19700201_1_1_0/k.bin\n"
+            "f2312862cc01adf34a93151377be2ddf\tshadow/1/data/test/partition_complex/19700201_1_1_0/minmax_p.idx\n"
+        )
+    else:
+        checksums = (
+            "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition_complex/19700102_2_2_0/k.bin\n"
+            "082814b5aa5109160d5c0c5aff10d4df\tshadow/1/data/test/partition_complex/19700201_1_1_0/v1.bin\n"
+            "13cae8e658e0ca4f75c56b1fc424e150\tshadow/1/data/test/partition_complex/19700102_2_2_0/minmax_p.idx\n"
+            "25daad3d9e60b45043a70c4ab7d3b1c6\tshadow/1/data/test/partition_complex/19700102_2_2_0/partition.dat\n"
+            "3726312af62aec86b64a7708d5751787\tshadow/1/data/test/partition_complex/19700201_1_1_0/partition.dat\n"
+            "37855b06a39b79a67ea4e86e4a3299aa\tshadow/1/data/test/partition_complex/19700102_2_2_0/checksums.txt\n"
+            "38e62ff37e1e5064e9a3f605dfe09d13\tshadow/1/data/test/partition_complex/19700102_2_2_0/v1.bin\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/k.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/p.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700102_2_2_0/v1.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/k.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.mrk\n"
+            "4ae71336e44bf9bf79d2752e234818a5\tshadow/1/data/test/partition_complex/19700201_1_1_0/v1.mrk\n"
+            "55a54008ad1ba589aa210d2629c1df41\tshadow/1/data/test/partition_complex/19700201_1_1_0/primary.idx\n"
+            "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition_complex/19700201_1_1_0/checksums.txt\n"
+            "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns.txt\n"
+            "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns.txt\n"
+            "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.bin\n"
+            "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition_complex/19700102_2_2_0/primary.idx\n"
+            "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700102_2_2_0/default_compression_codec.txt\n"
+            "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700201_1_1_0/default_compression_codec.txt\n"
+            "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition_complex/19700102_2_2_0/count.txt\n"
+            "c4ca4238a0b923820dcc509a6f75849b\tshadow/1/data/test/partition_complex/19700201_1_1_0/count.txt\n"
+            "cfcb770c3ecd0990dcceb1bde129e6c6\tshadow/1/data/test/partition_complex/19700102_2_2_0/p.bin\n"
+            "cfcd208495d565ef66e7dff9f98764da\tshadow/1/data/test/partition_complex/19700102_2_2_0/metadata_version.txt\n"
+            "cfcd208495d565ef66e7dff9f98764da\tshadow/1/data/test/partition_complex/19700201_1_1_0/metadata_version.txt\n"
+            "e2af3bef1fd129aea73a890ede1e7a30\tshadow/1/data/test/partition_complex/19700201_1_1_0/k.bin\n"
+            "f2312862cc01adf34a93151377be2ddf\tshadow/1/data/test/partition_complex/19700201_1_1_0/minmax_p.idx\n"
+        )
 
     assert TSV(instance.exec_in_container(cmd).replace("  ", "\t")) == TSV(checksums)
 
@@ -134,7 +165,7 @@ def test_partition_complex(partition_table_complex):
 
     q("ALTER TABLE test.partition_complex FREEZE")
 
-    partition_complex_assert_checksums()
+    partition_complex_assert_checksums(True)
 
     q("ALTER TABLE test.partition_complex DETACH PARTITION 197001")
     q("ALTER TABLE test.partition_complex ATTACH PARTITION 197001")
@@ -144,7 +175,7 @@ def test_partition_complex(partition_table_complex):
     q("ALTER TABLE test.partition_complex MODIFY COLUMN v1 Int8")
 
     # Check the backup hasn't changed
-    partition_complex_assert_checksums()
+    partition_complex_assert_checksums(True)
 
     q("OPTIMIZE TABLE test.partition_complex")
 
