@@ -450,8 +450,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         for (const auto & object_from : source_blobs)
         {
             std::string blob_name = object_storage.generateBlobNameForPath(to_path);
-            auto object_to = StoredObject::create(
-                object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+            auto object_to = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
 
             object_storage.copyObject(object_from, object_to);
 
@@ -616,7 +615,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
-    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 
@@ -690,7 +689,7 @@ void DiskObjectStorageTransaction::writeFileUsingCustomWriteObject(
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
-    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
     operations_to_execute.emplace_back(std::move(write_operation));

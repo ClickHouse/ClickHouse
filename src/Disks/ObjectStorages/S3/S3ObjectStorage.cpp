@@ -115,8 +115,6 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    assert(!objects[0].getPathKeyForCache().empty());
-
     ReadSettings disk_read_settings = patchSettings(read_settings);
 
     auto settings_ptr = s3_settings.get();

@@ -308,7 +308,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
         return false;
     }
 
-    auto object = StoredObject::create(*object_storage, id);
+    auto object = StoredObject(id);
     return object_storage->exists(object);
 }
 
