@@ -1,0 +1,27 @@
+<clickhouse>
+    <!--storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://localhost:11111/movetest/data/</endpoint>
+                <access_key_id>test</access_key_id>
+                <secret_access_key>testtest</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+                <s3_max_put_rps>1</s3_max_put_rps>
+                <s3_max_get_rps>1</s3_max_get_rps>
+            </s3>
+        </disks>
+        <policies>
+            <s3_and_default>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                    <external>
+                        <disk>s3</disk>
+                    </external>
+                </volumes>
+            </s3_and_default>
+        </policies>
+    </storage_configuration-->
+</clickhouse>

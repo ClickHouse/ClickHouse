@@ -668,7 +668,7 @@ void LocalServer::processConfig()
         if (!config().has("only-system-tables"))
         {
             DatabaseCatalog::instance().createBackgroundTasks();
-            loadMetadata(global_context);
+            waitLoad(loadMetadata(global_context));
             DatabaseCatalog::instance().startupBackgroundCleanup();
         }
 

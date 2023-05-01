@@ -54,10 +54,15 @@ public:
     TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_);
     TablesLoader() = delete;
 
-    LoadTaskPtrs loadTablesAsync(LoadJobSet load_after = {});
-    LoadTaskPtrs startupTablesAsync();
-    void loadTables();
-    void startupTables();
+    // Create tasks for async loading of all tables in `databases` after specified jobs `load_after`
+    [[nodiscard]] LoadTaskPtrs loadTablesAsync(LoadJobSet load_after = {});
+
+    // Create tasks for async startup of all tables in `databases` after specified jobs `startup_after`
+    // Note that for every table startup an extra dependency on that table loading will be added along with `startup_after`
+    [[nodiscard]] LoadTaskPtrs startupTablesAsync(LoadJobSet startup_after = {});
+
+    // Set of goal jobs for the whole loading process. Useful for scheduling more tasks after table loading
+    LoadJobSet goals();
 
 private:
     ContextMutablePtr global_context;
@@ -74,13 +79,12 @@ private:
     AtomicStopwatch stopwatch;
 
     AsyncLoader & async_loader;
-    LoadTaskPtrs load_tables;       // Tasks to load all tables
-    LoadTaskPtrs startup_tables;    // Tasks to startup all tables after loading
-    LoadTaskPtrs startup_databases; // Tasks to startup all databases after tables startup
+    std::unordered_map<UUID, LoadTaskPtr> load_table; /// table uuid -> load task
+    LoadTaskPtrs load_tasks;        // Tasks to load all tables
+    LoadTaskPtrs startup_tasks;     // Tasks to startup all tables and databases after loading
 
     ThreadPool pool; // TODO(serxa): get rid of it
 
-    void createTasks(LoadJobSet load_after);
     void buildDependencyGraph();
     void removeUnresolvableDependencies();
     void loadTablesInTopologicalOrder();

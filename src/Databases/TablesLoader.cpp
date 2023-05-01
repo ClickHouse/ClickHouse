@@ -40,21 +40,22 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     log = &Poco::Logger::get("TablesLoader");
 }
 
-void TablesLoader::createTasks(LoadJobSet load_after)
+LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
 {
     bool need_resolve_dependencies = !global_context->getConfigRef().has("ignore_table_dependencies_on_metadata_loading");
 
     /// Load all Lazy, MySQl, PostgreSQL, SQLite, etc databases first.
+    /// Note that this loading is NOT async because it should be fast and it cannot have any dependencies
     for (auto & database : databases)
     {
         if (need_resolve_dependencies && database.second->supportsLoadingInTopologicalOrder())
             databases_to_load.push_back(database.first);
         else
-            load_tables.push_back(database.second->loadStoredObjectsAsync(async_loader, load_after, global_context, strictness_mode, /* skip_startup_tables */ true));
+            database.second->loadStoredObjects(global_context, strictness_mode, /* skip_startup_tables */ true);
     }
 
     if (databases_to_load.empty())
-        return;
+        return load_tasks;
 
     /// Read and parse metadata from Ordinary, Atomic, Materialized*, Replicated, etc databases. Build dependency graph.
     for (auto & database_name : databases_to_load)
@@ -68,12 +69,6 @@ void TablesLoader::createTasks(LoadJobSet load_after)
              metadata.parsed_tables.size(), databases_to_load.size(), stopwatch.elapsedSeconds());
 
     stopwatch.restart();
-
-    LoadJobSet load_databases_without_dependencies;
-    for (const auto task : load_tables)
-        load_databases_without_dependencies.insert(task->goals().begin(), task->goals().end());
-    if (load_databases_without_dependencies.empty())
-        load_databases_without_dependencies = std::move(load_after);
 
     buildDependencyGraph();
 
@@ -88,111 +83,64 @@ void TablesLoader::createTasks(LoadJobSet load_after)
     ContextMutablePtr load_context = Context::createCopy(global_context);
     load_context->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
 
-    std::unordered_map<UUID, LoadTaskPtr> load_table; /// table uuid -> load task
-    std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
     for (const auto & table_id : all_loading_dependencies.getTablesSortedByDependency())
     {
-        /// Make set of jobs to load before this table
-        LoadJobSet load_dependencies;
+        /// Gather tasks to load before this table
+        LoadTaskPtrs load_dependency_tasks;
         for (StorageID dependency_id : all_loading_dependencies.getDependencies(table_id))
-        {
-            const auto & goals = load_table[dependency_id.uuid]->goals();
-            load_dependencies.insert(goals.begin(), goals.end());
-        }
-        if (load_dependencies.empty())
-            load_dependencies = load_databases_without_dependencies;
+            load_dependency_tasks.push_back(load_table[dependency_id.uuid]);
 
         // Make load table task
         auto table_name = table_id.getQualifiedName();
         const auto & path_and_query = metadata.parsed_tables[table_name];
-        auto load_task = databases[table_name.database]->loadTableFromMetadataAsync(async_loader, load_dependencies, load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);
-        load_table[table_id.uuid] = load_task;
-        load_tables.push_back(load_task);
+        auto task = databases[table_name.database]->loadTableFromMetadataAsync(
+            async_loader,
+            load_dependency_tasks.empty() ? load_after : getGoals(load_dependency_tasks),
+            load_context,
+            path_and_query.path,
+            table_name,
+            path_and_query.ast,
+            strictness_mode);
+        load_table[table_id.uuid] = task;
+        load_tasks.push_back(task);
+    }
 
+    return load_tasks;
+}
+
+LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
+{
+    std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
+    for (const auto & table_id : all_loading_dependencies.getTablesSortedByDependency())
+    {
         // Make startup table task
-        auto startup_task = databases[table_name.database]->startupTableAsync(async_loader, load_task->goals(), table_name, strictness_mode);
-        startup_database[table_name.database].push_back(startup_task);
-        startup_tables.push_back(startup_task);
+        auto table_name = table_id.getQualifiedName();
+        auto task = databases[table_name.database]->startupTableAsync(
+            async_loader,
+            joinJobs(load_table[table_id.uuid]->goals(), startup_after),
+            table_name,
+            strictness_mode);
+        startup_database[table_name.database].push_back(task);
+        startup_tasks.push_back(task);
     }
 
     /// Make startup database tasks
     for (auto [database_name, startup_table_tasks] : startup_database)
     {
-        LoadJobSet startup_after;
-        for (const auto & startup_task : startup_table_tasks)
-            startup_after.insert(startup_task->goals().begin(), startup_task->goals().end());
-        auto startup_database_task = databases[database_name]->startupDatabaseAsync(async_loader, startup_after, strictness_mode);
-        startup_databases.push_back(startup_database_task);
+        auto task = databases[database_name]->startupDatabaseAsync(
+            async_loader,
+            getGoals(startup_table_tasks),
+            strictness_mode);
+        startup_tasks.push_back(task);
     }
 
-    // Schedule all tasks in right order
-    async_loader.schedule(load_tables);
-    async_loader.schedule(startup_tables);
-    async_loader.schedule(startup_databases);
+    return startup_tasks;
 }
 
-LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
+LoadJobSet TablesLoader::goals()
 {
-    createTasks(load_after);
-    return load_tables;
+    return getGoals(startup_tasks);
 }
-
-LoadTaskPtrs TablesLoader::startupTablesAsync()
-{
-    return startup_tables;
-}
-
-
-void TablesLoader::loadTables()
-{
-    // TODO(serxa): rewrite using loadTablesAsync()
-    bool need_resolve_dependencies = !global_context->getConfigRef().has("ignore_table_dependencies_on_metadata_loading");
-
-    /// Load all Lazy, MySQl, PostgreSQL, SQLite, etc databases first.
-    for (auto & database : databases)
-    {
-        if (need_resolve_dependencies && database.second->supportsLoadingInTopologicalOrder())
-            databases_to_load.push_back(database.first);
-        else
-            database.second->loadStoredObjects(global_context, strictness_mode, /* skip_startup_tables */ true);
-    }
-
-    if (databases_to_load.empty())
-        return;
-
-    /// Read and parse metadata from Ordinary, Atomic, Materialized*, Replicated, etc databases. Build dependency graph.
-    for (auto & database_name : databases_to_load)
-    {
-        databases[database_name]->beforeLoadingMetadata(global_context, strictness_mode);
-        bool is_startup = LoadingStrictnessLevel::FORCE_ATTACH <= strictness_mode;
-        databases[database_name]->loadTablesMetadata(global_context, metadata, is_startup);
-    }
-
-    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",
-             metadata.parsed_tables.size(), databases_to_load.size(), stopwatch.elapsedSeconds());
-
-    stopwatch.restart();
-
-    buildDependencyGraph();
-
-    /// Update existing info (it's important for ATTACH DATABASE)
-    DatabaseCatalog::instance().addDependencies(referential_dependencies, loading_dependencies);
-
-    /// Remove tables that do not exist
-    removeUnresolvableDependencies();
-
-    loadTablesInTopologicalOrder();
-}
-
-
-void TablesLoader::startupTables()
-{
-    // TODO(serxa): rewrite using startupTablesAsync()
-    /// Startup tables after all tables are loaded. Background tasks (merges, mutations, etc) may slow down data parts loading.
-    for (auto & database : databases)
-        database.second->startupTables(pool, strictness_mode);
-}
-
 
 void TablesLoader::buildDependencyGraph()
 {
@@ -268,42 +216,6 @@ void TablesLoader::removeUnresolvableDependencies()
 
     /// Cannot load tables with cyclic dependencies.
     all_loading_dependencies.checkNoCyclicDependencies();
-}
-
-
-void TablesLoader::loadTablesInTopologicalOrder()
-{
-    /// Compatibility setting which should be enabled by default on attach
-    /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types of columns
-    ContextMutablePtr load_context = Context::createCopy(global_context);
-    load_context->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
-
-    // TODO(serxa): remove the following code. Return waitable job or job set instead of sync wait.
-    /// Load tables in parallel.
-    auto tables_to_load = all_loading_dependencies.getTablesSortedByDependencyForParallel();
-
-    for (size_t level = 0; level != tables_to_load.size(); ++level)
-    {
-        startLoadingTables(load_context, tables_to_load[level], level);
-        pool.wait();
-    }
-}
-
-void TablesLoader::startLoadingTables(ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level)
-{
-    size_t total_tables = metadata.parsed_tables.size();
-
-    LOG_INFO(log, "Loading {} tables with dependency level {}", tables_to_load.size(), level);
-
-    for (const auto & table_id : tables_to_load)
-    {
-        pool.scheduleOrThrowOnError([this, load_context, total_tables, table_name = table_id.getQualifiedName()]()
-        {
-            const auto & path_and_query = metadata.parsed_tables[table_name];
-            databases[table_name.database]->loadTableFromMetadata(load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);
-            logAboutProgress(log, ++tables_processed, total_tables, stopwatch);
-        });
-    }
 }
 
 }

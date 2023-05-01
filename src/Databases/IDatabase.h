@@ -140,20 +140,6 @@ public:
     {
     }
 
-    // TODO(serxa): do we really need loadStoredObjectsAsync()? better to always do it sync.
-    /// Create a task to load existing tables after specified dependencies `load_after` using `async_loader`.
-    /// The returned task is also stored inside the database for cancellation on destruction.
-    /// You can call it only once, right after the object is created.
-    virtual LoadTaskPtr loadStoredObjectsAsync(
-        AsyncLoader & /*async_loader*/,
-        LoadJobSet /*load_after*/,
-        ContextMutablePtr /*context*/,
-        LoadingStrictnessLevel /*mode*/,
-        bool /* skip_startup_tables */)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
-
     virtual bool supportsLoadingInTopologicalOrder() const { return false; }
 
     virtual void beforeLoadingMetadata(

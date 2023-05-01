@@ -1601,6 +1601,9 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
+    /// Tasks for loading and starting up all databases except system
+    LoadTaskPtrs load_metadata;
+
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
@@ -1620,9 +1623,10 @@ try
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
-        /// Then, load remaining databases
-        loadMetadata(global_context, default_database);
-        convertDatabasesEnginesIfNeed(global_context);
+        /// Then, load remaining databases (some of them maybe be loaded asynchronously)
+        load_metadata = loadMetadata(global_context, default_database);
+        /// If we need to convert database engines, disable async tables loading
+        convertDatabasesEnginesIfNeed(load_metadata, global_context);
         startupSystemTables();
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists

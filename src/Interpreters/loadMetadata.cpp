@@ -158,7 +158,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
     }
 }
 
-void loadMetadata(ContextMutablePtr context, const String & default_database_name)
+LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_database_name)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
@@ -230,20 +230,30 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
 
     auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
     TablesLoader loader{context, std::move(loaded_databases), mode};
-    loader.loadTables();
-    loader.startupTables();
+    auto load_tasks = loader.loadTablesAsync();
+    auto startup_tasks = loader.startupTablesAsync();
+
+    // First, load all tables
+    scheduleLoad(load_tasks);
+    waitLoad(load_tasks); // TODO(serxa): only wait for tables that must be loaded before server start
+
+    // Then, startup all tables
+    scheduleLoad(startup_tasks);
+    waitLoad(startup_tasks); // TODO(serxa): only wait for tables that must be started before server start
 
     if (has_force_restore_data_flag)
     {
         try
         {
-            fs::remove(force_restore_data_flag_file);
+            fs::remove(force_restore_data_flag_file); // TODO(serxa): when we should remove it with async loading? should we disable async loading with restore?
         }
         catch (...)
         {
             tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data sanity checks");
         }
     }
+
+    return joinTasks(load_tasks, startup_tasks);
 }
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
@@ -425,11 +435,11 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
             {database_name, DatabaseCatalog::instance().getDatabase(database_name)},
         };
         TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-        loader.loadTables();
+        scheduleAndWaitLoad(loader.loadTablesAsync());
 
         /// Startup tables if they were started before conversion and detach/attach
         if (tables_started)
-            loader.startupTables();
+            scheduleAndWaitLoad(loader.startupTablesAsync());
     }
     catch (Exception & e)
     {
@@ -450,7 +460,7 @@ void maybeConvertSystemDatabase(ContextMutablePtr context)
     maybeConvertOrdinaryDatabaseToAtomic(context, DatabaseCatalog::SYSTEM_DATABASE, /* tables_started */ false);
 }
 
-void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
+void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
 {
     auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
     if (!fs::exists(convert_flag_path))
@@ -458,6 +468,9 @@ void convertDatabasesEnginesIfNeed(ContextMutablePtr context)
 
     LOG_INFO(&Poco::Logger::get("loadMetadata"), "Found convert_ordinary_to_atomic file in flags directory, "
                                                  "will try to convert all Ordinary databases to Atomic");
+
+    // Wait for all table to be loaded and started
+    waitLoad(load_metadata);
 
     for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases())
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
@@ -486,7 +499,7 @@ void loadMetadataSystem(ContextMutablePtr context)
         {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
     TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
-    loader.loadTables();
+    scheduleAndWaitLoad(loader.loadTablesAsync());
     /// Will startup tables in system database after all databases are loaded.
 }
 

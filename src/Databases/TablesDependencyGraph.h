@@ -107,9 +107,6 @@ public:
     /// tables which depend on the tables which depend on the tables without dependencies, and so on.
     std::vector<StorageID> getTablesSortedByDependency() const;
 
-    /// The same as getTablesSortedByDependency() but make a list for parallel processing.
-    std::vector<std::vector<StorageID>> getTablesSortedByDependencyForParallel() const;
-
     /// Outputs information about this graph as a bunch of logging messages.
     void log() const;
 
