@@ -10,6 +10,14 @@ CREATE TABLE nr (`x` Nullable(UInt32), `s` Nullable(String)) ENGINE = Memory;
 INSERT INTO t VALUES (1, 'l');
 INSERT INTO nr VALUES (2, NULL);
 
+{% for allow_experimental_analyzer in [0, 1] -%}
+
+SET allow_experimental_analyzer = {{ allow_experimental_analyzer }};
+
+{% if allow_experimental_analyzer -%}
+SELECT '- analyzer -';
+{% endif -%}
+
 SET join_use_nulls = 0;
 
 SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM t AS l LEFT JOIN nr AS r USING (x) ORDER BY t.x;
@@ -36,7 +44,7 @@ SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l FULL JOIN t 
 
 SET join_use_nulls = 1;
 
-SELECT '-';
+SELECT '- join_use_nulls -';
 
 SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM t AS l LEFT JOIN nr AS r USING (x) ORDER BY t.x;
 SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM t AS l RIGHT JOIN nr AS r USING (x) ORDER BY t.x;
@@ -56,10 +64,11 @@ SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM t AS l FULL JOIN nr 
 
 SELECT '-';
 
--- TODO
--- SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l LEFT JOIN t AS r USING (s) ORDER BY t.x;
--- SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l RIGHT JOIN t AS r USING (s) ORDER BY t.x;
--- SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l FULL JOIN t AS r USING (s) ORDER BY t.x;
+SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l LEFT JOIN t AS r USING (s) ORDER BY t.x;
+SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l RIGHT JOIN t AS r USING (s) ORDER BY t.x;
+SELECT t.x, l.s, r.s, toTypeName(l.s), toTypeName(r.s) FROM nr AS l FULL JOIN t AS r USING (s) ORDER BY t.x;
+
+{% endfor %}
 
 DROP TABLE t;
 DROP TABLE nr;
