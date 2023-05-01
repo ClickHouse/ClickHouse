@@ -259,7 +259,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , zookeeper(current_zookeeper)
     , zookeeper_path(zookeeper_path_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
-    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3QueueReader"))
+    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3QReader"))
 {
     reader = createReader();
     if (reader)
