@@ -8,6 +8,7 @@
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
+#include <Server/UDPReplicationPack.h>
 
 
 namespace zkutil
@@ -37,6 +38,7 @@ public:
 
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+    void processQuery(const UDPReplicationPack & params, WriteBuffer & out, UDPReplicationPack & response) override;
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);

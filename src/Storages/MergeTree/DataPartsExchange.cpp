@@ -10,6 +10,7 @@
 #include <IO/S3Common.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Server/UDPReplicationPack.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -24,7 +25,6 @@
 #include <iterator>
 #include <regex>
 #include <base/sort.h>
-
 
 namespace fs = std::filesystem;
 
@@ -228,6 +228,132 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     }
 }
 
+#if USE_UDT
+void Service::processQuery(const UDPReplicationPack & params, WriteBuffer & out, UDPReplicationPack & response)
+{
+    int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
+
+    String part_name = params.get("part");
+
+    const auto data_settings = data.getSettings();
+
+    /// Validation of the input that may come from malicious replica.
+    MergeTreePartInfo::fromPartName(part_name, data.format_version);
+
+    /// We pretend to work as older server version, to be sure that client will correctly process our version
+    response.set("Set-Cookie", "server_protocol_version=" + toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)));
+
+    LOG_TRACE(log, "Sending part {}", part_name);
+
+    MergeTreeData::DataPartPtr part;
+
+    auto report_broken_part = [&]()
+    {
+        if (part && part->isProjectionPart())
+        {
+            auto parent_part = part->getParentPart()->shared_from_this();
+            data.reportBrokenPart(parent_part);
+        }
+        else if (part)
+            data.reportBrokenPart(part);
+        else
+            LOG_TRACE(log, "Part {} was not found, do not report it as broken", part_name);
+    };
+
+    try
+    {
+        part = findPart(part_name);
+
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
+
+        if (part->getDataPartStorage().isStoredOnRemoteDisk())
+        {
+            UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
+            if (revision)
+                part->getDataPartStorage().syncRevision(revision);
+
+            revision = part->getDataPartStorage().getRevision();
+            if (revision)
+                response.set("disk_revision", toString(revision));
+        }
+
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+            writeBinary(part->checksums.getTotalSizeOnDisk(), out);
+
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
+        {
+            WriteBufferFromOwnString ttl_infos_buffer;
+            part->ttl_infos.write(ttl_infos_buffer);
+            writeBinary(ttl_infos_buffer.str(), out);
+        }
+
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
+        {
+            writeStringBinary(part->getType().toString(), out);
+        }
+
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
+        {
+            writeUUIDText(part->uuid, out);
+        }
+
+        // Both not in the buffer when query is finished.
+
+        String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
+
+        std::regex re("\\s*,\\s*");
+        Strings capability(
+            std::sregex_token_iterator(remote_fs_metadata.begin(), remote_fs_metadata.end(), re, -1),
+            std::sregex_token_iterator());
+
+        bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
+
+        if (send_projections)
+        {
+            const auto & projections = part->getProjectionParts();
+            writeBinary(projections.size(), out);
+        }
+
+        if (data_settings->allow_remote_fs_zero_copy_replication &&
+            /// In memory data part does not have metadata yet.
+            !isInMemoryPart(part) &&
+            client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
+        {
+            auto disk_type = part->getDataPartStorage().getDiskType();
+            if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
+            {
+                /// Send metadata if the receiver's capability covers the source disk type.
+                response.set("remote_fs_metadata", disk_type);
+                sendPartFromDisk(part, out, client_protocol_version, true, send_projections);
+                return;
+            }
+        }
+
+        if (isInMemoryPart(part))
+            sendPartFromMemory(part, out, send_projections);
+        else
+            sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
+    }
+    catch (const NetException &)
+    {
+        /// Network error or error on remote side. No need to enqueue part for check.
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
+            report_broken_part();
+
+        throw;
+    }
+    catch (...)
+    {
+        report_broken_part();
+        throw;
+    }
+}
+#endif
+
 void Service::sendPartFromMemory(
     const MergeTreeData::DataPartPtr & part, WriteBuffer & out, bool send_projections)
 {
@@ -408,8 +534,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
-    uri.setHost(host);
-    uri.setPort(port);
+    uri.setHost("127.0.0.1");
+    //uri.setPort(port);
+    uri.setPort(9019);
     uri.setQueryParameters(
     {
         {"endpoint",                getEndpointId(replica_path)},

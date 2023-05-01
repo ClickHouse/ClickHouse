@@ -12,6 +12,7 @@ namespace DB
 
 class GRPCServer;
 class TCPServer;
+class UDTServer;
 
 /// Provides an unified interface to access a protocol implementing server
 /// no matter what type it has (HTTPServer, TCPServer, MySQLServer, GRPCServer, ...).
@@ -25,6 +26,10 @@ public:
 
 #if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
     ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
+#endif
+
+#if USE_UDT
+    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<UDTServer> udt_server_);
 #endif
 
     /// Starts the server. A new thread will be created that waits for and accepts incoming connections.
@@ -64,6 +69,7 @@ private:
     };
     class TCPServerAdapterImpl;
     class GRPCServerAdapterImpl;
+    class UDTServerAdapterImpl;
 
     std::string listen_host;
     std::string port_name;

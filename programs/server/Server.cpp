@@ -130,6 +130,10 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
+#if USE_UDT
+#   include <Server/UDTServer.h>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -2228,6 +2232,22 @@ void Server::createServers(
                     socket,
                     http_params));
         });
+
+        #if USE_UDT
+        port_name = "interserver_udt_port";
+        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, interserver_listen_host, port);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                interserver_listen_host,
+                port_name,
+                "UDT communication (interserver): " + address.toString(),
+                std::make_unique<UDTServer>(*this, interserver_listen_host, port));
+        });
+        #endif
 
         port_name = "interserver_https_port";
         createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter

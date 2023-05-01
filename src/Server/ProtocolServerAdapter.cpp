@@ -5,6 +5,9 @@
 #include <Server/GRPCServer.h>
 #endif
 
+#if USE_UDT
+#include <Server/UDTServer.h>
+#endif
 
 namespace DB
 {
@@ -36,6 +39,42 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     , impl(std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_)))
 {
 }
+
+#if USE_UDT
+class ProtocolServerAdapter::UDTServerAdapterImpl : public Impl
+{
+public:
+    explicit UDTServerAdapterImpl(std::unique_ptr<UDTServer> udt_server_) : udt_server(std::move(udt_server_)) {}
+    ~UDTServerAdapterImpl() override = default;
+
+    void start() override { udt_server->start(); }
+    void stop() override
+    {
+        is_stopping = true;
+        udt_server->stop();
+    }
+    bool isStopping() const override { return is_stopping; }
+    UInt16 portNumber() const override { return udt_server->portNumber(); }
+    size_t currentConnections() const override { return udt_server->currentConnections(); }
+    size_t currentThreads() const override { return udt_server->currentThreads(); }
+
+private:
+    std::unique_ptr<UDTServer> udt_server;
+    bool is_stopping = false;
+};
+
+ProtocolServerAdapter::ProtocolServerAdapter(
+    const std::string & listen_host_,
+    const char * port_name_,
+    const std::string & description_,
+    std::unique_ptr<UDTServer> udt_server_)
+    : listen_host(listen_host_)
+    , port_name(port_name_)
+    , description(description_)
+    , impl(std::make_unique<UDTServerAdapterImpl>(std::move(udt_server_)))
+{
+}
+#endif
 
 #if USE_GRPC && !defined(KEEPER_STANDALONE_BUILD)
 class ProtocolServerAdapter::GRPCServerAdapterImpl : public Impl

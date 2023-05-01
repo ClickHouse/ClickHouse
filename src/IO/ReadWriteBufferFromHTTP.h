@@ -22,8 +22,20 @@
 #include <Poco/URIStreamFactory.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
+#include <Server/UDPReplicationPack.h>
 #include "config.h"
 #include "config_version.h"
+
+
+#if USE_UDT
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-identifier"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#include <udt.h>
+
+#endif
 
 #include <filesystem>
 
@@ -45,6 +57,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
 }
 
 template <typename TSessionFactory>
@@ -108,6 +121,14 @@ namespace detail
             std::optional<size_t> end;
         };
 
+
+        #if USE_UDT
+        std::string protocol = "udt";
+        #else
+        std::string protocol = "tcp";
+        #endif
+
+    protected:
         Poco::URI uri;
         std::string method;
         std::string content_encoding;
@@ -160,57 +181,165 @@ namespace detail
             if (uri_.getPath().empty())
                 uri_.setPath("/");
 
-            Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-            request.setHost(uri_.getHost()); // use original, not resolved host name in header
-
-            if (out_stream_callback)
-                request.setChunkedTransferEncoding(true);
-            else if (method == Poco::Net::HTTPRequest::HTTP_POST)
-                request.setContentLength(0);    /// No callback - no body
-
-            for (auto & [header, value] : http_header_entries)
-                request.set(header, value);
-
-            std::optional<Range> range;
-            if constexpr (!for_object_info)
-            {
-                if (withPartialContent(read_range))
-                    range = Range{getOffset(), read_range.end};
-            }
-
-            if (range)
-            {
-                String range_header_value;
-                if (range->end)
-                    range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
-                else
-                    range_header_value = fmt::format("bytes={}-", *range->begin);
-                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
-                request.set("Range", range_header_value);
-            }
-
-            if (!credentials.getUsername().empty())
-                credentials.authenticate(request);
-
-            LOG_TRACE(log, "Sending request to {}", uri_.toString());
-
             auto sess = current_session->getSession();
+
             try
             {
-                auto & stream_out = sess->sendRequest(request);
+                if (protocol == "udt")
+                {
+                    #if USE_UDT
+                    UDPReplicationPack request;
 
-                if (out_stream_callback)
-                    out_stream_callback(stream_out);
+                    for (auto & [header, value] : http_header_entries)
+                        request.set(header, value);
 
-                auto result_istr = receiveResponse(*sess, request, response, true);
-                response.getCookies(cookies);
+                    for (auto it: uri_.getQueryParameters())
+                        request.set(it.first, it.second);
 
-                /// we can fetch object info while the request is being processed
-                /// and we don't want to override any context used by it
-                if constexpr (!for_object_info)
-                    content_encoding = response.get("Content-Encoding", "");
 
-                return result_istr;
+                    std::optional<Range> range;
+                    if constexpr (!for_object_info)
+                    {
+                        if (withPartialContent(read_range))
+                            range = Range{getOffset(), read_range.end};
+                    }
+
+                    if (range)
+                    {
+                        String range_header_value;
+                        if (range->end)
+                            range_header_value = fmt::format("{}-{}", *range->begin, *range->end);
+                        else
+                            range_header_value = fmt::format("{}-", *range->begin);
+                        LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                        request.set("bytes", range_header_value);
+                    }
+
+                    /*if (!credentials.getUsername().empty())
+                        credentials.authenticate(request);*/
+
+                    LOG_TRACE(log, "Sending UDT request to {}", uri_.toString());
+
+                    UDTSOCKET client = UDT::socket(AF_INET, SOCK_DGRAM, 0);
+
+                    sockaddr_in serv_addr;
+                    serv_addr.sin_family = AF_INET;
+                    serv_addr.sin_port = htons(uri_.getPort());
+                    inet_pton(AF_INET, uri_.getHost().c_str(), &serv_addr.sin_addr);
+
+                    memset(&(serv_addr.sin_zero), '\0', 8);
+
+                    // connect to the server, implict bind
+                    if (UDT::ERROR == UDT::connect(client, reinterpret_cast<sockaddr*>(&serv_addr), sizeof(serv_addr)))
+                    {
+                        return istr;
+                    }
+
+                    auto request_str = request.serialize();
+                    auto request_cstr = request_str.c_str();
+
+                    if (UDT::ERROR == UDT::sendmsg(client, request_cstr, static_cast<int>(request_str.size() + 1)))
+                    {
+                        return istr;
+                    }
+
+                    char data_packet_size[5] = "";
+
+                    if (UDT::ERROR == UDT::recvmsg(client, data_packet_size, sizeof(data_packet_size)))
+                    {
+                        return istr;
+                    }
+
+                    LOG_INFO(log, "Received UDT packet size: {}", data_packet_size);
+
+                    auto data_size = std::stoi(data_packet_size);
+
+                    UDPReplicationPack resp;
+
+                    char raw_data[data_size];
+
+                    if (UDT::ERROR == UDT::recvmsg(client, raw_data, data_size))
+                    {
+                        return istr;
+                    }
+
+                    auto data = resp.deserialize(reinterpret_cast<char*>(raw_data), data_size);
+
+                    LOG_INFO(log, "Received UDT packet: {}", data);
+
+                    std::cout << "\n\n";
+                    for (auto [key, value]: resp.data) {
+                        response.set(key, value);
+                        std::cout << key << ' ' << value << '\n';
+                    }
+                    std::cout << "\n\n";
+
+                    std::istringstream* result_istr;
+                    
+                    result_istr = new std::istringstream(data);
+
+                    response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
+
+                    UDT::close(client);
+
+                    return result_istr;
+                    #else
+                    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "UDT protocol was not enabled during build time");
+                    #endif
+                }
+                else
+                {
+                    Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                    request.setHost(uri_.getHost()); // use original, not resolved host name in header
+
+                    if (out_stream_callback)
+                        request.setChunkedTransferEncoding(true);
+                    else if (method == Poco::Net::HTTPRequest::HTTP_POST)
+                        request.setContentLength(0);    /// No callback - no body
+
+                    for (auto & [header, value] : http_header_entries)
+                        request.set(header, value);
+
+                    std::optional<Range> range;
+                    if constexpr (!for_object_info)
+                    {
+                        if (withPartialContent(read_range))
+                            range = Range{getOffset(), read_range.end};
+                    }
+
+                    if (range)
+                    {
+                        String range_header_value;
+                        if (range->end)
+                            range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
+                        else
+                            range_header_value = fmt::format("bytes={}-", *range->begin);
+                        LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                        request.set("Range", range_header_value);
+                    }
+
+                    if (!credentials.getUsername().empty())
+                        credentials.authenticate(request);
+
+                    LOG_TRACE(log, "Sending request to {}", uri_.toString());
+
+                    //auto sess = current_session->getSession();
+
+                    auto & stream_out = sess->sendRequest(request);
+
+                    if (out_stream_callback)
+                        out_stream_callback(stream_out);
+
+                    auto result_istr = receiveResponse(*sess, request, response, true);
+                    response.getCookies(cookies);
+
+                    /// we can fetch object info while the request is being processed
+                    /// and we don't want to override any context used by it
+                    if constexpr (!for_object_info)
+                        content_encoding = response.get("Content-Encoding", "");
+
+                    return result_istr;
+                }
             }
             catch (const Poco::Exception & e)
             {
@@ -1041,3 +1170,7 @@ public:
 };
 
 }
+
+#if USE_UDT
+#pragma GCC diagnostic pop
+#endif

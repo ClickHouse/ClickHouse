@@ -85,6 +85,7 @@ add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (rocksdb-cmake rocksdb)
 add_contrib (thrift-cmake thrift)
+add_contrib (udt-cmake udt)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy

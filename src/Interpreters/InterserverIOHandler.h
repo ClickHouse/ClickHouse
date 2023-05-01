@@ -14,6 +14,13 @@
 #include <map>
 #include <utility>
 
+
+#include "config.h"
+
+#if USE_UDT
+#   include <Server/UDPReplicationPack.h>
+#endif
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -39,6 +46,9 @@ class InterserverIOEndpoint
 public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
+    #if USE_UDT
+    virtual void processQuery(const UDPReplicationPack & params, WriteBuffer & out, UDPReplicationPack & response) = 0;
+    #endif
     virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.

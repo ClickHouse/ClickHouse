@@ -352,6 +352,11 @@ target_link_libraries(clickhouse_common_io
             Poco::Foundation
 )
 
+if (TARGET ch_contrib::udt)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::udt)
+    target_link_libraries(dbms PUBLIC ch_contrib::udt)
+endif()
+
 if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
