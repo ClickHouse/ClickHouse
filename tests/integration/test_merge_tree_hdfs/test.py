@@ -365,9 +365,8 @@ def test_move_replace_partition_to_another_table(cluster):
     hdfs_objects = fs.listdir("/clickhouse")
     for obj in hdfs_objects:
         print("Object in HDFS after move", obj)
-    assert (
-        len(hdfs_objects)
-        == FILES_OVERHEAD * 2
+    wait_for_delete_hdfs_objects(
+        cluster, FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
         - FILES_OVERHEAD_METADATA_VERSION * 2
     )
@@ -388,9 +387,8 @@ def test_move_replace_partition_to_another_table(cluster):
     for obj in hdfs_objects:
         print("Object in HDFS after insert", obj)
 
-    assert (
-        len(hdfs_objects)
-        == FILES_OVERHEAD * 2
+    wait_for_delete_hdfs_objects(
+        cluster, FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 6
         - FILES_OVERHEAD_METADATA_VERSION * 2
     )
@@ -420,9 +418,8 @@ def test_move_replace_partition_to_another_table(cluster):
     for obj in hdfs_objects:
         print("Object in HDFS after drop", obj)
 
-    assert (
-        len(hdfs_objects)
-        == FILES_OVERHEAD
+    wait_for_delete_hdfs_objects(
+        cluster, FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
         - FILES_OVERHEAD_METADATA_VERSION * 2
     )
