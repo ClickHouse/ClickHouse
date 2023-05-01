@@ -470,9 +470,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         print("Object after move partition", obj.object_name)
 
     # Number of objects in S3 should be unchanged.
-    assert (
-        len(s3_objects)
-        == FILES_OVERHEAD * 2
+    wait_for_delete_s3_objects(
+        cluster, FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
         - FILES_OVERHEAD_METADATA_VERSION * 2
     )
@@ -490,9 +489,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     for obj in s3_objects:
         print("Object after insert", obj.object_name)
 
-    assert (
-        len(s3_objects)
-        == FILES_OVERHEAD * 2
+    wait_for_delete_s3_objects(
+        cluster, FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 6
         - FILES_OVERHEAD_METADATA_VERSION * 2
     )
@@ -520,9 +518,9 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         print("Object after drop", obj.object_name)
 
     # Data should remain in S3
-    assert (
-        len(s3_objects)
-        == FILES_OVERHEAD
+
+    wait_for_delete_s3_objects(
+        cluster, FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
         - FILES_OVERHEAD_METADATA_VERSION * 2
     )
@@ -533,9 +531,9 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     for obj in s3_objects:
         print("Object after freeze", obj.object_name)
 
-    assert (
-        len(s3_objects)
-        == FILES_OVERHEAD
+    wait_for_delete_s3_objects(
+        cluster,
+        FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
         - FILES_OVERHEAD_METADATA_VERSION * 2
     )
