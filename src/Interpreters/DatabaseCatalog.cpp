@@ -346,7 +346,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     catch (const Exception & e)
     {
         if (exception)
-            exception->emplace(*e.clone());
+            exception->emplace(e);
     }
 
     if (!table)
