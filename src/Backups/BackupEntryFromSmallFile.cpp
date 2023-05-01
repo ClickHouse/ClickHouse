@@ -29,21 +29,18 @@ namespace
 }
 
 
-BackupEntryFromSmallFile::BackupEntryFromSmallFile(const String & file_path_, const std::optional<UInt128> & checksum_)
+BackupEntryFromSmallFile::BackupEntryFromSmallFile(const String & file_path_)
     : file_path(file_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(file_path_))
     , data(readFile(file_path_))
-    , checksum(checksum_)
 {
 }
-    
-BackupEntryFromSmallFile::BackupEntryFromSmallFile(
-    const DiskPtr & disk_, const String & file_path_, const std::optional<UInt128> & checksum_)
+
+BackupEntryFromSmallFile::BackupEntryFromSmallFile(const DiskPtr & disk_, const String & file_path_)
     : disk(disk_)
     , file_path(file_path_)
     , data_source_description(disk_->getDataSourceDescription())
     , data(readFile(disk_, file_path, data_source_description.is_encrypted))
-    , checksum(data_source_description.is_encrypted ? std::optional<UInt128>{} : checksum_)
 {
 }
 

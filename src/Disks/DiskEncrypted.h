@@ -223,6 +223,8 @@ public:
         return delegate->getFileSize(wrapped_path);
     }
 
+    static size_t convertFileSizeToEncryptedFileSize(size_t file_size);
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override
     {
         auto wrapped_path = wrappedPath(path);
