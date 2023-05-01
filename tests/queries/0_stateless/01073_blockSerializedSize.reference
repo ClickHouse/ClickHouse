@@ -1,0 +1,24 @@
+UInt8	1
+Nullable(UInt8)	2
+UInt32	4
+UInt64	8
+Nullable(UInt64)	9
+
+String	4
+FixedString(32)	32
+
+Enum8	1
+
+Array	12
+
+uniqCombinedState(100)	402
+uniqCombinedState(10000)	81993
+uniqCombinedState(100000)	81993
+uniqCombinedState(1000000)	81993
+uniqCombinedState(10000000)	81993
+uniqCombined64State(10000000)	98505
+
+String,UInt8	5
+
+Block(UInt32)	16
+Block(UInt32)	16

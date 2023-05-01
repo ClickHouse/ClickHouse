@@ -1,0 +1,38 @@
+<test>
+
+    <create_query>
+        create table if not exists whitespaces
+        engine = MergeTree() partition by tuple() order by tuple()
+        as
+            with 32 - log2(intHash32(number)) + 1 as num_spaces,
+                repeat(' ', toUInt32(num_spaces)) as spaces
+            select spaces || toString(number) || spaces value
+            from numbers_mt(100000000);
+    </create_query>
+
+
+
+    <substitutions>
+        <substitution>
+           <name>func</name>
+           <values>
+               <value>trimLeft(value)</value>
+               <value>trimRight(value)</value>
+               <value>trimBoth(value)</value>
+           </values>
+       </substitution>
+       <substitution>
+           <name>func_slow</name>
+           <values>
+               <value>replaceRegexpOne(value, '^ *', '')</value>
+               <value>replaceRegexpOne(value, ' *$', '')</value>
+               <value>replaceRegexpAll(value, '^ *| *$', '')</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT {func} FROM whitespaces FORMAT Null</query>
+    <query>SELECT {func_slow} FROM whitespaces LIMIT 10000000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS whitespaces</drop_query>
+</test>

@@ -1,0 +1,25 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_local>
+                <type>local</type>
+                <path>/disk/</path>
+            </disk_local>
+            <disk_encrypted>
+                <type>encrypted</type>
+                <disk>disk_local</disk>
+                <path>encrypted/</path>
+                <key>0000000000000000</key>
+            </disk_encrypted>
+        </disks>
+        <policies>
+            <encrypted_policy>
+                <volumes>
+                    <main>
+                        <disk>disk_encrypted</disk>
+                    </main>
+                </volumes>
+            </encrypted_policy>
+         </policies>
+    </storage_configuration>
+</clickhouse>

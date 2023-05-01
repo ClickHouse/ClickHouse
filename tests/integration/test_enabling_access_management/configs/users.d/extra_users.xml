@@ -1,0 +1,13 @@
+<clickhouse>
+    <users>
+        <readonly>
+            <password></password>
+            <profile>readonly</profile>
+            <access_management>1</access_management>
+        </readonly>
+        <xyz>
+            <password></password>
+            <profile>default</profile>
+        </xyz>
+    </users>
+</clickhouse>

@@ -1,0 +1,5 @@
+ALTER TABLE t
+    DROP COLUMN a,
+    DROP COLUMN b,
+    DROP COLUMN c,
+    ADD COLUMN `d` UInt8

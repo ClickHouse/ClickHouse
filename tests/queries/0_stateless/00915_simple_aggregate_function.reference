@@ -1,0 +1,45 @@
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+SimpleAggregateFunction(sum, Float64)
+0	0
+1	2
+2	4
+3	6
+4	8
+5	10
+6	12
+7	14
+8	16
+9	18
+0	0
+1	2
+2	4
+3	6
+4	8
+5	10
+6	12
+7	14
+8	16
+9	18
+1	1	2	2.2.2.2	3	([1,2,3],[2,1,1])	([1,2,3],[1,1,2])	([1,2,3],[2,1,2])	[1,2,2,3,4]	[4,2,1,3]
+10	2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222	20	20.20.20.20	5	([2,3,4],[2,1,1])	([2,3,4],[3,3,4])	([2,3,4],[4,3,4])	[]	[]
+SimpleAggregateFunction(anyLast, Nullable(String))	SimpleAggregateFunction(anyLast, LowCardinality(Nullable(String)))	SimpleAggregateFunction(anyLast, IPv4)	SimpleAggregateFunction(groupBitOr, UInt32)	SimpleAggregateFunction(sumMap, Tuple(Array(Int32), Array(Int64)))	SimpleAggregateFunction(minMap, Tuple(Array(Int32), Array(Int64)))	SimpleAggregateFunction(maxMap, Tuple(Array(Int32), Array(Int64)))	SimpleAggregateFunction(groupArrayArray, Array(Int32))	SimpleAggregateFunction(groupUniqArrayArray, Array(Int32))
+with_overflow	1	0

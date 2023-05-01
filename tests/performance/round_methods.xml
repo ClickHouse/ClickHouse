@@ -1,0 +1,19 @@
+<test>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(round(toInt64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(roundBankers(toInt64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(floor(toInt64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(ceil(toInt64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(trunc(toInt64(number), -2))</query>
+
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(round(toFloat64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(roundBankers(toFloat64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(floor(toFloat64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(ceil(toFloat64(number), -2))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(trunc(toFloat64(number), -2))</query>
+
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(round(toDecimal128(number, 0), -2))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(roundBankers(toDecimal128(number, 0), -2))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(floor(toDecimal128(number, 0), -2))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(ceil(toDecimal128(number, 0), -2))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(trunc(toDecimal128(number, 0), -2))</query>
+</test>

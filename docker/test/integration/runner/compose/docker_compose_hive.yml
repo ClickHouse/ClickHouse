@@ -1,0 +1,7 @@
+version: '2.3'
+services:
+    hdfs1:
+        image: lgboustc/hive_test:v2.0
+        hostname: hivetest
+        restart: always
+        entrypoint: bash /start.sh

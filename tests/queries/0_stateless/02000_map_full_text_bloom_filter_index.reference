@@ -1,0 +1,104 @@
+Map full text bloom filter tokenbf mapKeys
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value
+Map fixed full text bloom filter tokenbf mapKeys
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value
+Map full text bloom filter tokenbf mapValues
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value
+Map fixed full text bloom filter tokenbf mapKeys
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value
+Map full text bloom filter ngrambf mapKeys
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value
+Map fixed full text bloom filter ngrambf mapKeys
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value
+Map full text bloom filter ngrambf mapValues
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value
+Map fixed full text bloom filter ngrambf mapKeys
+Equals with existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+Equals with non existing key
+Equals with non existing key and default value
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with existing key
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key
+0	{'K0':'V0'}	{'K0':'V0'}
+1	{'K1':'V1'}	{'K1':'V1'}
+Not equals with non existing key and default value

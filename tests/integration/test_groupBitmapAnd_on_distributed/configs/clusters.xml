@@ -1,0 +1,32 @@
+<clickhouse>
+<remote_servers>
+    <awesome_cluster>
+        <shard>
+            <replica>
+                <host>node1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <replica>
+                <host>node2</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </awesome_cluster>
+    <test_version_cluster>
+        <shard>
+            <replica>
+                <host>node3</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <replica>
+                <host>node4</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </test_version_cluster>
+</remote_servers>
+</clickhouse>

@@ -1,0 +1,12 @@
+*** Single column partition key ***
+<rows_read>4</rows_read>
+<rows_read>3</rows_read>
+<rows_read>1</rows_read>
+*** Composite partition key ***
+<rows_read>0</rows_read>
+<rows_read>6</rows_read>
+<rows_read>0</rows_read>
+<rows_read>3</rows_read>
+<rows_read>0</rows_read>
+<rows_read>6</rows_read>
+<rows_read>3</rows_read>
