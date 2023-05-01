@@ -761,6 +761,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
         auto & attribute = attributes[attribute_index];
         bool attribute_is_nullable = attribute.is_nullable_sets.has_value();
 
+        /// Number of elements should not take into account multiple attributes.
+        new_element_count = 0;
+
         getAttributeContainers(attribute_index, [&](auto & containers)
         {
             using ContainerType = std::decay_t<decltype(containers.front())>;
