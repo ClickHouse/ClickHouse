@@ -7,27 +7,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 verify_sql="SELECT
     (SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics)
-    = (SELECT sum(active), sum(NOT active) FROM system.parts)"
+    = (SELECT sum(active), sum(NOT active) FROM
+    (SELECT active FROM system.parts UNION ALL SELECT active FROM system.projection_parts))"
 
 # The query is not atomic - it can compare states between system.parts and system.metrics from different points in time.
 # So, there is inherent race condition. But it should get expected result eventually.
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    for i in $(seq 1 3001)
+    while true
     do
         result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
         [ "$result" = "1" ] && break
-
-        if [ "$i" = "3000" ]; then
-            echo "======="
-            $CLICKHOUSE_CLIENT --query="SELECT * FROM system.parts format TSVWithNames"
-            echo "======="
-            $CLICKHOUSE_CLIENT --query="SELECT * FROM system.metrics format TSVWithNames"
-            echo "======="
-            return
-        fi
-
         sleep 0.1
     done
     echo 1

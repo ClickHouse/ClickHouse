@@ -11,7 +11,8 @@ set -o pipefail
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 verify_sql="SELECT
     (SELECT sumIf(value, metric = 'PartsInMemory'), sumIf(value, metric = 'PartsCompact'), sumIf(value, metric = 'PartsWide') FROM system.metrics) =
-    (SELECT countIf(part_type == 'InMemory'), countIf(part_type == 'Compact'), countIf(part_type == 'Wide') FROM system.parts)"
+    (SELECT countIf(part_type == 'InMemory'), countIf(part_type == 'Compact'), countIf(part_type == 'Wide')
+    FROM (SELECT part_type FROM system.parts UNION ALL SELECT part_type FROM system.projection_parts))"
 
 # The query is not atomic - it can compare states between system.parts and system.metrics from different points in time.
 # So, there is inherent race condition (especially in fasttest that runs tests in parallel).
@@ -20,22 +21,12 @@ verify_sql="SELECT
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    for i in $(seq 1 3001); do
+    while true; do
         result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
         if [ "$result" = "1" ]; then
             echo 1
             return
         fi
-
-        if [ "$i" = "3000" ]; then
-            echo "======="
-            $CLICKHOUSE_CLIENT --query="SELECT * FROM system.parts format TSVWithNames"
-            echo "======="
-            $CLICKHOUSE_CLIENT --query="SELECT * FROM system.metrics format TSVWithNames"
-            echo "======="
-            return
-        fi
-
         sleep 0.1
     done
 }
