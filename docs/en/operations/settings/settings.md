@@ -890,7 +890,7 @@ Write time that processor spent during execution/waiting for data to `system.pro
 
 See also:
 
-- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md)
 - [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
@@ -1123,7 +1123,7 @@ Could be used for throttling speed when replicating the data to add or replace n
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.
 
-Default value: 50.
+Default value: 1000.
 
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
@@ -1511,6 +1511,26 @@ Possible values:
 - 1 - Enabled
 
 Default value: `0`.
+
+## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
+
+The maximum amount of memory (in bytes) the current user may allocate in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
+
+## query_cache_max_entries {#query-cache-max-entries}
+
+The maximum number of query results the current user may store in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
 
 ## insert_quorum {#settings-insert_quorum}
 
@@ -4102,7 +4122,7 @@ Enabled by default.
 If we can't establish connection with replica after this timeout in hedged requests, we start working with the next replica without cancelling connection to the previous.
 Timeout value is in milliseconds.
 
-Default value: `100`.
+Default value: `50`.
 
 ## receive_data_timeout {#receive_data_timeout}
 
