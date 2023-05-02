@@ -15,10 +15,10 @@ class QueryPipelineBuilder;
 class ReadFromMemoryStorageStep final : public SourceStepWithFilter
 {
 public:
-    ReadFromMemoryStorageStep(const Names & column_names,
-                              const StorageSnapshotPtr & storage_snapshot,
-                              size_t num_streams,
-                              bool delay_read_for_global_sub_queries);
+    ReadFromMemoryStorageStep(const Names & columns_to_read_,
+                              const StorageSnapshotPtr & storage_snapshot_,
+                              size_t num_streams_,
+                              bool delay_read_for_global_sub_queries_);
 
     ReadFromMemoryStorageStep() = delete;
     ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep &) = delete;
