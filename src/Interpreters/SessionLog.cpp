@@ -100,9 +100,10 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
             {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
-            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)}
+            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
+            {"WebSocket",              static_cast<Int8>(Interface::WEB_SOCKET)}
         });
-    static_assert(magic_enum::enum_count<Interface>() == 7);
+    static_assert(magic_enum::enum_count<Interface>() == 8);
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
