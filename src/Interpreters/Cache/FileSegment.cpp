@@ -43,7 +43,7 @@ FileSegment::FileSegment(
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
     , cache(cache_)
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
     , log(&Poco::Logger::get(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #else
     , log(&Poco::Logger::get("FileSegment"))
