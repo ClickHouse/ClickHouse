@@ -821,7 +821,7 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-DB::KeeperApiVersion ZooKeeper::getApiVersion()
+DB::KeeperApiVersion ZooKeeper::getApiVersion() const
 {
     return impl->getApiVersion();
 }
@@ -1281,7 +1281,6 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path)
     request->path = path;
     return request;
 }
-
 
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {
