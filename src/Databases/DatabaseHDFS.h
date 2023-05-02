@@ -45,11 +45,11 @@ public:
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &) const override;
 
 protected:
-    StoragePtr getTableImpl(const String & url, ContextPtr context) const;
+    StoragePtr getTableImpl(const String & name, ContextPtr context) const;
 
     void addTable(const std::string & table_name, StoragePtr table_storage) const;
 
-    bool checkUrl(const std::string & name, ContextPtr context_, bool throw_on_error) const;
+    bool checkUrl(const std::string & url, ContextPtr context_, bool throw_on_error) const;
 
     std::string getTablePath(const std::string & table_name) const;
 

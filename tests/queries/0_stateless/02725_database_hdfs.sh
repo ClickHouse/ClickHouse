@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, use-hdfs
+# Tags: no-fasttest, use-hdfs, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
