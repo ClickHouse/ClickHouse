@@ -64,11 +64,9 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
+    void beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode) override;
 
-    void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
-
-    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
+    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
     void shutdown() override;
 
@@ -142,6 +140,8 @@ private:
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
 
     mutable ClusterPtr cluster;
+
+    LoadTaskPtr startup_replicated_database_task TSA_GUARDED_BY(mutex);
 };
 
 }

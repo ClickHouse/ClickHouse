@@ -28,12 +28,6 @@
 
 namespace fs = std::filesystem;
 
-namespace CurrentMetrics
-{
-    extern const Metric StartupSystemTablesThreads;
-    extern const Metric StartupSystemTablesThreadsActive;
-}
-
 namespace DB
 {
 
@@ -384,8 +378,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         if (!tables_started)
         {
             /// It's not quite correct to run DDL queries while database is not started up.
-            ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
-            DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
+            startupSystemTables(context); // NOTE: tables_started can be false only for system tables
         }
 
         auto local_context = Context::createCopy(context);
@@ -480,10 +473,9 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     fs::remove(convert_flag_path);
 }
 
-void startupSystemTables()
+void startupSystemTables(ContextMutablePtr context)
 {
-    ThreadPool pool(CurrentMetrics::StartupSystemTablesThreads, CurrentMetrics::StartupSystemTablesThreadsActive);
-    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
+    DatabaseCatalog::instance().getSystemDatabase()->startupTablesAndDatabase(context->getAsyncLoader(), LoadingStrictnessLevel::FORCE_RESTORE);
 }
 
 void loadMetadataSystem(ContextMutablePtr context)

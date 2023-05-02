@@ -7,7 +7,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <numeric>
 
@@ -34,7 +33,6 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , loading_dependencies("LoadingDeps")
     , all_loading_dependencies("LoadingDeps")
     , async_loader(global_context->getAsyncLoader())
-    , pool(CurrentMetrics::AsyncLoaderThreads, CurrentMetrics::AsyncLoaderThreadsActive)
 {
     metadata.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("TablesLoader");

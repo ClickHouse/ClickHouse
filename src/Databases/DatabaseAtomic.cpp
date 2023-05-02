@@ -441,29 +441,29 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
     }
 }
 
-void DatabaseAtomic::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
-    beforeLoadingMetadata(local_context, mode);
-    DatabaseOrdinary::loadStoredObjects(local_context, mode, skip_startup_tables);
-}
+    std::scoped_lock lock{mutex};
+    auto job = makeLoadJob(
+        DatabaseOrdinary::startupDatabaseAsync(async_loader, std::move(startup_after), mode)->goals(),
+        DATABASE_STARTUP_PRIORITY,
+        fmt::format("startup Atomic database {}", database_name),
+        [this, mode] (const LoadJobPtr &)
+        {
+            if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
+                return;
 
-void DatabaseAtomic::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
-{
-    DatabaseOrdinary::startupTables(thread_pool, mode);
+            NameToPathMap table_names;
+            {
+                std::lock_guard lock2{mutex};
+                table_names = table_name_to_path;
+            }
 
-    if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
-        return;
-
-    NameToPathMap table_names;
-    {
-        std::lock_guard lock{mutex};
-        table_names = table_name_to_path;
-    }
-
-    fs::create_directories(path_to_table_symlinks);
-    for (const auto & table : table_names)
-        tryCreateSymlink(table.first, table.second, true);
+            fs::create_directories(path_to_table_symlinks);
+            for (const auto & table : table_names)
+                tryCreateSymlink(table.first, table.second, true);
+        });
+    return startup_atomic_database_task = makeLoadTask(async_loader, {job});
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)

@@ -118,8 +118,6 @@
     M(MergeTreeBackgroundExecutorThreadsActive, "Number of threads in the MergeTreeBackgroundExecutor thread pool running a task.") \
     M(AsynchronousInsertThreads, "Number of threads in the AsynchronousInsert thread pool.") \
     M(AsynchronousInsertThreadsActive, "Number of threads in the AsynchronousInsert thread pool running a task.") \
-    M(StartupSystemTablesThreads, "Number of threads in the StartupSystemTables thread pool.") \
-    M(StartupSystemTablesThreadsActive, "Number of threads in the StartupSystemTables thread pool running a task.") \
     M(AggregatorThreads, "Number of threads in the Aggregator thread pool.") \
     M(AggregatorThreadsActive, "Number of threads in the Aggregator thread pool running a task.") \
     M(DDLWorkerThreads, "Number of threads in the DDLWorker thread pool for ON CLUSTER queries.") \

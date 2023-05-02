@@ -16,7 +16,7 @@ void loadMetadataSystem(ContextMutablePtr context);
 
 /// Background operations in system tables may slowdown loading of the rest tables,
 /// so we startup system tables after all databases are loaded.
-void startupSystemTables();
+void startupSystemTables(ContextMutablePtr context);
 
 /// Converts `system` database from Ordinary to Atomic (if needed)
 void maybeConvertSystemDatabase(ContextMutablePtr context);

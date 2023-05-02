@@ -1627,7 +1627,7 @@ try
         load_metadata = loadMetadata(global_context, default_database);
         /// If we need to convert database engines, disable async tables loading
         convertDatabasesEnginesIfNeed(load_metadata, global_context);
-        startupSystemTables();
+        startupSystemTables(global_context);
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);

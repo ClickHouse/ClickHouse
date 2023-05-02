@@ -448,16 +448,10 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     createEmptyLogEntry(current_zookeeper);
 }
 
-void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, LoadingStrictnessLevel mode)
+void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode)
 {
+    DatabaseAtomic::beforeLoadingMetadata(context_, mode);
     tryConnectToZooKeeperAndInitDatabase(mode);
-}
-
-void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
-{
-    beforeLoadingMetadata(local_context, mode);
-    DatabaseAtomic::loadStoredObjects(local_context, mode, skip_startup_tables);
 }
 
 UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const
@@ -465,24 +459,31 @@ UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const
     return DB::getMetadataHash(table_name, readMetadataFile(table_name));
 }
 
-void DatabaseReplicated::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, mode);
+    std::scoped_lock lock{mutex};
+    auto job = makeLoadJob(
+        DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode)->goals(),
+        DATABASE_STARTUP_PRIORITY,
+        fmt::format("startup Replicated database {}", database_name),
+        [this] (const LoadJobPtr &)
+        {
+            /// TSA: No concurrent writes are possible during loading
+            UInt64 digest = 0;
+            for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
+                digest += getMetadataHash(table.first);
 
-    /// TSA: No concurrent writes are possible during loading
-    UInt64 digest = 0;
-    for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
-        digest += getMetadataHash(table.first);
+            LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", TSA_SUPPRESS_WARNING_FOR_READ(tables).size(), digest);
+            chassert(!TSA_SUPPRESS_WARNING_FOR_READ(tables_metadata_digest));
+            TSA_SUPPRESS_WARNING_FOR_WRITE(tables_metadata_digest) = digest;
 
-    LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", TSA_SUPPRESS_WARNING_FOR_READ(tables).size(), digest);
-    chassert(!TSA_SUPPRESS_WARNING_FOR_READ(tables_metadata_digest));
-    TSA_SUPPRESS_WARNING_FOR_WRITE(tables_metadata_digest) = digest;
+            if (is_probably_dropped)
+                return;
 
-    if (is_probably_dropped)
-        return;
-
-    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
-    ddl_worker->startup();
+            ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+            ddl_worker->startup();
+        });
+    return startup_replicated_database_task = makeLoadTask(async_loader, {job});
 }
 
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const

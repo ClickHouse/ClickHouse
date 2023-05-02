@@ -88,82 +88,10 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel, bool)
 {
-    /** Tables load faster if they are loaded in sorted (by name) order.
-      * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
-      *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
-      */
-
-    ParsedTablesMetadata metadata;
-    bool force_attach = LoadingStrictnessLevel::FORCE_ATTACH <= mode;
-    loadTablesMetadata(local_context, metadata, force_attach);
-
-    size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
-
-    AtomicStopwatch watch;
-    std::atomic<size_t> dictionaries_processed{0};
-    std::atomic<size_t> tables_processed{0};
-
-    ThreadPool pool(CurrentMetrics::DatabaseOrdinaryThreads, CurrentMetrics::DatabaseOrdinaryThreadsActive);
-
-    /// We must attach dictionaries before attaching tables
-    /// because while we're attaching tables we may need to have some dictionaries attached
-    /// (for example, dictionaries can be used in the default expressions for some tables).
-    /// On the other hand we can attach any dictionary (even sourced from ClickHouse table)
-    /// without having any tables attached. It is so because attaching of a dictionary means
-    /// loading of its config only, it doesn't involve loading the dictionary itself.
-
-    /// Attach dictionaries.
-    for (const auto & name_with_path_and_query : metadata.parsed_tables)
-    {
-        const auto & name = name_with_path_and_query.first;
-        const auto & path = name_with_path_and_query.second.path;
-        const auto & ast = name_with_path_and_query.second.ast;
-        const auto & create_query = ast->as<const ASTCreateQuery &>();
-
-        if (create_query.is_dictionary)
-        {
-            pool.scheduleOrThrowOnError([&]()
-            {
-                loadTableFromMetadata(local_context, path, name, ast, mode);
-
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
-            });
-        }
-    }
-
-    pool.wait();
-
-    /// Attach tables.
-    for (const auto & name_with_path_and_query : metadata.parsed_tables)
-    {
-        const auto & name = name_with_path_and_query.first;
-        const auto & path = name_with_path_and_query.second.path;
-        const auto & ast = name_with_path_and_query.second.ast;
-        const auto & create_query = ast->as<const ASTCreateQuery &>();
-
-        if (!create_query.is_dictionary)
-        {
-            pool.scheduleOrThrowOnError([&]()
-            {
-                loadTableFromMetadata(local_context, path, name, ast, mode);
-
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++tables_processed, total_tables, watch);
-            });
-        }
-    }
-
-    pool.wait();
-
-    if (!skip_startup_tables)
-    {
-        /// After all tables was basically initialized, startup them.
-        startupTables(pool, mode);
-    }
+    // Because it supportsLoadingInTopologicalOrder, we don't need this loading method.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
@@ -236,7 +164,11 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
              TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database);
 }
 
-void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast,
+void DatabaseOrdinary::loadTableFromMetadata(
+    ContextMutablePtr local_context,
+    const String & file_path,
+    const QualifiedTableName & name,
+    const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
@@ -247,43 +179,89 @@ void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, co
         create_query,
         *this,
         name.database,
-        file_path, LoadingStrictnessLevel::FORCE_RESTORE <= mode);
+        file_path,
+        LoadingStrictnessLevel::FORCE_RESTORE <= mode);
 }
 
-void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel /*mode*/)
+LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
+    AsyncLoader & async_loader,
+    LoadJobSet load_after,
+    ContextMutablePtr local_context,
+    const String & file_path,
+    const QualifiedTableName & name,
+    const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
+{
+    std::scoped_lock lock(mutex);
+    auto job = makeLoadJob(
+        std::move(load_after),
+        TABLE_LOAD_PRIORITY,
+        fmt::format("load table {}", name.getFullName()),
+        [this, local_context, file_path, name, ast, mode] (const LoadJobPtr &)
+        {
+            loadTableFromMetadata(local_context, file_path, name, ast, mode);
+        });
+
+    return load_table[name.table] = makeLoadTask(async_loader, {job});
+}
+
+void DatabaseOrdinary::startupTablesAndDatabase(AsyncLoader & async_loader, LoadingStrictnessLevel mode)
 {
     LOG_INFO(log, "Starting up tables.");
+    LoadTaskPtrs tasks;
+    for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
+        tasks.push_back(startupTableAsync(
+            async_loader,
+            {},
+            QualifiedTableName{.database = getDatabaseName(), .table = table.first},
+            mode));
+    scheduleAndWaitLoad(tasks);
+    scheduleAndWaitLoad(startupDatabaseAsync(async_loader, {}, mode));
+}
 
-    /// NOTE No concurrent writes are possible during database loading
-    const size_t total_tables = TSA_SUPPRESS_WARNING_FOR_READ(tables).size();
-    if (!total_tables)
-        return;
+LoadTaskPtr DatabaseOrdinary::startupTableAsync(
+    AsyncLoader & async_loader,
+    LoadJobSet startup_after,
+    const QualifiedTableName & name,
+    LoadingStrictnessLevel /*mode*/)
+{
+    std::scoped_lock lock(mutex);
 
-    AtomicStopwatch watch;
-    std::atomic<size_t> tables_processed{0};
-
-    auto startup_one_table = [&](const StoragePtr & table)
+    /// Initialize progress indication on the first call
+    if (total_tables_to_startup == 0)
     {
-        /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
-        /// until startup finished.
-        auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
-        table->startup();
-        logAboutProgress(log, ++tables_processed, total_tables, watch);
-    };
-
-
-    try
-    {
-        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
-            thread_pool.scheduleOrThrowOnError([&]() { startup_one_table(table.second); });
+        total_tables_to_startup = tables.size();
+        startup_watch.restart();
     }
-    catch (...)
-    {
-        /// We have to wait for jobs to finish here, because job function has reference to variables on the stack of current thread.
-        thread_pool.wait();
-        throw;
-    }
-    thread_pool.wait();
+
+    auto job = makeLoadJob(
+        std::move(startup_after),
+        TABLE_STARTUP_PRIORITY,
+        fmt::format("startup table {}", name.getFullName()),
+        [this, table = getTableUnlocked(name.table)] (const LoadJobPtr &)
+        {
+            /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
+            /// until startup finished.
+            auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
+            table->startup();
+            logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
+        });
+
+    return startup_table[name.table] = makeLoadTask(async_loader, {job});
+}
+
+LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
+    AsyncLoader & async_loader,
+    LoadJobSet startup_after,
+    LoadingStrictnessLevel /*mode*/)
+{
+    std::scoped_lock lock(mutex);
+    // NOTE: this task is empty, but it is required for correct dependency handling (startup should be done after tables loading)
+    auto job = makeLoadJob(
+        std::move(startup_after),
+        DATABASE_STARTUP_PRIORITY,
+        fmt::format("startup Ordinary database {}", database_name));
+    return makeLoadTask(async_loader, {job});
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)

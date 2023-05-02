@@ -42,6 +42,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static constexpr auto TABLE_LOAD_PRIORITY = -1;       /// Initial priority for table loading jobs
+static constexpr auto TABLE_STARTUP_PRIORITY = -2;    /// Initial priority for table startup jobs
+static constexpr auto DATABASE_STARTUP_PRIORITY = -2; /// Initial priority for table startup jobs
+static constexpr auto TABLE_WAIT_PRIORITY = 0;        /// Prioritize load jobs that block queries
+
 class IDatabaseTablesIterator
 {
 public:
@@ -178,12 +183,11 @@ public:
     }
 
     /// Start all tables and the database itself
-    virtual void startupTables(ThreadPool & /*thread_pool*/, LoadingStrictnessLevel /*mode*/) {}
+    virtual void startupTablesAndDatabase(AsyncLoader & /*async_loader*/, LoadingStrictnessLevel /*mode*/) {}
 
     /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
-    /// `startup_after` must contain the task returned by `loadTableFromMetadataAsync()` for this table (see TablesLoader).
     /// The returned task is also stored inside the database for cancellation on destruction.
-    virtual LoadTaskPtr startupTableAsync(
+    [[nodiscard]] virtual LoadTaskPtr startupTableAsync(
         AsyncLoader & /*async_loader*/,
         LoadJobSet /*startup_after*/,
         const QualifiedTableName & /*name*/,
@@ -195,7 +199,7 @@ public:
     /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
     /// `startup_after` must contain all the tasks returned by `startupTableAsync()` for every table (see TablesLoader).
     /// The returned task is also stored inside the database for cancellation on destruction.
-    virtual LoadTaskPtr startupDatabaseAsync(
+    [[nodiscard]] virtual LoadTaskPtr startupDatabaseAsync(
         AsyncLoader & /*async_loader*/,
         LoadJobSet /*startup_after*/,
         LoadingStrictnessLevel /*mode*/)

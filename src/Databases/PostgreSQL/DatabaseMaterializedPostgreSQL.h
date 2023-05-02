@@ -40,7 +40,7 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
+    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
@@ -91,6 +91,8 @@ private:
 
     BackgroundSchedulePool::TaskHolder startup_task;
     bool shutdown_called = false;
+
+    LoadTaskPtr startup_postgresql_database_task;
 };
 
 }

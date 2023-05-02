@@ -404,7 +404,6 @@ String DatabaseMySQL::getMetadataPath() const
 
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
-
     std::lock_guard lock{mutex};
     fs::directory_iterator iter(getMetadataPath());
 

@@ -63,15 +63,22 @@ void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exceptio
     exception = exception_;
 }
 
-void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, mode);
+    std::scoped_lock lock{mutex};
+    auto job = makeLoadJob(
+        DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode)->goals(),
+        DATABASE_STARTUP_PRIORITY,
+        fmt::format("startup MaterializedMySQL database {}", database_name),
+        [this, mode] (const LoadJobPtr &)
+        {
+            if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+                materialize_thread.assertMySQLAvailable();
 
-    if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
-        materialize_thread.assertMySQLAvailable();
-
-    materialize_thread.startSynchronization();
-    started_up = true;
+            materialize_thread.startSynchronization();
+            started_up = true;
+        });
+    return startup_mysql_database_task = makeLoadTask(async_loader, {job});
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
