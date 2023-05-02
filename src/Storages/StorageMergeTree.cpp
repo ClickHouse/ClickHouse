@@ -167,14 +167,6 @@ void StorageMergeTree::startup()
     }
 }
 
-void StorageMergeTree::flush()
-{
-    if (flush_called.exchange(true))
-        return;
-
-    flushAllInMemoryPartsIfNeeded();
-}
-
 void StorageMergeTree::shutdown()
 {
     if (shutdown_called.exchange(true))

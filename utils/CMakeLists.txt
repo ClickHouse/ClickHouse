@@ -23,7 +23,6 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (wikistat-loader)
     add_subdirectory (check-marks)
     add_subdirectory (checksum-for-compressed-block)
-    add_subdirectory (wal-dump)
     add_subdirectory (check-mysql-binlog)
     add_subdirectory (keeper-bench)
 
