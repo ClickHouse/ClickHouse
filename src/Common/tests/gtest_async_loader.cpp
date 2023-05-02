@@ -135,7 +135,7 @@ TEST(AsyncLoader, Smoke)
         auto job3 = makeLoadJob({ job2 }, "job3", job_func);
         auto job4 = makeLoadJob({ job2 }, "job4", job_func);
         auto task2 = t.schedule({ job3, job4 });
-        auto job5 = makeLoadJob({ job3, job4 }, "job5", low_priority, job_func);
+        auto job5 = makeLoadJob({ job3, job4 }, low_priority, "job5", job_func);
         task2->merge(t.schedule({ job5 }));
 
         std::thread waiter_thread([=] { job5->wait(); });
@@ -572,14 +572,14 @@ TEST(AsyncLoader, StaticPriorities)
     };
 
     std::vector<LoadJobPtr> jobs;
-    jobs.push_back(makeLoadJob({}, "A", 0, job_func)); // 0
-    jobs.push_back(makeLoadJob({ jobs[0] }, "B", 3, job_func)); // 1
-    jobs.push_back(makeLoadJob({ jobs[0] }, "C", 4, job_func)); // 2
-    jobs.push_back(makeLoadJob({ jobs[0] }, "D", 1, job_func)); // 3
-    jobs.push_back(makeLoadJob({ jobs[0] }, "E", 2, job_func)); // 4
-    jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, "F", 0, job_func)); // 5
-    jobs.push_back(makeLoadJob({ jobs[5] }, "G", 0, job_func)); // 6
-    jobs.push_back(makeLoadJob({ jobs[6] }, "H", 9, job_func)); // 7
+    jobs.push_back(makeLoadJob({}, 0, "A", job_func)); // 0
+    jobs.push_back(makeLoadJob({ jobs[0] }, 3, "B", job_func)); // 1
+    jobs.push_back(makeLoadJob({ jobs[0] }, 4, "C", job_func)); // 2
+    jobs.push_back(makeLoadJob({ jobs[0] }, 1, "D", job_func)); // 3
+    jobs.push_back(makeLoadJob({ jobs[0] }, 2, "E", job_func)); // 4
+    jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, 0, "F", job_func)); // 5
+    jobs.push_back(makeLoadJob({ jobs[5] }, 0, "G", job_func)); // 6
+    jobs.push_back(makeLoadJob({ jobs[6] }, 9, "H", job_func)); // 7
     auto task = t.schedule({ jobs.begin(), jobs.end() });
 
     t.loader.start();
@@ -614,14 +614,14 @@ TEST(AsyncLoader, DynamicPriorities)
         //     |       +-> F0 --> G0 --> H0
         //     `-> E2 -'
         std::vector<LoadJobPtr> jobs;
-        jobs.push_back(makeLoadJob({}, "A", 0, job_func)); // 0
-        jobs.push_back(makeLoadJob({ jobs[0] }, "B", 3, job_func)); // 1
-        jobs.push_back(makeLoadJob({ jobs[0] }, "C", 4, job_func)); // 2
-        jobs.push_back(makeLoadJob({ jobs[0] }, "D", 1, job_func)); // 3
-        jobs.push_back(makeLoadJob({ jobs[0] }, "E", 2, job_func)); // 4
-        jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, "F", 0, job_func)); // 5
-        jobs.push_back(makeLoadJob({ jobs[5] }, "G", 0, job_func)); // 6
-        jobs.push_back(makeLoadJob({ jobs[6] }, "H", 0, job_func)); // 7
+        jobs.push_back(makeLoadJob({}, 0, "A", job_func)); // 0
+        jobs.push_back(makeLoadJob({ jobs[0] }, 3, "B", job_func)); // 1
+        jobs.push_back(makeLoadJob({ jobs[0] }, 4, "C", job_func)); // 2
+        jobs.push_back(makeLoadJob({ jobs[0] }, 1, "D", job_func)); // 3
+        jobs.push_back(makeLoadJob({ jobs[0] }, 2, "E", job_func)); // 4
+        jobs.push_back(makeLoadJob({ jobs[3], jobs[4] }, 0, "F", job_func)); // 5
+        jobs.push_back(makeLoadJob({ jobs[5] }, 0, "G", job_func)); // 6
+        jobs.push_back(makeLoadJob({ jobs[6] }, 0, "H", job_func)); // 7
         auto task = t.schedule({ jobs.begin(), jobs.end() });
 
         job_to_prioritize = jobs[6];
