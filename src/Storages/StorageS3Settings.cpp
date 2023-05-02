@@ -32,6 +32,7 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
     : PartUploadSettings(settings)
 {
     String key = config_prefix + "." + setting_name_prefix;
+    strict_upload_part_size = config.getUInt64(key + "strict_upload_part_size", strict_upload_part_size);
     min_upload_part_size = config.getUInt64(key + "min_upload_part_size", min_upload_part_size);
     max_upload_part_size = config.getUInt64(key + "max_upload_part_size", max_upload_part_size);
     upload_part_size_multiply_factor = config.getUInt64(key + "upload_part_size_multiply_factor", upload_part_size_multiply_factor);
@@ -49,10 +50,11 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(
 
 S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedCollection & collection)
 {
+    strict_upload_part_size = collection.getOrDefault<UInt64>("strict_upload_part_size", strict_upload_part_size);
     min_upload_part_size = collection.getOrDefault<UInt64>("min_upload_part_size", min_upload_part_size);
+    max_single_part_upload_size = collection.getOrDefault<UInt64>("max_single_part_upload_size", max_single_part_upload_size);
     upload_part_size_multiply_factor = collection.getOrDefault<UInt64>("upload_part_size_multiply_factor", upload_part_size_multiply_factor);
     upload_part_size_multiply_parts_count_threshold = collection.getOrDefault<UInt64>("upload_part_size_multiply_parts_count_threshold", upload_part_size_multiply_parts_count_threshold);
-    max_single_part_upload_size = collection.getOrDefault<UInt64>("max_single_part_upload_size", max_single_part_upload_size);
 
     /// This configuration is only applicable to s3. Other types of object storage are not applicable or have different meanings.
     storage_class_name = collection.getOrDefault<String>("s3_storage_class", storage_class_name);
@@ -63,6 +65,9 @@ S3Settings::RequestSettings::PartUploadSettings::PartUploadSettings(const NamedC
 
 void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(const Settings & settings, bool if_changed)
 {
+    if (!if_changed || settings.s3_strict_upload_part_size.changed)
+        strict_upload_part_size = settings.s3_strict_upload_part_size;
+
     if (!if_changed || settings.s3_min_upload_part_size.changed)
         min_upload_part_size = settings.s3_min_upload_part_size;
 
@@ -82,6 +87,12 @@ void S3Settings::RequestSettings::PartUploadSettings::updateFromSettingsImpl(con
 void S3Settings::RequestSettings::PartUploadSettings::validate()
 {
     static constexpr size_t min_upload_part_size_limit = 5 * 1024 * 1024;
+    if (strict_upload_part_size && strict_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting strict_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(strict_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
     if (min_upload_part_size < min_upload_part_size_limit)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,

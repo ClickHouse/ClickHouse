@@ -158,8 +158,9 @@ public:
         Int64 ms = 0;
         memcpy(reinterpret_cast<UInt8 *>(&ms) + 2, buffer, 6);
 
-        if constexpr (std::endian::native == std::endian::little)
-            std::reverse(reinterpret_cast<UInt8 *>(&ms), reinterpret_cast<UInt8 *>(&ms) + sizeof(Int64));
+#    if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        ms = std::byteswap(ms);
+#    endif
 
         return DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
     }
