@@ -218,14 +218,13 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
         std::vector<RowPolicyPtr> policies;
     };
 
-    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> table_mixers;
     std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> database_mixers;
 
     /// populate database_mixers using database-level policies
     ///  to aggregate (mix) rules per database
     for (const auto & [policy_id, info] : all_policies)
     {
-        if (info.isDatabase())
+        if (info.isForDatabase())
         {
             const auto & policy = *info.policy;
             bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
@@ -250,10 +249,12 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
         }
     }
 
+    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> table_mixers;
+
     /// populate table_mixers using database_mixers and table-level policies
     for (const auto & [policy_id, info] : all_policies)
     {
-        if (!info.isDatabase())
+        if (!info.isForDatabase())
         {
             const auto & policy = *info.policy;
             bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
@@ -298,7 +299,14 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
 
     auto mixed_filters = boost::make_shared<MixedFiltersMap>();
 
-    /// retrieve aggregated policies from mixers
+    /// Retrieve aggregated policies from mixers
+    ///  if a table has a policy for this particular table, we have all needed information in table_mixers
+    ///    (policies for the database are already applied)
+    ///  otherwise we would look for a policy for database using RowPolicy::ANY_TABLE_MARK
+    /// Consider restrictive policies a=1 for db.t, b=2 for db.* and c=3 for db.*
+    ///   We are going to have two items in mixed_filters:
+    ///     1. a=1 AND b=2 AND c=3   for db.t (comes from table_mixers, where it had been created with the help of database_mixers)
+    ///     2. b=2 AND c=3  for db.* (comes directly from database_mixers)
     for (auto * mixer_map_ptr : {&table_mixers, &database_mixers})
     {
         for (auto & [key, mixer] : *mixer_map_ptr)
