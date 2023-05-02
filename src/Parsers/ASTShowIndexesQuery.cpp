@@ -23,9 +23,9 @@ void ASTShowIndexesQuery::formatQueryImpl(const FormatSettings & settings, Forma
                   << "INDEXES"
                   << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(from_table);
-    if (!from_database.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(from_database);
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
+    if (!database.empty())
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
 
     if (where_expression)
     {
