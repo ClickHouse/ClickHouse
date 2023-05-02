@@ -14,8 +14,8 @@ public:
 
     ASTPtr where_expression;
 
-    String from_database;
-    String from_table;
+    String database;
+    String table;
 
     String getID(char) const override { return "ShowColumns"; }
     ASTPtr clone() const override;
