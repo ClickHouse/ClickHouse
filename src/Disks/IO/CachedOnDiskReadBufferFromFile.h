@@ -33,7 +33,8 @@ public:
         size_t file_size_,
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
-        std::optional<size_t> read_until_position_ = std::nullopt);
+        std::optional<size_t> read_until_position_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_);
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -136,7 +137,6 @@ private:
     String last_caller_id;
 
     String query_id;
-    bool enable_logging = false;
     String current_buffer_id;
 
     bool allow_seeks_after_first_read;
@@ -147,6 +147,8 @@ private:
     FileCache::QueryContextHolderPtr query_context_holder;
 
     bool is_persistent;
+
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }

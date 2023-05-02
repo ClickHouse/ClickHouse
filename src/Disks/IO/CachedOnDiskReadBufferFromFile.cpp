@@ -48,7 +48,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     size_t file_size_,
     bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
-    std::optional<size_t> read_until_position_)
+    std::optional<size_t> read_until_position_,
+    std::shared_ptr<FilesystemCacheLog> cache_log_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifndef NDEBUG
     , log(&Poco::Logger::get("CachedOnDiskReadBufferFromFile(" + source_file_path_ + ")"))
@@ -62,12 +63,12 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , read_until_position(read_until_position_ ? *read_until_position_ : file_size_)
     , implementation_buffer_creator(implementation_buffer_creator_)
     , query_id(query_id_)
-    , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
     , is_persistent(settings_.is_file_cache_persistent)
+    , cache_log(cache_log_)
 {
 }
 
@@ -103,7 +104,7 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
             break;
     }
 
-    if (auto cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog())
+    if (cache_log)
         cache_log->add(elem);
 }
 
@@ -488,7 +489,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     auto * current_file_segment = &file_segments->front();
     auto completed_range = current_file_segment->range();
 
-    if (enable_logging)
+    if (cache_log)
         appendFilesystemCacheLog(completed_range, read_type);
 
     chassert(file_offset_of_buffer_end > completed_range.right);
@@ -513,7 +514,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 
 CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 {
-    if (enable_logging && file_segments && !file_segments->empty())
+    if (cache_log && file_segments && !file_segments->empty())
     {
         appendFilesystemCacheLog(file_segments->front().range(), read_type);
     }

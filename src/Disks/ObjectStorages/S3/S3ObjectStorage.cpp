@@ -118,6 +118,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     assert(!objects[0].getPathKeyForCache().empty());
 
     ReadSettings disk_read_settings = patchSettings(read_settings);
+    auto global_context = Context::getGlobalContextInstance();
 
     auto settings_ptr = s3_settings.get();
 
@@ -141,12 +142,16 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         objects,
-        disk_read_settings);
+        disk_read_settings,
+        global_context->getFilesystemCacheLog());
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto & reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(s3_impl));
+        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
+            reader, disk_read_settings, std::move(s3_impl),
+            global_context->getAsyncReadCounters(),
+            global_context->getFilesystemReadPrefetchesLog());
     }
     else
     {
