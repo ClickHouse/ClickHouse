@@ -1859,6 +1859,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             std::lock_guard lock(outdated_data_parts_mutex);
             outdated_unloaded_data_parts = std::move(unloaded_parts);
+            outdated_data_parts_loading_finished = false;
         }
 
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
@@ -1878,6 +1879,7 @@ try
         if (outdated_unloaded_data_parts.empty())
         {
             outdated_data_parts_loading_finished = true;
+            outdated_data_parts_cv.notify_all();
             return;
         }
 
