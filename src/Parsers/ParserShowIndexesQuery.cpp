@@ -58,8 +58,7 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         tryGetIdentifierNameInto(from2, from2_str);
 
         query->table = from1_str;
-        if (!from2_str.empty())
-            query->database = from2_str; /// FROM table FROM database
+        query->database = from2_str;
     }
 
     if (ParserKeyword("WHERE").ignore(pos, expected))
