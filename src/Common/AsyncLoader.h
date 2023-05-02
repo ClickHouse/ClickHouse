@@ -45,17 +45,12 @@ enum class LoadStatus
 class LoadJob : private boost::noncopyable
 {
 public:
-    template <class Func>
-    LoadJob(LoadJobSet && dependencies_, String name_, ssize_t priority_, Func && func_)
-        : dependencies(std::move(dependencies_))
+    template <class Func, class LoadJobSetType>
+    LoadJob(LoadJobSetType && dependencies_, String name_, Func && func_, ssize_t priority_ = 0)
+        : dependencies(std::forward<LoadJobSetType>(dependencies_))
         , name(std::move(name_))
         , func(std::forward<Func>(func_))
         , load_priority(priority_)
-    {}
-
-    template <class Func>
-    LoadJob(LoadJobSet && dependencies_, String name_, Func && func_)
-        : LoadJob(std::move(dependencies_), std::move(name_), 0, std::forward<Func>(func_))
     {}
 
     // Current job status.
@@ -103,16 +98,33 @@ private:
     UInt64 finished_ns = 0;
 };
 
-template <class Func>
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, Func && func)
+struct EmptyJobFunc
+{
+    void operator()(const LoadJobPtr &) {}
+};
+
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, Func && func = EmptyJobFunc())
 {
     return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), std::forward<Func>(func));
 }
 
-template <class Func>
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, ssize_t priority, Func && func)
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, Func && func = EmptyJobFunc())
 {
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), priority, std::forward<Func>(func));
+    return std::make_shared<LoadJob>(dependencies, std::move(name), std::forward<Func>(func));
+}
+
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, ssize_t priority, String name, Func && func = EmptyJobFunc())
+{
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), std::forward<Func>(func), priority);
+}
+
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, ssize_t priority, String name, Func && func = EmptyJobFunc())
+{
+    return std::make_shared<LoadJob>(dependencies, std::move(name), std::forward<Func>(func), priority);
 }
 
 // Represents a logically connected set of LoadJobs required to achieve some goals (final LoadJob in the set).
