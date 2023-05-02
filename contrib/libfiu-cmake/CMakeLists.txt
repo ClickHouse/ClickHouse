@@ -10,7 +10,6 @@ set(FIU_SOURCES
   ${FIU_DIR}/libfiu/fiu-rc.c
   ${FIU_DIR}/libfiu/backtrace.c
   ${FIU_DIR}/libfiu/wtable.c
-  ${FIU_DIR}/libfiu/hash.c
 )
 
 set(FIU_HEADERS "${FIU_DIR}/libfiu")
