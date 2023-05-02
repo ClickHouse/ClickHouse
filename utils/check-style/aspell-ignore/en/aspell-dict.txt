@@ -56,6 +56,7 @@ Homebrew
 Homebrew's
 HorizontalDivide
 Hostname
+INSERTed
 IPv
 IntN
 Integrations
@@ -90,8 +91,10 @@ LOCALTIMESTAMP
 LibFuzzer
 LineAsString
 LinksDeployment
+LLVM's
 LowCardinality
 MEMTABLE
+MVCC
 MSan
 MacOS
 Memcheck
@@ -119,6 +122,7 @@ OpenStack
 OpenTelemetry
 PAAMAYIM
 Parsers
+ParquetMetadata
 Postgres
 Precompiled
 PrettyCompact
@@ -148,6 +152,7 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
+SELECTs
 SERIALIZABLE
 SIMD
 SMALLINT
@@ -174,6 +179,7 @@ Testflows
 Tgz
 Toolset
 Tradeoff
+Transactional
 TwoColumnList
 UBSan
 UInt
@@ -205,6 +211,7 @@ analytics
 anonymized
 ansi
 async
+atomicity
 autogeneration
 autostart
 avro
@@ -288,6 +295,7 @@ dragonbox
 durations
 endian
 enum
+encodings
 exFAT
 fastops
 fcoverage
@@ -297,6 +305,7 @@ flatbuffers
 fmtlib
 formatschema
 formatter
+fsync
 fuzzer
 fuzzers
 gRPC
@@ -516,6 +525,7 @@ tokenization
 toml
 toolchain
 toolset
+transactional
 transactionally
 tskv
 tsv

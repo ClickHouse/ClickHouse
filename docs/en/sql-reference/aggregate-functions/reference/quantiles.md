@@ -115,14 +115,14 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesApprox
+## quantilesGK
 
-`quantilesApprox` works similarly with `quantileApprox` but allows us to calculate quantities at different levels simultaneously and returns an array.
+`quantilesGK` works similarly with `quantileGK` but allows us to calculate quantities at different levels simultaneously and returns an array.
 
 **Syntax**
 
 ``` sql
-quantilesApprox(accuracy, level1, level2, ...)(expr)
+quantilesGK(accuracy, level1, level2, ...)(expr)
 ```
 
 **Returned value**
@@ -141,32 +141,32 @@ Query:
 
 
 ``` sql
-SELECT quantilesApprox(1, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(1, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [1,1,1]                                              │
-└──────────────────────────────────────────────────────┘
+┌─quantilesGK(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [1,1,1]                                          │
+└──────────────────────────────────────────────────┘
 
-SELECT quantilesApprox(10, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(10, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(10, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [156,413,659]                                         │
-└───────────────────────────────────────────────────────┘
+┌─quantilesGK(10, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [156,413,659]                                     │
+└───────────────────────────────────────────────────┘
 
 
-SELECT quantilesApprox(100, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(100, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [251,498,741]                                          │
-└────────────────────────────────────────────────────────┘
+┌─quantilesGK(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [251,498,741]                                      │
+└────────────────────────────────────────────────────┘
 
-SELECT quantilesApprox(1000, 0.25, 0.5, 0.75)(number + 1)
+SELECT quantilesGK(1000, 0.25, 0.5, 0.75)(number + 1)
 FROM numbers(1000)
 
-┌─quantilesApprox(1000, 0.25, 0.5, 0.75)(plus(number, 1))─┐
-│ [249,499,749]                                           │
-└─────────────────────────────────────────────────────────┘
+┌─quantilesGK(1000, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [249,499,749]                                       │
+└─────────────────────────────────────────────────────┘
 ```
