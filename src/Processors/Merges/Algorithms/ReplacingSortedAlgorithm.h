@@ -48,4 +48,5 @@ private:
     void insertRow();
 };
 
+using UpsertingSortedAlgorithm = ReplacingSortedAlgorithm;
 }

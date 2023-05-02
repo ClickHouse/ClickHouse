@@ -25,6 +25,8 @@ struct ChunkAndProgress
     bool is_finished = false;
 };
 
+struct TableVersion;
+
 struct ParallelReadingExtension
 {
     MergeTreeAllRangesCallback all_callback;
@@ -107,17 +109,17 @@ protected:
     injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
 
 protected:
-    static void initializeRangeReadersImpl(
-         MergeTreeRangeReader & range_reader,
-         std::deque<MergeTreeRangeReader> & pre_range_readers,
-         PrewhereInfoPtr prewhere_info,
-         const PrewhereExprInfo * prewhere_actions,
-         IMergeTreeReader * reader,
-         bool has_lightweight_delete,
-         const MergeTreeReaderSettings & reader_settings,
-         const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
-         const PrewhereExprStep & lightweight_delete_filter_step,
-         const Names & non_const_virtual_column_names);
+    void initializeRangeReadersImpl(
+        MergeTreeRangeReader & range_reader,
+        std::deque<MergeTreeRangeReader> & pre_range_readers,
+        PrewhereInfoPtr prewhere_info_,
+        const PrewhereExprInfo * prewhere_actions_,
+        IMergeTreeReader * reader_,
+        bool has_lightweight_delete,
+        const MergeTreeReaderSettings & reader_settings_,
+        const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step_,
+        const PrewhereExprStep & lightweight_delete_filter_step,
+        const Names & non_const_virtual_column_names_);
 
     /// Sets up data readers for each step of prewhere and where
     void initializeMergeTreeReadersForCurrentTask(

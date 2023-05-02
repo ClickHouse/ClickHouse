@@ -109,8 +109,7 @@ public:
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         Poco::Logger * log_,
         MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading
-    );
+        bool enable_parallel_reading);
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }

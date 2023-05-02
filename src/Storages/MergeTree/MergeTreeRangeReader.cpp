@@ -1,17 +1,18 @@
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Columns/FilterDescription.h>
+#include <bit>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/FilterDescription.h>
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <base/range.h>
-#include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <bit>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <base/range.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/TargetSpecific.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -28,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
 
@@ -800,6 +802,8 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 }
 
 MergeTreeRangeReader::MergeTreeRangeReader(
+    const MergeTreeData & storage_,
+    const StorageSnapshotPtr & storage_snapshot_,
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprStep * prewhere_info_,
@@ -811,6 +815,8 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
+    , storage(&storage_)
+    , table_version(storage_snapshot_->table_version)
 {
     if (prev_reader)
         result_sample_block = prev_reader->getSampleBlock();
@@ -1071,7 +1077,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result.addNumBytesRead(total_bytes);
     }
 
-    executePrewhereActionsAndFilterColumns(read_result);
+    executePrewhereActionsAndFilterColumns(read_result, bitmap_filter);
 
     read_result.checkInternalConsistency();
 
@@ -1155,6 +1161,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (read_sample_block.has("_part_offset"))
         fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
 
+    if (storage->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && !prev_reader)
+    {
+        auto row_ids = getPartOffsets(result, leading_begin_part_offset, leading_end_part_offset);
+        setBitmapFilter(row_ids);
+    }
+
     return result;
 }
 
@@ -1185,6 +1197,69 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     }
 
     result.columns.emplace_back(std::move(column));
+}
+
+PaddedPODArray<UInt64>
+MergeTreeRangeReader::getPartOffsets(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
+{
+    size_t num_rows = result.numReadRows();
+
+    PaddedPODArray<UInt64> res;
+    res.resize(num_rows);
+
+    UInt64 * pos = res.data();
+    UInt64 * end = res.end();
+
+    while (pos < end && leading_begin_part_offset < leading_end_part_offset)
+        *pos++ = leading_begin_part_offset++;
+
+    const auto & start_ranges = result.started_ranges;
+
+    for (const auto & start_range : start_ranges)
+    {
+        UInt64 start_part_offset = index_granularity->getMarkStartingRow(start_range.range.begin);
+        UInt64 end_part_offset = index_granularity->getMarkStartingRow(start_range.range.end);
+
+        while (pos < end && start_part_offset < end_part_offset)
+            *pos++ = start_part_offset++;
+    }
+    return res;
+}
+
+void MergeTreeRangeReader::setBitmapFilter(const PaddedPODArray<UInt64> & rows_id)
+{
+    if (!storage || !table_version || rows_id.empty())
+        return;
+
+    auto part_version = table_version->getPartVersion(merge_tree_reader->data_part_info_for_read->getDataPartInfo());
+
+    /// Get delete bitmap of the part
+    auto part_bitmap
+        = storage->delete_bitmap_cache->getOrCreate(merge_tree_reader->data_part_info_for_read->getDataPartPtr(), part_version);
+
+    size_t start_row = rows_id[0];
+    size_t end_row = rows_id[rows_id.size() - 1];
+
+    /// No deletes
+    if (!part_bitmap->rangeCardinality(start_row, end_row + 1))
+    {
+        bitmap_filter = nullptr;
+        return;
+    }
+
+    /// Create filter by delete bitmap and rows id
+    auto col_vec = ColumnUInt8::create(rows_id.size());
+    auto & data = col_vec->getData();
+
+    UInt8 * pos = data.data();
+    UInt8 * end = data.end();
+    const UInt64 * rows_pos = rows_id.data();
+    const UInt64 * rows_end = rows_id.end();
+
+    while (pos < end && rows_pos < rows_end)
+        *pos++ = !part_bitmap->deleted(static_cast<UInt32>(*rows_pos++));
+
+    bitmap_filter = std::move(col_vec);
 }
 
 Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, size_t & num_rows)
@@ -1301,12 +1376,71 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result) const
+static ColumnPtr combineBitmapFilter(ColumnPtr first, ColumnPtr second)
 {
+    size_t size = first->size();
+    auto res = ColumnUInt8::create(size);
+    auto & data = res->getData();
+
+    const auto & first_filter = typeid_cast<const ColumnUInt8 *>(first.get());
+    const auto & second_fiter = typeid_cast<const ColumnUInt8 *>(second.get());
+
+    if (!first_filter || !second_fiter)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Passed filters to combine are not both Column UInt8, but Column {} and Column {}",
+            first->getName(),
+            second->getName());
+
+    const auto & first_filter_data = first_filter->getData();
+    const auto & second_fiter_data = second_fiter->getData();
+
+    for (size_t i = 0; i < size; ++i)
+        data[i] = first_filter_data[i] && second_fiter_data[i];
+    return res;
+}
+
+static ColumnPtr removeNullbleAndSparse(ColumnPtr col)
+{
+    if (col->isNullable())
+    {
+        const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(*col);
+        return removeNullbleAndSparse(column_nested_nullable->getNestedColumn().convertToFullIfNeeded());
+    }
+    else if (col->isSparse() || col->lowCardinality())
+        return removeNullbleAndSparse(col->convertToFullIfNeeded());
+    return col->convertToFullIfNeeded();
+}
+
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, ColumnPtr filter_by_bitmap) const
+{
+    if (!prewhere_info && !filter_by_bitmap)
+        return;
+
     result.checkInternalConsistency();
 
     if (!prewhere_info)
+    {
+        const auto & filter = typeid_cast<const ColumnUInt8 *>(filter_by_bitmap.get())->getData();
+        size_t valid_rows = countBytesInFilter(filter);
+
+        if (valid_rows == filter.size())
+        {
+            /// Nothing need to do, no deleted rows
+        }
+        /// All rows are deleted
+        else if (!valid_rows)
+        {
+            result.columns.clear();
+            result.num_rows = 0;
+        }
+        else
+        {
+            filterColumns(result.columns, filter, filter.size());
+            result.num_rows = result.columns.front()->size();
+        }
         return;
+    }
 
     const auto & header = read_sample_block;
     size_t num_columns = header.columns();
@@ -1387,6 +1521,13 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     if (prewhere_info->remove_column)
         result.columns.erase(result.columns.begin() + prewhere_column_pos);
+
+    if (filter_by_bitmap)
+    {
+        current_step_filter = removeNullbleAndSparse(current_step_filter);
+        checkCombinedFiltersSize(current_step_filter->size(), filter_by_bitmap->size());
+        current_step_filter = combineBitmapFilter(current_step_filter, filter_by_bitmap);
+    }
 
     FilterWithCachedCount current_filter(current_step_filter);
 

@@ -1,17 +1,18 @@
 #pragma once
 
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Storages/MergeTree/ColumnSizeEstimator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
+#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <Compression/CompressedReadBufferFromFile.h>
+#include <Storages/MergeTree/Unique/WriteState.h>
 #include <Common/filesystemHelpers.h>
 
 #include <memory>
@@ -47,7 +48,6 @@ using MergeTaskPtr = std::shared_ptr<MergeTask>;
 class MergeTask
 {
 public:
-
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
@@ -90,6 +90,7 @@ public:
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
             global_ctx->need_prefix = need_prefix;
+            global_ctx->table_version = global_ctx->future_part->table_version;
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
@@ -105,6 +106,8 @@ public:
     }
 
     bool execute();
+
+    auto getWriteState() { return global_ctx->write_state; }
 
 private:
     struct IStage;
@@ -179,6 +182,12 @@ private:
         bool need_prefix;
 
         scope_guard temporary_directory_lock;
+
+        std::shared_ptr<const TableVersion> table_version;
+        WriteState write_state;
+        MutableColumnPtr col_encode = nullptr;
+        Names unique_keys;
+        bool column_initialized = false;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;

@@ -1,8 +1,9 @@
 #pragma once
-#include <Interpreters/Context.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Context.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -67,6 +68,10 @@ public:
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
     virtual void reportBroken() = 0;
+
+    virtual MergeTreePartInfo getDataPartInfo() const = 0;
+
+    virtual MergeTreeData::DataPartPtr getDataPartPtr() const = 0;
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;

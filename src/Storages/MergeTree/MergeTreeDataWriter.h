@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
+#include <Storages/MergeTree/Unique/WriteState.h>
 
 namespace DB
 {
@@ -51,7 +52,12 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, ChunkOffsetsPtr chunk_offsets = nullptr);
+    static BlocksWithPartition splitBlockIntoParts(
+        const Block & block,
+        size_t max_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        ChunkOffsetsPtr chunk_offsets = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -77,7 +83,9 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+
+    TemporaryPart writeTempPart(
+        BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, WriteStatePtr write_state = nullptr);
 
     TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
 
@@ -106,13 +114,13 @@ public:
         const MergeTreeData::MergingParams & merging_params);
 
 private:
-
     TemporaryPart writeTempPartImpl(
         BlockWithPartition & block,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         int64_t block_number,
-        bool need_tmp_prefix);
+        bool need_tmp_prefix,
+        WriteStatePtr write_state = nullptr);
 
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,

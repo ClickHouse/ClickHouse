@@ -31,6 +31,8 @@
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 
+#include <Storages/MergeTree/Unique/PrimaryKeysEncoder.h>
+
 namespace DB
 {
 
@@ -419,9 +421,28 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
+    if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && !global_ctx->column_initialized)
+    {
+        global_ctx->unique_keys = global_ctx->metadata_snapshot->getUniqueKey().column_names;
+        global_ctx->col_encode = DataTypeString{}.createColumn();
+        global_ctx->column_initialized = true;
+    }
+
     Block block;
     if (!ctx->is_cancelled() && (global_ctx->merging_executor->pull(block)))
     {
+        if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+        {
+            ColumnRawPtrs key_columns;
+            global_ctx->data->getUniqueKeyExpression(global_ctx->metadata_snapshot)->execute(block);
+            for (const auto & name : global_ctx->unique_keys)
+            {
+                key_columns.emplace_back(block.getByName(name).column.get());
+            }
+
+            PrimaryKeysEncoder::encode(key_columns, block.rows(), global_ctx->unique_keys.size(), global_ctx->col_encode);
+        }
+
         global_ctx->rows_written += block.rows();
 
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
@@ -460,6 +481,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     const auto data_settings = global_ctx->data->getSettings();
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
+
+    if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+    {
+        global_ctx->write_state.key_column = std::move(global_ctx->col_encode);
+    }
 
     return false;
 }
@@ -525,15 +551,25 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     Pipes pipes;
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
+        DeleteBitmapPtr delete_bitmap = nullptr;
+        auto part = global_ctx->future_part->parts[part_num];
+        if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && global_ctx->table_version)
+        {
+            auto part_version = global_ctx->table_version->getPartVersion(part->info);
+
+            auto & bitmap_cache = global_ctx->data->delete_bitmap_cache;
+            delete_bitmap = bitmap_cache->getOrCreate(part, part_version);
+        }
         Pipe pipe = createMergeTreeSequentialSource(
             *global_ctx->data,
             global_ctx->storage_snapshot,
-            global_ctx->future_part->parts[part_num],
+            part,
             column_names,
             ctx->read_with_direct_io,
             true,
             false,
-            global_ctx->input_rows_filtered);
+            global_ctx->input_rows_filtered,
+            delete_bitmap);
 
         pipes.emplace_back(std::move(pipe));
     }
@@ -877,6 +913,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     for (const auto & part : global_ctx->future_part->parts)
     {
+        DeleteBitmapPtr delete_bitmap = nullptr;
+        if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && global_ctx->table_version)
+        {
+            auto part_version = global_ctx->table_version->getPartVersion(part->info);
+
+            auto & bitmap_cache = global_ctx->data->delete_bitmap_cache;
+            delete_bitmap = bitmap_cache->getOrCreate(part, part_version);
+        }
         Pipe pipe = createMergeTreeSequentialSource(
             *global_ctx->data,
             global_ctx->storage_snapshot,
@@ -885,7 +929,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             ctx->read_with_direct_io,
             true,
             false,
-            global_ctx->input_rows_filtered);
+            global_ctx->input_rows_filtered,
+            delete_bitmap);
 
         if (global_ctx->metadata_snapshot->hasSortingKey())
         {
@@ -926,6 +971,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     switch (ctx->merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
+        case MergeTreeData::MergingParams::Unique:
             merged_transform = std::make_shared<MergingSortedTransform>(
                 header,
                 pipes.size(),
@@ -1034,11 +1080,11 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         }
     }
 
-    bool is_supported_storage =
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+    bool is_supported_storage = ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary
+        || ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing
+        || ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing
+        || ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing
+        || ctx->merging_params.mode == MergeTreeData::MergingParams::Unique;
 
     bool enough_ordinary_cols = global_ctx->gathering_columns.size() >= data_settings->vertical_merge_algorithm_min_columns_to_activate;
 

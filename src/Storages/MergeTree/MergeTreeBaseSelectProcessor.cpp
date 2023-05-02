@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+
 #include <city.h>
 
 namespace ProfileEvents
@@ -291,28 +292,40 @@ void IMergeTreeSelectAlgorithm::initializeRangeReaders(MergeTreeReadTask & curre
 }
 
 void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
-    MergeTreeRangeReader & range_reader, std::deque<MergeTreeRangeReader> & pre_range_readers,
-    PrewhereInfoPtr prewhere_info, const PrewhereExprInfo * prewhere_actions,
-    IMergeTreeReader * reader, bool has_lightweight_delete, const MergeTreeReaderSettings & reader_settings,
-    const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
-    const PrewhereExprStep & lightweight_delete_filter_step, const Names & non_const_virtual_column_names)
+    MergeTreeRangeReader & range_reader,
+    std::deque<MergeTreeRangeReader> & pre_range_readers,
+    PrewhereInfoPtr prewhere_info_,
+    const PrewhereExprInfo * prewhere_actions_,
+    IMergeTreeReader * reader_,
+    bool has_lightweight_delete,
+    const MergeTreeReaderSettings & reader_settings_,
+    const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step_,
+    const PrewhereExprStep & lightweight_delete_filter_step_,
+    const Names & non_const_virtual_column_names_)
 {
     MergeTreeRangeReader * prev_reader = nullptr;
     bool last_reader = false;
     size_t pre_readers_shift = 0;
 
     /// Add filtering step with lightweight delete mask
-    if (reader_settings.apply_deleted_mask && has_lightweight_delete)
+    if (reader_settings_.apply_deleted_mask && has_lightweight_delete)
     {
-        MergeTreeRangeReader pre_range_reader(pre_reader_for_step[0].get(), prev_reader, &lightweight_delete_filter_step, last_reader, non_const_virtual_column_names);
+        MergeTreeRangeReader pre_range_reader(
+            storage,
+            storage_snapshot,
+            pre_reader_for_step_[0].get(),
+            prev_reader,
+            &lightweight_delete_filter_step_,
+            last_reader,
+            non_const_virtual_column_names_);
         pre_range_readers.push_back(std::move(pre_range_reader));
         prev_reader = &pre_range_readers.back();
         pre_readers_shift++;
     }
 
-    if (prewhere_info)
+    if (prewhere_info_)
     {
-        if (prewhere_actions->steps.size() + pre_readers_shift != pre_reader_for_step.size())
+        if (prewhere_actions_->steps.size() + pre_readers_shift != pre_reader_for_step.size())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -322,9 +335,16 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 
         for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
         {
-            last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
+            last_reader = reader_->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
 
-            MergeTreeRangeReader current_reader(pre_reader_for_step[i + pre_readers_shift].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names);
+            MergeTreeRangeReader current_reader(
+                storage,
+                storage_snapshot,
+                pre_reader_for_step_[i + pre_readers_shift].get(),
+                prev_reader,
+                &prewhere_actions_->steps[i],
+                last_reader,
+                non_const_virtual_column_names_);
 
             pre_range_readers.push_back(std::move(current_reader));
             prev_reader = &pre_range_readers.back();
@@ -333,7 +353,8 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 
     if (!last_reader)
     {
-        range_reader = MergeTreeRangeReader(reader, prev_reader, nullptr, true, non_const_virtual_column_names);
+        range_reader
+            = MergeTreeRangeReader(storage, storage_snapshot, reader_, prev_reader, nullptr, true, non_const_virtual_column_names_);
     }
     else
     {
@@ -464,6 +485,11 @@ namespace
             block.insert({column, std::make_shared<DataTypeUInt64>(), name});
         }
 
+        void insertInt64Column(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeInt64>(), name});
+        }
+
         void insertUUIDColumn(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataTypeUUID>(), name});
@@ -575,6 +601,16 @@ static void injectPartConstVirtualColumns(
                     column = DataTypeUInt64().createColumn();
 
                 inserter.insertUInt64Column(column, virtual_column_name);
+            }
+            else if (virtual_column_name == "_part_min_block")
+            {
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUInt64().createColumnConst(rows, task->data_part->info.min_block)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUInt64().createColumn();
+
+                inserter.insertInt64Column(column, virtual_column_name);
             }
             else if (virtual_column_name == "_part_uuid")
             {

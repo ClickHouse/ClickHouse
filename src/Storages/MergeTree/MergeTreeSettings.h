@@ -72,6 +72,9 @@ struct Settings;
     M(UInt64, merge_tree_enable_clear_old_broken_detached, false, "Enable clearing old broken detached parts operation in background.", 0) \
     M(Bool, remove_rolled_back_parts_immediately, 1, "Setting for an incomplete experimental feature.", 0) \
     M(CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never, "Is the Replicated Merge cleanup has to be done automatically at each merge or manually (possible values are 'Always'/'Never' (default))", 0) \
+    M(UInt64, unique_merge_tree_max_primary_index_cache_size, 5 * DEFAULT_INSERT_BLOCK_SIZE, "the max primary index cache size for unique mergetree", 0) \
+    M(UInt64, unique_merge_tree_max_keeped_primary_index, 10, "The number of the primary indexes keeped in LRU cache, keeping 10 partitions primary index in cache by default", 0) \
+    M(UInt64, unique_merge_tree_mininum_delete_buffer_size_to_abort_merge, 65505, "If the delete buffers keys number equal or greater than it, than abort the merge", 0) \
     M(UInt64, replicated_max_mutations_in_one_entry, 10000, "Max number of mutation commands that can be merged together and executed in one MUTATE_PART entry (0 means unlimited)", 0) \
     \
     /** Inserts settings. */ \

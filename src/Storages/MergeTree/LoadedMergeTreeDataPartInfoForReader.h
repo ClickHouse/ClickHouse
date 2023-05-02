@@ -1,7 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-
 
 namespace DB
 {
@@ -52,6 +50,10 @@ public:
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
+
+    MergeTreePartInfo getDataPartInfo() const override { return data_part->info; }
+
+    MergeTreeData::DataPartPtr getDataPartPtr() const override { return data_part; }
 
 private:
     MergeTreeData::DataPartPtr data_part;

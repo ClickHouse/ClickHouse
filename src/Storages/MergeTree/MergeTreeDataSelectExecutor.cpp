@@ -1226,6 +1226,10 @@ static void selectColumnNames(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == "_part_min_block")
+        {
+            virt_column_names.push_back(name);
+        }
         else if (name == "_partition_id")
         {
             virt_column_names.push_back(name);

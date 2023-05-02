@@ -50,7 +50,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_ENOUGH_SPACE;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
@@ -58,6 +57,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace ActionLocks
@@ -109,7 +109,13 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
 
-    loadDataParts(has_force_restore_data_flag);
+    /// Must initialize after set relative_data_path
+    initializeForUniqueTable(attach);
+
+    loadDataParts(has_force_restore_data_flag, table_version ? table_version->get() : nullptr);
+
+    /// Must call after loadDataParts
+    initializePartsInfoByBlockId();
 
     if (!attach && !getDataPartsForInternalUsage().empty())
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -384,7 +390,6 @@ void StorageMergeTree::alter(
         }
     }
 }
-
 
 /// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.
 CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
@@ -1586,7 +1591,7 @@ struct FutureNewEmptyPart
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
 
-Strings getPartsNames(const FutureNewEmptyParts & parts)
+static Strings getPartsNames(const FutureNewEmptyParts & parts)
 {
     Strings part_names;
     for (const auto & p : parts)
@@ -1594,7 +1599,7 @@ Strings getPartsNames(const FutureNewEmptyParts & parts)
     return part_names;
 }
 
-FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
+static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
 {
     FutureNewEmptyParts future_parts;
 
@@ -1612,7 +1617,8 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
     return future_parts;
 }
 
-StorageMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
+static StorageMergeTree::MutableDataPartsVector
+createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
 {
     StorageMergeTree::MutableDataPartsVector data_parts;
     for (auto & part: future_parts)
@@ -1620,7 +1626,7 @@ StorageMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & da
     return data_parts;
 }
 
-void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
+static void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
 {
     for (auto & part : future_parts)
         part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(part.getDirName());

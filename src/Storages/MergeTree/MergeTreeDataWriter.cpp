@@ -27,6 +27,8 @@
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Storages/MergeTree/Unique/PrimaryKeysEncoder.h>
+
 namespace ProfileEvents
 {
     extern const Event MergeTreeDataWriterBlocks;
@@ -297,6 +299,9 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
                     block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
+            case MergeTreeData::MergingParams::Unique:
+                return std::make_shared<UpsertingSortedAlgorithm>(
+                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1);
         }
 
         UNREACHABLE();
@@ -335,9 +340,10 @@ Block MergeTreeDataWriter::mergeBlock(
 }
 
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
+    BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, WriteStatePtr write_state)
 {
-    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */true);
+    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */ true, write_state);
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context)
@@ -346,7 +352,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartWithoutPref
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
-    BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, int64_t block_number, bool need_tmp_prefix)
+    BlockWithPartition & block_with_partition,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    int64_t block_number,
+    bool need_tmp_prefix,
+    WriteStatePtr write_state)
 {
     TemporaryPart temp_part;
     Block & block = block_with_partition.block;
@@ -398,11 +409,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
+    /// For Unique Key model, we need first sorting data by Unique Key and mergeBlock,
+    /// then sorting data by Sortint Key.
+    if (metadata_snapshot->hasUniqueKey())
+        data.getUniqueKeyExpression(metadata_snapshot)->execute(block);
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
 
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    /// For Unique Key model, first sorting data by Unique Key
+    Names sort_columns = data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique ? metadata_snapshot->getUniqueKeyColumns()
+                                                                                                : metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -437,6 +455,50 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// There is no need to create empty part.
     if (expected_size == 0)
         return temp_part;
+
+    /// Encoding Unique Key columns
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+    {
+        auto unique_keys = metadata_snapshot->getUniqueKeyColumns();
+
+        ColumnRawPtrs unique_columns;
+        for (const auto & name : unique_keys)
+        {
+            unique_columns.emplace_back(block.getByName(name).column.get());
+        }
+        Field min_value, max_value;
+        for (const auto & col : unique_columns)
+        {
+            col->getExtremes(min_value, max_value);
+            write_state->min_key_values.emplace_back(min_value);
+            write_state->max_key_values.emplace_back(max_value);
+        }
+
+        write_state->key_column = PrimaryKeysEncoder::encode(unique_columns, block.rows(), unique_keys.size());
+
+        if (!data.merging_params.version_column.empty())
+        {
+            write_state->version_column = block.getByName(data.merging_params.version_column).column;
+        }
+
+        /// Now, we should sort data by sorting key
+        sort_columns = metadata_snapshot->getSortingKeyColumns();
+        sort_description.reserve(sort_columns_size);
+
+        for (size_t i = 0; i < sort_columns_size; ++i)
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+
+        if (!sort_description.empty())
+        {
+            if (!isAlreadySorted(block, sort_description))
+            {
+                stableGetPermutation(block, sort_description, perm);
+                perm_ptr = &perm;
+            }
+            else
+                ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
+        }
+    }
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();

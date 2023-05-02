@@ -6,13 +6,13 @@
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
 #include <sys/time.h>
 

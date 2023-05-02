@@ -5,6 +5,8 @@
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
 
+#include <Storages/StorageSnapshot.h>
+
 namespace DB
 {
 
@@ -13,12 +15,15 @@ class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
 
 class IMergeTreeReader;
+class MergeTreeData;
 class MergeTreeIndexGranularity;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+struct TableVersion;
 
 struct PrewhereExprStep
 {
@@ -84,6 +89,8 @@ class MergeTreeRangeReader
 {
 public:
     MergeTreeRangeReader(
+        const MergeTreeData & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
@@ -294,8 +301,11 @@ public:
 private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
-    void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
+    void executePrewhereActionsAndFilterColumns(ReadResult & result, ColumnPtr filter_by_bitmap = nullptr) const;
     void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+
+    PaddedPODArray<UInt64> getPartOffsets(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void setBitmapFilter(const PaddedPODArray<UInt64> & rows_id);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -311,6 +321,10 @@ private:
     bool is_initialized = false;
     Names non_const_virtual_column_names;
 
+    const MergeTreeData * storage = nullptr;
+    std::shared_ptr<const TableVersion> table_version = nullptr;
+
+    ColumnPtr bitmap_filter = nullptr;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeRangeReader");
 };
 
