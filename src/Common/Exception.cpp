@@ -97,7 +97,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    auto stack_trace_frames = exc.get_stack_trace_frames();
+    auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     set_stack_trace(stack_trace_frames, stack_trace_size);
@@ -108,7 +108,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    auto stack_trace_frames = exc.get_stack_trace_frames();
+    auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     set_stack_trace(stack_trace_frames, stack_trace_size);
@@ -119,7 +119,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 std::string getExceptionStackTraceString(const std::exception & e)
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    auto stack_trace_frames = e.get_stack_trace_frames();
+    auto * stack_trace_frames = e.get_stack_trace_frames();
     auto stack_trace_size = e.get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
@@ -150,7 +150,7 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
 std::string Exception::getStackTraceString() const
 {
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
-    auto stack_trace_frames = get_stack_trace_frames();
+    auto * stack_trace_frames = get_stack_trace_frames();
     auto stack_trace_size = get_stack_trace_size();
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     return StackTrace::toString(stack_trace_frames, 0, stack_trace_size);
