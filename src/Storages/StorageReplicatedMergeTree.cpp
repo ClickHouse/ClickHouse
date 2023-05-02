@@ -8198,7 +8198,7 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
     {
         String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
 
-        getZeroCopyLockNodeCreaetOps(
+        getZeroCopyLockNodeCreateOps(
             zookeeper, zookeeper_node, requests, zkutil::CreateMode::Persistent,
             replace_existing_lock, path_to_set_hardlinked_files, hardlinks);
     }
@@ -8990,7 +8990,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     return true;
 }
 
-void StorageReplicatedMergeTree::getZeroCopyLockNodeCreaetOps(
+void StorageReplicatedMergeTree::getZeroCopyLockNodeCreateOps(
     const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
     int32_t mode, bool replace_existing_lock,
     const String & path_to_set_hardlinked_files, const NameSet & hardlinked_files)
@@ -9043,7 +9043,7 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
     {
         Coordination::Requests ops;
         Coordination::Responses responses;
-        getZeroCopyLockNodeCreaetOps(zookeeper, zookeeper_node, ops, mode, replace_existing_lock, path_to_set_hardlinked_files, hardlinked_files);
+        getZeroCopyLockNodeCreateOps(zookeeper, zookeeper_node, ops, mode, replace_existing_lock, path_to_set_hardlinked_files, hardlinked_files);
         auto error = zookeeper->tryMulti(ops, responses);
         if (error == Coordination::Error::ZOK)
         {
