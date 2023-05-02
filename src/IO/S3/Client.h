@@ -163,6 +163,9 @@ public:
     using Aws::S3::S3Client::DisableRequestProcessing;
 
     ProviderType getProviderType() const;
+
+    void BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
+                          const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const override;
 private:
     Client(size_t max_redirects_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
