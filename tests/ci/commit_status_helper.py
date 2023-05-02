@@ -130,6 +130,18 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     if not statuses:
         return
 
+    if not [status for status in statuses if status.context == CI_STATUS_NAME]:
+        # This is the case, when some statuses already exist for the check,
+        # but not the CI_STATUS_NAME. We should create it as pending.
+        # W/o pr_info to avoid recursion, and yes, one extra create_ci_report
+        post_commit_status(
+            commit,
+            "pending",
+            create_ci_report(pr_info, statuses),
+            "The report for running CI",
+            CI_STATUS_NAME,
+        )
+
     # We update the report in generate_status_comment function, so do it each
     # run, even in the release PRs and normal pushes
     comment_body = generate_status_comment(pr_info, statuses)
