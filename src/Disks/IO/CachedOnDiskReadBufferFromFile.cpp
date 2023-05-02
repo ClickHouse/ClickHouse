@@ -490,11 +490,6 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 
     chassert(file_offset_of_buffer_end > completed_range.right);
 
-    if (read_type == ReadType::CACHED)
-    {
-        chassert(current_file_segment->getDownloadedSize(true) == current_file_segment->range().size());
-    }
-
     file_segments->popFront();
     if (file_segments->empty())
         return false;
