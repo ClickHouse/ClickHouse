@@ -1048,7 +1048,7 @@ void DatabaseReplicated::dropReplica(
     assert(!database || database_zookeeper_path == database->zookeeper_path);
 
     if (full_replica_name.find('/') != std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name: {}", full_replica_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
 

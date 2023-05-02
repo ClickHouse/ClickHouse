@@ -2113,7 +2113,14 @@ def reportLogStats(args):
               'Column ''{}'' already exists', 'No macro {} in config', 'Invalid origin H3 index: {}',
               'Invalid session timeout: ''{}''', 'Tuple cannot be empty', 'Database name is empty',
               'Table {} is not a Dictionary', 'Expected function, got: {}', 'Unknown identifier: ''{}''',
-              'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist'
+              'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist',
+              'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
+              'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
+              'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
+              'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
+              'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
+              'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
+              'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
