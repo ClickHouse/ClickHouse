@@ -370,6 +370,7 @@ def create_test_html_report(
                 colspan += 1
 
             if test_result.log_urls is not None:
+                has_log_urls = True
                 test_logs_html = "<br>".join(
                     [_get_html_url(url) for url in test_result.log_urls]
                 )
