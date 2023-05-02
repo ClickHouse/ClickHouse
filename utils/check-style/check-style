@@ -67,7 +67,6 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
-    ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
     ProfileEvents::Type
     ProfileEvents::TypeEnum

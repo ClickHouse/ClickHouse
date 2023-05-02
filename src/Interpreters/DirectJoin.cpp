@@ -1,7 +1,7 @@
 #include <Interpreters/DirectJoin.h>
-#include <Interpreters/castColumn.h>
+
 #include <Columns/ColumnNullable.h>
-#include <Common/logger_useful.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {

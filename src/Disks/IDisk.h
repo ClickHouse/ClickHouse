@@ -247,15 +247,15 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
-    virtual const String & getCacheName() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache"); }
+    virtual const String & getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
     virtual bool supportsCache() const { return false; }
 
     virtual NameSet getCacheLayersNames() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getCacheLayersNames()` is not implemented for disk: {}",
-            toString(getDataSourceDescription().type));
+                        "Method `getCacheLayersNames()` is not implemented for disk: {}",
+                        getDataSourceDescription().type);
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -263,9 +263,7 @@ public:
     /// be multiple files in remote fs for single clickhouse file.
     virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getStorageObjects()` not implemented for disk: {}",
-            toString(getDataSourceDescription().type));
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getDataSourceDescription().type);
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
@@ -283,8 +281,8 @@ public:
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getRemotePathsRecursive() not implemented for disk: {}`",
-            toString(getDataSourceDescription().type));
+                        "Method `getRemotePathsRecursive() not implemented for disk: {}`",
+                        getDataSourceDescription().type);
     }
 
     /// Batch request to remove multiple files.
@@ -400,7 +398,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getObjectStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().type);
     }
 
     /// Create disk object storage according to disk type.
@@ -411,7 +409,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().type);
     }
 
     virtual bool supportsStat() const { return false; }

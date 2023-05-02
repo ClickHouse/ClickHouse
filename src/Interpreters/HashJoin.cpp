@@ -517,7 +517,7 @@ size_t HashJoin::getTotalByteCount() const
 
     res += data->blocks_allocated_size;
     res += data->blocks_nullmaps_allocated_size;
-    res += data->pool.allocatedBytes();
+    res += data->pool.size();
 
     if (data->type != Type::CROSS)
     {

@@ -58,7 +58,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     set (RLIMIT_CPU 1000)
 
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
-    if (SANITIZE STREQUAL "memory")
+    if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
@@ -176,12 +176,6 @@ if (OS_DARWIN)
     set (ENABLE_CURL_BUILD OFF)
 endif ()
 
-option(ENABLE_ISAL_LIBRARY "Enable ISA-L library ON by default except on aarch64." ON)
-if (ARCH_AARCH64)
-    # Disable ISA-L libray on aarch64.
-    set (ENABLE_ISAL_LIBRARY OFF)
-endif ()
-
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # Can be lld or ld-lld or lld-13 or /path/to/lld.
     if (LINKER_NAME MATCHES "lld")
@@ -292,31 +286,48 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
-option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
-
-if (COMPILER_CLANG)
+if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
     # See https://reviews.llvm.org/D112921
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
-
-    # falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
-    # benchmarks.
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
-
-    if (ARCH_AMD64)
-        # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
-        # which makes benchmark results more stable.
-        set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
-
-    if (WITH_COVERAGE)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-        # If we want to disable coverage for specific translation units
-        set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
-    endif()
 endif ()
+
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+if (COMPILER_GCC OR COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+endif ()
+
+if (ARCH_AMD64)
+    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
+    # which makes benchmark results more stable.
+    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
+    if (COMPILER_GCC)
+        # gcc is in assembler, need to add "-Wa," prefix
+        set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
+    endif()
+
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
+endif()
+
+if (COMPILER_GCC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
+endif ()
+
+# Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
+option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
+
+if (WITH_COVERAGE AND COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+    # If we want to disable coverage for specific translation units
+    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
+endif()
+
+if (WITH_COVERAGE AND COMPILER_GCC)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
+    set(COVERAGE_OPTION "-lgcov")
+    set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
+endif()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
@@ -399,11 +410,7 @@ else()
 endif ()
 
 option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
-# We use mmap for allocations more heavily in debug builds, 
-# but GWP-ASan also wants to use mmap frequently, 
-# and due to a large number of memory mappings, 
-# it does not work together well.
-if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
+if (NOT OS_LINUX AND NOT OS_ANDROID)
     set(ENABLE_GWP_ASAN OFF)
 endif ()
 
@@ -427,11 +434,8 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (NOT SANITIZE)
-    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-endif()
-
-if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
+set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X))
     # Slightly more efficient code can be generated
     # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")

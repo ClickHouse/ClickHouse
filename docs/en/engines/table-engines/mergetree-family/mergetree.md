@@ -12,19 +12,19 @@ Engines in the `MergeTree` family are designed for inserting a very large amount
 
 Main features:
 
-- Stores data sorted by primary key.
+-   Stores data sorted by primary key.
 
     This allows you to create a small sparse index that helps find data faster.
 
-- Partitions can be used if the [partitioning key](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key.md) is specified.
+-   Partitions can be used if the [partitioning key](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key.md) is specified.
 
     ClickHouse supports certain operations with partitions that are more efficient than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query.
 
-- Data replication support.
+-   Data replication support.
 
     The family of `ReplicatedMergeTree` tables provides data replication. For more information, see [Data replication](/docs/en/engines/table-engines/mergetree-family/replication.md).
 
-- Data sampling support.
+-   Data sampling support.
 
     If necessary, you can set the data sampling method in the table.
 
@@ -207,10 +207,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **MergeTree() Parameters**
 
-- `date-column` — The name of a column of the [Date](/docs/en/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
-- `sampling_expression` — An expression for sampling.
-- `(primary, key)` — Primary key. Type: [Tuple()](/docs/en/sql-reference/data-types/tuple.md)
-- `index_granularity` — The granularity of an index. The number of data rows between the “marks” of an index. The value 8192 is appropriate for most tasks.
+-   `date-column` — The name of a column of the [Date](/docs/en/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
+-   `sampling_expression` — An expression for sampling.
+-   `(primary, key)` — Primary key. Type: [Tuple()](/docs/en/sql-reference/data-types/tuple.md)
+-   `index_granularity` — The granularity of an index. The number of data rows between the “marks” of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -250,9 +250,9 @@ Take the `(CounterID, Date)` primary key as an example. In this case, the sortin
 
 If the data query specifies:
 
-- `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
-- `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
-- `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
+-   `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
+-   `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
+-   `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
 
 The examples above show that it is always more effective to use an index than a full scan.
 
@@ -268,18 +268,18 @@ You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` cla
 
 The number of columns in the primary key is not explicitly limited. Depending on the data structure, you can include more or fewer columns in the primary key. This may:
 
-- Improve the performance of an index.
+-   Improve the performance of an index.
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
-    - There are queries with a condition on column `c`.
-    - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+    -   There are queries with a condition on column `c`.
+    -   Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
-- Improve data compression.
+-   Improve data compression.
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- Provide additional logic when merging data parts in the [CollapsingMergeTree](/docs/en/engines/table-engines/mergetree-family/collapsingmergetree.md/#table_engine-collapsingmergetree) and [SummingMergeTree](/docs/en/engines/table-engines/mergetree-family/summingmergetree.md) engines.
+-   Provide additional logic when merging data parts in the [CollapsingMergeTree](/docs/en/engines/table-engines/mergetree-family/collapsingmergetree.md/#table_engine-collapsingmergetree) and [SummingMergeTree](/docs/en/engines/table-engines/mergetree-family/summingmergetree.md) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
@@ -483,25 +483,25 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
-(*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
+(*) For `hasTokenCaseInsensitve` and `hasTokenCaseInsensitive` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 :::note
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
 
 For example:
 
-- Can be optimized:
-    - `s LIKE '%test%'`
-    - `NOT s NOT LIKE '%test%'`
-    - `s = 1`
-    - `NOT s != 1`
-    - `startsWith(s, 'test')`
-- Can not be optimized:
-    - `NOT s LIKE '%test%'`
-    - `s NOT LIKE '%test%'`
-    - `NOT s = 1`
-    - `s != 1`
-    - `NOT startsWith(s, 'test')`
+-   Can be optimized:
+    -   `s LIKE '%test%'`
+    -   `NOT s NOT LIKE '%test%'`
+    -   `s = 1`
+    -   `NOT s != 1`
+    -   `startsWith(s, 'test')`
+-   Can not be optimized:
+    -   `NOT s LIKE '%test%'`
+    -   `s NOT LIKE '%test%'`
+    -   `NOT s = 1`
+    -   `s != 1`
+    -   `NOT startsWith(s, 'test')`
 :::
 
 
@@ -614,11 +614,11 @@ TTL expr
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
 
-- `DELETE` - delete expired rows (default action);
-- `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
-- `TO DISK 'aaa'` - move part to the disk `aaa`;
-- `TO VOLUME 'bbb'` - move part to the disk `bbb`;
-- `GROUP BY` - aggregate expired rows.
+-   `DELETE` - delete expired rows (default action);
+-   `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
+-   `TO DISK 'aaa'` - move part to the disk `aaa`;
+-   `TO VOLUME 'bbb'` - move part to the disk `bbb`;
+-   `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
 ``` sql
@@ -722,10 +722,10 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 
 ### Terms {#terms}
 
-- Disk — Block device mounted to the filesystem.
-- Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-path) server setting.
-- Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
-- Storage policy — Set of volumes and the rules for moving data between them.
+-   Disk — Block device mounted to the filesystem.
+-   Default disk — Disk that stores the path specified in the [path](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-path) server setting.
+-   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
+-   Storage policy — Set of volumes and the rules for moving data between them.
 
 The names given to the described entities can be found in the system tables, [system.storage_policies](/docs/en/operations/system-tables/storage_policies.md/#system_tables-storage_policies) and [system.disks](/docs/en/operations/system-tables/disks.md/#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
@@ -759,9 +759,9 @@ Configuration structure:
 
 Tags:
 
-- `<disk_name_N>` — Disk name. Names must be different for all disks.
-- `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
-- `keep_free_space_bytes` — the amount of free disk space to be reserved.
+-   `<disk_name_N>` — Disk name. Names must be different for all disks.
+-   `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
+-   `keep_free_space_bytes` — the amount of free disk space to be reserved.
 
 The order of the disk definition is not important.
 
@@ -797,14 +797,14 @@ Storage policies configuration markup:
 
 Tags:
 
-- `policy_name_N` — Policy name. Policy names must be unique.
-- `volume_name_N` — Volume name. Volume names must be unique.
-- `disk` — a disk within a volume.
-- `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
-- `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
-- `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
-- `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
-- `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
+-   `policy_name_N` — Policy name. Policy names must be unique.
+-   `volume_name_N` — Volume name. Volume names must be unique.
+-   `disk` — a disk within a volume.
+-   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
+-   `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+-   `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
+-   `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
+-   `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 
 Cofiguration examples:
 
@@ -880,10 +880,10 @@ The number of threads performing background moves of data parts can be changed b
 
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
-- As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
-- When downloading from another replica.
-- As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
+-   As a result of an insert (`INSERT` query).
+-   During background merges and [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
+-   When downloading from another replica.
+-   As a result of partition freezing [ALTER TABLE … FREEZE PARTITION](/docs/en/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
@@ -956,30 +956,30 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 Required parameters:
 
-- `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
-- `access_key_id` — S3 access key id.
-- `secret_access_key` — S3 secret access key.
+-   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
+-   `access_key_id` — S3 access key id.
+-   `secret_access_key` — S3 secret access key.
 
 Optional parameters:
 
-- `region` — S3 region name.
-- `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
-- `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
-- `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
-- `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
-- `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
-- `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
-- `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
-- `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
-- `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
-- `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
-- `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-- `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
-- `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
-- `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
-- `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
-- `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
-- `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
+-   `region` — S3 region name.
+-   `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
+-   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
+-   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
+-   `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
+-   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
+-   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
+-   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
+-   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
+-   `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
+-   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
+-   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
+-   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
+-   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
+-   `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
+-   `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
+-   `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
+-   `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
 
 ### Configuring the cache
 
@@ -994,12 +994,12 @@ This is the cache configuration from above:
 ```
 
 These parameters define the cache layer:
-- `type` — If a disk is of type `cache` it caches mark and index files in memory.
-- `disk` — The name of the disk that will be cached.
+-   `type` — If a disk is of type `cache` it caches mark and index files in memory.
+-   `disk` — The name of the disk that will be cached.
 
 Cache parameters:
-- `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of memory) that the cache can grow to.
+-   `path` — The path where metadata for the cache is stored.
+-   `max_size` — The size (amount of memory) that the cache can grow to.
 
 :::tip
 There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
@@ -1100,9 +1100,9 @@ Examples of working configurations can be found in integration tests directory (
 
 ## Virtual Columns {#virtual-columns}
 
-- `_part` — Name of a part.
-- `_part_index` — Sequential index of the part in the query result.
-- `_partition_id` — Name of a partition.
-- `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
-- `_partition_value` — Values (a tuple) of a `partition by` expression.
-- `_sample_factor` — Sample factor (from the query).
+-   `_part` — Name of a part.
+-   `_part_index` — Sequential index of the part in the query result.
+-   `_partition_id` — Name of a partition.
+-   `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
+-   `_partition_value` — Values (a tuple) of a `partition by` expression.
+-   `_sample_factor` — Sample factor (from the query).

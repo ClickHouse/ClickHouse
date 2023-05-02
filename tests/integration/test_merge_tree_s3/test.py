@@ -52,18 +52,8 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
-FILES_OVERHEAD_METADATA_VERSION = 1
-FILES_OVERHEAD_PER_PART_WIDE = (
-    FILES_OVERHEAD_PER_COLUMN * 3
-    + 2
-    + 6
-    + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
-    + FILES_OVERHEAD_METADATA_VERSION
-)
-FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
-)
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
 def create_table(node, table_name, **additional_settings):
@@ -101,13 +91,6 @@ def run_s3_mocks(cluster):
     )
 
 
-def list_objects(cluster, path="data/"):
-    minio = cluster.minio_client
-    objects = list(minio.list_objects(cluster.minio_bucket, path, recursive=True))
-    logging.info(f"list_objects ({len(objects)}): {[x.object_name for x in objects]}")
-    return objects
-
-
 def wait_for_delete_s3_objects(cluster, expected, timeout=30):
     minio = cluster.minio_client
     while timeout > 0:
@@ -137,7 +120,9 @@ def drop_table(cluster, node_name):
         wait_for_delete_s3_objects(cluster, 0)
     finally:
         # Remove extra objects to prevent tests cascade failing
-        for obj in list_objects(cluster, "data/"):
+        for obj in list(
+            minio.list_objects(cluster.minio_bucket, "data/", recursive=True)
+        ):
             minio.remove_object(cluster.minio_bucket, obj.object_name)
 
 
@@ -247,6 +232,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
 def test_alter_table_columns(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -302,7 +288,7 @@ def test_attach_detach_partition(cluster, node_name):
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert (
-        len(list_objects(cluster, "data/"))
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
@@ -311,14 +297,14 @@ def test_attach_detach_partition(cluster, node_name):
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
     assert (
-        len(list_objects(cluster, "data/"))
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
     node.query("ALTER TABLE s3_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
     assert (
-        len(list_objects(cluster, "data/"))
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
@@ -327,7 +313,7 @@ def test_attach_detach_partition(cluster, node_name):
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
     assert (
-        len(list_objects(cluster, "data/"))
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1
     )
 
@@ -336,7 +322,7 @@ def test_attach_detach_partition(cluster, node_name):
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert (
-        len(list_objects(cluster, "data/"))
+        len(list(minio.list_objects(cluster.minio_bucket, "data/")))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1
     )
     node.query(
@@ -345,7 +331,7 @@ def test_attach_detach_partition(cluster, node_name):
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert (
-        len(list_objects(cluster, "data/"))
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
         == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 0
     )
 
@@ -679,22 +665,13 @@ def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     node.query(
-        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY value SETTINGS storage_policy='s3_with_cache_and_jbod';"
+        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_with_cache_and_jbod';"
     )
     node.query(
-        "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(100000000)"
+        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500000"
     )
-    out = node.exec_in_container(
-        [
-            "/usr/bin/clickhouse",
-            "benchmark",
-            "--iterations",
-            "10",
-            "--max_threads",
-            "100",
-            "--query",
-            "SELECT count() FROM s3_test WHERE key < 40000000 or key > 80000000 SETTINGS max_read_buffer_size='44Ki'",
-        ]
+    node.query(
+        "SELECT * FROM s3_test WHERE value LIKE '%abc%' ORDER BY value FORMAT Null"
     )
     assert node.contains_in_log(
         "Insert into cache is skipped due to insufficient disk space"

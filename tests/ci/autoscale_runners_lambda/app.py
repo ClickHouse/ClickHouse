@@ -64,10 +64,7 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     if runner_type == "style-checker":
         # the style checkers have so many noise, so it scales up too quickly
         scale_down = 1
-        # The 5 was too quick, there are complainings regarding too slow with
-        # 10. I am trying 7 now.
-        # UPDATE THE COMMENT ON CHANGES
-        scale_up = 7
+        scale_up = 10
     return scale_down, scale_up
 
 

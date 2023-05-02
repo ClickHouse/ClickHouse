@@ -12,8 +12,8 @@ The system also has a feature for limiting the complexity of a single query. See
 
 In contrast to query complexity restrictions, quotas:
 
-- Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
-- Account for resources spent on all remote servers for distributed query processing.
+-   Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
+-   Account for resources spent on all remote servers for distributed query processing.
 
 Let’s look at the section of the ‘users.xml’ file that defines quotas.
 

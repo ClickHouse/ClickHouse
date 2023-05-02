@@ -5,13 +5,14 @@
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
 
 /**
  * Reads from multiple ReadBuffers in parallel.
- * Preserves order of readers obtained from SeekableReadBufferFactory.
+ * Preserves order of readers obtained from ReadBufferFactory.
  *
  * It consumes multiple readers and yields data from them in order as it passed.
  * Each working reader save segments of data to internal queue.
@@ -29,7 +30,16 @@ private:
     bool nextImpl() override;
 
 public:
-    ParallelReadBuffer(SeekableReadBufferFactoryPtr reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers, size_t range_step_);
+    class ReadBufferFactory : public WithFileSize
+    {
+    public:
+        ~ReadBufferFactory() override = default;
+
+        virtual SeekableReadBufferPtr getReader() = 0;
+        virtual off_t seek(off_t off, int whence) = 0;
+    };
+
+    ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -37,8 +47,8 @@ public:
     size_t getFileSize();
     off_t getPosition() override;
 
-    const SeekableReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
-    SeekableReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
+    const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
+    ReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
 
 private:
     /// Reader in progress with a list of read segments
@@ -68,9 +78,7 @@ private:
 
     ThreadPoolCallbackRunner<void> schedule;
 
-    std::unique_ptr<SeekableReadBufferFactory> reader_factory;
-    size_t range_step;
-    size_t next_range_start{0};
+    std::unique_ptr<ReadBufferFactory> reader_factory;
 
     /**
      * FIFO queue of readers.
@@ -87,7 +95,7 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
-    off_t current_position{0}; // end of working_buffer
+    off_t current_position{0};
 
     bool all_completed{false};
 };

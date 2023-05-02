@@ -14,22 +14,11 @@ namespace DB
 /// part->getColumns() and storage->getColumns().
 struct AlterConversions
 {
-    struct RenamePair
-    {
-        std::string rename_to;
-        std::string rename_from;
-    };
     /// Rename map new_name -> old_name
-    std::vector<RenamePair> rename_map;
+    std::unordered_map<std::string, std::string> rename_map;
 
-    /// Column was renamed (lookup by value in rename_map)
-    bool columnHasNewName(const std::string & old_name) const;
-    /// Get new name for column (lookup by value in rename_map)
-    std::string getColumnNewName(const std::string & old_name) const;
-    /// Is this name is new name of column (lookup by key in rename_map)
-    bool isColumnRenamed(const std::string & new_name) const;
-    /// Get column old name before rename (lookup by key in rename_map)
-    std::string getColumnOldName(const std::string & new_name) const;
+    bool isColumnRenamed(const std::string & new_name) const { return rename_map.count(new_name) > 0; }
+    std::string getColumnOldName(const std::string & new_name) const { return rename_map.at(new_name); }
 };
 
 }

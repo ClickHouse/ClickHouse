@@ -284,6 +284,7 @@ def test_store_cleanup(started_cluster):
     node1.wait_for_log_line(
         "directories from store", timeout=90, look_behind_lines=1000000
     )
+
     node1.wait_for_log_line(
         "Nothing to clean up from store/", timeout=90, look_behind_lines=1000000
     )

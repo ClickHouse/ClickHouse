@@ -16,7 +16,7 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Disks/WriteMode.h>
 
 
@@ -155,7 +155,8 @@ public:
 
     virtual ~IObjectStorage() = default;
 
-    virtual const std::string & getCacheName() const;
+    /// Path to directory with objects cache
+    virtual const std::string & getCacheBasePath() const;
 
     static IAsynchronousReader & getThreadPoolReader();
 

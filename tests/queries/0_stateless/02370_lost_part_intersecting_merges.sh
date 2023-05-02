@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (1);"
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (2);"
 
-$CLICKHOUSE_CLIENT -q "system sync replica rmt1 pull;"
+$CLICKHOUSE_CLIENT --receive_timeout=3 -q "system sync replica rmt1;" 2>/dev/null 1>/dev/null
 
 # There's a stupid effect from "zero copy replication":
 # MERGE_PARTS all_1_2_1 can be executed by rmt2 even if it was assigned by rmt1
@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "detach table rmt1;"
 $CLICKHOUSE_CLIENT -q "attach table rmt1;"
 
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (3);"
-$CLICKHOUSE_CLIENT -q "system sync replica rmt1 pull;"
+$CLICKHOUSE_CLIENT -q "system sync replica rmt1;"
 $CLICKHOUSE_CLIENT -q "optimize table rmt1 final;"
 
 $CLICKHOUSE_CLIENT -q "system sync replica rmt1;"

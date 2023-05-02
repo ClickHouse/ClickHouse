@@ -144,6 +144,25 @@ def test_drop_replica_and_achieve_quorum(started_cluster):
         )
     )
 
+    print("Now we can insert some other data.")
+    zero.query(
+        "INSERT INTO test_drop_replica_and_achieve_quorum(a,d) VALUES (2, '2012-02-02')"
+    )
+
+    assert TSV("1\t2011-01-01\n2\t2012-02-02\n") == TSV(
+        zero.query("SELECT * FROM test_drop_replica_and_achieve_quorum ORDER BY a")
+    )
+    assert TSV("1\t2011-01-01\n2\t2012-02-02\n") == TSV(
+        first.query("SELECT * FROM test_drop_replica_and_achieve_quorum ORDER BY a")
+    )
+    assert TSV("1\t2011-01-01\n2\t2012-02-02\n") == TSV(
+        second.query("SELECT * FROM test_drop_replica_and_achieve_quorum ORDER BY a")
+    )
+
+    zero.query(
+        "DROP TABLE IF EXISTS test_drop_replica_and_achieve_quorum ON CLUSTER cluster"
+    )
+
 
 @pytest.mark.parametrize(("add_new_data"), [False, True])
 def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):

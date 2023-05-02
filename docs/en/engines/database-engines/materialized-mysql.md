@@ -22,10 +22,10 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 **Engine Parameters**
 
-- `host:port` — MySQL server endpoint.
-- `database` — MySQL database name.
-- `user` — MySQL user.
-- `password` — User password.
+-   `host:port` — MySQL server endpoint.
+-   `database` — MySQL database name.
+-   `user` — MySQL user.
+-   `password` — User password.
 
 ## Engine Settings
 

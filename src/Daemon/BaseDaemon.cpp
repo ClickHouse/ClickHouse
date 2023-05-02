@@ -63,7 +63,7 @@
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
-#   pragma clang diagnostic ignored "-Wunused-macros"
+#   pragma GCC diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif

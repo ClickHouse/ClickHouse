@@ -17,6 +17,7 @@
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>

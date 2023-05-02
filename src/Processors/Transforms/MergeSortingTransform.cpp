@@ -3,7 +3,6 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>

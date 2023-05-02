@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
-#include <Common/logger_useful.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Poco/Net/IPAddress.h>

@@ -70,7 +70,6 @@ struct ReadSettings
 
     size_t local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-    size_t prefetch_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
     bool local_fs_prefetch = false;
     bool remote_fs_prefetch = false;
@@ -82,7 +81,7 @@ struct ReadSettings
     size_t mmap_threshold = 0;
     MMappedFileCache * mmap_cache = nullptr;
 
-    /// For 'pread_threadpool'/'io_uring' method. Lower is more priority.
+    /// For 'pread_threadpool' method. Lower is more priority.
     size_t priority = 0;
 
     bool load_marks_asynchronously = true;
@@ -110,7 +109,6 @@ struct ReadSettings
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
-    ThrottlerPtr local_throttler;
 
     // Resource to be used during reading
     ResourceLink resource_link;
@@ -126,9 +124,8 @@ struct ReadSettings
     ReadSettings adjustBufferSize(size_t file_size) const
     {
         ReadSettings res = *this;
-        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
-        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
-        res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
+        res.local_fs_buffer_size = std::min(file_size, local_fs_buffer_size);
+        res.remote_fs_buffer_size = std::min(file_size, remote_fs_buffer_size);
         return res;
     }
 };

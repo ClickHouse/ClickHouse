@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

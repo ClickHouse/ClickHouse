@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -667,11 +668,5 @@ String extractZooKeeperName(const String & path);
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
-
-void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
-
-bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
-
-String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 
 }

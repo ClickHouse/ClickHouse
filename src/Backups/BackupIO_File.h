@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <Backups/BackupIO.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -28,7 +27,7 @@ private:
 class BackupWriterFile : public IBackupWriter
 {
 public:
-    explicit BackupWriterFile(const String & path_, const ContextPtr & context_);
+    explicit BackupWriterFile(const String & path_);
     ~BackupWriterFile() override;
 
     bool fileExists(const String & file_name) override;

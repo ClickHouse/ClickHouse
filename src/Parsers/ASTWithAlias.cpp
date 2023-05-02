@@ -20,9 +20,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
     /// This is needed because the query can become extraordinary large after substitution of aliases.
     if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash()).second)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_identifier : "");
         settings.writeIdentifier(alias);
-        settings.ostr << (settings.hilite ? IAST::hilite_none : "");
     }
     else
     {
