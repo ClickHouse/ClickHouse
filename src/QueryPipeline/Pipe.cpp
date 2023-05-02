@@ -660,11 +660,11 @@ void Pipe::addPartialResultTransform(ProcessorPtr transform)
         {
             for (auto & partial_result_port : partial_result_ports)
                 dropPort(partial_result_port, *processors, collected_processors);
-            
+
             partial_result_ports.assign(new_outputs_size, nullptr);
             return;
         }
-        
+
         auto partial_result_transform = transform->getPartialResultProcessor(std::move(transform), partial_result_limit, partial_result_duration_ms);
         auto & inputs = partial_result_transform->getInputs();
 
