@@ -38,7 +38,9 @@ public:
 
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+    if USE_UDT
     void processQuery(const UDPReplicationPack & params, WriteBuffer & out, UDPReplicationPack & response) override;
+    #endif
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
