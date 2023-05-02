@@ -95,12 +95,12 @@ String FileSegment::getPathInLocalCache() const
 
 void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & lock)
 {
-    if (isCompleted(false))
+    if (isCompleted(false) && state != State::DETACHED)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Updating state of file segment is not allowed, because it is already completed ({})",
-            getInfoForLogUnlocked(lock));
+            "Updating state to {} of file segment is not allowed, because it is already completed ({})",
+            stateToString(state), getInfoForLogUnlocked(lock));
     }
 
     LOG_TEST(log, "Updated state from {} to {}", stateToString(download_state), stateToString(state));
