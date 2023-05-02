@@ -101,7 +101,21 @@ def post_commit_status(
                 raise ex
             time.sleep(i)
     if pr_info:
-        set_status_comment(commit, pr_info)
+        status_updated = False
+        for i in range(RETRY):
+            try:
+                set_status_comment(commit, pr_info)
+                status_updated = True
+                break
+            except Exception as ex:
+                logging.warning(
+                    "Failed to update the status commit, will retry %s times: %s",
+                    RETRY - i - 1,
+                    ex,
+                )
+
+        if not status_updated:
+            logging.error("Failed to update the status comment, continue anyway")
 
 
 def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
