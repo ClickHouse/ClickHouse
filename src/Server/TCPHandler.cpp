@@ -815,7 +815,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
     {
-        PullingAsyncPipelineExecutor executor(pipeline);
+        bool has_partial_result_setting = query_context->getSettingsRef().partial_result_update_duration_ms.totalMilliseconds() > 0;
+        PullingAsyncPipelineExecutor executor(pipeline, has_partial_result_setting);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         Block block;

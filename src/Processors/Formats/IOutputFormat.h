@@ -105,6 +105,8 @@ public:
 
     void clearLastLines(size_t lines_number);
 
+    void activatePartialResultProtocol() { is_partial_result_protocol_active = true; }
+
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -191,6 +193,8 @@ private:
 
     size_t rows_read_before = 0;
     bool are_totals_written = false;
+
+    bool is_partial_result_protocol_active = false;
 
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
