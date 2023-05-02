@@ -1330,6 +1330,11 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
                     uncovered_unexpected_parts.size(), uncovered_unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
                     parts_to_fetch.size(), parts_to_fetch_blocks, covered_unexpected_parts.size(), unexpected_parts_rows - uncovered_unexpected_parts_rows);
     }
+    else
+    {
+        if (!parts_to_fetch.empty())
+            LOG_DEBUG(log, "Found parts to fetch (exist in zookeeper, but not locally): [{}]", fmt::join(parts_to_fetch, ", "));
+    }
 
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
     queue.setBrokenPartsToEnqueueFetchesOnLoading(std::move(parts_to_fetch));
