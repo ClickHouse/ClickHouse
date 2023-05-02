@@ -37,15 +37,18 @@ def run_query(instance, query, data=None, settings=None):
     return result
 
 
+
+    # reg_url="http://localhost:{}".format(started_cluster.schema_registry_port)
+    # arg={'url':reg_url}
+    # schema_registry_client = CachedSchemaRegistryClient(arg)
+
+
 def test_select(started_cluster):
     # type: (ClickHouseCluster) -> None
-    input("Cluster created, press any key to destroy...")
 
-    reg_url="http://localhost:{}".format(
-            started_cluster.schema_registry_port)
-    arg={'url':reg_url,'basic.auth.credentials.source':'USER_INFO','basic.auth.user.info':'schemauser:letmein'}
-
-    schema_registry_client = CachedSchemaRegistryClient(arg)
+    schema_registry_client = CachedSchemaRegistryClient(
+        "http://localhost:{}".format(started_cluster.schema_registry_port)
+    )
     serializer = MessageSerializer(schema_registry_client)
 
     schema = avro.schema.make_avsc_object(
@@ -65,12 +68,7 @@ def test_select(started_cluster):
     data = buf.getvalue()
 
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
-    # schema_registry_url = "http://{}:{}@{}:{}".format(
-    #     'schemauser', 'letmein',
-    #     started_cluster.schema_registry_host, 8081
-    # )
-    schema_registry_url = "http://{}:{}@{}:{}".format(
-        'schemauser', 'letmein',
+    schema_registry_url = "http://{}:{}".format(
         started_cluster.schema_registry_host, 8081
     )
 
@@ -83,3 +81,46 @@ def test_select(started_cluster):
         ["1"],
         ["2"],
     ]
+
+
+# def test_select_auth(started_cluster):
+#     # type: (ClickHouseCluster) -> None
+
+#     reg_url="http://localhost:{}".format(
+#             started_cluster.schema_registry_auth_port)
+#     arg={'url':reg_url,'basic.auth.credentials.source':'USER_INFO','basic.auth.user.info':'schemauser:letmein'}
+
+#     schema_registry_client = CachedSchemaRegistryClient(arg)
+#     serializer = MessageSerializer(schema_registry_client)
+
+#     schema = avro.schema.make_avsc_object(
+#         {
+#             "name": "test_record",
+#             "type": "record",
+#             "fields": [{"name": "value", "type": "long"}],
+#         }
+#     )
+
+#     buf = io.BytesIO()
+#     for x in range(0, 3):
+#         message = serializer.encode_record_with_schema(
+#             "test_subject", schema, {"value": x}
+#         )
+#         buf.write(message)
+#     data = buf.getvalue()
+
+#     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+#     schema_registry_url = "http://{}:{}@{}:{}".format(
+#         'schemauser', 'letmein',
+#         started_cluster.schema_registry_auth_host, 8081
+#     )
+
+#     run_query(instance, "create table avro_data_auth(value Int64) engine = Memory()")
+#     settings = {"format_avro_schema_registry_url": schema_registry_url}
+#     run_query(instance, "insert into avro_data_auth format AvroConfluent", data, settings)
+#     stdout = run_query(instance, "select * from avro_data_auth")
+#     assert list(map(str.split, stdout.splitlines())) == [
+#         ["0"],
+#         ["1"],
+#         ["2"],
+#     ]
