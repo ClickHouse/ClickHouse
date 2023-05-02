@@ -1852,7 +1852,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            if (server_settings.shutdown_wait_unfinished_queries)
+            if (!server_settings.shutdown_wait_unfinished_queries)
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
