@@ -20,9 +20,11 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    post_commit_status,
+    NotSet,
+    RerunHelper,
     get_commit,
     override_status,
+    post_commit_status,
     post_commit_status_to_file,
     update_mergeable_check,
 )
@@ -32,7 +34,6 @@ from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResults, read_test_results
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -238,6 +239,7 @@ def main():
         need_changed_files=run_changed_tests, pr_event_from_api=validate_bugfix_check
     )
 
+    commit = get_commit(gh, pr_info.sha)
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     if not os.path.exists(temp_path):
@@ -265,7 +267,7 @@ def main():
         run_by_hash_total = 0
         check_name_with_group = check_name
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
+    rerun_helper = RerunHelper(commit, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -274,13 +276,15 @@ def main():
     if run_changed_tests:
         tests_to_run = get_tests_to_run(pr_info)
         if not tests_to_run:
-            commit = get_commit(gh, pr_info.sha)
             state = override_status("success", check_name, validate_bugfix_check)
             if args.post_commit_status == "commit_status":
-                commit.create_status(
-                    context=check_name_with_group,
-                    description=NO_CHANGES_MSG,
-                    state=state,
+                post_commit_status(
+                    commit,
+                    state,
+                    NotSet,
+                    NO_CHANGES_MSG,
+                    check_name_with_group,
+                    pr_info,
                 )
             elif args.post_commit_status == "file":
                 post_commit_status_to_file(
@@ -366,16 +370,16 @@ def main():
     if args.post_commit_status == "commit_status":
         if "parallelreplicas" in check_name.lower():
             post_commit_status(
-                gh,
-                pr_info.sha,
-                check_name_with_group,
-                description,
+                commit,
                 "success",
                 report_url,
+                description,
+                check_name_with_group,
+                pr_info,
             )
         else:
             post_commit_status(
-                gh, pr_info.sha, check_name_with_group, description, state, report_url
+                commit, state, report_url, description, check_name_with_group, pr_info
             )
     elif args.post_commit_status == "file":
         if "parallelreplicas" in check_name.lower():
