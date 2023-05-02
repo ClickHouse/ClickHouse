@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <vector>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include "arrayScalarProduct.h"
