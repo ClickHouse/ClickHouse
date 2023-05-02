@@ -445,6 +445,22 @@ The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequen
 
 Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
+#### Hypothesis
+
+Special type of index which is applied to the checks defined in a query (e.g. in a WHERE clause).
+
+Example for table with column `a`:
+
+We define the following index first
+```sql
+INDEX t (a < 10) TYPE hypothesis GRANULARITY 1`
+```
+
+If a check contains `a > 15`, based on the hypothesis we can instantly return empty results
+because we know this check will never be true.
+
+Multiple hypothesis indices can be defined for a single table.
+
 #### Special-purpose
 
 - An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
@@ -927,7 +943,7 @@ use a local disk to cache data from a table stored at a URL. Neither the cache d
 nor the web storage is configured in the ClickHouse configuration files; both are
 configured in the CREATE/ATTACH query settings.
 
-In the settings highlighted below notice that the disk of `type=web` is nested within 
+In the settings highlighted below notice that the disk of `type=web` is nested within
 the disk of `type=cache`.
 
 ```sql

@@ -52,13 +52,13 @@ auto convertToCNF(ASTPtr expression, const ContextPtr & context, const QueryTree
     }
 }
 
-Analyzer::CNF::AtomicFormula cloneAtom(const Analyzer::CNF::AtomicFormula & atom, const ContextPtr & context)
+Analyzer::CNF::AtomicFormula cloneAtomAndPushNot(const Analyzer::CNF::AtomicFormula & atom, const ContextPtr & context)
 {
     Analyzer::CNF::AtomicFormula new_atom{atom.negative, atom.node_with_hash.node->clone()};
     return Analyzer::CNF::pushNotIntoFunction(new_atom, context);
 }
 
-CNFQuery::AtomicFormula cloneAtom(const CNFQuery::AtomicFormula & atom, const ContextPtr &)
+CNFQuery::AtomicFormula cloneAtomAndPushNot(const CNFQuery::AtomicFormula & atom, const ContextPtr &)
 {
     CNFQuery::AtomicFormula new_atom {atom.negative, atom.ast->clone()};
     pushNotIn(new_atom);
@@ -130,7 +130,7 @@ public:
 
         for (const auto & atomic_formula : atomic_constraints_data)
         {
-            auto atom = cloneAtom(atomic_formula, context);
+            auto atom = cloneAtomAndPushNot(atomic_formula, context);
 
             if constexpr (is_ast)
                 atomic_constraints.push_back(std::move(atom.ast));
@@ -159,7 +159,7 @@ public:
             {
                 hypotheses_data.push_back(group);
                 auto atomic_formula = *group.begin();
-                auto atom = cloneAtom(atomic_formula, context);
+                auto atom = cloneAtomAndPushNot(atomic_formula, context);
 
                 assert(!atom.negative);
 
@@ -228,7 +228,7 @@ public:
             {
                 for (const auto & atomic_formula : or_group)
                 {
-                    auto atom = cloneAtom(atomic_formula, context);
+                    auto atom = cloneAtomAndPushNot(atomic_formula, context);
 
                     if (isFunction(atom))
                     {
@@ -270,7 +270,7 @@ public:
 
                 for (const auto & atomic_formula : or_group)
                 {
-                    auto atom = cloneAtom(atomic_formula, context);
+                    auto atom = cloneAtomAndPushNot(atomic_formula, context);
 
                     if (isFunction(atom))
                     {
