@@ -187,7 +187,10 @@ public:
         {
             auto & arguments = function_node->getArguments().getNodes();
             for (auto & argument : arguments)
-                visit(argument);
+            {
+                if (!visit(argument))
+                    return false;
+            }
         }
 
         if (name == "or")
