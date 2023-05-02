@@ -218,4 +218,14 @@ enum class ParallelReplicasCustomKeyFilterType : uint8_t
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
+
+enum class HashFn {
+    SipHash,
+    BLAKE3,
+    SHA256,
+    MD4,
+    MD5
+};
+
+DECLARE_SETTING_ENUM(HashFn)
 }

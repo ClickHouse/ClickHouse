@@ -161,8 +161,9 @@ struct Settings;
     M(UInt64, part_moves_between_shards_delay_seconds, 30, "Time to wait before/after moving parts between shards.", 0) \
     M(Bool, use_metadata_cache, false, "Experimental feature to speed up parts loading process by using MergeTree metadata cache", 0) \
     M(Bool, allow_remote_fs_zero_copy_replication, false, "Don't use this setting in production, because it is not ready.", 0) \
-    M(Bool, cryptographic_mode, false, "Data part checksums will be hashed with cryptographic function, data integrity will be checked by forming MerkleTree", 0)\
+    M(Bool, cryptographic_mode, false, "Data part checksums will be hashed with cryptographic function, data integrity will be checked by forming MerkleTree", 0) \
     M(String, remote_fs_zero_copy_zookeeper_path, "/clickhouse/zero_copy", "ZooKeeper path for Zero-copy table-independet info.", 0) \
+    M(HashFn, hash_function, HashFn::SipHash, "Cryptographic hash function to use in hash buffers, works only when cryptographic_mode = true (possible values are 'BLAKE3'/'SHA256'/'MD4'/'MD5'/'SipHash' (default))", 0) \
     M(Bool, remote_fs_zero_copy_path_compatible_mode, false, "Run zero-copy in compatible mode during conversion process.", 0) \
     /** Compress marks and primary key. */ \
     M(Bool, compress_marks, false, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \

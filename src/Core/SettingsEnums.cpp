@@ -202,4 +202,11 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
      {"zlib", FormatSettings::ORCCompression::ZLIB},
      {"lz4", FormatSettings::ORCCompression::LZ4}})
 
+IMPLEMENT_SETTING_ENUM(HashFn, ErrorCodes::BAD_ARGUMENTS,
+    {{"SipHash", HashFn::SipHash},
+     {"BLAKE3", HashFn::BLAKE3},
+     {"SHA256", HashFn::SHA256},
+     {"MD4", HashFn::MD4},
+     {"MD5", HashFn::MD5}})
+
 }
