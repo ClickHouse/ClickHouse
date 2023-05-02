@@ -586,7 +586,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         auto uri_descriptions = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, "url");
         for (const auto & description : uri_descriptions)
         {
-            auto options = parseRemoteDescription(description, 0, description.size(), '|', max_addresses,"url");
+            auto options = parseRemoteDescription(description, 0, description.size(), '|', max_addresses, "url");
             urls_to_check.insert(urls_to_check.end(), options.begin(), options.end());
         }
     }
