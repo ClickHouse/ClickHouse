@@ -4421,14 +4421,6 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
     }
 }
 
-void StorageReplicatedMergeTree::flush()
-{
-    if (flush_called.exchange(true))
-        return;
-
-    flushAllInMemoryPartsIfNeeded();
-}
-
 
 void StorageReplicatedMergeTree::partialShutdown()
 {

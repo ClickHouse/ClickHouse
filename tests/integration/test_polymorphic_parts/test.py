@@ -49,9 +49,8 @@ def create_tables(name, nodes, node_settings, shard):
             PARTITION BY toYYYYMM(date)
             ORDER BY id
             SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes},
-            min_rows_for_wide_part = {min_rows_for_wide_part}, min_rows_for_compact_part = {min_rows_for_compact_part},
-            min_bytes_for_wide_part = 0, min_bytes_for_compact_part = 0,
-            in_memory_parts_enable_wal = 1
+            min_rows_for_wide_part = {min_rows_for_wide_part},
+            min_bytes_for_wide_part = 0
             """.format(
                 name=name, shard=shard, repl=i, **settings
             )
@@ -87,17 +86,14 @@ node2 = cluster.add_instance(
 settings_default = {
     "index_granularity_bytes": 10485760,
     "min_rows_for_wide_part": 512,
-    "min_rows_for_compact_part": 0,
 }
 settings_compact_only = {
     "index_granularity_bytes": 10485760,
     "min_rows_for_wide_part": 1000000,
-    "min_rows_for_compact_part": 0,
 }
 settings_not_adaptive = {
     "index_granularity_bytes": 0,
     "min_rows_for_wide_part": 512,
-    "min_rows_for_compact_part": 0,
 }
 
 node3 = cluster.add_instance(
@@ -116,12 +112,10 @@ node4 = cluster.add_instance(
 settings_compact = {
     "index_granularity_bytes": 10485760,
     "min_rows_for_wide_part": 512,
-    "min_rows_for_compact_part": 0,
 }
 settings_wide = {
     "index_granularity_bytes": 10485760,
     "min_rows_for_wide_part": 0,
-    "min_rows_for_compact_part": 0,
 }
 
 node5 = cluster.add_instance(
@@ -130,12 +124,6 @@ node5 = cluster.add_instance(
 node6 = cluster.add_instance(
     "node6", main_configs=["configs/compact_parts.xml"], with_zookeeper=True
 )
-
-settings_in_memory = {
-    "index_granularity_bytes": 10485760,
-    "min_rows_for_wide_part": 512,
-    "min_rows_for_compact_part": 256,
-}
 
 node9 = cluster.add_instance("node9", with_zookeeper=True, stay_alive=True)
 node10 = cluster.add_instance("node10", with_zookeeper=True)
@@ -190,42 +178,6 @@ def start_cluster():
             "shard2",
         )
         create_tables_old_format("polymorphic_table", [node5, node6], "shard3")
-        create_tables(
-            "in_memory_table",
-            [node9, node10],
-            [settings_in_memory, settings_in_memory],
-            "shard4",
-        )
-        create_tables(
-            "wal_table",
-            [node11, node12],
-            [settings_in_memory, settings_in_memory],
-            "shard4",
-        )
-        create_tables(
-            "restore_table",
-            [node11, node12],
-            [settings_in_memory, settings_in_memory],
-            "shard5",
-        )
-        create_tables(
-            "deduplication_table",
-            [node9, node10],
-            [settings_in_memory, settings_in_memory],
-            "shard5",
-        )
-        create_tables(
-            "sync_table",
-            [node9, node10],
-            [settings_in_memory, settings_in_memory],
-            "shard5",
-        )
-        create_tables(
-            "alters_table",
-            [node9, node10],
-            [settings_in_memory, settings_in_memory],
-            "shard5",
-        )
 
         yield cluster
 
@@ -422,7 +374,6 @@ settings7 = {"index_granularity_bytes": 10485760}
 settings8 = {
     "index_granularity_bytes": 10485760,
     "min_rows_for_wide_part": 512,
-    "min_rows_for_compact_part": 0,
 }
 
 
