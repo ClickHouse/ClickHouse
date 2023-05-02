@@ -11,6 +11,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Interpreters/executeQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
 #include <Poco/JSON/JSON.h>
@@ -49,7 +53,12 @@ namespace
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
 
-    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name, const std::unordered_set<UUID> & allowed_profile_ids, bool allow_no_password, bool allow_plaintext_password)
+    UserPtr parseUser(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & user_name,
+        const std::unordered_set<UUID> & allowed_profile_ids,
+        bool allow_no_password,
+        bool allow_plaintext_password)
     {
         auto user = std::make_shared<User>();
         user->setName(user_name);
@@ -207,42 +216,94 @@ namespace
             }
         }
 
-        /// By default all databases are accessible
-        /// and the user can grant everything he has.
-        user->access.grantWithGrantOption(AccessType::ALL);
-
-        if (databases)
+        const auto grants_config = user_config + ".grants";
+        std::optional<Strings> grant_queries;
+        if (config.has(grants_config))
         {
-            user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
-            user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
-            for (const String & database : *databases)
-                user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(grants_config, keys);
+            grant_queries.emplace();
+            grant_queries->reserve(keys.size());
+            for (const auto & key : keys)
+            {
+                const auto query = config.getString(grants_config + "." + key);
+                grant_queries->push_back(query);
+            }
         }
 
-        if (dictionaries)
-        {
-            user->access.revoke(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
-            for (const String & dictionary : *dictionaries)
-                user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
-        }
+        if (grant_queries && databases)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both `grants` and `allow_databases` can't be specified");
 
-        bool access_management = config.getBool(user_config + ".access_management", false);
-        if (!access_management)
+        if (grant_queries)
         {
-            user->access.revoke(AccessType::ACCESS_MANAGEMENT);
-            user->access.revokeGrantOption(AccessType::ALL);
-        }
+            ParserGrantQuery parser;
+            parser.parseWithoutGrantees();
 
-        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
-        if (!named_collection_control)
-        {
-            user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
-        }
+            for (const auto & string_query : *grant_queries)
+            {
+                String error_message;
+                const char * pos = string_query.data();
+                auto ast = tryParseQuery(parser, pos, pos + string_query.size(), error_message, false, "", false, 0, 0);
 
-        bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
-        if (!show_named_collections_secrets)
+                if (!ast)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse grant query. Error: {}", error_message);
+
+                auto & query = ast->as<ASTGrantQuery &>();
+
+                if (query.roles)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Roles can't be granted in config file");
+
+                if (!query.cluster.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't grant on cluster using config file");
+
+                for (auto & element : query.access_rights_elements)
+                {
+                    if (query.is_revoke)
+                        user->access.revoke(element);
+                    else
+                        user->access.grant(element);
+                }
+            }
+        }
+        else
         {
-            user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+            /// By default all databases are accessible
+            /// and the user can grant everything he has.
+            user->access.grantWithGrantOption(AccessType::ALL);
+
+            if (databases)
+            {
+                user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
+                user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+                for (const String & database : *databases)
+                    user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
+            }
+
+            if (dictionaries)
+            {
+                user->access.revoke(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+                for (const String & dictionary : *dictionaries)
+                    user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
+            }
+
+            bool access_management = config.getBool(user_config + ".access_management", false);
+            if (!access_management)
+            {
+                user->access.revoke(AccessType::ACCESS_MANAGEMENT);
+                user->access.revokeGrantOption(AccessType::ALL);
+            }
+
+            bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
+            if (!named_collection_control)
+            {
+                user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
+            }
+
+            bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
+            if (!show_named_collections_secrets)
+            {
+                user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+            }
         }
 
         String default_database = config.getString(user_config + ".default_database", "");
@@ -252,7 +313,11 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, const std::unordered_set<UUID> & allowed_profile_ids, bool allow_no_password, bool allow_plaintext_password)
+    std::vector<AccessEntityPtr> parseUsers(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::unordered_set<UUID> & allowed_profile_ids,
+        bool allow_no_password,
+        bool allow_plaintext_password)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
