@@ -18,9 +18,6 @@ namespace ErrorCodes
 
 struct ArrayCumSumImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -33,20 +30,22 @@ struct ArrayCumSumImpl
         {
             if (which.isNativeUInt())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+            if (which.isUInt128())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt128>());
             if (which.isUInt256())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt256>());
-            else
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt128>());
+            UNREACHABLE();
         }
 
         if (which.isInt())
         {
             if (which.isNativeInt())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+            if (which.isInt128())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt128>());
             if (which.isInt256())
                 return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt256>());
-            else
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt128>());
+            UNREACHABLE();
         }
 
         if (which.isFloat())
@@ -67,8 +66,8 @@ struct ArrayCumSumImpl
 
 
     template <typename Src, typename Dst>
-    static void NO_SANITIZE_UNDEFINED
-    implConst(size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, Src src_value)
+    static void NO_SANITIZE_UNDEFINED implConst(
+        size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, Src src_value)
     {
         size_t pos = 0;
         for (const auto * end = offsets + size; offsets < end; ++offsets)
@@ -84,8 +83,8 @@ struct ArrayCumSumImpl
     }
 
     template <typename Src, typename Dst>
-    static void NO_SANITIZE_UNDEFINED
-    implVector(size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
+    static void NO_SANITIZE_UNDEFINED implVector(
+        size_t size, const IColumn::Offset * __restrict offsets, Dst * __restrict res_values, const Src * __restrict src_values)
     {
         size_t pos = 0;
         for (const auto * end = offsets + size; offsets < end; ++offsets)

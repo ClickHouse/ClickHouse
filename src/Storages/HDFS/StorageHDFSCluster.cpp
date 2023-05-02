@@ -102,7 +102,8 @@ Pipe StorageHDFSCluster::read(
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 3, getName());
 
-    const auto & current_settings = context->getSettingsRef();
+    auto new_context = IStorageCluster::updateSettingsForTableFunctionCluster(context, context->getSettingsRef());
+    const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -113,14 +114,14 @@ Pipe StorageHDFSCluster::read(
                 std::vector<IConnectionPool::Entry>{try_result},
                 queryToString(query_to_send),
                 header,
-                context,
+                new_context,
                 /*throttler=*/nullptr,
                 scalars,
                 Tables(),
                 processed_stage,
                 extension);
 
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
         }
     }
 
