@@ -142,7 +142,7 @@ StorageS3Queue::StorageS3Queue(
     }
 
     String setting_zookeeper_path = s3queue_settings->keeper_path;
-    LOG_INFO(log, "Setttings zookeeper_path={}", setting_zookeeper_path);
+    LOG_INFO(log, "Settings zookeeper_path={}", setting_zookeeper_path);
     if (setting_zookeeper_path == "")
     {
         auto table_id = getStorageID();
