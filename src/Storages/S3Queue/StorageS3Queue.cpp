@@ -96,16 +96,10 @@ static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_TEXT;
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int S3_ERROR;
-    extern const int UNEXPECTED_EXPRESSION;
-    extern const int DATABASE_ACCESS_DENIED;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int FILE_DOESNT_EXIST;
     extern const int QUERY_NOT_ALLOWED;
     extern const int NO_ZOOKEEPER;
     extern const int REPLICA_ALREADY_EXISTS;
@@ -256,7 +250,8 @@ Pipe StorageS3Queue::read(
         const auto & virtuals = getVirtuals();
         std::erase_if(
             fetch_columns,
-            [&](const String & col) {
+            [&](const String & col)
+            {
                 return std::any_of(
                     virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col) { return col == virtual_col.name; });
             });
@@ -303,6 +298,20 @@ Pipe StorageS3Queue::read(
     narrowPipe(pipe, num_streams);
 
     return pipe;
+}
+
+SinkToStoragePtr StorageS3Queue::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Write is not supported by storage {}", getName());
+}
+
+void StorageS3Queue::truncate(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    ContextPtr /*local_context*/,
+    TableExclusiveLockHolder &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
 }
 
 NamesAndTypesList StorageS3Queue::getVirtuals() const
@@ -462,7 +471,8 @@ void StorageS3Queue::streamToViews()
         const auto & virtuals = getVirtuals();
         std::erase_if(
             fetch_columns,
-            [&](const String & col) {
+            [&](const String & col)
+            {
                 return std::any_of(
                     virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col) { return col == virtual_col.name; });
             });
@@ -609,9 +619,12 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query, KeysW
     std::unordered_set<String> exclude = getExcludedFiles();
 
     Strings processing;
-    if (mode == S3QueueMode::UNORDERED) {
+    if (mode == S3QueueMode::UNORDERED)
+    {
         processing = it->setProcessing(mode, exclude);
-    } else {
+    }
+    else
+    {
         String max_processed_file = getMaxProcessedFile();
         processing = it->setProcessing(mode, exclude, max_processed_file);
     }
@@ -623,7 +636,8 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query, KeysW
     return it;
 }
 
-std::unordered_set<String> StorageS3Queue::getFailedFiles() {
+std::unordered_set<String> StorageS3Queue::getFailedFiles()
+{
     auto zookeeper = getZooKeeper();
 
     String failed = zookeeper->get(zookeeper_path + "/failed");
@@ -632,7 +646,8 @@ std::unordered_set<String> StorageS3Queue::getFailedFiles() {
     return failed_files;
 }
 
-std::unordered_set<String> StorageS3Queue::getProcessedFiles() {
+std::unordered_set<String> StorageS3Queue::getProcessedFiles()
+{
     auto zookeeper = getZooKeeper();
 
     String processed = zookeeper->get(zookeeper_path + "/processed");
@@ -641,14 +656,16 @@ std::unordered_set<String> StorageS3Queue::getProcessedFiles() {
     return processed_files;
 }
 
-String StorageS3Queue::getMaxProcessedFile() {
+String StorageS3Queue::getMaxProcessedFile()
+{
     auto zookeeper = getZooKeeper();
 
     String processed = zookeeper->get(zookeeper_path + "/processed");
     return processed;
 }
 
-std::unordered_set<String> StorageS3Queue::getProcessingFiles() {
+std::unordered_set<String> StorageS3Queue::getProcessingFiles()
+{
     auto zookeeper = getZooKeeper();
 
     Strings consumer_table_uuids;
@@ -671,7 +688,8 @@ std::unordered_set<String> StorageS3Queue::getExcludedFiles()
     LOG_DEBUG(log, "failed_files {}", failed_files.size());
     exclude_files.merge(failed_files);
 
-    if (mode != S3QueueMode::ORDERED) {
+    if (mode != S3QueueMode::ORDERED)
+    {
         std::unordered_set<String> processed_files = getProcessedFiles();
         LOG_DEBUG(log, "processed_files {}", processed_files.size());
         exclude_files.merge(processed_files);
