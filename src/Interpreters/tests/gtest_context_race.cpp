@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Common/tests/gtest_global_context.h>
 #include <gtest/gtest.h>
+#include <thread>
 
 using namespace DB;
 
