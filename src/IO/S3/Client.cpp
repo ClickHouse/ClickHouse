@@ -123,15 +123,15 @@ ProviderType deduceProviderType(const std::string & url, const std::shared_ptr<A
     /// find credential keys we can simply behave as the underlying storage is S3
     /// otherwise, we need to be aware we are making requests to GCS
     /// and replace all headers with a valid prefix when needed
-	if (credentials_provider)
-	{
+    if (credentials_provider)
+    {
         auto credentials = credentials_provider->GetAWSCredentials();
         if (!credentials.IsEmpty())
             return ProviderType::AWS;
-	}
+    }
 
     if (url.find(".amazonaws.com") != std::string::npos)
-		return ProviderType::AWS;
+        return ProviderType::AWS;
 
     if (url.find("storage.googleapis.com") != std::string::npos)
         return ProviderType::GCS;
