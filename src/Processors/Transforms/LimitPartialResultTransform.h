@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Currently support only single thread implementation with one input and one output ports
 class LimitPartialResultTransform : public PartialResultTransform
 {
 public:

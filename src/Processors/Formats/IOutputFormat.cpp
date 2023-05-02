@@ -129,7 +129,7 @@ void IOutputFormat::work()
         case Main:
             result_rows += current_chunk.getNumRows();
             result_bytes += current_chunk.allocatedBytes();
-            if (!was_main_input && current_chunk.hasRows())
+            if (is_partial_result_protocol_active && !was_main_input && current_chunk.hasRows())
             {
                 consume(Chunk(current_chunk.cloneEmptyColumns(), 0));
                 was_main_input = true;

@@ -483,8 +483,7 @@ void Pipe::addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort 
     if (extremes)
         extremes_port = extremes;
 
-    /// TODO: Add support for partial result in multithreading mode
-    dropPartialResult();
+    addPartialResultTransform(transform);
 
     size_t next_output = 0;
     for (auto & input : inputs)
@@ -573,8 +572,7 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
         extremes_port = nullptr;
     }
 
-    /// TODO: Add support for partial result in multithreading mode
-    dropPartialResult();
+    addPartialResultTransform(transform);
 
     bool found_totals = false;
     bool found_extremes = false;
@@ -627,11 +625,10 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
 
     addProcessor(std::move(transform));
 
-
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::addPartialResultTransformIfNeeded(ProcessorPtr transform, size_t partial_result_port_id)
+void Pipe::addPartialResultSimpleTransform(ProcessorPtr transform, size_t partial_result_port_id)
 {
     if (isPartialResultActive())
     {
@@ -643,21 +640,73 @@ void Pipe::addPartialResultTransformIfNeeded(ProcessorPtr transform, size_t part
             return;
         }
 
-        if (partial_result_port == nullptr)
-        {
-            auto source = std::make_shared<NullSource>(getHeader());
-            partial_result_port = &source->getPort();
-
-            addProcessor(std::move(source));
-        }
-
         auto partial_result_transform = transform->getPartialResultProcessor(std::move(transform), partial_result_limit, partial_result_duration_ms);
 
-        connect(*partial_result_port, partial_result_transform->getInputs().front());
+        connectPartialResultPort(partial_result_port, partial_result_transform->getInputs().front());
+
         partial_result_port = &partial_result_transform->getOutputs().front();
 
         addProcessor(std::move(partial_result_transform));
     }
+}
+
+void Pipe::addPartialResultTransform(ProcessorPtr transform)
+{
+    if (isPartialResultActive())
+    {
+        size_t new_outputs_size = transform->getOutputs().size();
+
+        if (!transform->supportPartialResultProcessor())
+        {
+            for (auto & partial_result_port : partial_result_ports)
+                dropPort(partial_result_port, *processors, collected_processors);
+            
+            partial_result_ports.assign(new_outputs_size, nullptr);
+            return;
+        }
+        
+        auto partial_result_transform = transform->getPartialResultProcessor(std::move(transform), partial_result_limit, partial_result_duration_ms);
+        auto & inputs = partial_result_transform->getInputs();
+
+        if (inputs.size() != partial_result_ports.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot add transform {} to Pipe because it has {} input ports, but {} expected",
+                partial_result_transform->getName(),
+                inputs.size(),
+                partial_result_ports.size());
+
+        size_t next_port = 0;
+        for (auto & input : inputs)
+        {
+            connectPartialResultPort(partial_result_ports[next_port], input);
+            ++next_port;
+        }
+
+        partial_result_ports.assign(new_outputs_size, nullptr);
+
+        next_port = 0;
+        for (auto & new_partial_result_port : partial_result_transform->getOutputs())
+        {
+            partial_result_ports[next_port] = &new_partial_result_port;
+            ++next_port;
+        }
+
+        addProcessor(std::move(partial_result_transform));
+    }
+}
+
+void Pipe::connectPartialResultPort(OutputPort * partial_result_port, InputPort & partial_result_transform_port)
+{
+    if (partial_result_port == nullptr)
+    {
+        auto source = std::make_shared<NullSource>(getHeader());
+        partial_result_port = &source->getPort();
+
+        addProcessor(std::move(source));
+    }
+
+    connect(*partial_result_port, partial_result_transform_port);
 }
 
 void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
@@ -704,7 +753,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
             connect(*port, transform->getInputs().front());
             port = &transform->getOutputs().front();
             if (stream_type == StreamType::Main)
-                addPartialResultTransformIfNeeded(transform, partial_result_port_id);
+                addPartialResultSimpleTransform(transform, partial_result_port_id);
 
             addProcessor(std::move(transform));
         }
@@ -832,6 +881,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 
     add_transform(totals_port, StreamType::Totals);
     add_transform(extremes_port, StreamType::Extremes);
+    dropPartialResult();
 
     output_ports.clear();
     header.clear();
