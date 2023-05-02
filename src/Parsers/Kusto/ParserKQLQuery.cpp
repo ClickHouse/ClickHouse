@@ -128,24 +128,19 @@ String ParserKQLBase::getExprFromToken(const String & text, const uint32_t max_d
 
 String ParserKQLBase::getExprFromPipe(Pos & pos)
 {
-    uint16_t bracket_count = 0;
-    auto begin = pos;
+    BracketCount bracket_count;
     auto end = pos;
     while (!end->isEnd() && end->type != TokenType::Semicolon)
     {
-        if (end->type == TokenType::OpeningRoundBracket)
-            ++bracket_count;
-
-        if (end->type == TokenType::ClosingRoundBracket)
-            --bracket_count;
-
-        if (end->type == TokenType::PipeMark && bracket_count == 0)
+        bracket_count.count(end);
+        if (end->type == TokenType::PipeMark && bracket_count.isZero())
             break;
 
         ++end;
     }
-    --end;
-    return String(begin->begin, end->end);
+    if (end != pos)
+        --end;
+    return (pos <= end) ? String(pos->begin, end->end) : "";
 }
 
 String ParserKQLBase::getExprFromToken(Pos & pos)
