@@ -144,9 +144,6 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
-            case AuthenticationType::BCRYPT_PASSWORD:
-                return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
-
             case AuthenticationType::LDAP:
                 return external_authenticators.checkLDAPCredentials(auth_data.getLDAPServerName(), *basic_credentials);
 
@@ -155,6 +152,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::BCRYPT_PASSWORD:
+                return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::MAX:
                 break;

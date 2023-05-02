@@ -84,10 +84,10 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::PLAINTEXT_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
     static_assert(static_cast<int>(AuthenticationType::MAX) == 8);

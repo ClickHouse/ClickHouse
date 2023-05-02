@@ -1123,7 +1123,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'bcrypt_password' = 4, 'ldap' = 5, 'kerberos' = 6, 'ssl_certificate' = 7),
+    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7),
     `auth_params` String,
     `host_ip` Array(String),
     `host_names` Array(String),
