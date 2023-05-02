@@ -117,7 +117,7 @@ inline bool bitEquals(T && a, T && b)
   * 3) Hash tables that store the key and do not have a "mapped" value, e.g. the normal HashTable.
   *    GetKey returns the key, and GetMapped returns a zero void pointer. This simplifies generic
   *    code that works with mapped values: it can overload on the return type of GetMapped(), and
-  *    doesn't need other parameters. One example is insertSetMapped() function.
+  *    doesn't need other parameters. One example is Cell::setMapped() function.
   *
   * 4) Hash tables that store both the key and the "mapped" value, e.g. HashMap. Both GetKey and
   *    GetMapped are supported.
@@ -215,17 +215,6 @@ struct HashTableCell
     static void move(HashTableCell * /* old_location */, HashTableCell * /* new_location */) {}
 
 };
-
-/**
-  * A helper function for HashTable::insert() to set the "mapped" value.
-  * Overloaded on the mapped type, does nothing if it's VoidMapped.
-  */
-template <typename ValueType>
-void insertSetMapped(VoidMapped /* dest */, const ValueType & /* src */) {}
-
-template <typename MappedType, typename ValueType>
-void insertSetMapped(MappedType & dest, const ValueType & src) { dest = src.second; }
-
 
 /** Determines the size of the hash table, and when and how much it should be resized.
   * Has very small state (one UInt8) and useful for Set-s allocated in automatic memory (see uniqExact as an example).
@@ -1046,7 +1035,7 @@ public:
         }
 
         if (res.second)
-            insertSetMapped(res.first->getMapped(), x);
+            res.first->setMapped(x);
 
         return res;
     }
