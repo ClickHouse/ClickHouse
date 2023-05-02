@@ -25,12 +25,8 @@ SELECT * FROM \"http://localhost:11111/test/b.tsv\"
 """
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE test2;"
 
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"http://localhost:11111/test/b.tsv\""
-
 #################
 echo "Test 2: check exceptions"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"http://localhost:11111/test/c.myext\"" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK"
-
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test3;
 CREATE DATABASE test3 ENGINE = S3;

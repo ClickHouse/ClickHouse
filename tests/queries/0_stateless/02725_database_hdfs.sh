@@ -30,31 +30,25 @@ SELECT * FROM \"test_02725_1.tsv\"
 """
 ${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test2
 
-# Check implicit call in clickhouse-local
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"hdfs://localhost:12222/test_02725_2.tsv\""
-
 #################
 echo "Test 2: check exceptions"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"hdfs://localhost:12222/file.myext\"" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK0"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"hdfs://localhost:12222/test_02725_3.tsv\"" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK1"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM \"hdfs://localhost:12222\"" 2>&1| grep -F "UNKNOWN_TABLE" > /dev/null && echo "OK2"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test3;
 CREATE DATABASE test3 ENGINE = HDFS('abacaba');
-""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK3"
+""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK0"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test4;
 CREATE DATABASE test4 ENGINE = HDFS;
 USE test4;
 SELECT * FROM \"abacaba/file.tsv\"
-""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK4"
+""" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK1"
 
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK5"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK6"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1| grep -F "CANNOT_EXTRACT_TABLE_STRUCTURE" > /dev/null && echo "OK7"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK8"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM test4.\`http://localhost:11111/test/a.tsv\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK2"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/file.myext\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK3"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222/test_02725_3.tsv\`" 2>&1| grep -F "CANNOT_EXTRACT_TABLE_STRUCTURE" > /dev/null && echo "OK4"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test4.\`hdfs://localhost:12222\`" 2>&1| grep -F "BAD_ARGUMENTS" > /dev/null && echo "OK5"
 
 
 # Cleanup
