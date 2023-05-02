@@ -257,10 +257,10 @@ def main():
     pathname = CSV_DATA
     filename = os.path.basename(CSV_DATA)
     select_virtual_requests = {
-        "select _path from {tbl}": "\n".join([pathname] for _ in range(2)),
-        "select _file from {tbl}": "\n".join([filename] for _ in range(2)),
+        "select _path from {tbl}": "\n".join(pathname for _ in range(2)),
+        "select _file from {tbl}": "\n".join(filename for _ in range(2)),
         "select _file, from {tbl} order by _path": "\n".join(
-            [filename] for _ in range(2)
+            filename for _ in range(2)
         ),
         "select _path, _file from {tbl}": "\n".join(
             f"{pathname}\t{filename}" for _ in range(2)
