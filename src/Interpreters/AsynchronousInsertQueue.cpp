@@ -119,6 +119,15 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
     if (finished.exchange(true))
         return;
 
+    {
+        // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
+        // Entries data must be destroyed in context of user who runs async insert.
+        // Each entry in the list may correspond to a different user,
+        // so we need to switch current thread's MemoryTracker.
+        UserMemoryTrackerSwitcher switcher(user_memory_tracker);
+        bytes = "";
+    }
+
     if (exception_)
     {
         promise.set_exception(exception_);
@@ -446,6 +455,7 @@ try
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
+        auto bytes_size = entry->bytes.size();
         total_rows += executor.execute(*buffer);
         chunk_info->offsets.push_back(total_rows);
 
@@ -460,7 +470,7 @@ try
             elem.event_time_microseconds = timeInMicroseconds(entry->create_time);
             elem.query = key.query;
             elem.query_id = entry->query_id;
-            elem.bytes = entry->bytes.size();
+            elem.bytes = bytes_size;
             elem.exception = current_exception;
             current_exception.clear();
 
