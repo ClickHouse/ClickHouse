@@ -31,6 +31,28 @@ services:
     security_opt:
       - label:disable
 
+  kafka2:
+    image: confluentinc/cp-kafka:5.2.0
+    hostname: kafka2
+    ports:
+      - ${KAFKA2_EXTERNAL_PORT:-8082}:${KAFKA2_EXTERNAL_PORT:-8082}
+    environment:
+      # KAFKA_EXTERNAL_PORT: ${KAFKA2_EXTERNAL_PORT}
+      # KAFKA_HOST: ${KAFKA2_HOST}
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://localhost:${KAFKA2_EXTERNAL_PORT},OUTSIDE://kafka2:19093
+      KAFKA_ADVERTISED_HOST_NAME: kafka2
+      KAFKA_LISTENERS: INSIDE://0.0.0.0:${KAFKA_EXTERNAL_PORT},OUTSIDE://0.0.0.0:19093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: "kafka_zookeeper:2181"
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - kafka_zookeeper
+    security_opt:
+      - label:disable
+
   schema-registry:
     image: confluentinc/cp-schema-registry:5.2.0
     hostname: schema-registry
@@ -39,12 +61,24 @@ services:
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
-      # SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: BASIC
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:19092
+    depends_on:
+      - kafka_zookeeper
+      - kafka1
+    security_opt:
+      - label:disable
+
+  schema-registry-auth:
+    image: confluentinc/cp-schema-registry:5.2.0
+    hostname: schema-registry-auth
+    ports:
+      - ${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT:-12313}:${SCHEMA_REGISTRY_INTERNAL_PORT:-12313}
+    environment:
+      SCHEMA_REGISTRY_EXTERNAL_PORT: ${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT}
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry-auth
+      SCHEMA_REGISTRY_KAFKASTORE_SECURITY_PROTOCOL: PLAINTEXT
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka2:19093
       SCHEMA_REGISTRY_AUTHENTICATION_METHOD: BASIC
-      # SCHEMA_REGISTRY_BASIC_AUTH_CREDENTIALS_SOURCE: USER_INFO
-      # SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO: fred:letmein
-      # SCHEMA_REGISTRY_SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO: fred:letmein
       SCHEMA_REGISTRY_AUTHENTICATION_ROLES: schemaadmin, schemauser
       SCHEMA_REGISTRY_AUTHENTICATION_REALM: RealmFooBar
       SCHEMA_REGISTRY_OPTS: "-Djava.security.auth.login.config=/etc/schema-registry/secrets/schema_registry_jaas.conf"
@@ -52,6 +86,6 @@ services:
       - ${SCHEMA_REGISTRY_DIR:-}/secrets:/etc/schema-registry/secrets
     depends_on:
       - kafka_zookeeper
-      - kafka1
+      - kafka2
     security_opt:
       - label:disable
