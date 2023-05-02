@@ -109,20 +109,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys
        "expiration_window_seconds",
        "no_sign_request"};
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_PARSE_TEXT;
-    extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int S3_ERROR;
-    extern const int UNEXPECTED_EXPRESSION;
-    extern const int DATABASE_ACCESS_DENIED;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int FILE_DOESNT_EXIST;
-}
-
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
@@ -160,7 +146,8 @@ Strings StorageS3QueueSource::QueueGlobIterator::setProcessing(S3QueueMode & eng
             LOG_INFO(log, "Found in exclude keys {}", val.key);
             continue;
         }
-        if (engine_mode == S3QueueMode::ORDERED && full_path.compare(max_file) <= 0) {
+        if (engine_mode == S3QueueMode::ORDERED && full_path.compare(max_file) <= 0)
+        {
             continue;
         }
         if (processing_keys.size() < max_poll_size)
@@ -457,7 +444,8 @@ Chunk StorageS3QueueSource::generate()
 void StorageS3QueueSource::setFileProcessed(const String & file_path)
 {
     std::lock_guard lock(mutex);
-    if (mode == S3QueueMode::UNORDERED) {
+    if (mode == S3QueueMode::UNORDERED)
+    {
         String processed_files = zookeeper->get(zookeeper_path + "/processed");
         std::unordered_set<String> processed = parseCollection(processed_files);
 
@@ -466,7 +454,9 @@ void StorageS3QueueSource::setFileProcessed(const String & file_path)
         set_processed.insert(set_processed.end(), processed.begin(), processed.end());
 
         zookeeper->set(zookeeper_path + "/processed", toString(set_processed));
-    } else {
+    }
+    else
+    {
         zookeeper->set(zookeeper_path + "/processed", file_path);
     }
 }
@@ -497,7 +487,9 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & file_path)
     {
         const auto & err = outcome.GetError();
         LOG_ERROR(log, "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
-    } else {
+    }
+    else
+    {
         LOG_TRACE(log, "Object with path {} was removed from S3", file_path);
     }
 }
