@@ -134,6 +134,5 @@
 00725_join_on_bug_1
 00636_partition_key_parts_pruning
 00261_storage_aliases_and_array_join
-02701_non_parametric_function
 01825_type_json_multiple_files
 01281_group_by_limit_memory_tracking
