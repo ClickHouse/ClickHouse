@@ -470,7 +470,7 @@ CHECK_DESCRIPTIONS = [
     ),
     CheckDescription(
         "Flaky tests",
-        "Runs a flaky tests from master multiple times to identify if they are stable.",
+        "Checks if new added or modified tests are flaky by running them repeatedly, in parallel, with more randomization. Functional tests are run 100 times with address sanitizer, and additional randomization of thread scheduling. Integrational tests are run up to 10 times. If at least once a new test has failed, or was too long, this check will be red. We don't allow flaky tests, read https://clickhouse.com/blog/decorating-a-christmas-tree-with-the-help-of-flaky-tests/",
         lambda x: "tests flaky check" in x,
     ),
     CheckDescription(
