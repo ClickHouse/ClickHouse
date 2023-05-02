@@ -397,7 +397,31 @@ using FunctionRemoveGarbageParametersFromURL
 
 REGISTER_FUNCTION(RemoveGarbageParametersFromURL)
 {
-    factory.registerFunction<FunctionRemoveGarbageParametersFromURL>();
+    factory.registerFunction<FunctionRemoveGarbageParametersFromURL>(
+        {
+            R"(
+Removes parameters that look random from URL
+
+Takes a string containing an URL and an unsigned integer representing the minimal length of parameters to be considered for removal
+
+It returns a string containing an URL with randomly generated parameters removed.
+
+Here is an example:
+[example:all]
+
+If you specify minimum length that is greater than zero, it may help not to remove short parameters with low accuracy of detection
+[example:min_len]
+
+Every self-respectful data scientist knows how to apply arcsine to improve ads click-through rate with ClickHouse.
+For more details, see [https://en.wikipedia.org/wiki/Inverse_trigonometric_functions].
+)",
+            Documentation::Examples{
+                {"all", "SELECT removeGarbageParametersFromURL('http://yandex.ru/clck/jsredir?from=yandex.ru;search%2F;web;;&text=&etext=1004&cst=AiuY0DBWFJ5Hyx_fyvalFPA3abBqdnSOApSiLPWwVkIeiz46AroRCQXrfJ8M5oYTWorWEWccK4Kw_QEhSDD6X4nGMT4OabEk0xnry4NtnOEzWFPU4iTzunSVVjkuY7CYolnD7hb04cMRv7iMnaO8LjNm0hxqvwN9sXCzUYeXp_muLsdY4W99_U5MJKGmz7IAmR5-ceoAoaBB2XGYAS9BTYKbbvlmneBpbf_SwAd_6OOACXtLmRXqXad3AQbcArYE8LCO0zmE9vpha3yoT0jl8pd9CUmbGZR5nA3sf5TcDFTpr5nYaOdxjmHep2cZeW3QHvPtKA2xWXW6qzGrQeZ1SEOPcJ1afJqmAHisup90hhNYyl2hxl8xn_DtCRbJqYHb88JtuQ3591EGW42wPZhSbxBFdU0KIZN3c_VZOmk6avzKzqG_kJpjPObWXbh9qs0S23WxDGCcPUrIzi3ESSLv1qgaRhqkfjBc57BFVA4RxlljpKQdeVeTbklJgqptznf1aHZQ2wYARBzC_jvv994MCTZIus_NctCMWoSaU74OaMmo0h5ScYLI2CWy6nj5PbhCrgeLsaEBVOQT9xoLSoCRfJ78xI_T1ruuD3QBJmHY6YW8f5UM36LRbzhd5vmNTPRvrs2wcCFhF_w&l10n=ru&cts=1458904227333&mc=1.584962500721156', 0)"},
+                {"min_len", "SELECT removeGarbageParametersFromURL('http://yandex.ru/clck/jsredir?from=yandex.ru;search%2F;web;;&text=&etext=1004&cst=AiuY0DBWFJ5Hyx_fyvalFPA3abBqdnSOApSiLPWwVkIeiz46AroRCQXrfJ8M5oYTWorWEWccK4Kw_QEhSDD6X4nGMT4OabEk0xnry4NtnOEzWFPU4iTzunSVVjkuY7CYolnD7hb04cMRv7iMnaO8LjNm0hxqvwN9sXCzUYeXp_muLsdY4W99_U5MJKGmz7IAmR5-ceoAoaBB2XGYAS9BTYKbbvlmneBpbf_SwAd_6OOACXtLmRXqXad3AQbcArYE8LCO0zmE9vpha3yoT0jl8pd9CUmbGZR5nA3sf5TcDFTpr5nYaOdxjmHep2cZeW3QHvPtKA2xWXW6qzGrQeZ1SEOPcJ1afJqmAHisup90hhNYyl2hxl8xn_DtCRbJqYHb88JtuQ3591EGW42wPZhSbxBFdU0KIZN3c_VZOmk6avzKzqG_kJpjPObWXbh9qs0S23WxDGCcPUrIzi3ESSLv1qgaRhqkfjBc57BFVA4RxlljpKQdeVeTbklJgqptznf1aHZQ2wYARBzC_jvv994MCTZIus_NctCMWoSaU74OaMmo0h5ScYLI2CWy6nj5PbhCrgeLsaEBVOQT9xoLSoCRfJ78xI_T1ruuD3QBJmHY6YW8f5UM36LRbzhd5vmNTPRvrs2wcCFhF_w&l10n=ru&cts=1458904227333&mc=1.584962500721156', 14)"}},
+            Documentation::Categories{"URLs", "Strings", "Searching in Strings"}
+        },
+        FunctionFactory::CaseInsensitive
+    );
 }
 
 }

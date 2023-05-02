@@ -18,7 +18,7 @@
 namespace DB
 {
 /** For functions that convert a string and an integer to another string
-  * 
+  *
   * removeGarbageParametersFromURL(URL, length)
   */
 
