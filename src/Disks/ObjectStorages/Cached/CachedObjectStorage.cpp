@@ -4,6 +4,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Common/CurrentThread.h>
@@ -117,7 +118,9 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             file_size.value(),
             /* allow_seeks */true,
-            /* use_external_buffer */false);
+            /* use_external_buffer */false,
+            std::nullopt,
+            Context::getGlobalContextInstance()->getFilesystemCacheLog());
     }
 }
 
@@ -158,7 +161,9 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             file_size.value(),
             /* allow_seeks */true,
-            /* use_external_buffer */false);
+            /* use_external_buffer */false,
+            std::nullopt,
+            Context::getGlobalContextInstance()->getFilesystemCacheLog());
     }
 }
 

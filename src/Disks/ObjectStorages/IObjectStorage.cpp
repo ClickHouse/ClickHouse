@@ -25,15 +25,6 @@ void IObjectStorage::getDirectoryContents(const std::string &,
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
 }
 
-IAsynchronousReader & IObjectStorage::getThreadPoolReader()
-{
-    auto context = Context::getGlobalContextInstance();
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-    return context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-}
-
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
     auto context = Context::getGlobalContextInstance();
