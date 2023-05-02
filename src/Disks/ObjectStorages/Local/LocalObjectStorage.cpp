@@ -168,17 +168,10 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
 void LocalObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    if (Context::getGlobalContextInstance()->getSettingsRef().local_object_storage_has_copy)
-    {
-        fs::copy(object_from.absolute_path, object_to.absolute_path);
-    }
-    else
-    {
-        auto in = readObject(object_from);
-        auto out = writeObject(object_to, WriteMode::Rewrite);
-        copyData(*in, *out);
-        out->finalize();
-    }
+    auto in = readObject(object_from);
+    auto out = writeObject(object_to, WriteMode::Rewrite);
+    copyData(*in, *out);
+    out->finalize();
 }
 
 void LocalObjectStorage::shutdown()
