@@ -85,6 +85,13 @@ if curl --fail http://169.254.169.254/latest/meta-data/events/recommendations/re
   terminate-and-exit
 fi
 
+# Here we check if the autoscaling group marked the instance for termination, and it's wait for the job to finish
+ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
+if [ "$ASG_STATUS" == "Terminated" ]; then
+  echo 'The runner is marked as "Terminated" by the autoscaling group, we are terminating'
+  terminate-and-exit
+fi
+
 # shellcheck disable=SC2046
 docker ps --quiet | xargs --no-run-if-empty docker kill ||:
 # shellcheck disable=SC2046
