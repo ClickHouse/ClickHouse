@@ -361,6 +361,10 @@ public:
         return access("trySet", path, [&]() { return keeper->trySet(path, data, version, stat); });
     }
 
+    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
+    {
+        return access("checkExistsAndGetCreateAncestorsOps", path, [&]() { return keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
+    }
 
     void handleEphemeralNodeExistenceNoFailureInjection(const std::string & path, const std::string & fast_delete_if_equal_value)
     {
