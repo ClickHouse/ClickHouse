@@ -70,6 +70,30 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/Token.cpp"
     "${HDFS3_SOURCE_DIR}/client/PacketPool.cpp"
     "${HDFS3_SOURCE_DIR}/client/OutputStream.cpp"
+    "${HDFS3_SOURCE_DIR}/client/AbstractNativeRawDecoder.cpp"
+    "${HDFS3_SOURCE_DIR}/client/AbstractNativeRawEncoder.cpp"
+    "${HDFS3_SOURCE_DIR}/client/ByteBufferDecodingState.cpp"
+    "${HDFS3_SOURCE_DIR}/client/ByteBufferEncodingState.cpp"
+    "${HDFS3_SOURCE_DIR}/client/CoderUtil.cpp"
+    "${HDFS3_SOURCE_DIR}/client/ECChunk.cpp"
+    "${HDFS3_SOURCE_DIR}/client/ErasureCoderOptions.cpp"
+    "${HDFS3_SOURCE_DIR}/client/GF256.cpp"
+    "${HDFS3_SOURCE_DIR}/client/GaloisField.cpp"
+    "${HDFS3_SOURCE_DIR}/client/NativeRSRawDecoder.cpp"
+    "${HDFS3_SOURCE_DIR}/client/NativeRSRawEncoder.cpp"
+    "${HDFS3_SOURCE_DIR}/client/Preconditions.cpp"
+    "${HDFS3_SOURCE_DIR}/client/RSUtil.cpp"
+    "${HDFS3_SOURCE_DIR}/client/RawErasureCoderFactory.cpp"
+    "${HDFS3_SOURCE_DIR}/client/RawErasureDecoder.cpp"
+    "${HDFS3_SOURCE_DIR}/client/RawErasureEncoder.cpp"
+    "${HDFS3_SOURCE_DIR}/client/StatefulStripeReader.cpp"
+    "${HDFS3_SOURCE_DIR}/client/StripeReader.cpp"
+    "${HDFS3_SOURCE_DIR}/client/StripedBlockUtil.cpp"
+    "${HDFS3_SOURCE_DIR}/client/StripedInputStreamImpl.cpp"
+    "${HDFS3_SOURCE_DIR}/client/StripedOutputStreamImpl.cpp"
+    "${HDFS3_SOURCE_DIR}/client/SystemECPolicies.cpp"
+    "${HDFS3_SOURCE_DIR}/client/dump.cpp"
+    "${HDFS3_SOURCE_DIR}/client/erasure_coder.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcChannelKey.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcProtocolInfo.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp"
@@ -146,6 +170,11 @@ target_link_libraries(_hdfs3 PRIVATE ch_contrib::libxml2)
 target_link_libraries(_hdfs3 PRIVATE ch_contrib::protobuf boost::headers_only)
 if (TARGET OpenSSL::SSL)
     target_link_libraries(_hdfs3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
+endif()
+
+if (TARGET ch_contrib::isal)
+    target_link_libraries(_hdfs3 PRIVATE ch_contrib::isal)
+    add_definitions(-DHADOOP_ISAL_LIBRARY)
 endif()
 
 add_library(ch_contrib::hdfs ALIAS _hdfs3)
