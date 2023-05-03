@@ -667,56 +667,56 @@ class ClickHouseCluster:
             )
 
     @property
-    def kafka_port(self):
+    def kafka_port(self) -> int:
         if self._kafka_port:
             return self._kafka_port
         self._kafka_port = get_free_port()
         return self._kafka_port
 
     @property
-    def schema_registry_port(self):
+    def schema_registry_port(self) -> int:
         if self._schema_registry_port:
             return self._schema_registry_port
         self._schema_registry_port = get_free_port()
         return self._schema_registry_port
 
     @property
-    def kerberized_kafka_port(self):
+    def kerberized_kafka_port(self) -> int:
         if self._kerberized_kafka_port:
             return self._kerberized_kafka_port
         self._kerberized_kafka_port = get_free_port()
         return self._kerberized_kafka_port
 
     @property
-    def mongo_port(self):
+    def mongo_port(self) -> int:
         if self._mongo_port:
             return self._mongo_port
         self._mongo_port = get_free_port()
         return self._mongo_port
 
     @property
-    def mongo_no_cred_port(self):
+    def mongo_no_cred_port(self) -> int:
         if self._mongo_no_cred_port:
             return self._mongo_no_cred_port
         self._mongo_no_cred_port = get_free_port()
         return self._mongo_no_cred_port
 
     @property
-    def meili_port(self):
+    def meili_port(self) -> int:
         if self._meili_port:
             return self._meili_port
         self._meili_port = get_free_port()
         return self._meili_port
 
     @property
-    def meili_secure_port(self):
+    def meili_secure_port(self) -> int:
         if self._meili_secure_port:
             return self._meili_secure_port
         self._meili_secure_port = get_free_port()
         return self._meili_secure_port
 
     @property
-    def redis_port(self):
+    def redis_port(self) -> int:
         if self._redis_port:
             return self._redis_port
         self._redis_port = get_free_port()
@@ -3378,6 +3378,9 @@ class ClickHouseInstance:
         self.with_installed_binary = with_installed_binary
         self.is_up = False
         self.config_root_name = config_root_name
+
+        self.config_d_dir = None
+        self.logs_dir = None
 
     def is_built_with_sanitizer(self, sanitizer_name: str = "") -> bool:
         build_opts = self.query(

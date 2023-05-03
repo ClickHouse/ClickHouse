@@ -114,9 +114,6 @@ def cluster_with_dns_cache_update():
 
         yield cluster
 
-    except Exception as ex:
-        print(ex)
-
     finally:
         cluster.shutdown()
         pass
