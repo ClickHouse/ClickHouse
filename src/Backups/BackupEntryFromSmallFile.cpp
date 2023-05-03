@@ -19,9 +19,9 @@ namespace
         return s;
     }
 
-    String readFile(const DiskPtr & disk, const String & file_path, bool read_encrypted)
+    String readFile(const DiskPtr & disk, const String & file_path, bool copy_encrypted)
     {
-        auto buf = read_encrypted ? disk->readEncryptedFile(file_path) : disk->readFile(file_path);
+        auto buf = copy_encrypted ? disk->readEncryptedFile(file_path) : disk->readFile(file_path);
         String s;
         readStringUntilEOF(s, *buf);
         return s;
@@ -36,11 +36,12 @@ BackupEntryFromSmallFile::BackupEntryFromSmallFile(const String & file_path_)
 {
 }
 
-BackupEntryFromSmallFile::BackupEntryFromSmallFile(const DiskPtr & disk_, const String & file_path_)
+BackupEntryFromSmallFile::BackupEntryFromSmallFile(const DiskPtr & disk_, const String & file_path_, bool copy_encrypted_)
     : disk(disk_)
     , file_path(file_path_)
     , data_source_description(disk_->getDataSourceDescription())
-    , data(readFile(disk_, file_path, data_source_description.is_encrypted))
+    , copy_encrypted(copy_encrypted_ && data_source_description.is_encrypted)
+    , data(readFile(disk_, file_path, copy_encrypted))
 {
 }
 

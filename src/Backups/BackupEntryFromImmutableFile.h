@@ -18,6 +18,7 @@ public:
     BackupEntryFromImmutableFile(
         const DiskPtr & disk_,
         const String & file_path_,
+        bool copy_encrypted_ = false,
         const std::optional<UInt64> & file_size_ = {},
         const std::optional<UInt128> & checksum_ = {});
 
@@ -30,7 +31,7 @@ public:
     std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override;
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-    bool isEncryptedByDisk() const override { return data_source_description.is_encrypted; }
+    bool isEncryptedByDisk() const override { return copy_encrypted; }
 
     bool isFromFile() const override { return true; }
     bool isFromImmutableFile() const override { return true; }
@@ -41,6 +42,7 @@ private:
     const DiskPtr disk;
     const String file_path;
     const DataSourceDescription data_source_description;
+    const bool copy_encrypted;
     mutable std::optional<UInt64> file_size;
     mutable std::optional<UInt64> checksum;
     mutable bool file_size_adjusted = false;

@@ -82,12 +82,12 @@ void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPt
 {
     LOG_TRACE(log, "Copying file {} from disk {} through buffers", src_path, src_disk->getName());
 
-    auto create_read_buffer = [this, src_disk, src_path, file_size = start_pos + length, copy_encrypted]
+    auto create_read_buffer = [src_disk, src_path, copy_encrypted, settings = read_settings.adjustBufferSize(start_pos + length)]
     {
         if (copy_encrypted)
-            return src_disk->readEncryptedFile(src_path, read_settings, {}, file_size);
+            return src_disk->readEncryptedFile(src_path, settings);
         else
-            return src_disk->readFile(src_path, read_settings, {}, file_size);
+            return src_disk->readFile(src_path, settings);
     };
 
     copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);

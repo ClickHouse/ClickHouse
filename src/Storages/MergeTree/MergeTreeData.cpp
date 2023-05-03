@@ -5051,7 +5051,11 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context)
+BackupEntries MergeTreeData::backupParts(
+    const DataPartsVector & data_parts,
+    const String & data_path_in_backup,
+    const BackupSettings & backup_settings,
+    const ContextPtr & local_context)
 {
     BackupEntries backup_entries;
     std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
@@ -5089,8 +5093,9 @@ BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, con
             part->checksums,
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
-            backup_entries_from_part,
+            backup_settings,
             make_temporary_hard_links,
+            backup_entries_from_part,
             &temp_dirs);
 
         auto projection_parts = part->getProjectionParts();
@@ -5100,8 +5105,9 @@ BackupEntries MergeTreeData::backupParts(const DataPartsVector & data_parts, con
                 projection_part->checksums,
                 projection_part->getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
-                backup_entries_from_part,
+                backup_settings,
                 make_temporary_hard_links,
+                backup_entries_from_part,
                 &temp_dirs);
         }
 
