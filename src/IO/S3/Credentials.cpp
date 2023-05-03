@@ -16,6 +16,7 @@
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/Client.h>
+#    include <IO/S3Common.h>
 
 #    include <fstream>
 
@@ -142,7 +143,8 @@ Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
     String user_agent_string = awsComputeUserAgentString();
     auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
     if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
-        return {};
+        throw DB::Exception(ErrorCodes::S3_ERROR,
+            "Failed to token request. HTTP response code: {}", response_code);
 
     token = new_token;
     String url = endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
@@ -151,8 +153,11 @@ Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
 
     profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
     profile_request->SetUserAgent(user_agent_string);
-    auto result = GetResourceWithAWSWebServiceResult(profile_request).GetPayload();
-    return Aws::Utils::StringUtils::Trim(result.c_str());
+    const auto result = GetResourceWithAWSWebServiceResult(profile_request);
+    if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK)
+        throw DB::Exception(ErrorCodes::S3_ERROR,
+            "Failed to get availability zone. HTTP response code: {}", result.GetResponseCode());
+    return Aws::Utils::StringUtils::Trim(result.GetPayload().c_str());
 }
 
 std::pair<Aws::String, Aws::Http::HttpResponseCode> AWSEC2MetadataClient::getEC2MetadataToken(const std::string & user_agent_string) const
