@@ -1,7 +1,12 @@
 #pragma once
 
+#include <Access/Quota.h>
+#include <Access/RowPolicy.h>
+#include <Access/User.h>
+#include <Access/SettingsProfile.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Common/ZooKeeper/Common.h>
+#include <base/FnTraits.h>
 
 
 namespace Poco::Util
@@ -59,5 +64,27 @@ private:
     std::unique_ptr<ConfigReloader> config_reloader;
     bool backup_allowed = false;
     mutable std::mutex load_mutex;
+
+public:
+    static UUID generateID(AccessEntityType type, const String & name);
+    static UUID generateID(const IAccessEntity & entity);
+    static UserPtr parseUser(
+        const Poco::Util::AbstractConfiguration & config, const String & user_name, bool allow_no_password, bool allow_plaintext_password);
+    static std::vector<AccessEntityPtr>
+    parseUsers(const Poco::Util::AbstractConfiguration & config, bool allow_no_password, bool allow_plaintext_password);
+    static QuotaPtr
+    parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const std::vector<UUID> & user_ids);
+    static std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config);
+    static std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config);
+    static SettingsProfileElements parseSettingsConstraints(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & path_to_constraints,
+        Fn<void(std::string_view)> auto && check_setting_name_function);
+    static std::shared_ptr<SettingsProfile> parseSettingsProfile(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & profile_name,
+        Fn<void(std::string_view)> auto && check_setting_name_function);
+    static std::vector<AccessEntityPtr>
+    parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Fn<void(std::string_view)> auto && check_setting_name_function);
 };
 }

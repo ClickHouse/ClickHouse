@@ -92,5 +92,13 @@ private:
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;
     mutable std::mutex mutex;
+
+public:
+    static String makeDirectoryPathCanonical(const String & directory_path);
+    static String getNeedRebuildListsMarkFilePath(const String & directory_path);
+    static bool tryParseUUID(const String & str, UUID & id);
+    static String getEntityFilePath(const String & directory_path, const UUID & id);
+    static AccessEntityPtr readEntityFile(const String & file_path);
+    static AccessEntityPtr tryReadEntityFile(const String & file_path, Poco::Logger & log);
 };
 }
