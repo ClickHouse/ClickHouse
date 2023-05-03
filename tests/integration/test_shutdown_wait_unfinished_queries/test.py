@@ -5,10 +5,15 @@ import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node_wait_queries = cluster.add_instance("node_wait_queries", main_configs=["configs/config_wait.xml"], stay_alive=True)
-node_kill_queries = cluster.add_instance("node_kill_queries", main_configs=["configs/config_kill.xml"], stay_alive=True)
+node_wait_queries = cluster.add_instance(
+    "node_wait_queries", main_configs=["configs/config_wait.xml"], stay_alive=True
+)
+node_kill_queries = cluster.add_instance(
+    "node_kill_queries", main_configs=["configs/config_kill.xml"], stay_alive=True
+)
 
 global result
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -18,12 +23,15 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def do_long_query(node):
     global result
 
     result = node.query_and_get_answer_with_error(
-        "SELECT sleepEachRow(1) FROM system.numbers LIMIT 10", settings={"send_logs_level": "trace"}
+        "SELECT sleepEachRow(1) FROM system.numbers LIMIT 10",
+        settings={"send_logs_level": "trace"},
     )
+
 
 def test_shutdown_wait_unfinished_queries(start_cluster):
     global result
