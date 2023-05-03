@@ -119,7 +119,7 @@ WebObjectStorage::WebObjectStorage(
 
 bool WebObjectStorage::exists(const StoredObject & object) const
 {
-    const auto & path = object.absolute_path;
+    const auto & path = object.remote_path;
 
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
 

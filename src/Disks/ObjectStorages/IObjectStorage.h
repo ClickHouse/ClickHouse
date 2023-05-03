@@ -184,7 +184,7 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual std::string generateBlobNameForPath(const std::string & path) = 0;
+    virtual std::string generateBlobNameForPath(const std::string & path);
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
