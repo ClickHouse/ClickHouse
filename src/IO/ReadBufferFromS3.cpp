@@ -203,11 +203,13 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         return offset_;
 
     if (impl && restricted_seek)
+    {
         throw Exception(
-                        ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-                        "Seek is allowed only before first read attempt from the buffer (current offset: "
-                        "{}, new offset: {}, reading until position: {}, available: {})",
-                        getPosition(), offset_, read_until_position, available());
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+            "Seek is allowed only before first read attempt from the buffer (current offset: "
+            "{}, new offset: {}, reading until position: {}, available: {})",
+            getPosition(), offset_, read_until_position, available());
+    }
 
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
