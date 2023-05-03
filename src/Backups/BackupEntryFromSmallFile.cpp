@@ -44,7 +44,7 @@ BackupEntryFromSmallFile::BackupEntryFromSmallFile(const DiskPtr & disk_, const 
 {
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupEntryFromSmallFile::getReadBuffer() const
+std::unique_ptr<SeekableReadBuffer> BackupEntryFromSmallFile::getReadBuffer(const ReadSettings &) const
 {
     return std::make_unique<ReadBufferFromString>(data);
 }

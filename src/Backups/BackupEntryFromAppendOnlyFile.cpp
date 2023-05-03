@@ -21,24 +21,23 @@ namespace
 }
 
 BackupEntryFromAppendOnlyFile::BackupEntryFromAppendOnlyFile(
-    const DiskPtr & disk_, const String & file_path_, const ReadSettings & settings_, const std::optional<UInt64> & file_size_)
+    const DiskPtr & disk_, const String & file_path_, const std::optional<UInt64> & file_size_)
     : disk(disk_)
     , file_path(file_path_)
     , data_source_description(disk->getDataSourceDescription())
     , size(calculateSize(disk_, file_path_, data_source_description.is_encrypted, file_size_))
-    , settings(settings_.adjustBufferSize(size))
 {
 }
 
 BackupEntryFromAppendOnlyFile::~BackupEntryFromAppendOnlyFile() = default;
 
-std::unique_ptr<SeekableReadBuffer> BackupEntryFromAppendOnlyFile::getReadBuffer() const
+std::unique_ptr<SeekableReadBuffer> BackupEntryFromAppendOnlyFile::getReadBuffer(const ReadSettings & read_settings) const
 {
     std::unique_ptr<SeekableReadBuffer> buf;
     if (data_source_description.is_encrypted)
-        buf = disk->readEncryptedFile(file_path, settings);
+        buf = disk->readEncryptedFile(file_path, read_settings.adjustBufferSize(size));
     else
-        buf = disk->readFile(file_path, settings);
+        buf = disk->readFile(file_path, read_settings.adjustBufferSize(size));
     return std::make_unique<LimitSeekableReadBuffer>(std::move(buf), 0, size);
 }
 

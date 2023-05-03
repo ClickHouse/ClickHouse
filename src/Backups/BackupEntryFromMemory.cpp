@@ -14,7 +14,7 @@ BackupEntryFromMemory::BackupEntryFromMemory(String data_) : data(std::move(data
 {
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupEntryFromMemory::getReadBuffer() const
+std::unique_ptr<SeekableReadBuffer> BackupEntryFromMemory::getReadBuffer(const ReadSettings &) const
 {
     return std::make_unique<ReadBufferFromString>(data);
 }

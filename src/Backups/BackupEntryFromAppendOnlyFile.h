@@ -15,12 +15,11 @@ public:
     BackupEntryFromAppendOnlyFile(
         const DiskPtr & disk_,
         const String & file_path_,
-        const ReadSettings & settings_,
         const std::optional<UInt64> & file_size_ = {});
 
     ~BackupEntryFromAppendOnlyFile() override;
 
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override;
     UInt64 getSize() const override { return size; }
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
@@ -35,7 +34,6 @@ private:
     const String file_path;
     const DataSourceDescription data_source_description;
     const UInt64 size;
-    const ReadSettings settings;
 };
 
 }

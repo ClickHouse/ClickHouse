@@ -28,7 +28,7 @@ public:
     virtual std::optional<UInt128> getPartialChecksum(size_t /* prefix_length */) const { return {}; }
 
     /// Returns a read buffer for reading the data.
-    virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer() const = 0;
+    virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const = 0;
 
     /// Returns true if the data returned by getReadBuffer() is encrypted by an encrypted disk.
     virtual bool isEncryptedByDisk() const { return false; }

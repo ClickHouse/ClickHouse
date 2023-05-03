@@ -16,7 +16,7 @@ public:
     explicit BackupEntryFromSmallFile(const String & file_path_);
     BackupEntryFromSmallFile(const DiskPtr & disk_, const String & file_path_);
 
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings &) const override;
     UInt64 getSize() const override { return data.size(); }
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }

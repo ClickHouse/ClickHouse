@@ -529,10 +529,8 @@ std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
 
 void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto local_context = backup_entries_collector.getContext();
-    ReadSettings read_settings = local_context->getBackupReadSettings();
+    auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
 
-    auto lock_timeout = getLockTimeout(local_context);
     loadIndices(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -554,7 +552,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, read_settings, file_checker.getFileSize(data_file_path));
+            disk, hardlink_file_path, file_checker.getFileSize(data_file_path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -566,7 +564,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / index_file_name;
         disk->createHardLink(index_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, read_settings, file_checker.getFileSize(index_file_path));
+            disk, hardlink_file_path, file_checker.getFileSize(index_file_path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / index_file_name, std::move(backup_entry));
     }
