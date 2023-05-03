@@ -252,7 +252,14 @@ public:
         bool replace_existing_lock,
         std::optional<HardlinkedFiles> hardlinked_files) const;
 
-    void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
+    void getLockSharedDataOps(
+        const IMergeTreeDataPart & part,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        bool replace_existing_lock,
+        std::optional<HardlinkedFiles> hardlinked_files,
+        Coordination::Requests & requests) const;
+
+    zkutil::EphemeralNodeHolderPtr lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
@@ -542,7 +549,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -860,6 +867,12 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
+    static void getZeroCopyLockNodeCreateOps(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
+        int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
+        const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 
