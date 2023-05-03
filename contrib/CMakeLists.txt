@@ -182,6 +182,9 @@ if (ARCH_S390X)
 endif()
 add_contrib (annoy-cmake annoy)
 add_contrib (xxHash-cmake xxHash)
+
+add_contrib (libbcrypt-cmake libbcrypt)
+
 add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
 
