@@ -15,6 +15,7 @@ public:
     BackupEntryFromAppendOnlyFile(
         const DiskPtr & disk_,
         const String & file_path_,
+        bool copy_encrypted_ = false,
         const std::optional<UInt64> & file_size_ = {});
 
     ~BackupEntryFromAppendOnlyFile() override;
@@ -23,7 +24,7 @@ public:
     UInt64 getSize() const override { return size; }
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-    bool isEncryptedByDisk() const override { return data_source_description.is_encrypted; }
+    bool isEncryptedByDisk() const override { return copy_encrypted; }
 
     bool isFromFile() const override { return true; }
     DiskPtr getDisk() const override { return disk; }
@@ -33,6 +34,7 @@ private:
     const DiskPtr disk;
     const String file_path;
     const DataSourceDescription data_source_description;
+    const bool copy_encrypted;
     const UInt64 size;
 };
 

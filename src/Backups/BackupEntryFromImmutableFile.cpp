@@ -1,6 +1,5 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Disks/IDisk.h>
-#include <Disks/DiskEncrypted.h>
 
 
 namespace DB
@@ -20,11 +19,13 @@ namespace
 BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const DiskPtr & disk_,
     const String & file_path_,
+    bool copy_encrypted_,
     const std::optional<UInt64> & file_size_,
     const std::optional<UInt128> & checksum_)
     : disk(disk_)
     , file_path(file_path_)
     , data_source_description(disk->getDataSourceDescription())
+    , copy_encrypted(copy_encrypted_ && data_source_description.is_encrypted)
     , file_size(file_size_)
     , checksum(checksum_)
 {
@@ -34,7 +35,7 @@ BackupEntryFromImmutableFile::~BackupEntryFromImmutableFile() = default;
 
 std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer(const ReadSettings & read_settings) const
 {
-    if (data_source_description.is_encrypted)
+    if (copy_encrypted)
         return disk->readEncryptedFile(file_path, read_settings);
     else
         return disk->readFile(file_path, read_settings);
@@ -46,8 +47,8 @@ UInt64 BackupEntryFromImmutableFile::getSize() const
     if (!file_size_adjusted)
     {
         if (!file_size)
-            file_size = data_source_description.is_encrypted ? disk->getEncryptedFileSize(file_path) : disk->getFileSize(file_path);
-        else if (data_source_description.is_encrypted)
+            file_size = copy_encrypted ? disk->getEncryptedFileSize(file_path) : disk->getFileSize(file_path);
+        else if (copy_encrypted)
             file_size = disk->getEncryptedFileSize(*file_size);
         file_size_adjusted = true;
     }
@@ -61,7 +62,7 @@ UInt128 BackupEntryFromImmutableFile::getChecksum() const
     {
         if (!checksum)
             checksum = BackupEntryWithChecksumCalculation<IBackupEntry>::getChecksum();
-        else if (data_source_description.is_encrypted)
+        else if (copy_encrypted)
             checksum = combineChecksums(*checksum, disk->getEncryptedFileIV(file_path));
         checksum_adjusted = true;
     }

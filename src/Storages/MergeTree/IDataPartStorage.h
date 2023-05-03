@@ -65,6 +65,7 @@ using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct BackupSettings;
 
 struct WriteSettings;
 
@@ -200,8 +201,9 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,
-        BackupEntries & backup_entries,
+        const BackupSettings & backup_settings,
         bool make_temporary_hard_links,
+        BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.

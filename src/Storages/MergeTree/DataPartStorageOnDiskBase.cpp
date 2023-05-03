@@ -10,6 +10,7 @@
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
+#include <Backups/BackupSettings.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
@@ -322,8 +323,9 @@ void DataPartStorageOnDiskBase::backup(
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
     const String & path_in_backup,
-    BackupEntries & backup_entries,
+    const BackupSettings & backup_settings,
     bool make_temporary_hard_links,
+    BackupEntries & backup_entries,
     TemporaryFilesOnDisks * temp_dirs) const
 {
     fs::path part_path_on_disk = fs::path{root_path} / part_dir;
@@ -364,6 +366,8 @@ void DataPartStorageOnDiskBase::backup(
 
     files_to_backup = getActualFileNamesOnDisk(files_to_backup);
 
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+
     for (const auto & filepath : files_to_backup)
     {
         auto filepath_on_disk = part_path_on_disk / filepath;
@@ -371,7 +375,7 @@ void DataPartStorageOnDiskBase::backup(
 
         if (files_without_checksums.contains(filepath))
         {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk));
+            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, copy_encrypted));
             continue;
         }
 
@@ -392,7 +396,7 @@ void DataPartStorageOnDiskBase::backup(
             file_hash = {it->second.file_hash.first, it->second.file_hash.second};
         }
 
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, file_size, file_hash);
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, copy_encrypted, file_size, file_hash);
 
         if (temp_dir_owner)
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);

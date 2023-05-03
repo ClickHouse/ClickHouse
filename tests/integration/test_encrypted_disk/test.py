@@ -309,17 +309,24 @@ def test_restart():
 
 
 @pytest.mark.parametrize(
-    "storage_policy,backup_type,storage_policy2",
+    "backup_type,old_storage_policy,new_storage_policy,decrypt_files_from_encrypted_disks",
     [
-        ("encrypted_policy", "S3", "encrypted_policy"),
-        ("encrypted_policy", "S3", "s3_encrypted_default_path"),
-        ("s3_encrypted_default_path", "S3", "s3_encrypted_default_path"),
-        ("s3_encrypted_default_path", "S3", "encrypted_policy"),
-        ("s3_encrypted_default_path", "File", "encrypted_policy"),
-        ("local_policy", "File", "encrypted_policy"),
+        ("S3", "encrypted_policy", "encrypted_policy", False),
+        ("S3", "encrypted_policy", "s3_encrypted_default_path", False),
+        ("S3", "s3_encrypted_default_path", "s3_encrypted_default_path", False),
+        ("S3", "s3_encrypted_default_path", "encrypted_policy", False),
+        ("File", "s3_encrypted_default_path", "encrypted_policy", False),
+        ("File", "local_policy", "encrypted_policy", False),
+        ("File", "encrypted_policy", "local_policy", False),
+        ("File", "encrypted_policy", "local_policy", True),
     ],
 )
-def test_backup_restore(storage_policy, backup_type, storage_policy2):
+def test_backup_restore(
+    backup_type,
+    old_storage_policy,
+    new_storage_policy,
+    decrypt_files_from_encrypted_disks,
+):
     node.query(
         f"""
         CREATE TABLE encrypted_test (
@@ -327,7 +334,7 @@ def test_backup_restore(storage_policy, backup_type, storage_policy2):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS storage_policy='{storage_policy}'
+        SETTINGS storage_policy='{old_storage_policy}'
         """
     )
 
@@ -343,22 +350,38 @@ def test_backup_restore(storage_policy, backup_type, storage_policy2):
     elif backup_type == "File":
         backup_destination = f"File('/backups/{backup_name}/')"
 
-    node.query(f"BACKUP TABLE encrypted_test TO {backup_destination}")
+    node.query(
+        f"BACKUP TABLE encrypted_test TO {backup_destination} SETTINGS decrypt_files_from_encrypted_disks={int(decrypt_files_from_encrypted_disks)}"
+    )
 
-    if backup_type == "File" and storage_policy.find("encrypted") != -1:
+    storage_policy_changed = old_storage_policy != new_storage_policy
+    old_disk_encrypted = old_storage_policy.find("encrypted") != -1
+    new_disk_encrypted = new_storage_policy.find("encrypted") != -1
+
+    if backup_type == "File":
         root_path = os.path.join(node.cluster.instances_dir, "backups", backup_name)
+        expect_encrypted_in_backup = (
+            old_disk_encrypted and not decrypt_files_from_encrypted_disks
+        )
+
+        with open(f"{root_path}/metadata/default/encrypted_test.sql") as file:
+            assert file.read().startswith("CREATE TABLE default.encrypted_test")
+
+        with open(f"{root_path}/.backup") as file:
+            found_encrypted_in_backup = (
+                file.read().find("<encrypted_by_disk>true</encrypted_by_disk>") != -1
+            )
+            assert found_encrypted_in_backup == expect_encrypted_in_backup
+
         with open(
             f"{root_path}/data/default/encrypted_test/all_1_1_0/data.bin", "rb"
         ) as file:
-            assert file.read().startswith(b"ENC")
-        with open(f"{root_path}/metadata/default/encrypted_test.sql") as file:
-            assert file.read().startswith("CREATE TABLE default.encrypted_test")
-        with open(f"{root_path}/.backup") as file:
-            assert file.read().find("<encrypted_by_disk>true</encrypted_by_disk>") != -1
+            found_encrypted_in_backup = file.read().startswith(b"ENC")
+            assert found_encrypted_in_backup == expect_encrypted_in_backup
 
     node.query(f"DROP TABLE encrypted_test SYNC")
 
-    if storage_policy != storage_policy2:
+    if storage_policy_changed:
         node.query(
             f"""
             CREATE TABLE encrypted_test (
@@ -366,56 +389,22 @@ def test_backup_restore(storage_policy, backup_type, storage_policy2):
                 data String
             ) ENGINE=MergeTree()
             ORDER BY id
-            SETTINGS storage_policy='{storage_policy2}'
+            SETTINGS storage_policy='{new_storage_policy}'
             """
         )
 
-    node.query(
-        f"RESTORE TABLE encrypted_test FROM {backup_destination} SETTINGS allow_different_table_def={int(storage_policy != storage_policy2)}"
-    )
+    restore_command = f"RESTORE TABLE encrypted_test FROM {backup_destination} SETTINGS allow_different_table_def={int(storage_policy_changed)}"
 
-    assert node.query(select_query) == "(0,'data'),(1,'data')"
+    expect_error = None
+    if (
+        old_disk_encrypted
+        and not new_disk_encrypted
+        and not decrypt_files_from_encrypted_disks
+    ):
+        expect_error = "can be restored only to an encrypted disk"
 
-
-def test_cannot_restore_encrypted_files_to_unencrypted_disk():
-    node.query(
-        """
-        CREATE TABLE encrypted_test (
-            id Int64,
-            data String
-        ) ENGINE=MergeTree()
-        ORDER BY id
-        SETTINGS storage_policy='encrypted_policy'
-        """
-    )
-
-    node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
-    assert (
-        node.query("SELECT * FROM encrypted_test ORDER BY id FORMAT Values")
-        == "(0,'data'),(1,'data')"
-    )
-
-    backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', 'minio123')"
-    )
-    node.query(f"BACKUP TABLE encrypted_test TO {backup_destination}")
-
-    node.query(f"DROP TABLE encrypted_test SYNC")
-
-    node.query(
-        f"""
-        CREATE TABLE encrypted_test (
-            id Int64,
-            data String
-        ) ENGINE=MergeTree()
-        ORDER BY id
-        SETTINGS storage_policy='local_policy'
-        """
-    )
-
-    expected_error = "can be restored only to an encrypted disk"
-    assert expected_error in node.query_and_get_error(
-        f"RESTORE TABLE encrypted_test FROM {backup_destination} SETTINGS allow_different_table_def=1"
-    )
->>>>>>> 9c08fb30995 (Add tests.)
+    if expect_error:
+        assert expect_error in node.query_and_get_error(restore_command)
+    else:
+        node.query(restore_command)
+        assert node.query(select_query) == "(0,'data'),(1,'data')"
