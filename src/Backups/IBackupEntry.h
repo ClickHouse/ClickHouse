@@ -33,7 +33,7 @@ public:
     /// Returns true if the data returned by getReadBuffer() is encrypted by an encrypted disk.
     virtual bool isEncryptedByDisk() const { return false; }
 
-    /// Returns information about disk and file if this backup entry is generated from a file.  
+    /// Returns information about disk and file if this backup entry is generated from a file.
     virtual bool isFromFile() const { return false; }
     virtual bool isFromImmutableFile() const { return false; }
     virtual String getFilePath() const { return ""; }
