@@ -277,7 +277,7 @@ inline LoadTaskPtrs joinTasks(const LoadTaskPtrs & tasks1, const LoadTaskPtrs & 
 //     Status of an executing job is PENDING. And it is still considered as a scheduled job by AsyncLoader.
 //     Note that `job_func` of a CANCELED job is never executed.
 // 5a) On successful execution the job status is changed to OK and all existing and new `wait()` calls finish w/o exceptions.
-// 5b) Any exception thrown out of `job_func` is wrapped into an ASYNC_LOAD_FAILED exception and save inside LoadJob.
+// 5b) Any exception thrown out of `job_func` is wrapped into an ASYNC_LOAD_FAILED exception and saved inside LoadJob.
 //     The job status is changed to FAILED. All the dependent jobs are canceled. The exception is rethrown from all existing and new `wait()` calls.
 // 6)  The job is no longer considered as scheduled and is instead moved to the finished jobs set. This is just for introspection of the finished jobs.
 // 7)  The task containing this job is destructed or `remove()` is explicitly called. The job is removed from the finished job set.
