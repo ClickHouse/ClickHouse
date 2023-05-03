@@ -406,13 +406,6 @@ jobs:
         with:
           clear-repository: true
           submodules: true
-      - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
-        run: |
-          rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
-          git -C "$GITHUB_WORKSPACE" checkout .  && echo 'restored'
-          "$GITHUB_WORKSPACE/contrib/update-submodules.sh" && echo 'OK'
-          du -hs "$GITHUB_WORKSPACE/contrib" ||:
-          find "$GITHUB_WORKSPACE/contrib" -type f | wc -l ||:
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"

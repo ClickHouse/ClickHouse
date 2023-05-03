@@ -39,7 +39,7 @@ public:
     static ThreadStatus & get();
 
     /// Group to which belongs current thread
-    static ThreadGroupPtr getGroup();
+    static ThreadGroupStatusPtr getGroup();
 
     /// A logs queue used by TCPHandler to pass logs to a client
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
@@ -69,9 +69,9 @@ public:
 
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
-    static void attachToGroup(const ThreadGroupPtr & thread_group);
+    static void attachToGroup(const ThreadGroupStatusPtr & thread_group);
     /// Is useful for a ThreadPool tasks
-    static void attachToGroupIfDetached(const ThreadGroupPtr & thread_group);
+    static void attachToGroupIfDetached(const ThreadGroupStatusPtr & thread_group);
 
     /// Non-master threads call this method in destructor automatically
     static void detachFromGroupIfNotDetached();

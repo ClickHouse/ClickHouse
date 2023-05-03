@@ -1,4 +1,9 @@
-set(ENABLE_GRPC_DEFAULT ${ENABLE_LIBRARIES})
+# disable grpc due to conflicts of abseil (required by grpc) dynamic annotations with libtsan.a
+if (SANITIZE STREQUAL "thread" AND COMPILER_GCC)
+  set(ENABLE_GRPC_DEFAULT OFF)
+else()
+  set(ENABLE_GRPC_DEFAULT ${ENABLE_LIBRARIES})
+endif()
 option(ENABLE_GRPC "Use gRPC" ${ENABLE_GRPC_DEFAULT})
 
 if(NOT ENABLE_GRPC)

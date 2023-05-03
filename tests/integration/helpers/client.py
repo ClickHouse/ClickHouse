@@ -202,16 +202,6 @@ class CommandRequest:
             self.timer = Timer(timeout, kill_process)
             self.timer.start()
 
-    def remove_trash_from_stderr(self, stderr):
-        # FIXME https://github.com/ClickHouse/ClickHouse/issues/48181
-        if not stderr:
-            return stderr
-        lines = stderr.split("\n")
-        lines = [
-            x for x in lines if ("completion_queue" not in x and "Kick failed" not in x)
-        ]
-        return "\n".join(lines)
-
     def get_answer(self):
         self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
@@ -228,9 +218,7 @@ class CommandRequest:
             logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
             raise QueryTimeoutExceedException("Client timed out!")
 
-        if (
-            self.process.returncode != 0 or self.remove_trash_from_stderr(stderr)
-        ) and not self.ignore_error:
+        if (self.process.returncode != 0 or stderr) and not self.ignore_error:
             raise QueryRuntimeException(
                 "Client failed! Return code: {}, stderr: {}".format(
                     self.process.returncode, stderr

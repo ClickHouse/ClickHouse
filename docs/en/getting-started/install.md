@@ -161,11 +161,11 @@ sudo systemctl status clickhouse-keeper
 
 #### Packages {#packages}
 
-- `clickhouse-common-static` — Installs ClickHouse compiled binary files.
-- `clickhouse-server` — Creates a symbolic link for `clickhouse-server` and installs the default server configuration.
-- `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
-- `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
-- `clickhouse-keeper` - Used to install ClickHouse Keeper on dedicated ClickHouse Keeper nodes.  If you are running ClickHouse Keeper on the same server as ClickHouse server, then you do not need to install this package. Installs ClickHouse Keeper and the default ClickHouse Keeper configuration files.
+-   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
+-   `clickhouse-server` — Creates a symbolic link for `clickhouse-server` and installs the default server configuration.
+-   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
+-   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
+-   `clickhouse-keeper` - Used to install ClickHouse Keeper on dedicated ClickHouse Keeper nodes.  If you are running ClickHouse Keeper on the same server as ClickHouse server, then you do not need to install this package. Installs ClickHouse Keeper and the default ClickHouse Keeper configuration files.
 
 :::info
 If you need to install specific version of ClickHouse you have to install all packages with the same version:
@@ -429,8 +429,8 @@ We recommend using a minimum of 4GB of RAM to perform non-trivial queries. The C
 
 The required volume of RAM generally depends on:
 
-- The complexity of queries.
-- The amount of data that is processed in queries.
+-   The complexity of queries.
+-   The amount of data that is processed in queries.
 
 To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
 
@@ -442,11 +442,11 @@ The ClickHouse binary requires at least 2.5 GB of disk space for installation.
 
 The volume of storage required for your data may be calculated separately based on
 
-- an estimation of the data volume.
+-   an estimation of the data volume.
 
     You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
 
-- The data compression coefficient.
+-   The data compression coefficient.
 
     To estimate the data compression coefficient, load a sample of your data into ClickHouse, and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
 

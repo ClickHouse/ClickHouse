@@ -3,13 +3,13 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/StorageMongoDBSocketFactory.h>
+
 
 namespace DB
 {
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method", "options"};
+    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method"};
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
@@ -51,7 +51,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             config.getString(config_prefix + ".method", ""),
             configuration.database,
             config.getString(config_prefix + ".collection"),
-            config.getString(config_prefix + ".options", ""),
             sample_block);
     };
 
@@ -68,6 +67,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 #include <Poco/MongoDB/ObjectId.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
@@ -99,7 +99,6 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     const std::string & method_,
     const std::string & db_,
     const std::string & collection_,
-    const std::string & options_,
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , uri{uri_}
@@ -110,15 +109,13 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     , method{method_}
     , db{db_}
     , collection{collection_}
-    , options(options_)
     , sample_block{sample_block_}
     , connection{std::make_shared<Poco::MongoDB::Connection>()}
 {
-
-    StorageMongoDBSocketFactory socket_factory;
     if (!uri.empty())
     {
         // Connect with URI.
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
         connection->connect(uri, socket_factory);
 
         Poco::URI poco_uri(connection->uri());
@@ -144,10 +141,8 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     }
     else
     {
-        // Connect with host/port/user/etc through constructing the uri
-        std::string uri_constructed("mongodb://" + host + ":" + std::to_string(port) + "/" + db + (options.empty() ? "" : "?" + options));
-        connection->connect(uri_constructed, socket_factory);
-
+        // Connect with host/port/user/etc.
+        connection->connect(host, port);
         if (!user.empty())
         {
             Poco::MongoDB::Database poco_db(db);
@@ -160,9 +155,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
     : MongoDBDictionarySource{
-        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db,
-        other.collection, other.options, other.sample_block
-    }
+        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db, other.collection, other.sample_block}
 {
 }
 

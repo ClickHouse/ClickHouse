@@ -281,12 +281,7 @@ CREATE TABLE system.functions
     `alias_to` String,
     `create_query` String,
     `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
-    `description` String,
-    `syntax` String,
-    `arguments` String,
-    `returned_value` String,
-    `examples` String,
-    `categories` String
+    `description` String
 )
 ENGINE = SystemFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -361,7 +356,6 @@ CREATE TABLE system.merges
     `partition_id` String,
     `is_mutation` UInt8,
     `total_size_bytes_compressed` UInt64,
-    `total_size_bytes_uncompressed` UInt64,
     `total_size_marks` UInt64,
     `bytes_read_uncompressed` UInt64,
     `rows_read` UInt64,
@@ -516,8 +510,7 @@ CREATE TABLE system.parts
     `last_removal_attemp_time` DateTime,
     `removal_state` String,
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -571,8 +564,7 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -693,8 +685,7 @@ CREATE TABLE system.projection_parts
     `rows_where_ttl_info.min` Array(DateTime),
     `rows_where_ttl_info.max` Array(DateTime),
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemProjectionParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -748,8 +739,7 @@ CREATE TABLE system.projection_parts_columns
     `column_data_uncompressed_bytes` UInt64,
     `column_marks_bytes` UInt64,
     `bytes` UInt64,
-    `marks_size` UInt64,
-    `part_name` String
+    `marks_size` UInt64
 )
 ENGINE = SystemProjectionPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -856,7 +846,6 @@ CREATE TABLE system.replicas
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,
-    `zookeeper_name` String,
     `zookeeper_path` String,
     `replica_name` String,
     `replica_path` String,
@@ -878,7 +867,6 @@ CREATE TABLE system.replicas
     `absolute_delay` UInt64,
     `total_replicas` UInt8,
     `active_replicas` UInt8,
-    `lost_part_count` UInt64,
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
     `replica_is_active` Map(String, UInt8)
@@ -1036,12 +1024,10 @@ CREATE TABLE system.storage_policies
     `volume_name` String,
     `volume_priority` UInt64,
     `disks` Array(String),
-    `volume_type` Enum8('JBOD' = 0, 'SINGLE_DISK' = 1, 'UNKNOWN' = 2),
+    `volume_type` String,
     `max_data_part_size` UInt64,
     `move_factor` Float32,
-    `prefer_not_to_merge` UInt8,
-    `perform_ttl_move_on_insert` UInt8,
-    `load_balancing` Enum8('ROUND_ROBIN' = 0, 'LEAST_USED' = 1)
+    `prefer_not_to_merge` UInt8
 )
 ENGINE = SystemStoragePolicies
 COMMENT 'SYSTEM TABLE is built on the fly.'

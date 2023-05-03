@@ -1,6 +1,5 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>

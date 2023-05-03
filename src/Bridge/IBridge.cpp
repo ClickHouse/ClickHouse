@@ -14,12 +14,16 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <base/errnoToString.h>
 #include <base/range.h>
-#include <base/scope_guard.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
 
 #include "config.h"
+
+#if USE_ODBC
+#    include <Poco/Data/ODBC/Connector.h>
+#endif
+
 
 namespace DB
 {

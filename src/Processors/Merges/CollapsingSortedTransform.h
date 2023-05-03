@@ -16,8 +16,7 @@ public:
         SortDescription description_,
         const String & sign_column,
         bool only_positive_sign,
-        size_t max_block_size_rows,
-        size_t max_block_size_bytes,
+        size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
         : IMergingTransform(
@@ -27,8 +26,7 @@ public:
             std::move(description_),
             sign_column,
             only_positive_sign,
-            max_block_size_rows,
-            max_block_size_bytes,
+            max_block_size,
             &Poco::Logger::get("CollapsingSortedTransform"),
             out_row_sources_buf_,
             use_average_block_sizes)

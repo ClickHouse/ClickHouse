@@ -38,19 +38,15 @@ public:
 
     using PartNameAndChecksum = IBackupCoordination::PartNameAndChecksum;
 
-    struct PartNamesForTableReplica
-    {
-        String table_shared_id;
-        String table_name_for_logs;
-        String replica_name;
-        std::vector<PartNameAndChecksum> part_names_and_checksums;
-    };
-
     /// Adds part names which a specified replica of a replicated table is going to put to the backup.
     /// Multiple replicas of the replicated table call this function and then the added part names can be returned by call of the function
     /// getPartNames().
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
-    void addPartNames(PartNamesForTableReplica && part_names);
+    void addPartNames(
+        const String & table_shared_id,
+        const String & table_name_for_logs,
+        const String & replica_name,
+        const std::vector<PartNameAndChecksum> & part_names_and_checksums);
 
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addPartNames() but without duplications and without
@@ -59,30 +55,20 @@ public:
 
     using MutationInfo = IBackupCoordination::MutationInfo;
 
-    struct MutationsForTableReplica
-    {
-        String table_shared_id;
-        String table_name_for_logs;
-        String replica_name;
-        std::vector<MutationInfo> mutations;
-    };
-
     /// Adds information about mutations of a replicated table.
-    void addMutations(MutationsForTableReplica && mutations_for_table_replica);
+    void addMutations(
+        const String & table_shared_id,
+        const String & table_name_for_logs,
+        const String & replica_name,
+        const std::vector<MutationInfo> & mutations);
 
     /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
     std::vector<MutationInfo> getMutations(const String & table_shared_id, const String & replica_name) const;
 
-    struct DataPathForTableReplica
-    {
-        String table_shared_id;
-        String data_path;
-    };
-
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
     /// getDataPaths().
-    void addDataPath(DataPathForTableReplica && data_path_for_table_replica);
+    void addDataPath(const String & table_shared_id, const String & data_path);
 
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
     Strings getDataPaths(const String & table_shared_id) const;

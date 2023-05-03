@@ -751,6 +751,9 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
+    /// Makes backup entries to backup the data of the storage.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
     /// Extract data from the backup and put it to the storage.
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
@@ -1218,9 +1221,9 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr) const;
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false) const;
 
-    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr);
+    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false);
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
@@ -1310,7 +1313,7 @@ protected:
     /// Used to receive AlterConversions for part and apply them on fly. This
     /// method has different implementations for replicated and non replicated
     /// MergeTree because they store mutations in different way.
-    virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     MovePartsOutcome movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
@@ -1496,16 +1499,6 @@ private:
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
         std::mutex & part_loading_mutex);
-
-    LoadPartResult loadDataPartWithRetries(
-        const MergeTreePartInfo & part_info,
-        const String & part_name,
-        const DiskPtr & part_disk_ptr,
-        MergeTreeDataPartState to_state,
-        std::mutex & part_loading_mutex,
-        size_t backoff_ms,
-        size_t max_backoff_ms,
-        size_t max_tries);
 
     std::vector<LoadPartResult> loadDataPartsFromDisk(
         ThreadPool & pool,

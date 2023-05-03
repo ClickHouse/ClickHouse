@@ -24,7 +24,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Common/SipHash.h>
@@ -60,7 +59,7 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
         /// The loop can be further optimized.
         UInt64 number = rng();
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStoreLittleEndian<UInt64>(data, number);
+        unalignedStoreLE<UInt64>(data, number);
 #else
         unalignedStore<UInt64>(data, number);
 #endif
@@ -233,17 +232,8 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::UInt8:
         {
             auto column = ColumnUInt8::create();
-            auto & data = column->getData();
-            data.resize(limit);
-            if (isBool(type))
-            {
-                for (size_t i = 0; i < limit; ++i)
-                    data[i] = rng() % 2;
-            }
-            else
-            {
-                fillBufferWithRandomData(reinterpret_cast<char *>(data.data()), limit, sizeof(UInt8), rng);
-            }
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt8), rng);
             return column;
         }
         case TypeIndex::UInt16: [[fallthrough]];
@@ -359,55 +349,34 @@ ColumnPtr fillColumnWithRandomData(
         }
         case TypeIndex::Decimal32:
         {
-            const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal32> &>(*type);
-            auto column = decimal_type.createColumn();
+            auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal32> &>(*column);
-            auto & data = column_concrete.getData();
-            data.resize(limit);
-            /// Generate numbers from range [-10^P + 1, 10^P - 1]
-            Int32 range = common::exp10_i32(decimal_type.getPrecision());
-            for (size_t i = 0; i != limit; ++i)
-                data[i] = static_cast<Int32>(rng()) % range;
+            column_concrete.getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal32), rng, true);
             return column;
         }
-        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal64:  /// TODO Decimal may be generated out of range.
         {
-            const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal64> &>(*type);
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
-            auto & data = column_concrete.getData();
-            data.resize(limit);
-            /// Generate numbers from range [-10^P + 1, 10^P - 1]
-            Int64 range = common::exp10_i64(decimal_type.getPrecision());
-            for (size_t i = 0; i != limit; ++i)
-                data[i] = static_cast<Int64>(rng()) % range;
-
+            column_concrete.getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal64), rng, true);
             return column;
         }
         case TypeIndex::Decimal128:
         {
-            const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal128> &>(*type);
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal128> &>(*column);
-            auto & data = column_concrete.getData();
-            data.resize(limit);
-            /// Generate numbers from range [-10^P + 1, 10^P - 1]
-            Int128 range = common::exp10_i128(decimal_type.getPrecision());
-            for (size_t i = 0; i != limit; ++i)
-                data[i] = Int128({rng(), rng()}) % range;
+            column_concrete.getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal128), rng, true);
             return column;
         }
         case TypeIndex::Decimal256:
         {
-            const auto & decimal_type = assert_cast<const DataTypeDecimal<Decimal256> &>(*type);
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal256> &>(*column);
-            auto & data = column_concrete.getData();
-            data.resize(limit);
-            /// Generate numbers from range [-10^P + 1, 10^P - 1]
-            Int256 range = common::exp10_i256(decimal_type.getPrecision());
-            for (size_t i = 0; i != limit; ++i)
-                data[i] = Int256({rng(), rng(), rng(), rng()}) % range;
+            column_concrete.getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal256), rng, true);
             return column;
         }
         case TypeIndex::FixedString:

@@ -25,4 +25,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
+-   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)

@@ -45,11 +45,11 @@ Configuration markup:
 
 Required parameters:
 
-- `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
+-   `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
 
 Optional parameters:
 
-- `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
+-   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
 
 ## Using Virtual File System for Data Encryption {#encrypted-virtual-file-system}
 
@@ -78,16 +78,16 @@ When writing the same file to `disk2`, it will actually be written to the physic
 
 Required parameters:
 
-- `type` — `encrypted`. Otherwise the encrypted disk is not created.
-- `disk` — Type of disk for data storage.
-- `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form.
+-   `type` — `encrypted`. Otherwise the encrypted disk is not created.
+-   `disk` — Type of disk for data storage.
+-   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form.
     You can specify multiple keys using the `id` attribute (see example above).
 
 Optional parameters:
 
-- `path` — Path to the location on the disk where the data will be saved. If not specified, the data will be saved in the root directory.
-- `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
-- `algorithm` — [Algorithm](/docs/en/sql-reference/statements/create/table.md/#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
+-   `path` — Path to the location on the disk where the data will be saved. If not specified, the data will be saved in the root directory.
+-   `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
+-   `algorithm` — [Algorithm](/docs/en/sql-reference/statements/create/table.md/#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
 
 Example of disk configuration:
 
@@ -446,14 +446,14 @@ SETTINGS storage_policy='web';
 
 Required parameters:
 
-- `type` — `web`. Otherwise the disk is not created.
-- `endpoint` — The endpoint URL in `path` format. Endpoint URL must contain a root path to store data, where they were uploaded.
+-   `type` — `web`. Otherwise the disk is not created.
+-   `endpoint` — The endpoint URL in `path` format. Endpoint URL must contain a root path to store data, where they were uploaded.
 
 Optional parameters:
 
-- `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1` Mb.
-- `remote_fs_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
-- `remote_fs_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
+-   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1` Mb.
+-   `remote_fs_read_backoff_threashold` — The maximum wait time when trying to read data for remote disk. Default value: `10000` seconds.
+-   `remote_fs_read_backoff_max_tries` — The maximum number of attempts to read with backoff. Default value: `5`.
 
 If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/docs/en/operations/settings/settings.md/#http_connection_timeout), [http_receive_timeout](/docs/en/operations/settings/settings.md/#http_receive_timeout), [keep_alive_timeout](/docs/en/operations/server-configuration-parameters/settings.md/#keep-alive-timeout).
 

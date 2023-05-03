@@ -122,8 +122,13 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
         }
         processors->insert(processors->end(), new_processors.begin(), new_processors.end());
 
-        // Do not consider sources added during pipeline expansion as cancelable to avoid tricky corner cases (e.g. ConvertingAggregatedToChunksWithMergingSource cancellation)
-        source_processors.resize(source_processors.size() + new_processors.size(), false);
+        source_processors.reserve(source_processors.size() + new_processors.size());
+
+        for (auto & proc: new_processors)
+        {
+            bool is_source = proc->getInputs().empty();
+            source_processors.emplace_back(is_source);
+        }
     }
 
     uint64_t num_processors = processors->size();
@@ -219,7 +224,7 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
     std::stack<uint64_t> updated_processors;
     updated_processors.push(pid);
 
-    std::shared_lock read_lock(nodes_mutex);
+    UpgradableMutex::ReadGuard read_lock(nodes_mutex);
 
     while (!updated_processors.empty() || !updated_edges.empty())
     {
@@ -382,14 +387,11 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
             if (need_expand_pipeline)
             {
-                // We do not need to upgrade lock atomically, so we can safely release shared_lock and acquire unique_lock
-                read_lock.unlock();
                 {
-                    std::unique_lock lock(nodes_mutex);
+                    UpgradableMutex::WriteGuard lock(read_lock);
                     if (!expandPipeline(updated_processors, pid))
                         return false;
                 }
-                read_lock.lock();
 
                 /// Add itself back to be prepared again.
                 updated_processors.push(pid);

@@ -95,14 +95,14 @@ def test_create_alter_user():
 
     check_logs(
         must_contain=[
-            "CREATE USER u1 IDENTIFIED",
-            "ALTER USER u1 IDENTIFIED",
+            "CREATE USER u1 IDENTIFIED WITH sha256_password",
+            "ALTER USER u1 IDENTIFIED WITH sha256_password",
             "CREATE USER u2 IDENTIFIED WITH plaintext_password",
         ],
         must_not_contain=[
             password,
-            "IDENTIFIED BY",
-            "IDENTIFIED BY",
+            "IDENTIFIED WITH sha256_password BY",
+            "IDENTIFIED WITH sha256_hash BY",
             "IDENTIFIED WITH plaintext_password BY",
         ],
     )

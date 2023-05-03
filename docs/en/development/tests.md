@@ -194,11 +194,11 @@ If the system clickhouse-server is already running and you do not want to stop i
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
 Examples:
-- cross-compile for Darwin x86_64 (macOS)
-- cross-compile for FreeBSD x86_64
-- cross-compile for Linux AArch64
-- build on Ubuntu with libraries from system packages (discouraged)
-- build with shared linking of libraries (discouraged)
+-   cross-compile for Darwin x86_64 (macOS)
+-   cross-compile for FreeBSD x86_64
+-   cross-compile for Linux AArch64
+-   build on Ubuntu with libraries from system packages (discouraged)
+-   build with shared linking of libraries (discouraged)
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 

@@ -150,8 +150,7 @@ FilterDAGInfoPtr generateFilterActions(
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
-        /// We should add back quotes around column name as it can contain dots.
-        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth));
+        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -463,20 +462,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         context->setSetting("parallel_replicas_custom_key", String{""});
     }
 
-    /// Try to execute query without parallel replicas if we find that there is a FINAL modifier there.
-    bool is_query_with_final = false;
-    if (query_info.table_expression_modifiers)
-        is_query_with_final = query_info.table_expression_modifiers->hasFinal();
-    else if (query_info.query)
-        is_query_with_final = query_info.query->as<ASTSelectQuery &>().final();
-
-    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
-    {
-        LOG_WARNING(log, "FINAL modifier is supported with parallel replicas. Will try to execute the query without using them.");
-        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
-        context->setSetting("parallel_replicas_custom_key", String{""});
-    }
-
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
@@ -533,13 +518,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
-    if (storage && context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY && !joined_tables.tablesWithColumns().empty())
+    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY && !joined_tables.tablesWithColumns().empty())
     {
         if (settings.parallel_replicas_count > 1)
         {
             if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *context))
             {
                 LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
+                if (!storage)
+                    throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
 
                 parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
                     settings.parallel_replicas_count,

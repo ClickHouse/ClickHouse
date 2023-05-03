@@ -185,41 +185,6 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
     }
 }
 
-void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    if (settings.json.write_named_tuples_as_objects
-        && have_explicit_names)
-    {
-        writeCString("{\n", ostr);
-        for (size_t i = 0; i < elems.size(); ++i)
-        {
-            if (i != 0)
-                writeCString(",\n", ostr);
-            writeChar(' ', (indent + 1) * 4, ostr);
-            writeJSONString(elems[i]->getElementName(), ostr, settings);
-            writeCString(": ", ostr);
-            elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
-        }
-        writeChar('\n', ostr);
-        writeChar(' ', indent * 4, ostr);
-        writeChar('}', ostr);
-    }
-    else
-    {
-        writeCString("[\n", ostr);
-        for (size_t i = 0; i < elems.size(); ++i)
-        {
-            if (i != 0)
-                writeCString(",\n", ostr);
-            writeChar(' ', (indent + 1) * 4, ostr);
-            elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
-        }
-        writeChar('\n', ostr);
-        writeChar(' ', indent * 4, ostr);
-        writeChar(']', ostr);
-    }
-}
-
 void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.json.read_named_tuples_as_objects

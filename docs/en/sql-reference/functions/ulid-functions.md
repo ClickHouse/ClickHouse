@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/ulid-functions
-sidebar_position: 190
+sidebar_position: 54
 sidebar_label: ULID
 ---
 
@@ -18,7 +18,7 @@ generateULID([x])
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+-   `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../../sql-reference/data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 
@@ -60,12 +60,12 @@ ULIDStringToDateTime(ulid[, timezone])
 
 **Arguments**
 
-- `ulid` — Input ULID. [String](/docs/en/sql-reference/data-types/string.md) or [FixedString(26)](/docs/en/sql-reference/data-types/fixedstring.md).
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+-   `ulid` — Input ULID. [String](/docs/en/sql-reference/data-types/string.md) or [FixedString(26)](/docs/en/sql-reference/data-types/fixedstring.md).
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- Timestamp with milliseconds precision.
+-   Timestamp with milliseconds precision.
 
 Type: [DateTime64(3)](/docs/en/sql-reference/data-types/datetime64.md).
 
@@ -83,4 +83,4 @@ SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
 
 ## See Also
 
-- [UUID](../../sql-reference/functions/uuid-functions.md)
+-   [UUID](../../sql-reference/functions/uuid-functions.md)

@@ -47,7 +47,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
-    T value = T{};
+    T value;
 
 public:
     static constexpr bool is_nullable = false;

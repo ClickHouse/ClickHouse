@@ -270,7 +270,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Insert info arena. Bytes: " << arena.allocatedBytes()
+            << "Insert info arena. Bytes: " << arena.size()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << sum_strings_size / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"
@@ -298,7 +298,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Randomly remove and insert elements. Bytes: " << arena.allocatedBytes()
+            << "Randomly remove and insert elements. Bytes: " << arena.size()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"
@@ -331,7 +331,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Filling cache. Bytes: " << arena.allocatedBytes()
+            << "Filling cache. Bytes: " << arena.size()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"

@@ -30,12 +30,10 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
-#include <Storages/StorageKeeperMap.h>
 
 namespace DB
 {
@@ -663,7 +661,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-    return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
+    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
@@ -1389,30 +1387,17 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (query_context->getClientInfo().is_replicated_database_internal)
         return false;
 
-    /// we never replicate KeeperMap operations for some types of queries because it doesn't make sense
-    const auto is_keeper_map_table = [&](const ASTPtr & ast)
-    {
-        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
-
-        return table->as<StorageKeeperMap>() != nullptr;
-    };
-
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
-        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter() && !is_keeper_map_table(query_ptr);
+    {
+        return !alter->isAttachAlter() && !alter->isFetchAlter() && !alter->isDropPartitionAlter();
+    }
 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
     {
-        if (drop->table.get())
-            return drop->kind != ASTDropQuery::Truncate || !is_keeper_map_table(query_ptr);
-
-        return false;
+        return drop->table.get();
     }
-
-    if (query_ptr->as<const ASTDeleteQuery>() != nullptr)
-        return !is_keeper_map_table(query_ptr);
 
     return true;
 }

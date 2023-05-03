@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import atexit
 import logging
 import subprocess
 import os
@@ -14,7 +13,6 @@ from commit_status_helper import (
     RerunHelper,
     get_commit,
     post_commit_status,
-    update_mergeable_check,
 )
 from docker_pull_helper import get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY
@@ -63,7 +61,6 @@ def main():
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
-    atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")

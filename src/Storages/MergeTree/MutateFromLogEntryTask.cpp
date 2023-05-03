@@ -164,20 +164,21 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContext();
-    task_context->setCurrentQueryId("");
-
+    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
-        task_context);
+        settings);
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    fake_query_context = Context::createCopy(storage.getContext());
+    fake_query_context->makeQueryContext();
+    fake_query_context->setCurrentQueryId("");
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
-            entry.create_time, task_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
+            entry.create_time, fake_query_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)

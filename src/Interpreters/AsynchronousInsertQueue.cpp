@@ -40,7 +40,6 @@ namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
-    extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -343,15 +342,10 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
     }
 }
 
-namespace
-{
-
-using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
-
-void appendElementsToLogSafe(
+static void appendElementsToLogSafe(
     AsynchronousInsertLog & log,
     std::vector<AsynchronousInsertLogElement> elements,
-    TimePoint flush_time,
+    std::chrono::time_point<std::chrono::system_clock> flush_time,
     const String & flush_query_id,
     const String & flush_exception)
 try
@@ -371,8 +365,6 @@ try
 catch (...)
 {
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
-}
-
 }
 
 // static
@@ -445,8 +437,7 @@ try
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
-        size_t num_rows = executor.execute(*buffer);
-        total_rows += num_rows;
+        total_rows += executor.execute(*buffer);
         chunk_info->offsets.push_back(total_rows);
 
         /// Keep buffer, because it still can be used
@@ -461,7 +452,6 @@ try
             elem.query = key.query;
             elem.query_id = entry->query_id;
             elem.bytes = entry->bytes.size();
-            elem.rows = num_rows;
             elem.exception = current_exception;
             current_exception.clear();
 
@@ -482,28 +472,9 @@ try
 
     format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
-    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
-
-    auto finish_entries = [&]
-    {
-        for (const auto & entry : data->entries)
-        {
-            if (!entry->isFinished())
-                entry->finish();
-        }
-
-        if (!log_elements.empty())
-        {
-            auto flush_time = std::chrono::system_clock::now();
-            appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
-        }
-    };
 
     if (total_rows == 0)
-    {
-        finish_entries();
         return;
-    }
 
     try
     {
@@ -531,7 +502,17 @@ try
         throw;
     }
 
-    finish_entries();
+    for (const auto & entry : data->entries)
+    {
+        if (!entry->isFinished())
+            entry->finish();
+    }
+
+    if (!log_elements.empty())
+    {
+        auto flush_time = std::chrono::system_clock::now();
+        appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
+    }
 }
 catch (const Exception & e)
 {

@@ -10,7 +10,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/PODArray.h>
 
 namespace DB
 {
