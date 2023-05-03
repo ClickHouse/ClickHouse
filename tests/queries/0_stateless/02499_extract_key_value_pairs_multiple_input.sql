@@ -426,3 +426,25 @@ WITH
         ) AS x
 SELECT
     x;
+
+WITH
+    str_to_map('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
+WITH
+    mapFromString('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
