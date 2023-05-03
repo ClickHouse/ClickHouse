@@ -23,6 +23,7 @@ list (APPEND PUBLIC_LIBS
         ch_contrib::murmurhash
         ch_contrib::hashidsxx
         ch_contrib::morton_nd
+        clickhouse_common_foundationdb
 )
 
 list (APPEND PRIVATE_LIBS

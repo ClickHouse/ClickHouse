@@ -45,6 +45,8 @@ struct ExternalLoaderConfigSettings
   * distributed between lifetime.min_sec and lifetime.max_sec.
   * If either of lifetime.min_sec and lifetime.max_sec is zero, such object is never updated.
   */
+class DictionariesMetaStoreFDB;
+class ExternalDictionariesLoader;
 class ExternalLoader
 {
 public:
@@ -54,7 +56,7 @@ public:
 
     using Duration = std::chrono::milliseconds;
     using TimePoint = std::chrono::system_clock::time_point;
-
+    using Repository = IExternalLoaderConfigRepository;
     struct ObjectConfig
     {
         Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
@@ -75,7 +77,19 @@ public:
         std::exception_ptr exception;
         std::shared_ptr<const ObjectConfig> config;
     };
+    struct FileInfo
+    {
+        Poco::Timestamp last_update_time = 0;
+        bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
+        Poco::AutoPtr<Poco::Util::AbstractConfiguration> file_contents; // Parsed contents of the file.
+        std::unordered_map<String /* object name */, String /* key in file_contents */> objects;
+    };
 
+    struct RepositoryInfo
+    {
+        std::unique_ptr<Repository> repository;
+        std::unordered_map<String /* path */, FileInfo> files;
+    };
     using LoadResults = std::vector<LoadResult>;
 
     template <typename T>
@@ -208,6 +222,13 @@ public:
 
     /// Reload only a specified path in a specified config repository.
     void reloadConfig(const String & repository_name, const String & path) const;
+
+    /// Get all repositories from fdb.
+    std::unordered_map<IExternalLoaderConfigRepository *, RepositoryInfo> getAllLocalRepositories();
+    void setFDBflag(bool flag);
+    void clearRepositories();
+    void setFDBDictionaryRepositories(std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories);
+    void addConfigRepositoryWithoutReturn(std::unique_ptr<IExternalLoaderConfigRepository> repository) const;
 
 protected:
     virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;

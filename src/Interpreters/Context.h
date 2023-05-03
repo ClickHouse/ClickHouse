@@ -1,40 +1,46 @@
 #pragma once
 
-#include <base/types.h>
-#include <Common/isLocalAddress.h>
-#include <Common/MultiVersion.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/RemoteHostFilter.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Common/Throttler_fwd.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/IResourceManager.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <IO/IResourceManager.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <base/types.h>
+#include <Common/MultiVersion.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/Throttler_fwd.h>
+#include <Common/isLocalAddress.h>
 
 #include "config.h"
 
-#include <boost/container/flat_set.hpp>
 #include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <boost/container/flat_set.hpp>
 
 
-namespace Poco::Net { class IPAddress; }
-namespace zkutil { class ZooKeeper; }
+namespace Poco::Net
+{
+class IPAddress;
+}
+namespace zkutil
+{
+class ZooKeeper;
+}
 
 struct OvercommitTracker;
 
@@ -43,6 +49,7 @@ namespace DB
 
 class ASTSelectQuery;
 
+class DictionariesMetaStoreFDB;
 struct ContextSharedPart;
 class ContextAccess;
 struct User;
@@ -159,8 +166,8 @@ struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
 #if USE_NLP
-    class SynonymsExtensions;
-    class Lemmatizers;
+class SynonymsExtensions;
+class Lemmatizers;
 #endif
 
 class ZooKeeperMetadataTransaction;
@@ -229,7 +236,7 @@ private:
   *
   * Everything is encapsulated for all sorts of checks and locks.
   */
-class Context: public std::enable_shared_from_this<Context>
+class Context : public std::enable_shared_from_this<Context>
 {
 private:
     ContextSharedPart * shared;
@@ -246,21 +253,21 @@ private:
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
-    Settings settings;  /// Setting for query execution.
+    Settings settings; /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
-    ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
+    ProgressCallback progress_callback; /// Callback for tracking progress of query execution.
 
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
-    std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
-    bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
-    StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
-    bool is_distributed = false;  /// Whether the current context it used for distributed query
+    std::weak_ptr<QueryStatus> process_list_elem; /// For tracking total resource usage for query.
+    bool has_process_list_elem = false; /// It's impossible to check if weak_ptr was initialized or not
+    StorageID insertion_table = StorageID::createEmpty(); /// Saved insertion table in query context
+    bool is_distributed = false; /// Whether the current context it used for distributed query
 
-    String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
-                            /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
+    String default_format; /// Format, used when server formats data by itself and if query does not have FORMAT specification.
+        /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
 
     String insert_format; /// Format, used in insert query.
 
@@ -383,15 +390,15 @@ private:
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
 
     /// TODO: maybe replace with temporary tables?
-    StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
-    Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    StoragePtr view_source; /// Temporary StorageValues used to generate alias columns for materialized views
+    Tables table_function_results; /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
 
     ContextWeakMutablePtr query_context;
-    ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
-    ContextWeakMutablePtr global_context;   /// Global context. Could be equal to this.
+    ContextWeakMutablePtr session_context; /// Session context or nullptr. Could be equal to this.
+    ContextWeakMutablePtr global_context; /// Global context. Could be equal to this.
 
     /// XXX: move this stuff to shared part instead.
-    ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
+    ContextMutablePtr buffer_context; /// Buffer context. Could be equal to this.
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
@@ -410,9 +417,7 @@ public:
 
         KitchenSink() = default;
 
-        KitchenSink(const KitchenSink & rhs)
-            : analyze_counter(rhs.analyze_counter.load())
-        {}
+        KitchenSink(const KitchenSink & rhs) : analyze_counter(rhs.analyze_counter.load()) { }
 
         KitchenSink & operator=(const KitchenSink & rhs)
         {
@@ -432,24 +437,24 @@ private:
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
-    NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
-                                                     /// (key=name, value)
+    NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
+        /// (key=name, value)
 
-    IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
-                                   /// when using ClickHouse as a library in some project. For example, it may contain host
-                                   /// logger, some query identification information, profiling guards, etc. This field is
-                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::ContextPtr)
-                                   /// methods.
+    IHostContextPtr host_context; /// Arbitrary object that may used to attach some host specific information to query context,
+        /// when using ClickHouse as a library in some project. For example, it may contain host
+        /// logger, some query identification information, profiling guards, etc. This field is
+        /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::ContextPtr)
+        /// methods.
 
-    ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
-                                                    /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
-                                                    /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
-                                                    /// thousands of signatures.
-                                                    /// And I hope it will be replaced with more common Transaction sometime.
+    ZooKeeperMetadataTransactionPtr metadata_transaction; /// Distributed DDL context. I'm not sure if it's a suitable place for this,
+        /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
+        /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
+        /// thousands of signatures.
+        /// And I hope it will be replaced with more common Transaction sometime.
 
-    MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
-                                                        /// It's shared with all children contexts.
-    MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
+    MergeTreeTransactionPtr merge_tree_transaction; /// Current transaction context. Can be inside session or query context.
+        /// It's shared with all children contexts.
+    MergeTreeTransactionHolder merge_tree_transaction_holder; /// It will rollback or commit transaction on Context destruction.
 
     /// Use copy constructor or createGlobal() instead
     Context();
@@ -542,7 +547,8 @@ public:
     void checkAccess(const AccessFlags & flags, std::string_view database) const;
     void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
     void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(
+        const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
     void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const;
@@ -590,12 +596,12 @@ public:
 
     enum StorageNamespace
     {
-         ResolveGlobal = 1u,                                           /// Database name must be specified
-         ResolveCurrentDatabase = 2u,                                  /// Use current database
-         ResolveOrdinary = ResolveGlobal | ResolveCurrentDatabase,     /// If database name is not specified, use current database
-         ResolveExternal = 4u,                                         /// Try get external table
-         ResolveAll = ResolveExternal | ResolveOrdinary                /// If database name is not specified, try get external table,
-                                                                       ///    if external table not found use current database.
+        ResolveGlobal = 1u, /// Database name must be specified
+        ResolveCurrentDatabase = 2u, /// Use current database
+        ResolveOrdinary = ResolveGlobal | ResolveCurrentDatabase, /// If database name is not specified, use current database
+        ResolveExternal = 4u, /// Try get external table
+        ResolveAll = ResolveExternal | ResolveOrdinary /// If database name is not specified, try get external table,
+        ///    if external table not found use current database.
     };
 
     String resolveDatabase(const String & database_name) const;
@@ -669,7 +675,7 @@ public:
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
 
-    String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
+    String getDefaultFormat() const; /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 
     String getInsertFormat() const;
@@ -703,6 +709,8 @@ public:
 
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
+    std::shared_ptr<DictionariesMetaStoreFDB> getFDBDictionaryLoader() const;
+    std::shared_ptr<DictionariesMetaStoreFDB> getFDBDictionaryLoaderUnlocked() const;
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
@@ -724,7 +732,12 @@ public:
     BackupsWorker & getBackupsWorker() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
@@ -1017,11 +1030,11 @@ public:
 
     enum class ApplicationType
     {
-        SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
-        CLIENT,         /// clickhouse-client
-        LOCAL,          /// clickhouse-local
-        KEEPER,         /// clickhouse-keeper (also daemon)
-        DISKS,          /// clickhouse-disks
+        SERVER, /// The program is run as clickhouse-server daemon (default behavior)
+        CLIENT, /// clickhouse-client
+        LOCAL, /// clickhouse-local
+        KEEPER, /// clickhouse-keeper (also daemon)
+        DISKS, /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;
@@ -1169,60 +1182,34 @@ public:
     ThrottlerPtr getBackupsThrottler() const;
 
 private:
-    mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
-    mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
+    mutable ThrottlerPtr remote_read_query_throttler; /// A query-wide throttler for remote IO reads
+    mutable ThrottlerPtr remote_write_query_throttler; /// A query-wide throttler for remote IO writes
 
-    mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
-    mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
+    mutable ThrottlerPtr local_read_query_throttler; /// A query-wide throttler for local IO reads
+    mutable ThrottlerPtr local_write_query_throttler; /// A query-wide throttler for local IO writes
 
-    mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
+    mutable ThrottlerPtr backups_query_throttler; /// A query-wide throttler for BACKUPs
 };
 
 struct HTTPContext : public IHTTPContext
 {
-    explicit HTTPContext(ContextPtr context_)
-        : context(Context::createCopy(context_))
-    {}
+    explicit HTTPContext(ContextPtr context_) : context(Context::createCopy(context_)) { }
 
-    uint64_t getMaxHstsAge() const override
-    {
-        return context->getSettingsRef().hsts_max_age;
-    }
+    uint64_t getMaxHstsAge() const override { return context->getSettingsRef().hsts_max_age; }
 
-    uint64_t getMaxUriSize() const override
-    {
-        return context->getSettingsRef().http_max_uri_size;
-    }
+    uint64_t getMaxUriSize() const override { return context->getSettingsRef().http_max_uri_size; }
 
-    uint64_t getMaxFields() const override
-    {
-        return context->getSettingsRef().http_max_fields;
-    }
+    uint64_t getMaxFields() const override { return context->getSettingsRef().http_max_fields; }
 
-    uint64_t getMaxFieldNameSize() const override
-    {
-        return context->getSettingsRef().http_max_field_name_size;
-    }
+    uint64_t getMaxFieldNameSize() const override { return context->getSettingsRef().http_max_field_name_size; }
 
-    uint64_t getMaxFieldValueSize() const override
-    {
-        return context->getSettingsRef().http_max_field_value_size;
-    }
+    uint64_t getMaxFieldValueSize() const override { return context->getSettingsRef().http_max_field_value_size; }
 
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getSettingsRef().http_max_chunk_size;
-    }
+    uint64_t getMaxChunkSize() const override { return context->getSettingsRef().http_max_chunk_size; }
 
-    Poco::Timespan getReceiveTimeout() const override
-    {
-        return context->getSettingsRef().http_receive_timeout;
-    }
+    Poco::Timespan getReceiveTimeout() const override { return context->getSettingsRef().http_receive_timeout; }
 
-    Poco::Timespan getSendTimeout() const override
-    {
-        return context->getSettingsRef().http_send_timeout;
-    }
+    Poco::Timespan getSendTimeout() const override { return context->getSettingsRef().http_send_timeout; }
 
     ContextPtr context;
 };

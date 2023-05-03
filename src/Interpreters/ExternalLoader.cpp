@@ -1,25 +1,31 @@
 #include "ExternalLoader.h"
 
+#include <iostream>
+#include <memory>
 #include <mutex>
-#include <pcg_random.hpp>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/randomSeed.h>
-#include <Common/setThreadName.h>
-#include <Common/StatusInfo.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
+#include <unordered_map>
+#include <unordered_set>
+#include <Interpreters/DictionariesMetaStoreFDB.h>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <unordered_set>
+#include <pcg_random.hpp>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Exception.h>
+#include <Common/StatusInfo.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
+#include <utility>
+#include <Poco/Util/XMLConfiguration.h>
 
 namespace CurrentStatusInfo
 {
-    extern const Status DictionaryStatus;
+extern const Status DictionaryStatus;
 }
 
 
@@ -32,7 +38,8 @@ namespace ErrorCodes
     extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
-
+using Repository = IExternalLoaderConfigRepository;
+using RepositoryInfo = ExternalLoader::RepositoryInfo;
 namespace
 {
     template <typename ReturnType>
@@ -99,23 +106,35 @@ namespace
 
 /** Reads configurations from configuration repository and parses it.
   */
+class DictionariesMetaStoreFDB;
 class ExternalLoader::LoadablesConfigReader : private boost::noncopyable
 {
+    friend DictionariesMetaStoreFDB;
+
 public:
-    LoadablesConfigReader(const String & type_name_, Poco::Logger * log_)
-        : type_name(type_name_), log(log_)
-    {
-    }
+    LoadablesConfigReader(const String & type_name_, Poco::Logger * log_) : type_name(type_name_), log(log_) { }
     ~LoadablesConfigReader() = default;
 
-    using Repository = IExternalLoaderConfigRepository;
 
     void addConfigRepository(std::unique_ptr<Repository> repository)
     {
         std::lock_guard lock{mutex};
         auto * ptr = repository.get();
+        if (fdb_name_map.find(repository->getName()) != fdb_name_map.end())
+        {
+            LOG_DEBUG(log, "dictionary: {} has existed ", repository->getName());
+            return;
+        }
         repositories.emplace(ptr, RepositoryInfo{std::move(repository), {}});
         need_collect_object_configs = true;
+        if (settings.external_config == "dictionary" && fdb_flag)
+        {
+            /// Repository is dictionary with fdb
+            ExternalLoaderFDBDictionaryConfigRepository * repo_ptr = dynamic_cast<ExternalLoaderFDBDictionaryConfigRepository *>(ptr);
+            if (repo_ptr == nullptr)
+                return;
+            fdb_name_map.emplace(repo_ptr->getName(), repo_ptr);
+        }
     }
 
     void removeConfigRepository(Repository * repository)
@@ -124,8 +143,19 @@ public:
         auto it = repositories.find(repository);
         if (it == repositories.end())
             return;
-        repositories.erase(it);
         need_collect_object_configs = true;
+        auto repository_name = repository->getName();
+        if (settings.external_config == "dictionary")
+        {
+            ExternalLoaderFDBDictionaryConfigRepository * repo_ptr
+                = dynamic_cast<ExternalLoaderFDBDictionaryConfigRepository *>(repository);
+            LOG_DEBUG(log, "Remove config repository {}", repository_name);
+            if (repo_ptr != nullptr && fdb_name_map.find(repository_name) != fdb_name_map.end())
+            {
+                fdb_name_map.erase(repository_name);
+            }
+        }
+        repositories.erase(repository);
     }
 
     void setConfigSettings(const ExternalLoaderConfigSettings & settings_)
@@ -145,6 +175,17 @@ public:
     /// Reads all repositories.
     ObjectConfigsPtr read()
     {
+        if (fdb_flag)
+        {
+            try
+            {
+                updateLocalRepositoriesFromFDB();
+            }
+            catch (std::exception & e)
+            {
+                LOG_INFO(log, "Exception:{}", e.what());
+            }
+        }
         std::lock_guard lock(mutex);
         readRepositories();
         collectObjectConfigs();
@@ -155,6 +196,17 @@ public:
     /// This functions checks only a specified repository but returns configs from all repositories.
     ObjectConfigsPtr read(const String & repository_name)
     {
+        if (fdb_flag)
+        {
+            try
+            {
+                updateLocalRepositoriesFromFDB();
+            }
+            catch (std::exception & e)
+            {
+                LOG_INFO(log, "Exception:{}", e.what());
+            }
+        }
         std::lock_guard lock(mutex);
         readRepositories(repository_name);
         collectObjectConfigs();
@@ -165,27 +217,97 @@ public:
     /// This functions checks only a specified repository but returns configs from all repositories.
     ObjectConfigsPtr read(const String & repository_name, const String & path)
     {
+        if (fdb_flag)
+        {
+            try
+            {
+                updateLocalRepositoriesFromFDB();
+            }
+            catch (std::exception & e)
+            {
+                LOG_INFO(log, "Exception:{}", e.what());
+            }
+        }
         std::lock_guard lock(mutex);
         readRepositories(repository_name, path);
         collectObjectConfigs();
         return object_configs;
     }
 
+    std::unordered_map<Repository *, RepositoryInfo> getAllLocalRepositories()
+    {
+        /// Return all repositories of local system.
+        std::unordered_map<Repository *, RepositoryInfo> repos;
+        std::vector<Repository *> delete_repo;
+        for (auto & repository : repositories)
+        {
+            std::unordered_map<std::string, FileInfo> repo_files;
+            ExternalLoaderXMLConfigRepository * repo_ptr = dynamic_cast<ExternalLoaderXMLConfigRepository *>(repository.first);
+            if (repo_ptr == nullptr)
+                continue;
+            for (auto & file : repository.second.files)
+            {
+                FileInfo repo_file;
+                repo_file.file_contents = file.second.file_contents;
+                repo_file.last_update_time = file.second.last_update_time;
+                repo_file.objects = file.second.objects;
+                repo_files.emplace(file.first, repo_file);
+            }
+            repos.emplace(repository.first, RepositoryInfo{std::move(repository.second.repository), repo_files});
+            delete_repo.push_back(repository.first);
+        }
+        for (auto & repository : delete_repo)
+        {
+            removeConfigRepository(repository);
+        }
+        return repos;
+    }
+
+    void setFDBFlag(bool fdb) { fdb_flag = fdb; }
+
+    bool existFDB() const { return fdb_flag; }
+
+    void clearRepositories() { repositories.clear(); }
+
+    void setFDBDictionaryRepositories(std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories_)
+    {
+        fdb_dictionary_repositories = fdb_dictionary_repositories_;
+    }
+
+    void updateLocalRepositoriesFromFDB()
+    {
+        /// 1. get all repositories' name from fdb
+        /// 2. commpare names from fdb and names at local to find repositories new or deleted.
+        /// 3. if repositories is new, system will add them to repositories, otherwise delete them.
+        std::vector<std::unique_ptr<Repository>> repos = fdb_dictionary_repositories->getAllDictPtr();
+        std::unordered_map<std::string, bool> fdb_repo_names;
+        for (auto & ptr : repos)
+        {
+            std::string dict_name = ptr->getName();
+            if (fdb_name_map.find(dict_name) == fdb_name_map.end())
+            {
+                addConfigRepository(std::move(ptr));
+            }
+            fdb_repo_names.emplace(dict_name, true);
+        }
+        /// Delete repository which does not exist in fdb.
+        std::vector<Repository *> delete_repo;
+        for (auto & [name, repo] : fdb_name_map)
+        {
+            if (fdb_repo_names.find(name) == fdb_repo_names.end())
+            {
+                delete_repo.push_back(repo);
+            }
+        }
+        for (auto * repo : delete_repo)
+        {
+            removeConfigRepository(repo);
+        }
+        LOG_DEBUG(log, "Update local repositories from foundationdb finish.");
+    }
+    std::vector<std::string> getFDBDictionaryList() { return fdb_dictionary_repositories->list(); }
+
 private:
-    struct FileInfo
-    {
-        Poco::Timestamp last_update_time = 0;
-        bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
-        Poco::AutoPtr<Poco::Util::AbstractConfiguration> file_contents; // Parsed contents of the file.
-        std::unordered_map<String /* object name */, String /* key in file_contents */> objects;
-    };
-
-    struct RepositoryInfo
-    {
-        std::unique_ptr<Repository> repository;
-        std::unordered_map<String /* path */, FileInfo> files;
-    };
-
     /// Reads the repositories.
     /// Checks last modification times of files and read those files which are new or changed.
     void readRepositories(const std::optional<String> & only_repository_name = {}, const std::optional<String> & only_path = {})
@@ -249,10 +371,7 @@ private:
     }
 
     /// Reads a file, returns true if the file is new or changed.
-    bool readFileInfo(
-        FileInfo & file_info,
-        IExternalLoaderConfigRepository & repository,
-        const String & path) const
+    bool readFileInfo(FileInfo & file_info, IExternalLoaderConfigRepository & repository, const String & path) const
     {
         try
         {
@@ -273,7 +392,7 @@ private:
             // is updated, but in the same second).
             // The solution to this is probably switching to std::filesystem
             // -- the work is underway to do so.
-            if (update_time_from_repository == file_info.last_update_time)
+            if (update_time_from_repository == file_info.last_update_time && !fdb_flag)
             {
                 file_info.in_use = true;
                 return false;
@@ -282,6 +401,11 @@ private:
             LOG_TRACE(log, "Loading config file '{}'.", path);
             file_info.file_contents = repository.load(path);
             auto & file_contents = *file_info.file_contents;
+
+            const Poco::Util::XMLConfiguration & xml_config = dynamic_cast<const Poco::Util::XMLConfiguration &>(file_contents);
+            std::stringstream s("");
+            std::ostream & str = s;
+            xml_config.save(str);
 
             /// get all objects' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
@@ -360,6 +484,16 @@ private:
                         new_config->repository_name = repository->getName();
                         new_config->from_temp_repository = repository->isTemporary();
                         new_config->path = path;
+                        if (settings.external_config == "dictionary")
+                        {
+                            ExternalLoaderFDBDictionaryConfigRepository * repo_ptr
+                                = dynamic_cast<ExternalLoaderFDBDictionaryConfigRepository *>(repository);
+                            if (repo_ptr != nullptr)
+                            {
+                                // This is xml dictionary
+                                new_config->repository_name = "";
+                            }
+                        }
                         new_configs->configs_by_name.emplace(object_name, std::move(new_config));
                     }
                     else
@@ -368,11 +502,10 @@ private:
                         if (!already_added->from_temp_repository && !repository->isTemporary())
                         {
                             if (path == already_added->path && repository->getName() == already_added->repository_name)
-                                LOG_WARNING(log, "{} '{}' is found twice in the same file '{}'",
-                                    type_name, object_name, path);
+                                LOG_WARNING(log, "{} '{}' is found twice in the same file '{}'", type_name, object_name, path);
                             else
-                                LOG_WARNING(log, "{} '{}' is found both in file '{}' and '{}'",
-                                    type_name, object_name, already_added->path, path);
+                                LOG_WARNING(
+                                    log, "{} '{}' is found both in file '{}' and '{}'", type_name, object_name, already_added->path, path);
                         }
                     }
                 }
@@ -388,7 +521,11 @@ private:
 
     std::mutex mutex;
     ExternalLoaderConfigSettings settings;
+    bool fdb_flag = false;
+    std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories;
     std::unordered_map<Repository *, RepositoryInfo> repositories;
+    /// fdb_name_map is the map of FDBxxxConfigRepository's name and FDBxxxConfigRepository
+    std::unordered_map<std::string, Repository *> fdb_name_map;
     ObjectConfigsPtr object_configs;
     bool need_collect_object_configs = false;
     size_t counter = 0;
@@ -405,13 +542,8 @@ public:
     using CreateObjectFunction = std::function<LoadablePtr(
         const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */)>;
 
-    LoadingDispatcher(
-        const CreateObjectFunction & create_object_function_,
-        const String & type_name_,
-        Poco::Logger * log_)
-        : create_object(create_object_function_)
-        , type_name(type_name_)
-        , log(log_)
+    LoadingDispatcher(const CreateObjectFunction & create_object_function_, const String & type_name_, Poco::Logger * log_)
+        : create_object(create_object_function_), type_name(type_name_), log(log_)
     {
     }
 
@@ -464,7 +596,8 @@ public:
             else
             {
                 const auto & new_config = new_config_it->second;
-                bool config_is_same = isSameConfiguration(*info.config->config, info.config->key_in_config, *new_config->config, new_config->key_in_config);
+                bool config_is_same
+                    = isSameConfiguration(*info.config->config, info.config->key_in_config, *new_config->config, new_config->key_in_config);
                 info.config = new_config;
                 if (!config_is_same)
                 {
@@ -472,7 +605,10 @@ public:
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
-                        LOG_TRACE(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
+                        LOG_TRACE(
+                            log,
+                            "Will reload '{}' because its configuration has been changed and there were attempts to load it before",
+                            name);
                         startLoading(info, true);
                     }
                 }
@@ -530,10 +666,7 @@ public:
     }
 
     /// Sets whether the objects should be loaded asynchronously, each loading in a new thread (from the thread pool).
-    void enableAsyncLoading(bool enable)
-    {
-        enable_async_loading = enable;
-    }
+    void enableAsyncLoading(bool enable) { enable_async_loading = enable; }
 
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
@@ -703,7 +836,11 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, to_string(info.next_update_time));
+                            LOG_TRACE(
+                                log,
+                                "Object '{}' not modified, will not reload. Next update at {}",
+                                info.name,
+                                to_string(info.next_update_time));
                             continue;
                         }
 
@@ -727,7 +864,7 @@ public:
 private:
     struct Info
     {
-        Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) {}
+        Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) { }
 
         bool loaded() const { return object != nullptr; }
         bool failed() const { return !object && exception; }
@@ -926,12 +1063,26 @@ private:
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
 
-        LOG_TRACE(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
+        LOG_TRACE(
+            log,
+            "Will load the object '{}' {}, force = {}, loading_id = {}",
+            info.name,
+            (enable_async_loading ? std::string("in background") : "immediately"),
+            forced_to_reload,
+            info.loading_id);
 
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+            auto thread = ThreadFromGlobalPool{
+                &LoadingDispatcher::doLoading,
+                this,
+                info.name,
+                loading_id,
+                forced_to_reload,
+                min_id_to_finish_loading_dependencies_,
+                true,
+                CurrentThread::getGroup()};
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -968,12 +1119,15 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
+    void doLoading(
+        const String & name,
+        size_t loading_id,
+        bool forced_to_reload,
+        size_t min_id_to_finish_loading_dependencies_,
+        bool async,
+        ThreadGroupPtr thread_group = {})
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
+        SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
 
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
@@ -1101,7 +1255,12 @@ private:
         }
         if (info->loading_id != loading_id)
         {
-            LOG_TRACE(log, "Next update time for '{}' will not be set because this object's current loading_id {} is different from the specified {}.", name, info->loading_id, loading_id);
+            LOG_TRACE(
+                log,
+                "Next update time for '{}' will not be set because this object's current loading_id {} is different from the specified {}.",
+                name,
+                info->loading_id,
+                loading_id);
             return;
         }
 
@@ -1114,8 +1273,13 @@ private:
                 return ", next update is scheduled at " + to_string(next_update_time);
             };
             if (previous_version)
-                tryLogException(new_exception, log, "Could not update " + type_name + " '" + name + "'"
-                                ", leaving the previous version" + next_update_time_description());
+                tryLogException(
+                    new_exception,
+                    log,
+                    "Could not update " + type_name + " '" + name
+                        + "'"
+                          ", leaving the previous version"
+                        + next_update_time_description());
             else
                 tryLogException(new_exception, log, "Could not load " + type_name + " '" + name + "'" + next_update_time_description());
         }
@@ -1162,7 +1326,8 @@ private:
         {
             if (!loaded_object->supportUpdates())
             {
-                LOG_TRACE(log, "Supposed update time for '{}' is never (loaded, does not support updates)", loaded_object->getLoadableName());
+                LOG_TRACE(
+                    log, "Supposed update time for '{}' is never (loaded, does not support updates)", loaded_object->getLoadableName());
 
                 return never;
             }
@@ -1179,13 +1344,23 @@ private:
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                 auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-                LOG_TRACE(log, "Supposed update time for '{}' is {} (loaded, lifetime [{}, {}], no errors)",
-                    loaded_object->getLoadableName(), to_string(result), lifetime.min_sec, lifetime.max_sec);
+                LOG_TRACE(
+                    log,
+                    "Supposed update time for '{}' is {} (loaded, lifetime [{}, {}], no errors)",
+                    loaded_object->getLoadableName(),
+                    to_string(result),
+                    lifetime.min_sec,
+                    lifetime.max_sec);
                 return result;
             }
 
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), to_string(result), error_count);
+            LOG_TRACE(
+                log,
+                "Supposed update time for '{}' is {} (backoff, {} errors)",
+                loaded_object->getLoadableName(),
+                to_string(result),
+                error_count);
             return result;
         }
         else
@@ -1280,10 +1455,8 @@ private:
 
 ExternalLoader::ExternalLoader(const String & type_name_, Poco::Logger * log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
-    , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
-          type_name_,
-          log_))
+    , loading_dispatcher(
+          std::make_unique<LoadingDispatcher>([this](auto && a, auto && b, auto && c) { return createObject(a, b, c); }, type_name_, log_))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
     , type_name(type_name_)
     , log(log_)
@@ -1306,6 +1479,19 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
         CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
+}
+
+void ExternalLoader::addConfigRepositoryWithoutReturn(std::unique_ptr<IExternalLoaderConfigRepository> repository) const
+{
+    auto * ptr = repository.get();
+    String name = ptr->getName();
+    config_files_reader->addConfigRepository(std::move(repository));
+    reloadConfig(name);
+}
+
+std::unordered_map<Repository *, RepositoryInfo> ExternalLoader::getAllLocalRepositories()
+{
+    return config_files_reader->getAllLocalRepositories();
 }
 
 void ExternalLoader::setConfigSettings(const ExternalLoaderConfigSettings & settings)
@@ -1435,8 +1621,7 @@ Strings ExternalLoader::getAllTriedToLoadNames() const
 }
 
 
-void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
-                                 bool check_no_errors) const
+void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result, bool check_no_errors) const
 {
     if (result.object && (!check_no_errors || !result.exception))
         return;
@@ -1459,11 +1644,11 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         }
         catch (...)
         {
-            throw DB::Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
-                                "Failed to load dictionary '{}': {}",
-                                result.name,
-                                getCurrentExceptionMessage(true /*with stack trace*/,
-                                                           true /*check embedded stack trace*/));
+            throw DB::Exception(
+                ErrorCodes::DICTIONARIES_WAS_NOT_LOADED,
+                "Failed to load dictionary '{}': {}",
+                result.name,
+                getCurrentExceptionMessage(true /*with stack trace*/, true /*check embedded stack trace*/));
         }
     }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
@@ -1472,8 +1657,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not tried to load", type_name, result.name);
 }
 
-void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,
-                                 bool check_no_errors) const
+void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results, bool check_no_errors) const
 {
     std::exception_ptr exception;
     for (const auto & result : results)
@@ -1511,8 +1695,23 @@ void ExternalLoader::reloadConfig(const String & repository_name, const String &
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
 }
 
-ExternalLoader::LoadablePtr ExternalLoader::createObject(
-    const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const
+void ExternalLoader::clearRepositories()
+{
+    config_files_reader->clearRepositories();
+}
+
+void ExternalLoader::setFDBflag(bool flag)
+{
+    config_files_reader->setFDBFlag(flag);
+}
+
+void ExternalLoader::setFDBDictionaryRepositories(std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories)
+{
+    config_files_reader->setFDBDictionaryRepositories(fdb_dictionary_repositories);
+}
+
+ExternalLoader::LoadablePtr
+ExternalLoader::createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const
 {
     if (previous_version)
         return previous_version->clone();
