@@ -11,6 +11,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 BackupReaderFile::BackupReaderFile(const String & root_path_, const ContextPtr & context_)
     : BackupReaderDefault(&Poco::Logger::get("BackupReaderFile"), context_)
     , root_path(root_path_)
