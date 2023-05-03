@@ -5,6 +5,7 @@
 #include <Formats/NativeWriter.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPCommon.h>
 #include <IO/S3Common.h>
 #include <Server/HTTP/HTMLForm.h>
@@ -63,8 +64,9 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
 // Reserved for ALTER PRIMARY KEY
-// constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PRIMARY_KEY = 8;
+// constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PRIMARY_KEY = 9;
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -120,7 +122,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -281,6 +283,10 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             && name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             continue;
 
+        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION
+            && name == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
+            continue;
+
         files_to_replicate.insert(name);
     }
 
@@ -408,7 +414,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
         {"compress",                "false"}
     });
 
@@ -708,7 +714,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     auto block = block_in.read();
     throttler->add(block.bytes());
 
-    new_data_part->setColumns(block.getNamesAndTypesList(), {});
+    new_data_part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
 
     if (!is_projection)
     {
@@ -784,7 +790,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&
-            file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
+            file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
+            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
@@ -814,6 +821,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const auto data_settings = data.getSettings();
     MergeTreeData::DataPart::Checksums data_checksums;
 
+    zkutil::EphemeralNodeHolderPtr zero_copy_temporary_lock_holder;
     if (to_remote_disk)
     {
         readStringBinary(part_id, in);
@@ -822,7 +830,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             throw Exception(ErrorCodes::ZERO_COPY_REPLICATION_ERROR, "Part {} unique id {} doesn't exist on {} (with type {}).", part_name, part_id, disk->getName(), toString(disk->getDataSourceDescription().type));
 
         LOG_DEBUG(log, "Downloading part {} unique id {} metadata onto disk {}.", part_name, part_id, disk->getName());
-        data.lockSharedDataTemporary(part_name, part_id, disk);
+        zero_copy_temporary_lock_holder = data.lockSharedDataTemporary(part_name, part_id, disk);
     }
     else
     {
@@ -931,7 +939,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     if (to_remote_disk)
     {
-        data.lockSharedData(*new_data_part, /* replace_existing_lock = */ true, {});
         LOG_DEBUG(log, "Download of part {} unique id {} metadata onto disk {} finished.", part_name, part_id, disk->getName());
     }
     else
@@ -940,6 +947,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             new_data_part->checksums.checkEqual(data_checksums, false);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
+
+    if (zero_copy_temporary_lock_holder)
+        zero_copy_temporary_lock_holder->setAlreadyRemoved();
 
     return new_data_part;
 }

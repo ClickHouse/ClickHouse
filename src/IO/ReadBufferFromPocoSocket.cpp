@@ -8,7 +8,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-
+#include <Common/AsyncTaskExecutor.h>
 
 namespace ProfileEvents
 {
@@ -52,8 +52,8 @@ bool ReadBufferFromPocoSocket::nextImpl()
         /// If async_callback is specified, and read will block, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
-            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
+        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR))
+            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
 
         if (internal_buffer.size() > INT_MAX)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");

@@ -273,7 +273,7 @@ struct SetRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return data.size() + data.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + data.size() + sizeof(version); }
 };
 
 struct SetResponse : virtual Response
@@ -318,6 +318,9 @@ struct CheckRequest : virtual Request
 {
     String path;
     int32_t version = -1;
+
+    /// should it check if a node DOES NOT exist
+    bool not_exists = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -524,7 +527,7 @@ public:
         const Requests & requests,
         MultiCallback callback) = 0;
 
-    virtual DB::KeeperApiVersion getApiVersion() = 0;
+    virtual DB::KeeperApiVersion getApiVersion() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
