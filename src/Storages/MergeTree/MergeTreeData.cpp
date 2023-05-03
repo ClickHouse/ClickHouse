@@ -1893,7 +1893,7 @@ try
     if (is_async)
         shared_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-    size_t num_loaded_parts = 0;
+    std::atomic_size_t num_loaded_parts = 0;
 
     auto runner = threadPoolCallbackRunner<void>(OutdatedPartsLoadingThreadPool::get(), "OutdatedParts");
     std::vector<std::future<void>> parts_futures;
