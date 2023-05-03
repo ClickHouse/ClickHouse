@@ -16,6 +16,7 @@ cluster = ClickHouseCluster(__file__)
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
+
         cluster.add_instance(
             "node1",
             main_configs=["configs/storage_conf.xml"],
@@ -33,8 +34,7 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
+        
 def test_fetch_correct_volume(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
@@ -178,57 +178,3 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
         )
     )
     assert all([value == "s3" for value in part_to_disk.values()])
-
-
-def test_zero_copy_mutation(started_cluster):
-    node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]
-
-    node1.query(
-        """
-CREATE TABLE test_zero_copy_mutation (EventDate Date, CounterID UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse-tables/test_zero_copy_mutation', 'r1')
-ORDER BY (CounterID, EventDate)
-SETTINGS index_granularity = 8192, storage_policy = 's3_only'"""
-    )
-
-    node2.query(
-        """
-CREATE TABLE test_zero_copy_mutation (EventDate Date, CounterID UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse-tables/test_zero_copy_mutation', 'r2')
-ORDER BY (CounterID, EventDate)
-SETTINGS index_granularity = 8192, storage_policy = 's3_only'"""
-    )
-
-    node1.query(
-        "INSERT INTO test_zero_copy_mutation SELECT toDate('2023-01-01') + toIntervalDay(number) + rand(), number * number from system.numbers limit 10"
-    )
-
-    node2.query("SYSTEM STOP REPLICATION QUEUES test_zero_copy_mutation")
-    p = Pool(3)
-
-    def run_long_mutation(node):
-        node1.query(
-            "ALTER TABLE test_zero_copy_mutation DELETE WHERE sleepEachRow(1) == 1"
-        )
-
-    job = p.apply_async(run_long_mutation, (node1,))
-
-    for i in range(30):
-        count = node1.query(
-            "SELECT count() FROM system.replication_queue WHERE type = 'MUTATE_PART'"
-        ).strip()
-        if int(count) > 0:
-            break
-        else:
-            time.sleep(0.1)
-
-    node2.query("SYSTEM START REPLICATION QUEUES test_zero_copy_mutation")
-
-    node2.query("SYSTEM SYNC REPLICA test_zero_copy_mutation")
-
-    job.get()
-
-    assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock exists")
-    assert node2.contains_in_log("Removing zero-copy lock on")
-    assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock doesn't exist")

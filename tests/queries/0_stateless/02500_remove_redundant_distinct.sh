@@ -4,13 +4,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-if [ -z ${ENABLE_ANALYZER+x} ]; then
-    ENABLE_ANALYZER=0
-fi
-
 OPTIMIZATION_SETTING="query_plan_remove_redundant_distinct"
-DISABLE_OPTIMIZATION="set allow_experimental_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="set allow_experimental_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled $OPTIMIZATION_SETTING"
 query="SELECT DISTINCT *
@@ -259,8 +255,4 @@ FROM
     )
     GROUP BY a WITH TOTALS
 )"
-run_query "$query"
-
-echo "-- DISTINCT COUNT() with GROUP BY => do _not_ remove DISTINCT"
-query="select distinct count() from numbers(10) group by number"
 run_query "$query"

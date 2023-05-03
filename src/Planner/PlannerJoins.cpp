@@ -18,7 +18,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
-#include <Analyzer/Utils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
@@ -62,8 +61,6 @@ void JoinClause::dump(WriteBuffer & buffer) const
             for (const auto & dag_node : dag_nodes)
             {
                 dag_nodes_dump += dag_node->result_name;
-                dag_nodes_dump += " ";
-                dag_nodes_dump += dag_node->result_type->getName();
                 dag_nodes_dump += ", ";
             }
 
@@ -607,8 +604,8 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name_ = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name_)
+        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
+        if (!table_column_name)
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;

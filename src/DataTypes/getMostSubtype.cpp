@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
 
 
 namespace DB
@@ -281,10 +280,6 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 minimize(min_bits_of_unsigned_integer, 32);
             else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
                 minimize(min_bits_of_unsigned_integer, 64);
-            else if (typeid_cast<const DataTypeUInt128 *>(type.get()))
-                minimize(min_bits_of_unsigned_integer, 128);
-            else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
-                minimize(min_bits_of_unsigned_integer, 256);
             else if (typeid_cast<const DataTypeInt8 *>(type.get()))
                 minimize(min_bits_of_signed_integer, 8);
             else if (typeid_cast<const DataTypeInt16 *>(type.get()))
@@ -293,10 +288,6 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 minimize(min_bits_of_signed_integer, 32);
             else if (typeid_cast<const DataTypeInt64 *>(type.get()))
                 minimize(min_bits_of_signed_integer, 64);
-            else if (typeid_cast<const DataTypeInt128 *>(type.get()))
-                minimize(min_bits_of_signed_integer, 128);
-            else if (typeid_cast<const DataTypeInt256 *>(type.get()))
-                minimize(min_bits_of_signed_integer, 256);
             else if (typeid_cast<const DataTypeFloat32 *>(type.get()))
                 minimize(min_mantissa_bits_of_floating, 24);
             else if (typeid_cast<const DataTypeFloat64 *>(type.get()))
@@ -335,10 +326,6 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                     return std::make_shared<DataTypeUInt32>();
                 else if (min_bits_of_unsigned_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
-                else if (min_bits_of_unsigned_integer <= 128)
-                    return std::make_shared<DataTypeUInt128>();
-                else if (min_bits_of_unsigned_integer <= 256)
-                    return std::make_shared<DataTypeUInt256>();
                 else
                     throw Exception(ErrorCodes::NO_COMMON_TYPE,
                                     "Logical error: {} but as all data types are integers, "
@@ -356,39 +343,12 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                     return std::make_shared<DataTypeInt32>();
                 else if (min_bits_of_signed_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
-                else if (min_bits_of_signed_integer <= 128)
-                    return std::make_shared<DataTypeInt128>();
-                else if (min_bits_of_signed_integer <= 256)
-                    return std::make_shared<DataTypeInt256>();
                 else
                     throw Exception(ErrorCodes::NO_COMMON_TYPE,
                                     "Logical error: {} but as all data types are integers, "
                                     "we must have found maximum signed integer type", getExceptionMessagePrefix(types));
             }
         }
-    }
-
-    /// Decimals
-    {
-        bool all_decimals = true;
-        UInt32 min_scale = std::numeric_limits<UInt32>::max();
-        UInt32 min_precision = std::numeric_limits<UInt32>::max();
-        for (const auto & type : types)
-        {
-            if (isDecimal(type))
-            {
-                min_scale = std::min(min_scale, getDecimalScale(*type));
-                min_precision = std::min(min_precision, getDecimalPrecision(*type));
-            }
-            else
-            {
-                all_decimals = false;
-                break;
-            }
-        }
-
-        if (all_decimals)
-            return createDecimal<DataTypeDecimal>(min_precision, min_scale);
     }
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).

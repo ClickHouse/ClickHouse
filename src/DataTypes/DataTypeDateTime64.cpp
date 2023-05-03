@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 static constexpr UInt32 max_scale = 9;
@@ -55,16 +54,6 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
 SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationDateTime64>(scale, *this);
-}
-
-std::string getDateTimeTimezone(const IDataType & data_type)
-{
-    if (const auto * type = typeid_cast<const DataTypeDateTime *>(&data_type))
-        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
-    if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
-        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get time zone from type {}", data_type.getName());
 }
 
 }

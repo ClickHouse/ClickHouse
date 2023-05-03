@@ -5,7 +5,6 @@
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -541,7 +540,7 @@ template <>
 void IPAddressDictionary::addAttributeSize<String>(const Attribute & attribute)
 {
     addAttributeSize<StringRef>(attribute);
-    bytes_allocated += sizeof(Arena) + attribute.string_arena->allocatedBytes();
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
 }
 
 void IPAddressDictionary::calculateBytesAllocated()

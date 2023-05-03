@@ -140,8 +140,8 @@ ORDER BY
 │        1 │     1 │     1 │ [1,2,3]      │   <┐   
 │        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
 │        1 │     3 │     3 │ [1,2,3]      │   <┘ 
-│        2 │     0 │     0 │ [0]          │   <- 2-nd group
-│        3 │     0 │     0 │ [0]          │   <- 3-d group
+│        2 │     0 │     0 │ [0]          │   <-  2-nd group
+│        3 │     0 │     0 │ [0]          │   <-  3-d group
 └──────────┴───────┴───────┴──────────────┘
 ```
 
@@ -567,7 +567,7 @@ SELECT
     ts,
     value,
     round(avg(value) OVER (PARTITION BY metric ORDER BY toDate(ts) 
-       Range BETWEEN 10 PRECEDING AND CURRENT ROW),2) AS moving_avg_10_days_temp
+       Range BETWEEN 10 PRECEDING AND CURRENT ROW),2) moving_avg_10_days_temp
 FROM sensors
 ORDER BY
     metric ASC,

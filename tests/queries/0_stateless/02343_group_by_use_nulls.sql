@@ -1,4 +1,3 @@
-set optimize_group_by_function_keys=0;
 -- { echoOn }
 SELECT number, number % 2, sum(number) AS val
 FROM numbers(10)

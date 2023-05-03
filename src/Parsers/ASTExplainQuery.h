@@ -80,8 +80,6 @@ public:
         return res;
     }
 
-    void setExplainKind(ExplainKind kind_) { kind = kind_; }
-
     void setExplainedQuery(ASTPtr query_)
     {
         children.emplace_back(query_);

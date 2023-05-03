@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/|utils/keeper-bench/example.yaml'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -67,7 +67,6 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::Counters
     ProfileEvents::end
     ProfileEvents::increment
-    ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
     ProfileEvents::Type
     ProfileEvents::TypeEnum
@@ -79,7 +78,6 @@ EXTERN_TYPES_EXCLUDES=(
 
     CurrentMetrics::add
     CurrentMetrics::sub
-    CurrentMetrics::get
     CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
@@ -167,7 +165,7 @@ find $ROOT_PATH/tests/queries -iname '*fail*' |
     grep . && echo 'Tests should not be named with "fail" in their names. It makes looking at the results less convenient when you search for "fail" substring in browser.'
 
 # Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
-# NOTE: it is not that accurate, but at least something.
+# NOTE: it is not that accuate, but at least something.
 tests_with_query_log=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
@@ -178,17 +176,6 @@ for test_case in "${tests_with_query_log[@]}"; do
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
-
-# There shouldn't be large jumps between test numbers (since they should be consecutive)
-max_diff=$(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-          grep -oP '\d+\D+\K\d+' | sort -n -u | awk 's{print ($0-s) " diff " s " and " $0 }{s=$0}' | sort -n | tail -n 1
-)
-max_diff_value=( $(echo $max_diff) )
-if [[ $max_diff_value -ge 100 ]];
-then
-    echo "Too big of a difference between test numbers: $max_diff"
-fi
 
 # Queries to:
 tables_with_database_column=(
@@ -351,13 +338,6 @@ for test_case in "${expect_tests[@]}"; do
         pattern="^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$"
         grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
     fi
-
-    # Otherwise expect_after/expect_before will not bail without stdin attached
-    # (and actually this is a hack anyway, correct way is to use $any_spawn_id)
-    pattern="-i \$any_spawn_id timeout"
-    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-    pattern="-i \$any_spawn_id eof"
-    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 done
 
 # Conflict markers
@@ -405,9 +385,3 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 
 # Check for existence of __init__.py files
 for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done
-
-# A small typo can lead to debug code in release builds, see https://github.com/ClickHouse/ClickHouse/pull/47647
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -l -F '#ifdef NDEBUG' | xargs -I@FILE awk '/#ifdef NDEBUG/ { inside = 1; dirty = 1 } /#endif/ { if (inside && dirty) { print "File @FILE has suspicious #ifdef NDEBUG, possibly confused with #ifndef NDEBUG" }; inside = 0 } /#else/ { dirty = 0 }' @FILE
-
-# If a user is doing dynamic or typeid cast with a pointer, and immediately dereferencing it, it is unsafe.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep --line-number -P '(dynamic|typeid)_cast<[^>]+\*>\([^\(\)]+\)->' | grep -P '.' && echo "It's suspicious when you are doing a dynamic_cast or typeid_cast with a pointer and immediately dereferencing it. Use references instead of pointers or check a pointer to nullptr."

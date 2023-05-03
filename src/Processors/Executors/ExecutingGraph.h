@@ -2,11 +2,10 @@
 
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
-#include <Common/SharedMutex.h>
+#include <Processors/Executors/UpgradableLock.h>
 #include <mutex>
 #include <queue>
 #include <stack>
-#include <vector>
 
 
 namespace DB
@@ -138,7 +137,7 @@ public:
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
     bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
-    void cancel(bool cancel_all_processors = true);
+    void cancel();
 
 private:
     /// Add single edge to edges list. Check processor is known.
@@ -153,10 +152,9 @@ private:
     bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
-    std::vector<bool> source_processors;
     std::mutex processors_mutex;
 
-    SharedMutex nodes_mutex;
+    UpgradableMutex nodes_mutex;
 
     const bool profile_processors;
     bool cancelled = false;

@@ -12,13 +12,6 @@ namespace DB
   *
   * ALIAS table column nodes are registered in table expression data and replaced in query tree with inner alias expression.
   */
-void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context);
-
-/** Collect source columns for expression node.
-  * Collected source columns are registered in planner context.
-  *
-  * ALIAS table column nodes are registered in table expression data and replaced in query tree with inner alias expression.
-  */
-void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context);
+void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContext & planner_context);
 
 }

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MarkCache.h>
 #include <IO/ReadSettings.h>
-#include <Common/ThreadPool_fwd.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -18,7 +18,7 @@ public:
     using MarksPtr = MarkCache::MappedPtr;
 
     MergeTreeMarksLoader(
-        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
+        DataPartStoragePtr data_part_storage_,
         MarkCache * mark_cache_,
         const String & mrk_path,
         size_t marks_count_,
@@ -30,10 +30,10 @@ public:
 
     ~MergeTreeMarksLoader();
 
-    MarkInCompressedFile getMark(size_t row_index, size_t column_index = 0);
+    const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
 
 private:
-    MergeTreeDataPartInfoForReaderPtr data_part_reader;
+    DataPartStoragePtr data_part_storage;
     MarkCache * mark_cache = nullptr;
     String mrk_path;
     size_t marks_count;

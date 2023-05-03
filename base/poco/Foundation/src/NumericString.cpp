@@ -14,9 +14,23 @@
 
 #include "Poco/Bugcheck.h"
 
-#include <double-conversion/double-conversion.h>
+
+// +++ double conversion +++
+#define double_conversion poco_double_conversion	// don't collide with standalone double_conversion library
+#define UNREACHABLE poco_bugcheck
+#define UNIMPLEMENTED poco_bugcheck
+#include "diy-fp.cc"
+#include "cached-powers.cc"
+#include "bignum-dtoa.cc"
+#include "bignum.cc"
+#include "fast-dtoa.cc"
+#include "fixed-dtoa.cc"
+#include "strtod.cc"
+#include "double-conversion.cc"
+// --- double conversion ---
 
 #include "Poco/NumericString.h"
+poco_static_assert(POCO_MAX_FLT_STRING_LEN == double_conversion::kMaxSignificantDecimalDigits);
 #include "Poco/String.h"
 #include <memory>
 #include <cctype>
@@ -249,7 +263,7 @@ float strToFloat(const char* str)
 	int processed;
 	int flags = StringToDoubleConverter::ALLOW_LEADING_SPACES |
 		StringToDoubleConverter::ALLOW_TRAILING_SPACES;
-	StringToDoubleConverter converter(flags, 0.0, std::numeric_limits<float>::quiet_NaN(), POCO_FLT_INF, POCO_FLT_NAN);
+	StringToDoubleConverter converter(flags, 0.0, Single::NaN(), POCO_FLT_INF, POCO_FLT_NAN);
 	float result = converter.StringToFloat(str, static_cast<int>(strlen(str)), &processed);
 	return result;
 }
@@ -261,7 +275,7 @@ double strToDouble(const char* str)
 	int processed;
 	int flags = StringToDoubleConverter::ALLOW_LEADING_SPACES |
 		StringToDoubleConverter::ALLOW_TRAILING_SPACES;
-	StringToDoubleConverter converter(flags, 0.0, std::numeric_limits<double>::quiet_NaN(), POCO_FLT_INF, POCO_FLT_NAN);
+	StringToDoubleConverter converter(flags, 0.0, Double::NaN(), POCO_FLT_INF, POCO_FLT_NAN);
 	double result = converter.StringToDouble(str, static_cast<int>(strlen(str)), &processed);
 	return result;
 }

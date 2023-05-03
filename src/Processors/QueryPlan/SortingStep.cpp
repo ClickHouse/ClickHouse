@@ -45,6 +45,7 @@ static ITransformingStep::Traits getTraits(size_t limit)
     return ITransformingStep::Traits
     {
         {
+            .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
@@ -98,13 +99,11 @@ SortingStep::SortingStep(
     const DataStream & input_stream,
     SortDescription sort_description_,
     size_t max_block_size_,
-    UInt64 limit_,
-    bool always_read_till_end_)
+    UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
-    , always_read_till_end(always_read_till_end_)
     , sort_settings(max_block_size_)
 {
     sort_settings.max_block_size = max_block_size_;
@@ -176,10 +175,8 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             pipeline.getNumStreams(),
             result_sort_desc,
             sort_settings.max_block_size,
-            /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
-            limit_,
-            always_read_till_end);
+            limit_);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -266,14 +263,7 @@ void SortingStep::fullSort(
     if (pipeline.getNumStreams() > 1)
     {
         auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getHeader(),
-            pipeline.getNumStreams(),
-            result_sort_desc,
-            sort_settings.max_block_size,
-            /*max_block_size_bytes=*/0,
-            SortingQueueStrategy::Batch,
-            limit_,
-            always_read_till_end);
+            pipeline.getHeader(), pipeline.getNumStreams(), result_sort_desc, sort_settings.max_block_size, SortingQueueStrategy::Batch, limit_);
 
         pipeline.addTransform(std::move(transform));
     }

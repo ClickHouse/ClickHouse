@@ -265,10 +265,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         }
     }
 
-    /// This will rule out unusual expressions like *, t.* that cannot appear in DEFAULT
-    if (default_expression && !dynamic_cast<const ASTWithAlias *>(default_expression.get()))
-        return false;
-
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 

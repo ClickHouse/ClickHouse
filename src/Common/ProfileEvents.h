@@ -1,13 +1,10 @@
 #pragma once
 
 #include <Common/VariableContext.h>
-#include <base/types.h>
-#include <base/strong_typedef.h>
-#include <Poco/Message.h>
+#include "base/types.h"
 #include <atomic>
 #include <memory>
 #include <cstddef>
-
 
 /** Implements global counters for various events happening in the application
   *  - for high level profiling.
@@ -17,7 +14,7 @@
 namespace ProfileEvents
 {
     /// Event identifier (index in array).
-    using Event = StrongTypedef<size_t, struct EventTag>;
+    using Event = size_t;
     using Count = size_t;
     using Increment = Int64;
     using Counter = std::atomic<Count>;
@@ -112,9 +109,6 @@ namespace ProfileEvents
     /// The same as above but ignores value of setting 'trace_profile_events'
     /// and never sends profile event to trace log.
     void incrementNoTrace(Event event, Count amount = 1);
-
-    /// Increment a counter for log messages.
-    void incrementForLogMessage(Poco::Message::Priority priority);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);

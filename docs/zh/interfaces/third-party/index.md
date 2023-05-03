@@ -13,6 +13,5 @@ sidebar_position: 24
 -   [GUI](../../interfaces/third-party/gui.md)
 -   [Proxies](../../interfaces/third-party/proxy.md)
 
-:::note
+!!! note "注意"
 支持通用API的通用工具[ODBC](../../interfaces/odbc.md)或[JDBC](../../interfaces/jdbc.md)，通常也适用于ClickHouse，但这里没有列出，因为它们实在太多了。
-:::

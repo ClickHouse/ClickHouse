@@ -45,7 +45,7 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit_at_least.swap(counter); }
 };
 
 }

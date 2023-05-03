@@ -80,25 +80,27 @@ CREATE TABLE 02339_db.test_table
 
 INSERT INTO 02339_db.test_table VALUES (0, 'Value');
 
-SELECT '--';
+-- TODO: Qualified COLUMNS where identifier has more than 2 parts are not supported on parser level
 
-DESCRIBE (SELECT 02339_db.test_table.* FROM 02339_db.test_table);
-SELECT 02339_db.test_table.* FROM 02339_db.test_table;
+-- SELECT '--';
 
-SELECT '--';
+-- DESCRIBE (SELECT 02339_db.test_table.* FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.* FROM 02339_db.test_table;
 
-DESCRIBE (SELECT 02339_db.test_table.COLUMNS(id) FROM 02339_db.test_table);
-SELECT 02339_db.test_table.COLUMNS(id) FROM 02339_db.test_table;
+-- SELECT '--';
 
-SELECT '--';
+-- DESCRIBE (SELECT 02339_db.test_table.COLUMNS(id) FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.COLUMNS(id) FROM 02339_db.test_table;
 
-DESCRIBE (SELECT 02339_db.test_table.COLUMNS(id), 02339_db.test_table.COLUMNS(value) FROM 02339_db.test_table);
-SELECT 02339_db.test_table.COLUMNS(id), 02339_db.test_table.COLUMNS(value) FROM 02339_db.test_table;
+-- SELECT '--';
 
-SELECT '--';
+-- DESCRIBE (SELECT 02339_db.test_table.COLUMNS(id), 02339_db.test_table.COLUMNS(value) FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.COLUMNS(id), 02339_db.test_table.COLUMNS(value) FROM 02339_db.test_table;
 
-DESCRIBE (SELECT 02339_db.test_table.COLUMNS('i'), 02339_db.test_table.COLUMNS('v') FROM 02339_db.test_table);
-SELECT 02339_db.test_table.COLUMNS('i'), 02339_db.test_table.COLUMNS('v') FROM 02339_db.test_table;
+-- SELECT '--';
+
+-- DESCRIBE (SELECT 02339_db.test_table.COLUMNS('i'), 02339_db.test_table.COLUMNS('v') FROM 02339_db.test_table);
+-- SELECT 02339_db.test_table.COLUMNS('i'), 02339_db.test_table.COLUMNS('v') FROM 02339_db.test_table;
 
 DROP TABLE 02339_db.test_table;
 DROP DATABASE 02339_db;

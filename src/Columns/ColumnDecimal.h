@@ -136,11 +136,6 @@ public:
         return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
     }
 
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return this->template getNumberOfDefaultRowsImpl<Self>();
-    }
-
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
     {
         return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);

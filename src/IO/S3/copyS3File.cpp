@@ -4,12 +4,10 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/StdStreamFromReadBuffer.h>
-#include <IO/ReadBufferFromS3.h>
 
 #include <IO/S3/Requests.h>
 
@@ -407,7 +405,7 @@ namespace
     {
     public:
         CopyDataToFileHelper(
-            const CreateReadBuffer & create_read_buffer_,
+            const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer_,
             size_t offset_,
             size_t size_,
             const std::shared_ptr<const S3::Client> & client_ptr_,
@@ -586,35 +584,15 @@ namespace
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
-            , supports_multipart_copy(S3::supportsMultiPartCopy(client_ptr_->getProviderType()))
         {
         }
 
         void performCopy()
         {
             if (size <= upload_settings.max_single_operation_copy_size)
-            {
                 performSingleOperationCopy();
-            }
-            else if (!supports_multipart_copy)
-            {
-                LOG_INFO(&Poco::Logger::get("copyS3File"), "Multipart upload using copy is not supported, will use regular upload");
-                copyDataToS3File(
-                    getSourceObjectReadBuffer(),
-                    offset,
-                    size,
-                    client_ptr,
-                    dest_bucket,
-                    dest_key,
-                    request_settings,
-                    object_metadata,
-                    schedule,
-                    for_disk_s3);
-            }
             else
-            {
                 performMultipartUploadCopy();
-            }
 
             if (request_settings.check_objects_after_upload)
                 checkObjectAfterUpload();
@@ -625,15 +603,6 @@ namespace
         const String & src_key;
         size_t offset;
         size_t size;
-        bool supports_multipart_copy;
-
-        CreateReadBuffer getSourceObjectReadBuffer()
-        {
-            return [&]
-            {
-                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, Context::getGlobalContextInstance()->getReadSettings());
-            };
-        }
 
         void performSingleOperationCopy()
         {
@@ -683,39 +652,18 @@ namespace
                     break;
                 }
 
-                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest" || outcome.GetError().GetExceptionName() == "InvalidArgument")
+                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
                 {
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
                     LOG_INFO(
                         log,
-                        "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart "
-                        "upload copy",
+                        "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart upload copy",
                         outcome.GetError().GetExceptionName(),
                         dest_bucket,
                         dest_key,
                         size);
-
-                    if (!supports_multipart_copy)
-                    {
-                        LOG_INFO(log, "Multipart upload using copy is not supported, will try regular upload");
-                        copyDataToS3File(
-                            getSourceObjectReadBuffer(),
-                            offset,
-                            size,
-                            client_ptr,
-                            dest_bucket,
-                            dest_key,
-                            request_settings,
-                            object_metadata,
-                            schedule,
-                            for_disk_s3);
-                        break;
-                    }
-                    else
-                    {
-                        performMultipartUploadCopy();
-                        break;
-                    }
+                    performMultipartUploadCopy();
+                    break;
                 }
 
                 if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))

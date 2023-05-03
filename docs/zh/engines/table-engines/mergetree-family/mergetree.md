@@ -25,9 +25,8 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
     需要的话，您可以给表设置一个采样方法。
 
-:::info
-[合并](../special/merge.md#merge) 引擎并不属于 `*MergeTree` 系列。
-:::
+!!! note "注意"
+    [合并](../special/merge.md#merge) 引擎并不属于 `*MergeTree` 系列。
 
 ## 建表 {#table_engine-mergetree-creating-a-table}
 
@@ -192,7 +191,7 @@ ClickHouse 会为每个数据片段创建一个索引文件来存储这些标记
 
 ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键的行。
 
-您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/index.md#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
+您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
 
 ### 主键的选择 {#zhu-jian-de-xuan-ze}
 
@@ -330,7 +329,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     支持的数据类型：`Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`。
 
-    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md)
+    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions)
 
 ``` sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -353,19 +352,19 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith) | ✗           | ✗      | ✔          | ✔          | ✗            |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany) | ✗           | ✗      | ✔          | ✗          | ✗            |
-| [in](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notIn](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [in](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notIn](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [empty](../../../sql-reference/functions/array-functions.md#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [empty](../../../sql-reference/functions/array-functions#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [notEmpty](../../../sql-reference/functions/array-functions#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | hasToken                                                     | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 常量参数小于 ngram 大小的函数不能使用 `ngrambf_v1` 进行查询优化。
 
-:::note
+!!! note "注意"
 布隆过滤器可能会包含不符合条件的匹配，所以 `ngrambf_v1`, `tokenbf_v1` 和 `bloom_filter` 索引不能用于结果返回为假的函数，例如：
 
 - 可以用来优化的场景
@@ -380,7 +379,6 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
   - `NOT s = 1`
   - `s != 1`
   - `NOT startsWith(s, 'test')`
-:::
 
 ## 并发数据访问 {#concurrent-data-access}
 
@@ -689,7 +687,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 `default` 存储策略意味着只使用一个卷，这个卷只包含一个在 `<path>` 中定义的磁盘。您可以使用[ALTER TABLE ... MODIFY SETTING]来修改存储策略，新的存储策略应该包含所有以前的磁盘和卷，并使用相同的名称。
 
-可以通过 [background_move_pool_size](../../../operations/server-configuration-parameters/settings.md#background_move_pool_size) 设置调整执行后台任务的线程数。
+可以通过 [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) 设置调整执行后台任务的线程数。
 
 ### 详细说明 {#details}
 

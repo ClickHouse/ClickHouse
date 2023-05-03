@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
+#include <Common/ArenaAllocator.h>
 #include <Common/PODArray_fwd.h>
 #include <base/types.h>
 #include <DataTypes/DataTypeArray.h>

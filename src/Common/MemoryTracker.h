@@ -141,8 +141,6 @@ public:
         fault_probability = value;
     }
 
-    void injectFault() const;
-
     void setSampleProbability(double value)
     {
         sample_probability = value;
@@ -215,8 +213,6 @@ public:
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
-
-    void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
 };
 
 extern MemoryTracker total_memory_tracker;

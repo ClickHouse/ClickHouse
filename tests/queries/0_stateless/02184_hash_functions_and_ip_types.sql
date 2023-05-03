@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_analyzer = 1;
-
 SELECT
     toIPv4('1.2.3.4') AS ipv4,
     halfMD5(ipv4),

@@ -17,7 +17,6 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Common/CurrentMetrics.h>
 
 
 using Key = UInt64;
@@ -28,12 +27,6 @@ using Source = std::vector<Key>;
 using Map = HashMap<Key, Value>;
 using MapTwoLevel = TwoLevelHashMap<Key, Value>;
 
-
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-}
 
 struct SmallLock
 {
@@ -254,7 +247,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads);
+    ThreadPool pool(num_threads);
 
     Source data(n);
 

@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/CurrentMetrics.h>
 
 #include <Core/Defines.h>
 
@@ -22,11 +21,6 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric HashedDictionaryThreads;
-    extern const Metric HashedDictionaryThreadsActive;
-}
 
 namespace
 {
@@ -66,7 +60,7 @@ public:
     explicit ParallelDictionaryLoader(HashedDictionary & dictionary_)
         : dictionary(dictionary_)
         , shards(dictionary.configuration.shards)
-        , pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, shards)
+        , pool(shards)
         , shards_queues(shards)
     {
         UInt64 backlog = dictionary.configuration.shard_load_queue_backlog;
@@ -81,7 +75,7 @@ public:
             pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
                 if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
+                    CurrentThread::attachToIfDetached(thread_group);
                 setThreadName("HashedDictLoad");
 
                 threadWorker(shard);
@@ -114,18 +108,9 @@ public:
 
     ~ParallelDictionaryLoader()
     {
-        try
-        {
-            for (auto & queue : shards_queues)
-                queue->clearAndFinish();
-
-            /// NOTE: It is OK to not pass the exception next, since on success finish() should be called which will call wait()
-            pool.wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(dictionary.log, "Exception had been thrown during parallel load of the dictionary");
-        }
+        for (auto & queue : shards_queues)
+            queue->clearAndFinish();
+        pool.wait();
     }
 
 private:
@@ -139,13 +124,13 @@ private:
     void threadWorker(size_t shard)
     {
         Block block;
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder_;
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
         auto & shard_queue = *shards_queues[shard];
 
         while (shard_queue.pop(block))
         {
             Stopwatch watch;
-            dictionary.blockToAttributes(block, arena_holder_, shard);
+            dictionary.blockToAttributes(block, arena_holder, shard);
             UInt64 elapsed_ms = watch.elapsedMilliseconds();
             if (elapsed_ms > 1'000)
                 LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_ms, block.rows());
@@ -228,7 +213,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         return;
 
     size_t shards = std::max<size_t>(configuration.shards, 1);
-    ThreadPool pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, shards);
+    ThreadPool pool(shards);
 
     size_t hash_tables_count = 0;
     auto schedule_destroy = [&hash_tables_count, &pool](auto & container)
@@ -239,7 +224,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
             if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
+                CurrentThread::attachToIfDetached(thread_group);
             setThreadName("HashedDictDtor");
 
             if constexpr (sparse)
@@ -1022,7 +1007,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
     }
 
     for (const auto & arena : string_arenas)
-        bytes_allocated += arena->allocatedBytes();
+        bytes_allocated += arena->size();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

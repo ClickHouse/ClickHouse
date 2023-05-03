@@ -63,7 +63,7 @@ struct fmt::formatter<DB::MarkRange>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw fmt::format_error("invalid format");
+            throw format_error("invalid format");
 
         return it;
     }
@@ -71,6 +71,6 @@ struct fmt::formatter<DB::MarkRange>
     template <typename FormatContext>
     auto format(const DB::MarkRange & range, FormatContext & ctx)
     {
-        return fmt::format_to(ctx.out(), "{}", fmt::format("({}, {})", range.begin, range.end));
+        return format_to(ctx.out(), "{}", fmt::format("({}, {})", range.begin, range.end));
     }
 };

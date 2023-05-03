@@ -173,7 +173,6 @@ public:
     }
 
     double getRatioOfDefaultRows(double sample_ratio) const override;
-    UInt64 getNumberOfDefaultRows() const override;
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
 

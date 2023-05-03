@@ -1,5 +1,4 @@
 #include "DiskLocal.h"
-#include <Common/Throttler_fwd.h>
 #include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
@@ -12,7 +11,6 @@
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -20,13 +18,11 @@
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
-#include <Disks/IO/WriteBufferFromTemporaryFile.h>
-
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
-
 
 namespace CurrentMetrics
 {
@@ -371,11 +367,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(
-        fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
+    return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
 }
 
 void DiskLocal::removeFile(const String & path)
@@ -585,14 +580,13 @@ struct DiskWriteCheckData
     }
 };
 
-bool DiskLocal::canWrite() noexcept
+bool DiskLocal::canWrite() const noexcept
 try
 {
     static DiskWriteCheckData data;
+    String tmp_template = fs::path(disk_path) / "";
     {
-        auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
-        auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
-        auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
+        auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->sync();
     }

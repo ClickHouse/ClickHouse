@@ -1,4 +1,3 @@
-#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -114,8 +113,10 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (group_by_with_cube)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
 
-    if (group_by_with_grouping_sets && groupBy())
+    if (group_by_with_grouping_sets)
     {
+        if (!groupBy()) /// sanity check, issue 43049
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupt AST");
         auto nested_frame = frame;
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;

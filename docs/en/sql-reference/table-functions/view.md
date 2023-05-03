@@ -15,11 +15,11 @@ view(subquery)
 
 **Arguments**
 
-- `subquery` — `SELECT` query.
+-   `subquery` — `SELECT` query.
 
 **Returned value**
 
-- A table.
+-   A table.
 
 **Example**
 
@@ -63,4 +63,4 @@ SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 
 **See Also**
 
-- [View Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/view/)
+-   [View Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/view/)

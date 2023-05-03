@@ -39,7 +39,7 @@ public:
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
-    QueryPlanStepPtr readFromParts(
+    QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

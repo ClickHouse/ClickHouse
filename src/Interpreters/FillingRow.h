@@ -1,5 +1,7 @@
 #pragma once
 #include <Core/SortDescription.h>
+#include <Core/InterpolateDescription.h>
+#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -28,18 +30,17 @@ public:
     size_t size() const { return row.size(); }
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
-    bool operator>=(const FillingRow & other) const;
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
-
-    String dump() const;
 
 private:
     Row row;
     SortDescription sort_description;
 };
 
-WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row);
+void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
+    const FillingRow & filling_row, const Block & interpolate_block);
+void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num);
 
 }

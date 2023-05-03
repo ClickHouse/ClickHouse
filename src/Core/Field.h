@@ -1019,7 +1019,7 @@ struct fmt::formatter<DB::Field>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw fmt::format_error("Invalid format");
+            throw format_error("Invalid format");
 
         return it;
     }
@@ -1027,6 +1027,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx)
     {
-        return fmt::format_to(ctx.out(), "{}", toString(x));
+        return format_to(ctx.out(), "{}", toString(x));
     }
 };

@@ -37,19 +37,6 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 `WITH ADMIN OPTION` присваивает привилегию [ADMIN OPTION](#admin-option-privilege) пользователю или роли.
 `WITH REPLACE OPTION` заменяет все старые роли новыми ролями для пользователя `user` или `role`, если не указано, добавляет новые новые роли.
 
-## Синтаксис присвоения текущих привилегий {#grant-current-grants-syntax}
-
-```sql
-GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
-```
-
-- `privilege` — Тип привилегии
-- `role` — Роль пользователя ClickHouse.
-- `user` — Пользователь ClickHouse.
-
-Использование выражения `CURRENT GRANTS` позволяет присвоить все указанные и доступные для присвоения привилегии.
-Если список привелегий не задан, то указанный пользователь или роль получат все доступные привилегии для `CURRENT_USER`.
-
 ## Использование {#grant-usage}
 
 Для использования `GRANT` пользователь должен иметь привилегию `GRANT OPTION`. Пользователь может выдавать привилегии только внутри области действий назначенных ему самому привилегий.
@@ -120,8 +107,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 - [CREATE](#grant-create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
-        - `CREATE ARBITRARY TEMPORARY TABLE`
-            -   `CREATE TEMPORARY TABLE`
+        - `CREATE TEMPORARY TABLE`
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
     - `CREATE FUNCTION`
@@ -328,8 +314,7 @@ GRANT INSERT(x,y) ON db.table TO john
 - `CREATE`. Уровень: `GROUP`
     - `CREATE DATABASE`. Уровень: `DATABASE`
     - `CREATE TABLE`. Уровень: `TABLE`
-        - `CREATE ARBITRARY TEMPORARY TABLE`. Уровень: `GLOBAL`
-            - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
+        - `CREATE TEMPORARY TABLE`. Уровень: `GLOBAL`
     - `CREATE VIEW`. Уровень: `VIEW`
     - `CREATE DICTIONARY`. Уровень: `DICTIONARY`
 

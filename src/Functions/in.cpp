@@ -123,9 +123,6 @@ public:
         }
 
         auto set = column_set->getData();
-        if (!set)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set passed as the second argument for function '{}'", getName());
-
         auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())

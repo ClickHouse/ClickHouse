@@ -19,9 +19,7 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    RerunHelper,
     format_description,
-    get_commit,
     post_commit_status,
     update_mergeable_check,
 )
@@ -31,6 +29,7 @@ from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
+from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -269,10 +268,9 @@ def main():
 
     if CI:
         gh = Github(get_best_robot_token(), per_page=100)
-        commit = get_commit(gh, pr_info.sha)
         atexit.register(update_mergeable_check, gh, pr_info, args.check_name)
 
-        rerun_helper = RerunHelper(commit, args.check_name)
+        rerun_helper = RerunHelper(gh, pr_info, args.check_name)
         if rerun_helper.is_already_finished_by_status():
             logging.info(
                 "Check is already finished according to github status, exiting"
@@ -349,7 +347,7 @@ def main():
 
     description = format_description(description)
 
-    post_commit_status(commit, state, report_url, description, args.check_name, pr_info)
+    post_commit_status(gh, pr_info.sha, args.check_name, description, state, report_url)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

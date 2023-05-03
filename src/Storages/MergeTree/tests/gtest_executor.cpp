@@ -15,7 +15,6 @@ using namespace DB;
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
-    extern const Metric BackgroundMergesAndMutationsPoolSize;
 }
 
 std::random_device device;
@@ -103,8 +102,7 @@ TEST(Executor, Simple)
         "GTest",
         1, // threads
         100, // max_tasks
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
     String schedule; // mutex is not required because we have a single worker
@@ -146,8 +144,7 @@ TEST(Executor, RemoveTasks)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
     for (size_t i = 0; i < batch; ++i)
@@ -187,8 +184,7 @@ TEST(Executor, RemoveTasksStress)
         "GTest",
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
     std::barrier barrier(schedulers_count + removers_count);
@@ -238,8 +234,7 @@ TEST(Executor, UpdatePolicy)
         "GTest",
         1, // threads
         100, // max_tasks
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
     );
 
     String schedule; // mutex is not required because we have a single worker

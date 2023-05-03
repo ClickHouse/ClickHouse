@@ -49,9 +49,8 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 
 与原始MySQL表具有相同列的表对象。
 
-:::note
-在`INSERT`查询中为了区分`mysql(...)`与带有列名列表的表名的表函数，你必须使用关键字`FUNCTION`或`TABLE FUNCTION`。查看如下示例。
-:::
+!!! note "注意"
+    在`INSERT`查询中为了区分`mysql(...)`与带有列名列表的表名的表函数，你必须使用关键字`FUNCTION`或`TABLE FUNCTION`。查看如下示例。
 
 ## 用法示例 {#usage-example}
 

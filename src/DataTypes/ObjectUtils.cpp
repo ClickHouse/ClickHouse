@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 size_t getNumberOfDimensions(const IDataType & type)
@@ -122,7 +121,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
         return makeNullable(getDataTypeByColumn(column_nullable->getNestedColumn()));
 
     /// TODO: add more types.
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get data type of column {}", column.getFamilyName());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get data type of column {}", column.getFamilyName());
 }
 
 template <size_t I, typename Tuple>

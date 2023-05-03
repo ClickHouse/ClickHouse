@@ -22,6 +22,8 @@ public:
 
     off_t seek(off_t off, int whence) override;
 
+    Range getRemainingReadRange() const override;
+
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
     /// file_offset_of_buffer_end can differ from impl's file_offset_of_buffer_end

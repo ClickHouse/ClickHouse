@@ -13,6 +13,6 @@ class ASTFunction;
  * add it to DiskSelector by a unique (but always the same for given configuration) disk name
  * and return this name.
  */
-std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr context);
+std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context);
 
 }

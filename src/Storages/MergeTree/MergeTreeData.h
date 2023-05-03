@@ -751,6 +751,9 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
+    /// Makes backup entries to backup the data of the storage.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
     /// Extract data from the backup and put it to the storage.
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
@@ -955,7 +958,7 @@ public:
     /// section from config.xml.
     CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
 
-    std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
+    std::lock_guard<std::mutex> getQueryIdSetLock() const { return std::lock_guard<std::mutex>(query_id_set_mutex); }
 
     /// Record current query id where querying the table. Throw if there are already `max_queries` queries accessing the same table.
     /// Returns false if the `query_id` already exists in the running set, otherwise return true.
@@ -1207,7 +1210,7 @@ protected:
     {
         auto it = data_parts_by_info.find(part->info);
         if (it == data_parts_by_info.end() || (*it).get() != part.get())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} doesn't exist (info: {})", part->name, part->info.getPartNameForLogs());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} doesn't exist", part->name);
 
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
@@ -1218,9 +1221,9 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr) const;
+    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false) const;
 
-    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr);
+    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false);
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
@@ -1310,9 +1313,9 @@ protected:
     /// Used to receive AlterConversions for part and apply them on fly. This
     /// method has different implementations for replicated and non replicated
     /// MergeTree because they store mutations in different way.
-    virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+    virtual MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
-    MovePartsOutcome movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
+    bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
     /// Makes backup entries to backup the parts of this table.
     BackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const ContextPtr & local_context);
@@ -1453,7 +1456,7 @@ private:
     using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
 
     /// Move selected parts to corresponding disks
-    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, bool wait_for_move_if_zero_copy=false);
+    bool moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, bool wait_for_move_if_zero_copy=false);
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTaggerPtr selectPartsForMove();
@@ -1496,16 +1499,6 @@ private:
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
         std::mutex & part_loading_mutex);
-
-    LoadPartResult loadDataPartWithRetries(
-        const MergeTreePartInfo & part_info,
-        const String & part_name,
-        const DiskPtr & part_disk_ptr,
-        MergeTreeDataPartState to_state,
-        std::mutex & part_loading_mutex,
-        size_t backoff_ms,
-        size_t max_backoff_ms,
-        size_t max_tries);
 
     std::vector<LoadPartResult> loadDataPartsFromDisk(
         ThreadPool & pool,

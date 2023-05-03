@@ -123,12 +123,9 @@ Client::Client(
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
-    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
-
-    provider_type = getProviderTypeFromURL(initial_endpoint);
-    LOG_TRACE(log, "Provider type: {}", toString(provider_type));
-
-    detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
+    std::string endpoint;
+    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
+    detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
@@ -136,10 +133,8 @@ Client::Client(
 
 Client::Client(const Client & other)
     : Aws::S3::S3Client(other)
-    , initial_endpoint(other.initial_endpoint)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
-    , provider_type(other.provider_type)
     , max_redirects(other.max_redirects)
     , log(&Poco::Logger::get("S3Client"))
 {
@@ -181,8 +176,6 @@ void Client::insertRegionOverride(const std::string & bucket, const std::string 
 Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
-
-    request.setProviderType(provider_type);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -322,7 +315,6 @@ std::invoke_result_t<RequestFn, RequestType>
 Client::doRequest(const RequestType & request, RequestFn request_fn) const
 {
     const auto & bucket = request.GetBucket();
-    request.setProviderType(provider_type);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -395,11 +387,6 @@ Client::doRequest(const RequestType & request, RequestFn request_fn) const
     throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
 }
 
-ProviderType Client::getProviderType() const
-{
-    return provider_type;
-}
-
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
@@ -408,6 +395,7 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
 
     if (!force_detect && !detect_region)
         return "";
+
 
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
@@ -575,7 +563,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
     HTTPHeaderEntries headers,
-    CredentialsConfiguration credentials_configuration)
+    bool use_environment_credentials,
+    bool use_insecure_imds_request)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -602,7 +591,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),
-            credentials_configuration);
+            use_environment_credentials,
+            use_insecure_imds_request);
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(

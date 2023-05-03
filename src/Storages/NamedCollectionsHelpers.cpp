@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 namespace
 {
-    NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts, bool throw_unknown_collection)
+    NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts)
     {
         if (asts.empty())
             return nullptr;
@@ -25,12 +25,10 @@ namespace
             return nullptr;
 
         const auto & collection_name = identifier->name();
-        if (throw_unknown_collection)
-            return NamedCollectionFactory::instance().get(collection_name);
-        return NamedCollectionFactory::instance().tryGet(collection_name);
+        return NamedCollectionFactory::instance().get(collection_name);
     }
 
-    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
+    std::optional<std::pair<std::string, Field>> getKeyValueFromAST(ASTPtr ast)
     {
         const auto * function = ast->as<ASTFunction>();
         if (!function || function->name != "equals")
@@ -42,83 +40,46 @@ namespace
         if (function_args.size() != 2)
             return std::nullopt;
 
-        auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[0], context);
+        auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(
+            function_args[0], Context::getGlobalContextInstance());
         auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
 
-        ASTPtr literal_value;
-        try
-        {
-            if (key == "database" || key == "db")
-                literal_value = evaluateConstantExpressionForDatabaseName(function_args[1], context);
-            else
-                literal_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-        }
-        catch (...)
-        {
-            if (fallback_to_ast_value)
-                return std::pair{key, function_args[1]};
-            throw;
-        }
-
+        auto literal_value = evaluateConstantExpressionOrIdentifierAsLiteral(
+            function_args[1], Context::getGlobalContextInstance());
         auto value = literal_value->as<ASTLiteral>()->value;
-        return std::pair{key, Field(value)};
+
+        return std::pair{key, value};
     }
 }
 
 
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    ASTs asts, ContextPtr context, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
+NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
 {
     if (asts.empty())
         return nullptr;
 
     NamedCollectionUtils::loadIfNot();
 
-    auto collection = tryGetNamedCollectionFromASTs(asts, throw_unknown_collection);
+    auto collection = tryGetNamedCollectionFromASTs(asts);
     if (!collection)
         return nullptr;
 
-    auto collection_copy = collection->duplicate();
-
     if (asts.size() == 1)
-        return collection_copy;
+        return collection;
+
+    auto collection_copy = collection->duplicate();
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(*it, /* fallback_to_ast_value */complex_args != nullptr, context);
-
+        auto value_override = getKeyValueFromAST(*it);
         if (!value_override && !(*it)->as<ASTFunction>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
         if (!value_override)
             continue;
 
-        if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
-        {
-            complex_args->emplace_back(value_override->first, *value);
-            continue;
-        }
-
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value_override->second)));
+        collection_copy->setOrUpdate<String>(key, toString(value));
     }
-
-    return collection_copy;
-}
-
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-{
-    auto collection_name = config.getString(config_prefix + ".name", "");
-    if (collection_name.empty())
-        return nullptr;
-
-    const auto & collection = NamedCollectionFactory::instance().get(collection_name);
-    auto collection_copy = collection->duplicate();
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-    for (const auto & key : keys)
-        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key));
 
     return collection_copy;
 }

@@ -2,7 +2,7 @@
 #include <cinttypes>
 #include <utility>
 #include <Common/formatIPv6.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 namespace DB

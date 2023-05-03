@@ -196,7 +196,7 @@ class TestResult:
             )
         for log_path in log_paths:
             file = Path(log_path)
-            assert file.exists(), file
+            assert file.exists()
             self.log_files.append(file)
 
 
@@ -370,7 +370,6 @@ def create_test_html_report(
                 colspan += 1
 
             if test_result.log_urls is not None:
-                has_log_urls = True
                 test_logs_html = "<br>".join(
                     [_get_html_url(url) for url in test_result.log_urls]
                 )
@@ -477,7 +476,7 @@ def create_build_html_report(
     commit_url: str,
 ) -> str:
     rows = ""
-    for build_result, build_log_url, artifact_urls in zip(
+    for (build_result, build_log_url, artifact_urls) in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"

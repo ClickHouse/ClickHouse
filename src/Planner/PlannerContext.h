@@ -7,7 +7,6 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/PreparedSets.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -57,18 +56,18 @@ class PlannerSet
 {
 public:
     /// Construct planner set that is ready for execution
-    explicit PlannerSet(FutureSet set_)
+    explicit PlannerSet(SetPtr set_)
         : set(std::move(set_))
     {}
 
     /// Construct planner set with set and subquery node
-    explicit PlannerSet(QueryTreeNodePtr subquery_node_)
-        : set(promise_to_build_set.get_future())
+    explicit PlannerSet(SetPtr set_, QueryTreeNodePtr subquery_node_)
+        : set(std::move(set_))
         , subquery_node(std::move(subquery_node_))
     {}
 
-    /// Get a reference to a set that might be not built yet
-    const FutureSet & getSet() const
+    /// Get set
+    const SetPtr & getSet() const
     {
         return set;
     }
@@ -79,15 +78,8 @@ public:
         return subquery_node;
     }
 
-    /// This promise will be fulfilled when set is built and all FutureSet objects will become ready
-    std::promise<SetPtr> extractPromiseToBuildSet()
-    {
-        return std::move(promise_to_build_set);
-    }
-
 private:
-    std::promise<SetPtr> promise_to_build_set;
-    FutureSet set;
+    SetPtr set;
 
     QueryTreeNodePtr subquery_node;
 };
@@ -96,22 +88,16 @@ class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_);
+    PlannerContext(ContextPtr query_context_, GlobalPlannerContextPtr global_planner_context_);
 
     /// Get planner context query context
-    ContextPtr getQueryContext() const
+    const ContextPtr & getQueryContext() const
     {
         return query_context;
     }
 
-    /// Get planner context mutable query context
-    const ContextMutablePtr & getMutableQueryContext() const
-    {
-        return query_context;
-    }
-
-    /// Get planner context mutable query context
-    ContextMutablePtr & getMutableQueryContext()
+    /// Get planner context query context
+    ContextPtr & getQueryContext()
     {
         return query_context;
     }
@@ -151,14 +137,8 @@ public:
       */
     TableExpressionData * getTableExpressionDataOrNull(const QueryTreeNodePtr & table_expression_node);
 
-    /// Get table expression node to data map
+    /// Get table expression node to data read only map
     const std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData() const
-    {
-        return table_expression_node_to_data;
-    }
-
-    /// Get table expression node to data map
-    std::unordered_map<QueryTreeNodePtr, TableExpressionData> & getTableExpressionNodeToData()
     {
         return table_expression_node_to_data;
     }
@@ -194,7 +174,7 @@ public:
     const PlannerSet & getSetOrThrow(const SetKey & key) const;
 
     /// Get set for key, if no set is registered null is returned
-    PlannerSet * getSetOrNull(const SetKey & key);
+    const PlannerSet * getSetOrNull(const SetKey & key) const;
 
     /// Get registered sets
     const SetKeyToSet & getRegisteredSets() const
@@ -204,7 +184,7 @@ public:
 
 private:
     /// Query context
-    ContextMutablePtr query_context;
+    ContextPtr query_context;
 
     /// Global planner context
     GlobalPlannerContextPtr global_planner_context;

@@ -1,6 +1,5 @@
 #include <Analyzer/SortNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -110,7 +109,7 @@ QueryTreeNodePtr SortNode::cloneImpl() const
     return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
 }
 
-ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr SortNode::toASTImpl() const
 {
     auto result = std::make_shared<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;
@@ -121,10 +120,10 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
     result->nulls_direction_was_explicitly_specified = nulls_sort_direction.has_value();
 
     result->with_fill = with_fill;
-    result->fill_from = hasFillFrom() ? getFillFrom()->toAST(options) : nullptr;
-    result->fill_to = hasFillTo() ? getFillTo()->toAST(options) : nullptr;
-    result->fill_step = hasFillStep() ? getFillStep()->toAST(options) : nullptr;
-    result->children.push_back(getExpression()->toAST(options));
+    result->fill_from = hasFillFrom() ? getFillFrom()->toAST() : nullptr;
+    result->fill_to = hasFillTo() ? getFillTo()->toAST() : nullptr;
+    result->fill_step = hasFillStep() ? getFillStep()->toAST() : nullptr;
+    result->children.push_back(getExpression()->toAST());
 
     if (collator)
     {

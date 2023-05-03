@@ -35,7 +35,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/UUID.h>
-#include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -47,12 +46,6 @@
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric MergeTreeDataSelectExecutorThreads;
-    extern const Metric MergeTreeDataSelectExecutorThreadsActive;
-}
-
 namespace DB
 {
 
@@ -63,6 +56,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ROWS;
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
@@ -163,7 +157,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     if (!query_info.projection)
     {
-        auto step = readFromParts(
+        auto plan = readFromParts(
             query_info.merge_tree_select_result_ptr ? MergeTreeData::DataPartsVector{} : parts,
             column_names_to_return,
             storage_snapshot,
@@ -175,14 +169,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             query_info.merge_tree_select_result_ptr,
             enable_parallel_reading);
 
-        if (!step && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
-            && !metadata_for_reading->projections.empty() && !settings.query_plan_optimize_projection)
+        if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
+            && !metadata_for_reading->projections.empty())
             throw Exception(ErrorCodes::PROJECTION_NOT_USED,
                             "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
 
-        auto plan = std::make_unique<QueryPlan>();
-        if (step)
-            plan->addStep(std::move(step));
         return plan;
     }
 
@@ -206,7 +197,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     else if (query_info.projection->merge_tree_projection_select_result_ptr)
     {
         LOG_DEBUG(log, "projection required columns: {}", fmt::join(query_info.projection->required_columns, ", "));
-        projection_plan->addStep(readFromParts(
+        projection_plan = readFromParts(
             {},
             query_info.projection->required_columns,
             storage_snapshot,
@@ -216,7 +207,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read,
             query_info.projection->merge_tree_projection_select_result_ptr,
-            enable_parallel_reading));
+            enable_parallel_reading);
     }
 
     if (projection_plan->isInitialized())
@@ -597,24 +588,18 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
         */
 
-    auto parallel_replicas_mode = context->getParallelReplicasMode();
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
-    if (settings.parallel_replicas_count > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
-        && !data.supportsSampling() && settings.parallel_replica_offset > 0)
+    if (settings.parallel_replicas_count > 1 && !data.supportsSampling() && settings.parallel_replica_offset > 0)
     {
-        LOG_DEBUG(
-            log,
-            "Will use no data on this replica because parallel replicas processing has been requested"
+        LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
             " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
         sampling.read_nothing = true;
         return sampling;
     }
 
-    sampling.use_sampling = relative_sample_size > 0
-        || (settings.parallel_replicas_count > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
-            && data.supportsSampling());
-    bool no_data = false; /// There is nothing left after sampling.
+    sampling.use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
+    bool no_data = false;   /// There is nothing left after sampling.
 
     if (sampling.use_sampling)
     {
@@ -997,6 +982,26 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     /// Let's find what range to read from each part.
     {
+        std::atomic<size_t> total_rows{0};
+
+        /// Do not check number of read rows if we have reading
+        /// in order of sorting key with limit.
+        /// In general case, when there exists WHERE clause
+        /// it's impossible to estimate number of rows precisely,
+        /// because we can stop reading at any time.
+
+        SizeLimits limits;
+        if (settings.read_overflow_mode == OverflowMode::THROW
+            && settings.max_rows_to_read
+            && !query_info.input_order_info)
+            limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+
+        SizeLimits leaf_limits;
+        if (settings.read_overflow_mode_leaf == OverflowMode::THROW
+            && settings.max_rows_to_read_leaf
+            && !query_info.input_order_info)
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
 
@@ -1071,7 +1076,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             if (!ranges.ranges.empty())
+            {
+                if (limits.max_rows || leaf_limits.max_rows)
+                {
+                    /// Fail fast if estimated number of rows to read exceeds the limit
+                    auto current_rows_estimate = ranges.getRowsCount();
+                    size_t prev_total_rows_estimate = total_rows.fetch_add(current_rows_estimate);
+                    size_t total_rows_estimate = current_rows_estimate + prev_total_rows_estimate;
+                    if (query_info.limit > 0 && total_rows_estimate > query_info.limit)
+                    {
+                        total_rows_estimate = query_info.limit;
+                    }
+                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+                    leaf_limits.check(
+                        total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+                }
+
                 parts_with_ranges[part_index] = std::move(ranges);
+            }
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
@@ -1084,20 +1106,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         else
         {
             /// Parallel loading of data parts.
-            ThreadPool pool(
-                CurrentMetrics::MergeTreeDataSelectExecutorThreads,
-                CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
-                num_threads);
+            ThreadPool pool(num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
                     SCOPE_EXIT_SAFE(
                         if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
+                            CurrentThread::detachQueryIfNotDetached();
                     );
                     if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                        CurrentThread::attachToIfDetached(thread_group);
 
                     process_part(part_index);
                 });
@@ -1179,6 +1198,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
     const ReadFromMergeTree::AnalysisResult & result,
     const ContextPtr & context)
+        TSA_NO_THREAD_SAFETY_ANALYSIS // disabled because TSA is confused by guaranteed copy elision in data.getQueryIdSetLock()
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
@@ -1202,7 +1222,22 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     {
         auto query_id = context->getCurrentQueryId();
         if (!query_id.empty())
-            return data.getQueryIdHolder(query_id, data_settings->max_concurrent_queries);
+        {
+            auto lock = data.getQueryIdSetLock();
+            if (data.insertQueryIdOrThrowNoLock(query_id, data_settings->max_concurrent_queries))
+            {
+                try
+                {
+                    return std::make_shared<QueryIdHolder>(query_id, data);
+                }
+                catch (...)
+                {
+                    /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
+                    data.removeQueryIdNoLock(query_id);
+                    throw;
+                }
+            }
+        }
     }
     return nullptr;
 }
@@ -1307,7 +1342,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         log);
 }
 
-QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
+QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1323,10 +1358,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     if (merge_tree_select_result_ptr)
     {
         if (merge_tree_select_result_ptr->marks() == 0)
-            return {};
+            return std::make_unique<QueryPlan>();
     }
     else if (parts.empty())
-        return {};
+        return std::make_unique<QueryPlan>();
 
     Names real_column_names;
     Names virt_column_names;
@@ -1336,7 +1371,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
-    return std::make_unique<ReadFromMergeTree>(
+    auto read_from_merge_tree = std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         real_column_names,
         virt_column_names,
@@ -1352,6 +1387,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         merge_tree_select_result_ptr,
         enable_parallel_reading
     );
+
+    QueryPlanPtr plan = std::make_unique<QueryPlan>();
+    plan->addStep(std::move(read_from_merge_tree));
+    return plan;
 }
 
 
@@ -1430,21 +1469,18 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         return res;
     }
 
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
-    const auto & key_indices = key_condition.getKeyIndices();
-    DataTypes key_types;
-    for (size_t i : key_indices)
-    {
-        index_columns->emplace_back(ColumnWithTypeAndName{index[i], primary_key.data_types[i], primary_key.column_names[i]});
-        key_types.emplace_back(primary_key.data_types[i]);
-    }
+    size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
+    const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
 
+    std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
     /// If there are no monotonic functions, there is no need to save block reference.
     /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
-    std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (key_condition.hasMonotonicFunctionsChain())
     {
+        auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
+        for (size_t i = 0; i < used_key_size; ++i)
+            index_columns->emplace_back(ColumnWithTypeAndName{index[i], primary_key.data_types[i], primary_key.column_names[i]});
 
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
@@ -1456,9 +1492,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
     else
     {
-        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
+        create_field_ref = [&index](size_t row, size_t column, FieldRef & field)
         {
-            (*index_columns)[column].column->get(row, field);
+            index[column]->get(row, field);
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;
@@ -1466,7 +1502,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
 
     /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = key_indices.size();
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
@@ -1491,10 +1526,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 create_field_ref(range.end, i, index_right[i]);
             }
         }
-        return key_condition.mayBeTrueInRange(used_key_size, index_left.data(), index_right.data(), key_types);
+        return key_condition.mayBeTrueInRange(
+            used_key_size, index_left.data(), index_right.data(), primary_key.data_types);
     };
 
-    const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
     if (!key_condition.matchesExactContinuousRange())
     {
         // Do exclusion search, where we drop ranges that do not match

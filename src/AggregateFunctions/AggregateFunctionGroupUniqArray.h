@@ -4,7 +4,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -182,6 +181,7 @@ public:
         auto & set = this->data(place).value;
         size_t size;
         readVarUInt(size, buf);
+        //TODO: set.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
             set.insert(readStringBinaryInto(*arena, buf));
