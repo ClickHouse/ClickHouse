@@ -41,7 +41,9 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
 void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                       DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
-    if (write_mode == WriteMode::Rewrite)
+    /// std::filesystem::copy() can copy from the filesystem only, and it can't do the throttling or appending.
+    bool has_throttling = static_cast<bool>(read_settings.local_throttler);
+    if (!has_throttling && (write_mode == WriteMode::Rewrite))
     {
         auto destination_data_source_description = destination_disk->getDataSourceDescription();
         if (destination_data_source_description.sameKind(data_source_description)
@@ -50,10 +52,10 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
             /// Use more optimal way.
             LOG_TRACE(log, "Copying file {} to disk {} locally", path_in_backup, destination_disk->getName());
 
-            auto write_blob_function
-                = [abs_source_path = root_path / path_in_backup, file_size](
-                      const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> &) -> size_t
+            auto write_blob_function = [abs_source_path = root_path / path_in_backup, file_size](
+                                           const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> &) -> size_t
             {
+                /// For local disks the size of a blob path is expected to be 1.
                 if (blob_path.size() != 1 || mode != WriteMode::Rewrite)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                                     "Blob writing function called with unexpected blob_path.size={} or mode={}",
@@ -63,7 +65,7 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
             };
 
             destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
-            return;
+            return; /// copied!
         }
     }
 
@@ -76,7 +78,6 @@ BackupWriterFile::BackupWriterFile(const String & root_path_, const ContextPtr &
     : BackupWriterDefault(&Poco::Logger::get("BackupWriterFile"), context_)
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
-    , has_throttling(static_cast<bool>(read_settings.local_throttler))
 {
 }
 
@@ -120,7 +121,8 @@ void BackupWriterFile::removeFiles(const Strings & file_names)
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                         bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
-    /// std::filesystem::copy() can copy from the filesystem only, and it cannot do the throttling.
+    /// std::filesystem::copy() can copy from the filesystem only, and it can't do the throttling or copy a part of the file.
+    bool has_throttling = static_cast<bool>(read_settings.local_throttler);
     if (!has_throttling)
     {
         auto source_data_source_description = src_disk->getDataSourceDescription();
@@ -140,7 +142,7 @@ void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr s
                     auto abs_dest_path = root_path / path_in_backup;
                     fs::create_directories(abs_dest_path.parent_path());
                     fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
-                    return;
+                    return; /// copied!
                 }
             }
         }

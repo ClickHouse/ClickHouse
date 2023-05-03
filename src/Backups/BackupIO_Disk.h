@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupIO_Default.h>
+#include <Disks/DiskType.h>
 #include <filesystem>
 
 
@@ -26,6 +27,7 @@ public:
 private:
     const DiskPtr disk;
     const std::filesystem::path root_path;
+    const DataSourceDescription data_source_description;
 };
 
 class BackupWriterDisk : public BackupWriterDefault
@@ -50,6 +52,7 @@ private:
 
     const DiskPtr disk;
     const std::filesystem::path root_path;
+    const DataSourceDescription data_source_description;
 };
 
 }

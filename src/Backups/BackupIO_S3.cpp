@@ -135,6 +135,8 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
+    /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
+    /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
     if (destination_data_source_description.sameKind(data_source_description)
         && (destination_data_source_description.is_encrypted == encrypted_in_backup))
@@ -166,7 +168,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
         };
 
         destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
-        return;
+        return; /// copied!
     }
 
     /// Fallback to copy through buffers.
@@ -189,9 +191,10 @@ BackupWriterS3::BackupWriterS3(
 void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                       bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
+    /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
+    /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto source_data_source_description = src_disk->getDataSourceDescription();
-    if (source_data_source_description.sameKind(data_source_description)
-        && (source_data_source_description.is_encrypted == copy_encrypted))
+    if (source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
     {
         /// getBlobPath() can return more than 2 elements if the file is stored as multiple objects in S3 bucket.
         /// In this case we can't use the native copy.
@@ -210,7 +213,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 request_settings,
                 {},
                 threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
-            return;
+            return; /// copied!
         }
     }
 
