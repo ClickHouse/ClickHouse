@@ -339,7 +339,7 @@ private:
 public:
     using Metric = CurrentMetrics::Metric;
 
-    AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_);
+    AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_, bool log_progress_);
 
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
@@ -407,6 +407,7 @@ private:
 
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
+    const bool log_progress; // Periodically log total progress
     Poco::Logger * log;
     std::chrono::system_clock::time_point busy_period_start_time;
     AtomicStopwatch stopwatch;
