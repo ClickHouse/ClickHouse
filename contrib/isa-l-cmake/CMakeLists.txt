@@ -1,3 +1,7 @@
+if (NOT ARCH_AMD64)
+    return()
+endif ()
+
 set(ISAL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/isa-l")
 
 # The YASM and NASM assembers are somewhat mutually compatible. ISAL specifically needs NASM. If only YASM is installed, then check_language(ASM_NASM)
