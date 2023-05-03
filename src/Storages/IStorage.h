@@ -178,6 +178,8 @@ public:
     /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
     virtual bool isSystemStorage() const { return false; }
 
+    /// Returns true if asynchronous inserts are enabled for table.
+    virtual bool areAsynchronousInsertsEnabled() const { return false; }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
