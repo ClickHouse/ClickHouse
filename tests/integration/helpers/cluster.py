@@ -3903,7 +3903,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'
+                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log | wc -l',
             ]
         )
         return result
@@ -4611,7 +4611,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                f"echo '{content}' > /var/lib/clickhouse/format_schemas/{file_name}"
+                f"echo '{content}' > /var/lib/clickhouse/format_schemas/{file_name}",
             ]
         )
 
