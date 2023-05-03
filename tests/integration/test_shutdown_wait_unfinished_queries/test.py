@@ -36,7 +36,6 @@ def test_shutdown_wait_unfinished_queries(start_cluster):
 
     long_query.join()
 
-    print(result)
     assert result[0].count("0") == 10
 
     long_query = threading.Thread(target=do_long_query, args=(node_kill_queries,))
@@ -46,5 +45,4 @@ def test_shutdown_wait_unfinished_queries(start_cluster):
     node_kill_queries.stop_clickhouse(kill=False)
 
     long_query.join()
-    print(result)
     assert "QUERY_WAS_CANCELLED" in result[1]
