@@ -30,7 +30,7 @@ namespace ErrorCodes
 }
 
 MergeTreeMarksLoader::MergeTreeMarksLoader(
-    MergeTreeDataPartInfoForReaderPtr data_part_reader_,
+    DataPartStoragePtr data_part_storage_,
     MarkCache * mark_cache_,
     const String & mrk_path_,
     size_t marks_count_,
@@ -39,7 +39,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     const ReadSettings & read_settings_,
     ThreadPool * load_marks_threadpool_,
     size_t columns_in_mark_)
-    : data_part_reader(data_part_reader_)
+    : data_part_storage(std::move(data_part_storage_))
     , mark_cache(mark_cache_)
     , mrk_path(mrk_path_)
     , marks_count(marks_count_)
@@ -97,8 +97,6 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
-
-    auto data_part_storage = data_part_reader->getDataPartStorage();
 
     size_t file_size = data_part_storage->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(columns_in_mark);
@@ -178,8 +176,6 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarks()
 {
     MarkCache::MappedPtr loaded_marks;
-
-    auto data_part_storage = data_part_reader->getDataPartStorage();
 
     if (mark_cache)
     {

@@ -92,20 +92,6 @@ There are multiple ways of user identification:
     CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
     ```
 
-5. The type of the password can also be omitted:
-
-    ```sql
-    CREATE USER name4 IDENTIFIED BY 'my_password'
-    ```
-
-    In this case, ClickHouse will use the default password type specified in the server configuration:
-
-    ```xml
-    <default_password_type>sha256_password</default_password_type>
-    ```
-
-    The available password types are: `plaintext_password`, `sha256_password`, `double_sha1_password`.
-
 ## User Host
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:

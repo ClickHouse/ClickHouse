@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/MultipleAccessStorage.h>
-#include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Common.h>
 #include <base/scope_guard.h>
@@ -148,11 +147,8 @@ public:
     void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;
 
-    /// Default password type when the user does not specify it.
-    void setDefaultPasswordTypeFromConfig(const String & type_);
-    AuthenticationType getDefaultPasswordType() const;
+    /// Check complexity requirements for plaintext passwords
 
-    /// Check complexity requirements for passwords
     void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_);
     void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_);
     void checkPasswordComplexityRules(const String & password_) const;
@@ -246,7 +242,6 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
-    std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
 };
 
 }

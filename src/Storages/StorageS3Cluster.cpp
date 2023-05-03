@@ -140,8 +140,7 @@ Pipe StorageS3Cluster::read(
         /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
-    auto new_context = IStorageCluster::updateSettingsForTableFunctionCluster(context, context->getSettingsRef());
-    const auto & current_settings = new_context->getSettingsRef();
+    const auto & current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
     {
@@ -152,7 +151,7 @@ Pipe StorageS3Cluster::read(
                     std::vector<IConnectionPool::Entry>{try_result},
                     queryToString(query_to_send),
                     sample_block,
-                    new_context,
+                    context,
                     /*throttler=*/nullptr,
                     scalars,
                     Tables(),

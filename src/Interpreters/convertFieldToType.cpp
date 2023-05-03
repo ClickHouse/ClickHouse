@@ -237,20 +237,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
-        /// produce wrong result in some special cases.
-        if (which_type.isDate() && src.getType() == Field::Types::Int64)
-        {
-            return convertNumericType<UInt64>(src, type);
-        }
-
-        /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
-        /// produce wrong result in some special cases.
-        if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
-        {
-            return convertNumericType<Int64>(src, type);
-        }
-
         if (which_type.isDateTime64()
             && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {

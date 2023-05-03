@@ -1324,7 +1324,7 @@ The trailing slash is mandatory.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## Prometheus {#server_configuration_parameters-prometheus}
+## prometheus {#server_configuration_parameters-prometheus}
 
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
@@ -1339,25 +1339,13 @@ Settings:
 **Example**
 
 ``` xml
-<clickhouse>
-    <listen_host>0.0.0.0</listen_host>
-    <http_port>8123</http_port>
-    <tcp_port>9000</tcp_port>
-    <!-- highlight-start -->
-    <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>9363</port>
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
-    </prometheus>
-    <!-- highlight-end -->
-</clickhouse>
-```
-
-Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
-```bash
-curl 127.0.0.1:9363/metrics
+ <prometheus>
+    <endpoint>/metrics</endpoint>
+    <port>9363</port>
+    <metrics>true</metrics>
+    <events>true</events>
+    <asynchronous_metrics>true</asynchronous_metrics>
+</prometheus>
 ```
 
 ## query_log {#server_configuration_parameters-query-log}

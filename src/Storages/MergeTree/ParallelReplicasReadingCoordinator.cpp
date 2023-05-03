@@ -131,7 +131,7 @@ public:
 
 DefaultCoordinator::~DefaultCoordinator()
 {
-    LOG_DEBUG(log, "Coordination done: {}", toString(stats));
+    LOG_INFO(log, "Coordination done: {}", toString(stats));
 }
 
 void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement & announcement)
@@ -214,7 +214,7 @@ void DefaultCoordinator::finalizeReadingState()
         description += fmt::format("Replicas: ({}) --- ", fmt::join(part.replicas, ","));
     }
 
-    LOG_DEBUG(log, "Reading state is fully initialized: {}", description);
+    LOG_INFO(log, "Reading state is fully initialized: {}", description);
 }
 
 
@@ -228,7 +228,7 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
     stats[announcement.replica_num].number_of_requests +=1;
 
     ++sent_initial_requests;
-    LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
+    LOG_INFO(log, "{} {}", sent_initial_requests, replicas_count);
     if (sent_initial_requests == replicas_count)
         finalizeReadingState();
 }
@@ -334,7 +334,7 @@ public:
     {}
     ~InOrderCoordinator() override
     {
-        LOG_DEBUG(log, "Coordination done: {}", toString(stats));
+        LOG_INFO(log, "Coordination done: {}", toString(stats));
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
@@ -349,7 +349,7 @@ public:
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_TRACE(log, "Received an announcement {}", announcement.describe());
+    LOG_TRACE(log, "Received an announecement {}", announcement.describe());
 
     /// To get rid of duplicates
     for (const auto & part: announcement.description)

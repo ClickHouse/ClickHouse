@@ -11,8 +11,6 @@ SELECT mapApply((k, v) -> tuple(v + 9223372036854775806), col) FROM table_map; -
 
 SELECT mapConcat(col, map('key5', 500), map('key6', 600)) FROM table_map ORDER BY id;
 SELECT mapConcat(col, materialize(map('key5', 500)), map('key6', 600)) FROM table_map ORDER BY id;
-SELECT concat(map('key5', 500), map('key6', 600));
-SELECT map('key5', 500) || map('key6', 600);
 
 SELECT mapExists((k, v) -> k LIKE '%3', col) FROM table_map ORDER BY id;
 SELECT mapExists((k, v) -> k LIKE '%2' AND v < 1000, col) FROM table_map ORDER BY id;

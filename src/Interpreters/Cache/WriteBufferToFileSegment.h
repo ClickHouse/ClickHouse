@@ -13,7 +13,7 @@ class WriteBufferToFileSegment : public WriteBufferFromFileDecorator, public IRe
 {
 public:
     explicit WriteBufferToFileSegment(FileSegment * file_segment_);
-    explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder);
+    explicit WriteBufferToFileSegment(FileSegmentsHolder && segment_holder);
 
     void nextImpl() override;
 
@@ -28,7 +28,7 @@ private:
     FileSegment * file_segment;
 
     /// Empty if file_segment is not owned by this WriteBufferToFileSegment
-    FileSegmentsHolderPtr segment_holder;
+    FileSegmentsHolder segment_holder;
 };
 
 

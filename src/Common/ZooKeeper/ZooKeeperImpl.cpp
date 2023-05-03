@@ -1085,7 +1085,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-KeeperApiVersion ZooKeeper::getApiVersion() const
+KeeperApiVersion ZooKeeper::getApiVersion()
 {
     return keeper_api_version;
 }

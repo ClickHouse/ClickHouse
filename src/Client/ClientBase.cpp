@@ -34,7 +34,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -1613,15 +1612,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
-        if (!create_user_query->attach && create_user_query->auth_data)
+        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
         {
-            if (const auto * auth_data = create_user_query->auth_data->as<ASTAuthenticationData>())
-            {
-                auto password = auth_data->getPassword();
-
-                if (password)
-                    global_context->getAccessControl().checkPasswordComplexityRules(*password);
-            }
+            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
+            create_user_query->temporary_password_for_checks.reset();
         }
     }
 

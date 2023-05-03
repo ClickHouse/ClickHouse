@@ -80,9 +80,11 @@ def process_test_log(log_path, broken_tests):
                         test_results.append(
                             (
                                 test_name,
-                                "SKIPPED",
+                                "FAIL",
                                 test_time,
-                                ["This test passed. Update broken_tests.txt.\n"],
+                                [
+                                    "Test is expected to fail! Please, update broken_tests.txt!\n"
+                                ],
                             )
                         )
                     else:

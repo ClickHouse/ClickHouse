@@ -32,15 +32,13 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     size_t threads_count_,
     size_t max_tasks_count_,
     CurrentMetrics::Metric metric_,
-    CurrentMetrics::Metric max_tasks_metric_,
-    std::string_view policy)
+    CurrentMetrics::Metric max_tasks_metric_)
     : name(name_)
     , threads_count(threads_count_)
     , max_tasks_count(max_tasks_count_)
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
-    , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
+    , pool(std::make_unique<ThreadPool>(CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
@@ -54,9 +52,20 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
 
     for (size_t number = 0; number < threads_count; ++number)
         pool->scheduleOrThrowOnError([this] { threadFunction(); });
+}
 
-    if (!policy.empty())
-        pending.updatePolicy(policy);
+template <class Queue>
+MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
+    String name_,
+    size_t threads_count_,
+    size_t max_tasks_count_,
+    CurrentMetrics::Metric metric_,
+    CurrentMetrics::Metric max_tasks_metric_,
+    std::string_view policy)
+    requires requires(Queue queue) { queue.updatePolicy(policy); } // Because we use explicit template instantiation
+    : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_, max_tasks_metric_)
+{
+    pending.updatePolicy(policy);
 }
 
 template <class Queue>
@@ -317,4 +326,5 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
 template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
+
 }

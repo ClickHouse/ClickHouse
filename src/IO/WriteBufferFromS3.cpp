@@ -85,8 +85,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , upload_settings(request_settings.getUploadSettings())
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , strict_upload_part_size(upload_settings.strict_upload_part_size)
-    , current_upload_part_size(upload_settings.min_upload_part_size)
+    , upload_part_size(upload_settings.min_upload_part_size)
     , schedule(std::move(schedule_))
     , write_settings(write_settings_)
 {
@@ -101,79 +100,28 @@ void WriteBufferFromS3::nextImpl()
     /// Buffer in a bad state after exception
     if (temporary_buffer->tellp() == -1)
         allocateBuffer();
-    else
-        chassert(temporary_buffer->tellp() == static_cast<std::streamoff>(last_part_size));
-
-    if (strict_upload_part_size)
-        processWithStrictParts();
-    else
-        processWithDynamicParts();
-
-    waitForReadyBackGroundTasks();
-}
-
-void WriteBufferFromS3::processWithStrictParts()
-{
-    chassert(strict_upload_part_size > 0);
-
-    size_t buffer_size = offset();
-    size_t left_in_buffer = buffer_size;
-    size_t new_size = last_part_size + buffer_size;
-    size_t buffer_offset = 0;
-
-    if (new_size > strict_upload_part_size)
-    {
-        /// Data size will exceed fixed part size threshold for multipart upload, need to use multipart upload.
-        if (multipart_upload_id.empty())
-            createMultipartUpload();
-
-        while (new_size > strict_upload_part_size)
-        {
-            size_t to_write = strict_upload_part_size - last_part_size;
-            temporary_buffer->write(working_buffer.begin() + buffer_offset, to_write);
-            buffer_offset += to_write;
-
-            writePart();
-            allocateBuffer();
-
-            new_size -= strict_upload_part_size;
-            left_in_buffer -= to_write;
-        }
-    }
-
-    if (left_in_buffer)
-    {
-        temporary_buffer->write(working_buffer.begin() + buffer_offset, left_in_buffer);
-        last_part_size += left_in_buffer;
-    }
-
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, buffer_size);
-
-    if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(buffer_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
-}
-
-void WriteBufferFromS3::processWithDynamicParts()
-{
-    chassert(current_upload_part_size > 0);
 
     size_t size = offset();
     temporary_buffer->write(working_buffer.begin(), size);
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, size);
-    last_part_size += size;
 
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
+    last_part_size += offset();
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
     if (multipart_upload_id.empty() && last_part_size > upload_settings.max_single_part_upload_size)
         createMultipartUpload();
 
-    if (!multipart_upload_id.empty() && last_part_size > current_upload_part_size)
+    chassert(upload_part_size > 0);
+    if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
     {
         writePart();
+
         allocateBuffer();
     }
+
+    waitForReadyBackGroundTasks();
 }
 
 void WriteBufferFromS3::allocateBuffer()
@@ -387,17 +335,14 @@ void WriteBufferFromS3::fillUploadRequest(S3::UploadPartRequest & req)
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    if (!strict_upload_part_size)
+    /// Maybe increase `upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
+    auto threshold = upload_settings.upload_part_size_multiply_parts_count_threshold;
+    if (!multipart_upload_id.empty() && (part_number % threshold == 0))
     {
-        /// Maybe increase `current_upload_part_size` (we need to increase it sometimes to keep `part_number` less or equal than `max_part_number`).
-        auto threshold = upload_settings.upload_part_size_multiply_parts_count_threshold;
-        if (!multipart_upload_id.empty() && (part_number % threshold == 0))
-        {
-            auto max_upload_part_size = upload_settings.max_upload_part_size;
-            auto upload_part_size_multiply_factor = upload_settings.upload_part_size_multiply_factor;
-            current_upload_part_size *= upload_part_size_multiply_factor;
-            current_upload_part_size = std::min(current_upload_part_size, max_upload_part_size);
-        }
+        auto max_upload_part_size = upload_settings.max_upload_part_size;
+        auto upload_part_size_multiply_factor = upload_settings.upload_part_size_multiply_factor;
+        upload_part_size *= upload_part_size_multiply_factor;
+        upload_part_size = std::min(upload_part_size, max_upload_part_size);
     }
 }
 

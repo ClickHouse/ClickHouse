@@ -141,19 +141,20 @@ add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-if (NOT OS_DARWIN)
+
+if (ENABLE_CURL_BUILD)
     add_contrib (curl-cmake curl)
     add_contrib (azure-cmake azure)
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
+
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
 add_contrib (libgsasl-cmake libgsasl) # requires krb5
 add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
 add_contrib (nats-io-cmake nats-io)
-add_contrib (isa-l-cmake isa-l)
-add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5, isa-l
+add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
 add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
@@ -177,12 +178,17 @@ add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
 add_contrib (morton-nd-cmake morton-nd)
+
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
+
 add_contrib (annoy-cmake annoy)
+
 add_contrib (xxHash-cmake xxHash)
+
 add_contrib (google-benchmark-cmake google-benchmark)
+
 add_contrib (ulid-c-cmake ulid-c)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.

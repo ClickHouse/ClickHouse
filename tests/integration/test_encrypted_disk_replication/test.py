@@ -52,7 +52,9 @@ def create_table(
 ):
     engine = "ReplicatedMergeTree('/clickhouse/tables/encrypted_test/', '{replica}')"
 
-    settings = f"storage_policy='{storage_policy}', allow_remote_fs_zero_copy_replication={int(zero_copy_replication)}"
+    settings = f"storage_policy='{storage_policy}'"
+    if zero_copy_replication:
+        settings += ", allow_remote_fs_zero_copy_replication=true"
 
     node1.query(
         f"""

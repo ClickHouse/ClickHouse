@@ -1658,7 +1658,6 @@ Example of settings:
         <password></password>
         <db>test</db>
         <collection>dictionary_source</collection>
-        <options>ssl=true</options>
     </mongodb>
 </source>
 ```
@@ -1673,7 +1672,6 @@ SOURCE(MONGODB(
     password ''
     db 'test'
     collection 'dictionary_source'
-    options 'ssl=true'
 ))
 ```
 
@@ -1685,8 +1683,6 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
-- `options` -  MongoDB connection string options (optional parameter).
-
 
 ### Redis
 
