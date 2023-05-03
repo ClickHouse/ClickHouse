@@ -215,7 +215,7 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
-    DB::KeeperApiVersion getApiVersion();
+    DB::KeeperApiVersion getApiVersion() const;
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -675,5 +675,21 @@ void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
+
+template <typename Client>
+void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
+{
+    if (client.getApiVersion() >= DB::KeeperApiVersion::WITH_CHECK_NOT_EXISTS)
+    {
+        auto request = std::make_shared<Coordination::CheckRequest>();
+        request->path = path;
+        request->not_exists = true;
+        requests.push_back(std::move(request));
+        return;
+    }
+
+    requests.push_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
+    requests.push_back(makeRemoveRequest(path, -1));
+}
 
 }

@@ -183,7 +183,7 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
-    DB::KeeperApiVersion getApiVersion() override;
+    DB::KeeperApiVersion getApiVersion() const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using

@@ -93,7 +93,7 @@ public:
 
     void finalize(const String & reason) override;
 
-    DB::KeeperApiVersion getApiVersion() override
+    DB::KeeperApiVersion getApiVersion() const override
     {
         return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
     }
