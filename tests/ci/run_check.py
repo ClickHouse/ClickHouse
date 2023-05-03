@@ -144,7 +144,7 @@ def main():
             f"expect adding docs for {FEATURE_LABEL}",
             DOCS_NAME,
         )
-    else:
+    elif not description_error:
         set_mergeable_check(commit, "skipped")
 
     if description_error:
