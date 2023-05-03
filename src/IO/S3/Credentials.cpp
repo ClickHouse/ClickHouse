@@ -25,6 +25,10 @@ namespace DB::S3
 
 namespace
 {
+namespace ErrorCodes
+{
+    extern const int AWS_ERROR;
+}
 
 bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials, uint64_t expiration_window_seconds)
 {
@@ -143,7 +147,7 @@ Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
     String user_agent_string = awsComputeUserAgentString();
     auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
     if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
-        throw DB::Exception(ErrorCodes::S3_ERROR,
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
             "Failed to token request. HTTP response code: {}", response_code);
 
     token = new_token;
@@ -155,7 +159,7 @@ Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
     profile_request->SetUserAgent(user_agent_string);
     const auto result = GetResourceWithAWSWebServiceResult(profile_request);
     if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK)
-        throw DB::Exception(ErrorCodes::S3_ERROR,
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
             "Failed to get availability zone. HTTP response code: {}", result.GetResponseCode());
     return Aws::Utils::StringUtils::Trim(result.GetPayload().c_str());
 }
