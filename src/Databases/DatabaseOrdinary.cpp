@@ -29,12 +29,6 @@
 
 namespace fs = std::filesystem;
 
-namespace CurrentMetrics
-{
-    extern const Metric DatabaseOrdinaryThreads;
-    extern const Metric DatabaseOrdinaryThreadsActive;
-}
-
 namespace DB
 {
 

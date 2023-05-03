@@ -98,8 +98,6 @@
     M(StorageHiveThreadsActive, "Number of threads in the StorageHive thread pool running a task.") \
     M(AsyncLoaderThreads, "Number of threads in the async loader thread pool.") \
     M(AsyncLoaderThreadsActive, "Number of threads in the async loader thread pool running a task.") \
-    M(DatabaseOrdinaryThreads, "Number of threads in the Ordinary database thread pool.") \
-    M(DatabaseOrdinaryThreadsActive, "Number of threads in the Ordinary database thread pool running a task.") \
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseCatalogThreads, "Number of threads in the DatabaseCatalog thread pool.") \

@@ -11,12 +11,6 @@
 #include <numeric>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric AsyncLoaderThreads;
-    extern const Metric AsyncLoaderThreadsActive;
-}
-
 namespace DB
 {
 
