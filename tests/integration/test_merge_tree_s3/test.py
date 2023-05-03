@@ -8,6 +8,8 @@ from helpers.mock_servers import start_mock_servers
 from helpers.utility import generate_values, replace_config, SafeThread
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
+from helpers.wait_for_helpers import wait_for_merges
+from helpers.test_tools import assert_eq_with_retry
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -97,6 +99,7 @@ def run_s3_mocks(cluster):
         [
             ("unstable_proxy.py", "resolver", "8081"),
             ("no_delete_objects.py", "resolver", "8082"),
+            ("broken_s3.py", "resolver", "8083"),
         ],
     )
 
@@ -132,6 +135,18 @@ def clear_minio(cluster):
     except:
         # Remove extra objects to prevent tests cascade failing
         remove_all_s3_objects(cluster)
+
+    yield
+
+
+@pytest.fixture(autouse=True, scope="function")
+def reset_mock_broken_s3(cluster):
+    response = cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        ["curl", "-s", f"http://localhost:8083/mock_settings/reset"],
+        nothrow=True,
+    )
+    assert response == "OK"
 
     yield
 
@@ -825,3 +840,124 @@ def test_cache_setting_compatibility(cluster, node_name):
     assert not node.contains_in_log("No such file or directory: Cache info:")
 
     check_no_objects_after_drop(cluster)
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_by_drop(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS test_merge_canceled_by_drop NO DELAY")
+    node.query(
+        "CREATE TABLE test_merge_canceled_by_drop "
+        " (key UInt32, value String)"
+        " Engine=MergeTree() "
+        " ORDER BY value "
+        " SETTINGS storage_policy='s3'"
+    )
+    node.query("SYSTEM STOP MERGES test_merge_canceled_by_drop")
+    node.query(
+        "INSERT INTO test_merge_canceled_by_drop SELECT number, toString(number) FROM numbers(100000000)"
+    )
+    node.query("SYSTEM START MERGES test_merge_canceled_by_drop")
+
+    wait_for_merges(node, "test_merge_canceled_by_drop")
+    check_no_objects_after_drop(
+        cluster, table_name="test_merge_canceled_by_drop", node_name=node_name
+    )
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_by_s3_errors(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS test_merge_canceled_by_s3_errors NO DELAY")
+    node.query(
+        "CREATE TABLE test_merge_canceled_by_s3_errors "
+        " (key UInt32, value String)"
+        " Engine=MergeTree() "
+        " ORDER BY value "
+        " SETTINGS storage_policy='broken_s3'"
+    )
+    node.query("SYSTEM STOP MERGES test_merge_canceled_by_s3_errors")
+    node.query(
+        "INSERT INTO test_merge_canceled_by_s3_errors SELECT number, toString(number) FROM numbers(10000)"
+    )
+    node.query(
+        "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
+    )
+    min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
+    assert int(min_key) == 0, min_key
+
+    response = cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        [
+            "curl",
+            "-s",
+            f"http://localhost:8083/mock_settings/error_at_put?when_length_bigger=50000",
+        ],
+        nothrow=True,
+    )
+    assert response == "OK"
+
+    node.query("SYSTEM START MERGES test_merge_canceled_by_s3_errors")
+
+    error = node.query_and_get_error(
+        "OPTIMIZE TABLE test_merge_canceled_by_s3_errors FINAL",
+    )
+    assert "ExpectedError Message: mock s3 injected error" in error, error
+
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
+
+    check_no_objects_after_drop(
+        cluster, table_name="test_merge_canceled_by_s3_errors", node_name=node_name
+    )
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_merge_canceled_by_s3_errors_when_move(cluster, node_name):
+    node = cluster.instances[node_name]
+    settings = {
+        "storage_policy": "external_broken_s3",
+        "merge_with_ttl_timeout": 1,
+    }
+    create_table(node, "merge_canceled_by_s3_errors_when_move", **settings)
+
+    node.query("SYSTEM STOP MERGES merge_canceled_by_s3_errors_when_move")
+    node.query(
+        "INSERT INTO merge_canceled_by_s3_errors_when_move"
+        " VALUES {}".format(generate_values("2020-01-03", 1000))
+    )
+    node.query(
+        "INSERT INTO merge_canceled_by_s3_errors_when_move"
+        " VALUES {}".format(generate_values("2020-01-03", 1000, -1))
+    )
+
+    node.query(
+        "ALTER TABLE merge_canceled_by_s3_errors_when_move"
+        "    MODIFY TTL"
+        "        dt + INTERVAL 1 DAY "
+        "        TO VOLUME 'external'",
+        settings={"materialize_ttl_after_modify": 0},
+    )
+
+    response = cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        [
+            "curl",
+            "-s",
+            f"http://localhost:8083/mock_settings/error_at_put?when_length_bigger=10000",
+        ],
+        nothrow=True,
+    )
+    assert response == "OK"
+
+    node.query("SYSTEM START MERGES merge_canceled_by_s3_errors_when_move")
+
+    node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
+
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
+
+    count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
+    assert int(count) == 2000, count
+
+    check_no_objects_after_drop(
+        cluster, table_name="merge_canceled_by_s3_errors_when_move", node_name=node_name
+    )
