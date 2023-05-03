@@ -15,7 +15,7 @@ if [ -z "$CLICKHOUSE_REPO_PATH" ]; then
     ls -lath ||:
 fi
 
-clickhouse_source="--clickhouse-source \'$CLICKHOUSE_PACKAGE\'"
+clickhouse_source="--clickhouse-source $CLICKHOUSE_PACKAGE"
 if [ -n "$WITH_LOCAL_BINARY" ]; then
     clickhouse_source="--clickhouse-source /clickhouse"
 fi
