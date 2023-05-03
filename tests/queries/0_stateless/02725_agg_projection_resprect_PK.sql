@@ -18,7 +18,7 @@ CREATE TABLE t0
             c1
     )
 )
-ENGINE = MergeTree ORDER BY (c1, c2);
+ENGINE = MergeTree ORDER BY (c1, c2) settings min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 0;
 
 INSERT INTO t0 SELECT
     number,
