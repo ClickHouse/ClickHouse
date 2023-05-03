@@ -76,7 +76,7 @@ Resets the mark cache.
 
 ## DROP REPLICA
 
-Dead replicas can be dropped using following syntax:
+Dead replicas of `ReplicatedMergeTree` tables can be dropped using following syntax:
 
 ``` sql
 SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
@@ -85,12 +85,24 @@ SYSTEM DROP REPLICA 'replica_name';
 SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 ```
 
-Queries will remove the replica path in ZooKeeper. It is useful when the replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it cannot drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
+Queries will remove the `ReplicatedMergeTree` replica path in ZooKeeper. It is useful when the replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it cannot drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
 
 The first one removes metadata of `'replica_name'` replica of `database.table` table.
 The second one does the same for all replicated tables in the database.
 The third one does the same for all replicated tables on the local server.
 The fourth one is useful to remove metadata of dead replica when all other replicas of a table were dropped. It requires the table path to be specified explicitly. It must be the same path as was passed to the first argument of `ReplicatedMergeTree` engine on table creation.
+
+## DROP DATABASE REPLICA
+
+Dead replicas of `Replicated` databases can be dropped using following syntax:
+
+``` sql
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM DATABASE database;
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'];
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPATH '/path/to/table/in/zk';
+```
+
+Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica path from ZooKeeper when there's no database to run `DROP DATABASE`. Please note that it does not remove `ReplicatedMergeTree` replicas (so you may need `SYSTEM DROP REPLICA` as well). Shard and replica names are the names that were specified in `Replicated` engine arguments when creating the database. Also, these names can be obtained from `database_shard_name` and `database_replica_name` columns in `system.clusters`. If the `FROM SHARD` clause is missing, then `replica_name` must be a full replica name in `shard_name|replica_name` format.
 
 ## DROP UNCOMPRESSED CACHE
 
@@ -114,11 +126,11 @@ This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper. Note that `SYSTEM RELOAD CONFIG` does not reload `USER` configuration stored in ZooKeeper, it only reloads `USER` configuration that is stored in `users.xml`.  To reload all `USER` config use `SYSTEM RELOAD USERS`
 
 ## RELOAD USERS
 
-Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. Note that `SYSTEM RELOAD CONFIG` will only reload users.xml access storage.
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. 
 
 ## SHUTDOWN
 
@@ -222,6 +234,14 @@ Clears freezed backup with the specified name from all the disks. See more about
 
 ``` sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
+```
+
+### WAIT LOADING PARTS
+
+Wait until all asynchronously loading data parts of a table (outdated data parts) will became loaded.
+
+``` sql
+SYSTEM WAIT LOADING PARTS [db.]merge_tree_family_table_name
 ```
 
 ## Managing ReplicatedMergeTree Tables

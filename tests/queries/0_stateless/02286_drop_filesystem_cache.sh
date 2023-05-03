@@ -31,7 +31,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
-    $CLICKHOUSE_CLIENT --multiline --multiquery --query "SYSTEM DROP FILESYSTEM CACHE './data'; --{serverError 36}"
+    $CLICKHOUSE_CLIENT --multiline --multiquery --query "SYSTEM DROP FILESYSTEM CACHE 'ff'; --{serverError 36}"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
@@ -77,7 +77,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_022862 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '${STORAGE_POLICY}_2/'"
+    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '${STORAGE_POLICY}_2'"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_022862"

@@ -216,8 +216,6 @@ public:
     /// It's used if not set in engine's arguments while creating a replicated table.
     static String getDefaultReplicaName(const ContextPtr & context_);
 
-    int getMetadataVersion() const { return metadata_version; }
-
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
 
@@ -254,7 +252,14 @@ public:
         bool replace_existing_lock,
         std::optional<HardlinkedFiles> hardlinked_files) const;
 
-    void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
+    void getLockSharedDataOps(
+        const IMergeTreeDataPart & part,
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        bool replace_existing_lock,
+        std::optional<HardlinkedFiles> hardlinked_files,
+        Coordination::Requests & requests) const;
+
+    zkutil::EphemeralNodeHolderPtr lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
@@ -269,7 +274,7 @@ public:
     static std::pair<bool, NameSet> unlockSharedDataByID(
         String part_id,
         const String & table_uuid,
-        const String & part_name,
+        const MergeTreePartInfo & part_info,
         const String & replica_name_,
         const std::string & disk_type,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
@@ -382,6 +387,11 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
 
+    /// during server restart or attach table process, set since_metadata_err_incr_readonly_metric = true and increase readonly metric if has_metadata_in_zookeeper = false.
+    /// during detach or drop table process, decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
+    /// during restore replica process, set since_metadata_err_incr_readonly_metric = false and decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
+    bool since_metadata_err_incr_readonly_metric = false;
+
     static const String default_zookeeper_name;
     const String zookeeper_name;
     const String zookeeper_path;
@@ -430,7 +440,6 @@ private:
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
 
-    int metadata_version = 0;
     /// Threads.
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
@@ -517,8 +526,10 @@ private:
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
-    void setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
-                           ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
+    void setTableStructure(
+        const StorageID & table_id, const ContextPtr & local_context,
+        ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff,
+        int32_t new_metadata_version);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.
@@ -543,7 +554,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -842,7 +853,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
 
@@ -861,6 +872,12 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
+    static void getZeroCopyLockNodeCreateOps(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
+        int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
+        const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 
