@@ -122,7 +122,6 @@
 02575_merge_prewhere_different_default_kind
 02713_array_low_cardinality_string
 02707_skip_index_with_in
-02680_mysql_ast_logical_err
 02324_map_combinator_bug
 02241_join_rocksdb_bs
 02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
@@ -133,6 +132,5 @@
 00725_join_on_bug_1
 00636_partition_key_parts_pruning
 00261_storage_aliases_and_array_join
-02701_non_parametric_function
 01825_type_json_multiple_files
 01281_group_by_limit_memory_tracking
