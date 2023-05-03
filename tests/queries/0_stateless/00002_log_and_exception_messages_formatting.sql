@@ -30,7 +30,13 @@ create temporary table known_short_messages (s String) as select * from (select
 'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
 'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
 'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
-'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}'
+'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
+'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
+'Transaction was cancelled', 'Could not find table: {}', 'Table {} doesn''t exist',
+'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
+'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
+'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
+'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
@@ -65,11 +71,11 @@ select 'noisy Info messages', max2((select count() from logs where level <= 'Inf
 
 -- Same as above for Warning
 with ('Not enabled four letter command {}') as frequent_in_tests
-select 'noisy Warning messages', max2((select countOrDefault() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
-    group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.01);
+select 'noisy Warning messages', max2(coalesce((select countOrDefault() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
+    group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.01);
 
 -- Same as above for Error
-select 'noisy Error messages', max2((select countOrDefault() from logs where level = 'Error' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.02);
+select 'noisy Error messages', max2(coalesce((select countOrDefault() from logs where level = 'Error' group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.02);
 
 select 'no Fatal messages', count() from logs where level = 'Fatal';
 

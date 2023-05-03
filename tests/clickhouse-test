@@ -2022,7 +2022,7 @@ def reportLogStats(args):
 
     query = """
         WITH
-            120 AS mins,
+            240 AS mins,
             (
                 SELECT (count(), sum(length(message)))
                 FROM system.text_log
@@ -2052,7 +2052,7 @@ def reportLogStats(args):
 
     query = """
         WITH
-            120 AS mins
+            240 AS mins
         SELECT
             count() AS count,
             substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
@@ -2073,7 +2073,7 @@ def reportLogStats(args):
     query = """
         SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
         FROM system.text_log
-        WHERE (now() - toIntervalMinute(120)) < event_time
+        WHERE (now() - toIntervalMinute(240)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
         AND (message NOT LIKE concat('%Exception: ', s, '%'))
         GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
@@ -2098,12 +2098,18 @@ def reportLogStats(args):
               'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
               'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
               'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
-              'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}'
+              'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
+              'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
+              'Transaction was cancelled', 'Could not find table: {}', 'Table {} doesn''t exist',
+              'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
+              'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
+              'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
+              'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
             min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
         FROM system.text_log
-        WHERE (now() - toIntervalMinute(120)) < event_time
+        WHERE (now() - toIntervalMinute(240)) < event_time
             AND (length(message_format_string) < 16
                 OR (message ilike '%DB::Exception%' AND length_without_exception_boilerplate < 30))
             AND message_format_string NOT IN known_short_messages
@@ -2117,7 +2123,7 @@ def reportLogStats(args):
     query = """
         SELECT max((freq, message_format_string)), level
         FROM (SELECT count() / (SELECT count() FROM system.text_log
-              WHERE (now() - toIntervalMinute(120)) < event_time) AS freq,
+              WHERE (now() - toIntervalMinute(240)) < event_time) AS freq,
               min(level) AS level, message_format_string FROM system.text_log
               WHERE (now() - toIntervalMinute(120)) < event_time
               GROUP BY message_format_string ORDER BY freq DESC)
