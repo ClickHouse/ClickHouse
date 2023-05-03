@@ -1,9 +1,9 @@
-#include <Parsers/tests/gtest_common.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/applyTableOverride.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ParserAlterQuery.h>
@@ -17,6 +17,8 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <string_view>
 #include <regex>
+#include <gtest/gtest.h>
+#include "gtest_common.h"
 
 namespace
 {
@@ -554,58 +556,59 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "print parse_url('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')",
             "SELECT concat('{', concat('\"Scheme\":\"', protocol('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Host\":\"', domain('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Port\":\"', toString(port('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')), '\"'), ',', concat('\"Path\":\"', path('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), ',', concat('\"Username\":\"', splitByChar(':', splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'))[1])[1], '\"'), ',', concat('\"Password\":\"', splitByChar(':', splitByChar('@', netloc('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'))[1])[2], '\"'), ',', concat('\"Query Parameters\":', concat('{\"', replace(replace(queryString('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '=', '\":\"'), '&', '\",\"'), '\"}')), ',', concat('\"Fragment\":\"', fragment('https://john:123@google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment'), '\"'), '}')"
-        },{
-             "Customers | summarize t = make_list(FirstName) by FirstName",
-             "SELECT\n    FirstName,\n    groupArrayIf(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_list(FirstName, 10) by FirstName",
-             "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName",
-             "SELECT\n    FirstName,\n    groupArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName",
-             "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_set(FirstName) by FirstName",
-             "SELECT\n    FirstName,\n    groupUniqArray(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_set(FirstName, 10) by FirstName",
-             "SELECT\n    FirstName,\n    groupUniqArray(10)(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName",
-             "SELECT\n    FirstName,\n    groupUniqArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName",
-             "SELECT\n    FirstName,\n    groupUniqArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
-         },
-         {
-             "print output = dynamic([1, 2, 3])",
-             "SELECT [1, 2, 3] AS output"
-         },
-         {
-             "print output = dynamic(['a', 'b', 'c'])",
-             "SELECT ['a', 'b', 'c'] AS output"
-         },
-         {
-             "T | extend duration = endTime - startTime",
-             "SELECT\n    * EXCEPT duration,\n    endTime - startTime AS duration\nFROM T"
-         },
-         {
-             "T |project endTime, startTime | extend duration = endTime - startTime",
-             "SELECT\n    * EXCEPT duration,\n    endTime - startTime AS duration\nFROM\n(\n    SELECT\n        endTime,\n        startTime\n    FROM T\n)"
-         },
-         {
-             "T | extend c =c*2, b-a, d = a +b , a*b",
-             "SELECT\n    * EXCEPT c EXCEPT d,\n    c * 2 AS c,\n    b - a AS Column1,\n    a + b AS d,\n    a * b AS Column2\nFROM T"
-         }
+        },
+        {
+            "Customers | summarize t = make_list(FirstName) by FirstName",
+            "SELECT\n    FirstName,\n    groupArrayIf(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize t = make_list(FirstName, 10) by FirstName",
+            "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName",
+            "SELECT\n    FirstName,\n    groupArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName",
+            "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize t = make_set(FirstName) by FirstName",
+            "SELECT\n    FirstName,\n    groupUniqArray(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize t = make_set(FirstName, 10) by FirstName",
+            "SELECT\n    FirstName,\n    groupUniqArray(10)(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName",
+            "SELECT\n    FirstName,\n    groupUniqArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName",
+            "SELECT\n    FirstName,\n    groupUniqArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "print output = dynamic([1, 2, 3])",
+            "SELECT [1, 2, 3] AS output"
+        },
+        {
+            "print output = dynamic(['a', 'b', 'c'])",
+            "SELECT ['a', 'b', 'c'] AS output"
+        },
+        {
+            "T | extend duration = endTime - startTime",
+            "SELECT\n    * EXCEPT duration,\n    endTime - startTime AS duration\nFROM T"
+        },
+        {
+            "T |project endTime, startTime | extend duration = endTime - startTime",
+            "SELECT\n    * EXCEPT duration,\n    endTime - startTime AS duration\nFROM\n(\n    SELECT\n        endTime,\n        startTime\n    FROM T\n)"
+        },
+        {
+            "T | extend c =c*2, b-a, d = a +b , a*b",
+            "SELECT\n    * EXCEPT c EXCEPT d,\n    c * 2 AS c,\n    b - a AS Column1,\n    a + b AS d,\n    a * b AS Column2\nFROM T"
+        }
 })));
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;

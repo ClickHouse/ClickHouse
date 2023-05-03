@@ -7,7 +7,7 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
-
+#include "Poco/String.h"
 #include <format>
 #include <regex>
 
