@@ -11,6 +11,8 @@ namespace CurrentMetrics
     extern const Metric BackupsIOThreadsActive;
     extern const Metric MergeTreePartsLoaderThreads;
     extern const Metric MergeTreePartsLoaderThreadsActive;
+    extern const Metric MergeTreePartsCleanerThreads;
+    extern const Metric MergeTreePartsCleanerThreadsActive;
     extern const Metric MergeTreeOutdatedPartsLoaderThreads;
     extern const Metric MergeTreeOutdatedPartsLoaderThreadsActive;
 }
@@ -85,7 +87,7 @@ void ActivePartsLoadingThreadPool::initialize(size_t max_threads, size_t max_fre
 {
     if (instance)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The BackupsIO thread pool is initialized twice");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The ActivePartsLoadingThreadPool thread pool is initialized twice");
     }
 
     instance = std::make_unique<ThreadPool>(
@@ -101,7 +103,7 @@ ThreadPool & ActivePartsLoadingThreadPool::get()
 {
     if (!instance)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The BackupsIO thread pool is not initialized");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The ActivePartsLoadingThreadPool thread pool is not initialized");
     }
 
     return *instance;
@@ -147,5 +149,34 @@ ThreadPool & OutdatedPartsLoadingThreadPool::get()
 
     return *instance;
 }
+
+std::unique_ptr<ThreadPool> PartsCleaningThreadPool::instance;
+
+void PartsCleaningThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
+{
+    if (instance)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsCleaningThreadPool thread pool is initialized twice");
+    }
+
+    instance = std::make_unique<ThreadPool>(
+        CurrentMetrics::MergeTreePartsCleanerThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        max_threads,
+        max_free_threads,
+        queue_size,
+        /* shutdown_on_exception= */ false);
+}
+
+ThreadPool & PartsCleaningThreadPool::get()
+{
+    if (!instance)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsCleaningThreadPool thread pool is not initialized");
+    }
+
+    return *instance;
+}
+
 
 }

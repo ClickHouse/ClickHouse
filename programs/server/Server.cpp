@@ -776,14 +776,19 @@ try
 
     ActivePartsLoadingThreadPool::initialize(
         server_settings.max_active_parts_loading_thread_pool_size,
-        0, // We don't need any threads one all the parts will be loaded
+        0, // We don't need any threads once all the parts will be loaded
         server_settings.max_active_parts_loading_thread_pool_size);
 
     OutdatedPartsLoadingThreadPool::initialize(
         server_settings.max_outdated_parts_loading_thread_pool_size,
         /*turbo=*/server_settings.max_active_parts_loading_thread_pool_size,
-        0, // We don't need any threads one all the parts will be loaded
+        0, // We don't need any threads once all the parts will be loaded
         server_settings.max_outdated_parts_loading_thread_pool_size);
+
+    PartsCleaningThreadPool::initialize(
+        server_settings.max_parts_cleaning_thread_pool_size,
+        0, // We don't need any threads one all the parts will be deleted
+        server_settings.max_parts_cleaning_thread_pool_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
