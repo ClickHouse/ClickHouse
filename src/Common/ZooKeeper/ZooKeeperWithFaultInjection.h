@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
+#include "Coordination/KeeperConstants.h"
 
 namespace DB
 {
@@ -379,6 +380,11 @@ public:
         }
 
         ephemeral_nodes.clear();
+    }
+
+    KeeperApiVersion getApiVersion() const
+    {
+        return keeper->getApiVersion();
     }
 
 private:

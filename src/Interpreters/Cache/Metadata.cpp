@@ -278,8 +278,8 @@ void CacheMetadata::doCleanup()
         }
         catch (...)
         {
-            chassert(false);
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
         }
     }
 }
