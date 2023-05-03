@@ -55,9 +55,7 @@ def generate_dnf():
     return " OR ".join(clauses)
 
 
-select_query = (
-    "SELECT count() FROM t_cnf_fuzz WHERE {} SETTINGS convert_query_to_cnf = {}, allow_experimental_analyzer=1"
-)
+select_query = "SELECT count() FROM t_cnf_fuzz WHERE {} SETTINGS convert_query_to_cnf = {}, allow_experimental_analyzer=1"
 
 fail_report = """
 Failed query: '{}'.
