@@ -8404,7 +8404,7 @@ std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWith
             /// Get hardlinked files
             String files_not_to_remove_str;
             Coordination::Error code;
-            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, &code);
+            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
             if (code != Coordination::Error::ZOK)
             {
                 LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
@@ -8426,7 +8426,7 @@ std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWith
                     return {true, std::nullopt};
                 }
 
-                if (children.size() > 1 || children.size() == 1 && children[0] != ZeroCopyLock::ZERO_COPY_LOCK_NAME)
+                if (children.size() > 1 || (children.size() == 1 && children[0] != ZeroCopyLock::ZERO_COPY_LOCK_NAME))
                 {
                     LOG_TRACE(log, "No files not to remove found for part {} from parent {}", part_info_str, part_candidate_info_str);
                 }
@@ -8471,20 +8471,23 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         if (!files_not_to_remove_str.empty())
             boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
 
+        String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
+
+        /// Delete our replica node for part from zookeeper (we are not interested in it anymore)
+        String zookeeper_part_replica_node = fs::path(zookeeper_part_uniq_node) / replica_name_;
+
         auto [has_parent, parent_not_to_remove] = getParentLockedBlobs(
             zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_info, data_format_version, logger);
-        if (has_parent && parent_not_to_remove == std::nullopt)
+
+        // parent_not_to_remove == std::nullopt means that we were unable to retrieve parts set
+        if (has_parent || parent_not_to_remove == std::nullopt)
         {
             LOG_TRACE(logger, "Failed to get mutation parent on {} for part {}, refusing to remove blobs", zookeeper_part_replica_node, part_name);
             return {false, {}};
         }
 
-        files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
+        files_not_to_remove.insert(parent_not_to_remove->begin(), parent_not_to_remove->end());
 
-        String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
-
-        /// Delete our replica node for part from zookeeper (we are not interested in it anymore)
-        String zookeeper_part_replica_node = fs::path(zookeeper_part_uniq_node) / replica_name_;
 
         LOG_TRACE(logger, "Remove zookeeper lock {} for part {}", zookeeper_part_replica_node, part_name);
 
