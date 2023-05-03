@@ -11,7 +11,7 @@ UInt128 BackupEntryWithChecksumCalculation<Base>::getChecksum() const
     std::lock_guard lock{checksum_calculation_mutex};
     if (!calculated_checksum)
     {
-        auto read_buffer = this->getReadBuffer();
+        auto read_buffer = this->getReadBuffer(ReadSettings{}.adjustBufferSize(this->getSize()));
         HashingReadBuffer hashing_read_buffer(*read_buffer);
         hashing_read_buffer.ignoreAll();
         calculated_checksum = hashing_read_buffer.getHash();
@@ -28,7 +28,7 @@ std::optional<UInt128> BackupEntryWithChecksumCalculation<Base>::getPartialCheck
     if (prefix_length >= this->getSize())
         return this->getChecksum();
 
-    auto read_buffer = this->getReadBuffer();
+    auto read_buffer = this->getReadBuffer(ReadSettings{}.adjustBufferSize(prefix_length));
     HashingReadBuffer hashing_read_buffer(*read_buffer);
     hashing_read_buffer.ignore(prefix_length);
     auto partial_checksum = hashing_read_buffer.getHash();

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Backups/BackupEntryWithChecksumCalculation.h>
-#include <IO/ReadSettings.h>
 #include <base/defines.h>
 #include <mutex>
+
 
 namespace DB
 {
@@ -18,13 +18,12 @@ public:
     BackupEntryFromImmutableFile(
         const DiskPtr & disk_,
         const String & file_path_,
-        const ReadSettings & settings_,
         const std::optional<UInt64> & file_size_ = {},
         const std::optional<UInt128> & checksum_ = {});
 
     ~BackupEntryFromImmutableFile() override;
 
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override;
 
     UInt64 getSize() const override;
     UInt128 getChecksum() const override;
@@ -42,7 +41,6 @@ private:
     const DiskPtr disk;
     const String file_path;
     const DataSourceDescription data_source_description;
-    const ReadSettings settings;
     mutable std::optional<UInt64> file_size;
     mutable std::optional<UInt64> checksum;
     mutable bool file_size_adjusted = false;

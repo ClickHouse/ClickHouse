@@ -319,7 +319,6 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const Name
 }
 
 void DataPartStorageOnDiskBase::backup(
-    const ReadSettings & read_settings,
     const MergeTreeDataPartChecksums & checksums,
     const NameSet & files_without_checksums,
     const String & path_in_backup,
@@ -393,7 +392,7 @@ void DataPartStorageOnDiskBase::backup(
             file_hash = {it->second.file_hash.first, it->second.file_hash.second};
         }
 
-        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, read_settings, file_size, file_hash);
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, file_size, file_hash);
 
         if (temp_dir_owner)
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);

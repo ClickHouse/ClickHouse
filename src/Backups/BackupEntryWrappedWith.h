@@ -15,7 +15,7 @@ public:
     BackupEntryWrappedWith(BackupEntryPtr entry_, T && custom_value_) : entry(entry_), custom_value(std::move(custom_value_)) { }
     ~BackupEntryWrappedWith() override = default;
 
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return entry->getReadBuffer(); }
+    std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override { return entry->getReadBuffer(read_settings); }
     UInt64 getSize() const override { return entry->getSize(); }
     UInt128 getChecksum() const override { return entry->getChecksum(); }
     std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override { return entry->getPartialChecksum(prefix_length); }

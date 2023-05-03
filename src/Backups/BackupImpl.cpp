@@ -868,7 +868,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     {
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
         auto out = archive_writer->writeFile(info.data_file_name);
-        auto read_buffer = entry->getReadBuffer();
+        auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
         if (info.base_size != 0)
             read_buffer->seek(info.base_size, SEEK_SET);
         copyData(*read_buffer, *out);
@@ -882,7 +882,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     else
     {
         LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
-        auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
+        auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
         writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
     }
 
