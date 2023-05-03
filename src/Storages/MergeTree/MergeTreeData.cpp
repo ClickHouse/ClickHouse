@@ -1209,13 +1209,58 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
 
-    res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
-        .withPartInfo(part_info)
-        .withPartFormatFromDisk()
-        .build();
-
     String part_path = fs::path(relative_data_path) / part_name;
     String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
+
+    /// Ignore broken parts that can appear as a result of hard server restart.
+    auto mark_broken = [&]
+    {
+        if (!res.part)
+        {
+            /// Build a fake part and mark it as broken in case of filesystem error.
+            /// If the error impacts part directory instead of single files,
+            /// an exception will be thrown during detach and silently ignored.
+            res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
+                .withPartStorageType(MergeTreeDataPartStorageType::Full)
+                .withPartType(MergeTreeDataPartType::Wide)
+                .build();
+        }
+
+        res.is_broken = true;
+        tryLogCurrentException(log, fmt::format("while loading part {} on path {}", part_name, part_path));
+
+        res.size_of_part = calculatePartSizeSafe(res.part, log);
+        auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
+
+        LOG_ERROR(log,
+            "Detaching broken part {}{} (size: {}). "
+            "If it happened after update, it is likely because of backward incompatibility. "
+            "You need to resolve this manually",
+            getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
+    };
+
+    try
+    {
+        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
+            .withPartInfo(part_info)
+            .withPartFormatFromDisk()
+            .build();
+    }
+    catch (const Exception & e)
+    {
+        /// Don't count the part as broken if there was a retryalbe error
+        /// during loading, such as "not enough memory" or network error.
+        if (isRetryableException(e))
+            throw;
+
+        mark_broken();
+        return res;
+    }
+    catch (...)
+    {
+        mark_broken();
+        return res;
+    }
 
     if (part_disk_ptr->exists(marker_path))
     {
@@ -1244,27 +1289,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         if (isRetryableException(e))
             throw;
 
-        res.is_broken = true;
-        tryLogCurrentException(log, fmt::format("while loading part {} on path {}", res.part->name, part_path));
+        mark_broken();
+        return res;
     }
     catch (...)
     {
-        res.is_broken = true;
-        tryLogCurrentException(log, fmt::format("while loading part {} on path {}", res.part->name, part_path));
-    }
-
-    /// Ignore broken parts that can appear as a result of hard server restart.
-    if (res.is_broken)
-    {
-        res.size_of_part = calculatePartSizeSafe(res.part, log);
-        auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
-
-        LOG_ERROR(log,
-            "Detaching broken part {}{} (size: {}). "
-            "If it happened after update, it is likely because of backward incompatibility. "
-            "You need to resolve this manually",
-            getFullPathOnDisk(part_disk_ptr), part_name, part_size_str);
-
+        mark_broken();
         return res;
     }
 
