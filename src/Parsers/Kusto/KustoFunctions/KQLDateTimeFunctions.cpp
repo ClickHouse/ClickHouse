@@ -16,7 +16,7 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
-
+#include "Poco/String.h"
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
