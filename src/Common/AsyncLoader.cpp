@@ -24,7 +24,7 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 {
     if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
     {
-        LOG_INFO(log, "{}%", processed * 100.0 / total);
+        LOG_INFO(log, "Processed: {}%", processed * 100.0 / total);
         watch.restart();
     }
 }
