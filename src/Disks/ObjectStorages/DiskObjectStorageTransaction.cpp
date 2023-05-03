@@ -109,7 +109,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
             if (hardlink_count == 0)
             {
-                objects_to_remove = objects;
+                objects_to_remove = std::move(objects);
             }
         }
         catch (const Exception & e)
@@ -194,7 +194,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
                 /// File is really redundant
                 if (hardlink_count == 0 && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                    objects_to_remove.insert(objects_to_remove.end(), objects.begin(), objects.end());
+                    std::move(objects.begin(), objects.end(), std::back_inserter(objects_to_remove));
             }
             catch (const Exception & e)
             {
@@ -267,7 +267,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
                 if (hardlink_count == 0)
                 {
-                    objects_to_remove[path_to_remove] = objects_paths;
+                    objects_to_remove[path_to_remove] = std::move(objects_paths);
                 }
             }
             catch (const Exception & e)
@@ -321,7 +321,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             {
                 if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
                 {
-                    remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
+                    std::move(remote_paths.begin(), remote_paths.end(), std::back_inserter(remove_from_remote));
                 }
             }
             /// Read comment inside RemoveObjectStorageOperation class

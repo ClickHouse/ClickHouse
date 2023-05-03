@@ -106,14 +106,14 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
-        && fs::path(object.absolute_path).extension() != ".tmp";
+        && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.
-    removeCacheIfExists(object.absolute_path);
+    removeCacheIfExists(object.remote_path);
 
     if (cache_on_write)
     {
-        auto key = getCacheKey(object.absolute_path);
+        auto key = getCacheKey(object.remote_path);
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
             std::move(implementation_buffer),
             cache,
@@ -144,21 +144,21 @@ void CachedObjectStorage::removeObject(const StoredObject & object)
 void CachedObjectStorage::removeObjects(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.absolute_path);
+        removeCacheIfExists(object.remote_path);
 
     object_storage->removeObjects(objects);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeCacheIfExists(object.absolute_path);
+    removeCacheIfExists(object.remote_path);
     object_storage->removeObjectIfExists(object);
 }
 
 void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-        removeCacheIfExists(object.absolute_path);
+        removeCacheIfExists(object.remote_path);
 
     object_storage->removeObjectsIfExist(objects);
 }

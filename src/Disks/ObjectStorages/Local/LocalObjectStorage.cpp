@@ -41,7 +41,7 @@ LocalObjectStorage::LocalObjectStorage()
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
-    return fs::exists(object.absolute_path);
+    return fs::exists(object.remote_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
@@ -106,7 +106,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    const auto & path = object.absolute_path;
+    const auto & path = object.remote_path;
 
     if (!file_size)
         file_size = tryGetSizeFromFilePath(path);
@@ -126,10 +126,10 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
-    LOG_TEST(log, "Write object: {}", object.absolute_path);
-    auto impl = std::make_unique<WriteBufferFromFile>(object.absolute_path, buf_size);
+    LOG_TEST(log, "Write object: {}", object.remote_path);
+    auto impl = std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(
-        std::move(impl), std::move(finalize_callback), object.absolute_path);
+        std::move(impl), std::move(finalize_callback), object.remote_path);
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object)
@@ -138,8 +138,8 @@ void LocalObjectStorage::removeObject(const StoredObject & object)
     if (!exists(object))
         return;
 
-    if (0 != unlink(object.absolute_path.data()))
-        throwFromErrnoWithPath("Cannot unlink file " + object.absolute_path, object.absolute_path, ErrorCodes::CANNOT_UNLINK);
+    if (0 != unlink(object.remote_path.data()))
+        throwFromErrnoWithPath("Cannot unlink file " + object.remote_path, object.remote_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void LocalObjectStorage::removeObjects(const StoredObjects & objects)

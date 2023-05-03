@@ -11,21 +11,20 @@ namespace DB
 /// Object metadata: path, size, path_key_for_cache.
 struct StoredObject
 {
-    /// Absolute path of the blob in object storage.
-    std::string absolute_path;
-    /// A map which is mapped to current blob (for example, a corresponding local path as clickhouse sees it).
-    std::string mapped_path;
+    std::string remote_path;
+    std::string local_path; /// or equivalent "metadata_path"
 
     uint64_t bytes_size = 0;
-
-    const std::string & getMappedPath() const;
 
     StoredObject() = default;
 
     explicit StoredObject(
-        const std::string & absolute_path_,
+        const std::string & remote_path_,
         uint64_t bytes_size_ = 0,
-        const std::string & mapped_path_ = "");
+        const std::string & local_path_ = "")
+    : remote_path(remote_path_)
+    , local_path(local_path_)
+    , bytes_size(bytes_size_) {}
 };
 
 using StoredObjects = std::vector<StoredObject>;
