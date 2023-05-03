@@ -38,7 +38,7 @@ struct AsyncLoaderTest
     pcg64 rng{randomSeed()};
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
-        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads, /* log_failures = */ false)
+        : loader(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive, max_threads, /* log_failures = */ false, /* log_progress = */ false)
     {}
 
     template <typename T>
