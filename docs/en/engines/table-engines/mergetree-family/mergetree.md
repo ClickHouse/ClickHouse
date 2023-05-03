@@ -439,6 +439,50 @@ Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, 
 - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
 - `random_seed` — The seed for Bloom filter hash functions.
 
+Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:  
+
+```sql
+CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]   
+AS  
+(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));   
+  
+CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]   
+AS  
+(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));  
+    
+CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]  
+AS   
+(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);  
+  
+CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]   
+AS  
+(number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
+
+```  
+To use those functions,we need to specify two parameter at least.
+For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:   
+  
+
+```sql
+--- estimate number of bits in the filter
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;  
+
+┌─size_of_bloom_filter_in_bytes─┐
+│                         10304 │
+└───────────────────────────────┘
+  
+--- estimate number of hash functions
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_hash_functions
+  
+┌─number_of_hash_functions─┐
+│                       13 │
+└──────────────────────────┘
+
+```
+Of course, you can also use those functions to estimate parameters by other conditions.
+The functions refer to the content [here](https://hur.st/bloomfilter).
+
+
 #### Token Bloom Filter
 
 The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
@@ -731,7 +775,13 @@ The names given to the described entities can be found in the system tables, [sy
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
-Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory.
+Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in a file in the `config.d` directory.
+
+:::tip
+Disks can also be declared in the `SETTINGS` section of a query.  This is useful
+for adhoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
+See [dynamic storage](#dynamic-storage) for more details.
+:::
 
 Configuration structure:
 
@@ -875,6 +925,87 @@ The `default` storage policy implies using only one volume, which consists of on
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
+
+### Dynamic Storage
+
+This example query shows how to attach a table stored at a URL and configure the
+remote storage within the query. The web storage is not configured in the ClickHouse
+configuration files; all the settings are in the CREATE/ATTACH query.
+
+:::note
+The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
+:::
+
+```sql
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+  # highlight-end
+```
+
+### Nested Dynamic Storage
+
+This example query builds on the above dynamic disk configuration and shows how to
+use a local disk to cache data from a table stored at a URL. Neither the cache disk
+nor the web storage is configured in the ClickHouse configuration files; both are
+configured in the CREATE/ATTACH query settings.
+
+In the settings highlighted below notice that the disk of `type=web` is nested within 
+the disk of `type=cache`.
+
+```sql
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  # highlight-start
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+  # highlight-end
+```
 
 ### Details {#details}
 

@@ -7,7 +7,7 @@ import logging
 
 from github import Github
 
-from commit_status_helper import post_commit_status
+from commit_status_helper import get_commit, post_commit_status
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     IMAGES_PATH,
@@ -43,6 +43,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
+    commit = get_commit(gh, pr_info.sha)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
@@ -87,4 +88,4 @@ if __name__ == "__main__":
 
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(gh, pr_info.sha, NAME, "Report built", "success", report_url)
+    post_commit_status(commit, "success", report_url, "Report built", NAME, pr_info)
