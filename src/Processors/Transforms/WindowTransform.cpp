@@ -2012,7 +2012,7 @@ struct WindowFunctionNtile final : public WindowFunction
 
             if (!buckets)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must > 0");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must be greater than 0");
             }
         }
         // new partition
