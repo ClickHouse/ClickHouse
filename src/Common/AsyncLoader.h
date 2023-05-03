@@ -381,7 +381,8 @@ public:
     size_t getScheduledJobCount() const;
 
     // Helper class for introspection
-    struct JobState {
+    struct JobState
+    {
         LoadJobPtr job;
         size_t dependencies_left = 0;
         bool is_executing = false;
