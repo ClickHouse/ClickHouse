@@ -70,6 +70,13 @@ public:
     // Returns number of threads blocked by `wait()` or `waitNoThrow()` calls.
     size_t waitersCount() const;
 
+    // Introspection
+    using TimePoint = std::chrono::system_clock::time_point;
+    TimePoint scheduleTime() const { return schedule_time; }
+    TimePoint enqueueTime() const { return enqueue_time; }
+    TimePoint startTime() const { return start_time; }
+    TimePoint finishTime() const { return finish_time; }
+
     const LoadJobSet dependencies; // Jobs to be done before this one (with ownership), it is `const` to make creation of cycles hard
     const String name;
 
@@ -82,6 +89,7 @@ private:
     void finish();
 
     void scheduled();
+    void enqueued();
     void execute(const LoadJobPtr & self);
 
     std::function<void(const LoadJobPtr & self)> func;
@@ -93,9 +101,10 @@ private:
     LoadStatus load_status{LoadStatus::PENDING};
     std::exception_ptr load_exception;
 
-    UInt64 scheduled_ns = 0;
-    UInt64 started_ns = 0;
-    UInt64 finished_ns = 0;
+    std::atomic<TimePoint> schedule_time{TimePoint{}};
+    std::atomic<TimePoint> enqueue_time{TimePoint{}};
+    std::atomic<TimePoint> start_time{TimePoint{}};
+    std::atomic<TimePoint> finish_time{TimePoint{}};
 };
 
 struct EmptyJobFunc
@@ -371,6 +380,20 @@ public:
     size_t getMaxThreads() const;
     size_t getScheduledJobCount() const;
 
+    // Helper class for introspection
+    struct JobState {
+        LoadJobPtr job;
+        size_t dependencies_left = 0;
+        bool is_executing = false;
+        bool is_blocked = false;
+        bool is_ready = false;
+        std::optional<ssize_t> initial_priority;
+        std::optional<UInt64> ready_seqno;
+    };
+
+    // For introspection and debug only, see `system.async_loader` table
+    std::vector<JobState> getJobStates() const;
+
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     String checkCycleImpl(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock);
@@ -385,7 +408,7 @@ private:
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
     Poco::Logger * log;
-    UInt64 busy_period_started_ns;
+    std::chrono::system_clock::time_point busy_period_start_time;
     AtomicStopwatch stopwatch;
     size_t old_jobs = 0; // Number of jobs that were finished in previous busy period (for correct progress indication)
 

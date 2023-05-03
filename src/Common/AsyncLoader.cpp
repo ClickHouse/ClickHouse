@@ -96,19 +96,25 @@ void LoadJob::canceled(const std::exception_ptr & ptr)
 void LoadJob::finish()
 {
     func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` and `LoadJob::wait()` return
-    finished_ns = clock_gettime_ns();
+    finish_time = std::chrono::system_clock::now();
     if (waiters > 0)
         finished.notify_all();
 }
 
 void LoadJob::scheduled()
 {
-    scheduled_ns = clock_gettime_ns();
+    schedule_time = std::chrono::system_clock::now();
+}
+
+void LoadJob::enqueued()
+{
+    if (enqueue_time.load() == TimePoint{}) // Do not rewrite in case of requeue
+        enqueue_time = std::chrono::system_clock::now();
 }
 
 void LoadJob::execute(const LoadJobPtr & self)
 {
-    started_ns = clock_gettime_ns();
+    start_time = std::chrono::system_clock::now();
     func(self);
 }
 
@@ -217,7 +223,7 @@ void AsyncLoader::scheduleImpl(const LoadJobSet & input_jobs)
     // Restart watches after idle period
     if (scheduled_jobs.empty())
     {
-        busy_period_started_ns = clock_gettime_ns();
+        busy_period_start_time = std::chrono::system_clock::now();
         stopwatch.restart();
         old_jobs = finished_jobs.size();
     }
@@ -367,7 +373,7 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
     for (const auto & job : jobs)
     {
         size_t erased = finished_jobs.erase(job);
-        if (old_jobs >= erased && job->finished_ns && job->finished_ns < busy_period_started_ns)
+        if (old_jobs >= erased && job->finishTime() != LoadJob::TimePoint{} && job->finishTime() < busy_period_start_time)
             old_jobs -= erased;
     }
 }
@@ -395,6 +401,29 @@ size_t AsyncLoader::getScheduledJobCount() const
 {
     std::unique_lock lock{mutex};
     return scheduled_jobs.size();
+}
+
+std::vector<AsyncLoader::JobState> AsyncLoader::getJobStates() const
+{
+    std::unique_lock lock{mutex};
+    std::multimap<String, JobState> states;
+    for (const auto & [job, info] : scheduled_jobs)
+        states.emplace(job->name, JobState{
+            .job = job,
+            .dependencies_left = info.dependencies_left,
+            .is_executing = info.is_executing(),
+            .is_blocked = info.is_blocked(),
+            .is_ready = info.is_ready(),
+            .initial_priority = info.initial_priority,
+            .ready_seqno = last_ready_seqno
+        });
+    for (const auto & job : finished_jobs)
+        states.emplace(job->name, JobState{.job = job});
+    lock.unlock();
+    std::vector<JobState> result;
+    for (auto && [_, state] : states)
+        result.emplace_back(std::move(state));
+    return result;
 }
 
 void AsyncLoader::checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock)
@@ -535,6 +564,8 @@ void AsyncLoader::enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<
         ALLOW_ALLOCATIONS_IN_SCOPE;
         ready_queue.emplace(info.key(), job);
     });
+
+    job->enqueued();
 
     if (is_running && workers < max_threads)
         spawn(lock);
