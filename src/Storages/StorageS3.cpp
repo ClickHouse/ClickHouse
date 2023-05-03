@@ -1,7 +1,5 @@
 #include "config.h"
 #include <Common/ProfileEvents.h>
-#include "IO/ParallelReadBuffer.h"
-#include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
@@ -12,6 +10,8 @@
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
+#include <IO/ParallelReadBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>

@@ -32,6 +32,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 
 #include <boost/multi_index_container.hpp>
@@ -1408,6 +1409,10 @@ protected:
     BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
     bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
+
+    /// This has to be "true" by default, because in case of empty table or absence of Outdated parts
+    /// it is automatically finished.
+    bool outdated_data_parts_loading_finished TSA_GUARDED_BY(outdated_data_parts_mutex) = true;
 
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedDataPartsLoadingTask();

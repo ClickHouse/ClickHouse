@@ -48,6 +48,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/SharedThreadPools.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -1858,6 +1859,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             std::lock_guard lock(outdated_data_parts_mutex);
             outdated_unloaded_data_parts = std::move(unloaded_parts);
+            outdated_data_parts_loading_finished = false;
         }
 
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
@@ -1875,7 +1877,11 @@ try
     {
         std::lock_guard lock(outdated_data_parts_mutex);
         if (outdated_unloaded_data_parts.empty())
+        {
+            outdated_data_parts_loading_finished = true;
+            outdated_data_parts_cv.notify_all();
             return;
+        }
 
         LOG_DEBUG(log, "Loading {} outdated data parts {}",
             outdated_unloaded_data_parts.size(),
@@ -1887,7 +1893,11 @@ try
     if (is_async)
         shared_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-    size_t num_loaded_parts = 0;
+    std::atomic_size_t num_loaded_parts = 0;
+
+    auto runner = threadPoolCallbackRunner<void>(OutdatedPartsLoadingThreadPool::get(), "OutdatedParts");
+    std::vector<std::future<void>> parts_futures;
+
     while (true)
     {
         PartLoadingTree::NodePtr part;
@@ -1897,6 +1907,10 @@ try
 
             if (is_async && outdated_data_parts_loading_canceled)
             {
+                /// Wait for every scheduled task
+                for (auto & future : parts_futures)
+                    future.wait();
+
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
                     "Loaded {} parts, {} left unloaded", num_loaded_parts, outdated_unloaded_data_parts.size());
@@ -1907,34 +1921,38 @@ try
                 break;
 
             part = outdated_unloaded_data_parts.back();
+            outdated_unloaded_data_parts.pop_back();
         }
 
-        auto res = loadDataPartWithRetries(
+        parts_futures.push_back(runner([&, part = part]()
+        {
+            auto res = loadDataPartWithRetries(
             part->info, part->name, part->disk,
             DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-        ++num_loaded_parts;
-        if (res.is_broken)
-            res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
-        else if (res.part->is_duplicate)
-            res.part->remove();
-        else
-            preparePartForRemoval(res.part);
-
-        {
-            std::lock_guard lock(outdated_data_parts_mutex);
-            chassert(part == outdated_unloaded_data_parts.back());
-            outdated_unloaded_data_parts.pop_back();
-
-            if (outdated_unloaded_data_parts.empty())
-                break;
-        }
+            ++num_loaded_parts;
+            if (res.is_broken)
+                res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+            else if (res.part->is_duplicate)
+                res.part->remove();
+            else
+                preparePartForRemoval(res.part);
+        }, 0));
     }
+
+    /// Wait for every scheduled task
+    for (auto & future : parts_futures)
+        future.wait();
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts, is_async ? "asynchronously" : "synchronously");
-    outdated_data_parts_cv.notify_all();
+
+    {
+        std::lock_guard lock(outdated_data_parts_mutex);
+        outdated_data_parts_loading_finished = true;
+        outdated_data_parts_cv.notify_all();
+    }
 }
 catch (...)
 {
@@ -1951,15 +1969,13 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
     if (isStaticStorage())
         return;
 
-    std::unique_lock lock(outdated_data_parts_mutex);
-    if (outdated_unloaded_data_parts.empty())
-        return;
-
     LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
+
+    std::unique_lock lock(outdated_data_parts_mutex);
 
     outdated_data_parts_cv.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        return outdated_unloaded_data_parts.empty() || outdated_data_parts_loading_canceled;
+        return outdated_data_parts_loading_finished || outdated_data_parts_loading_canceled;
     });
 
     if (outdated_data_parts_loading_canceled)
