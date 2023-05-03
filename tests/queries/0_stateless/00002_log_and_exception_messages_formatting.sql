@@ -49,17 +49,24 @@ create temporary table known_short_messages (s String) as select * from (select
 'Column ''{}'' already exists', 'No macro {} in config', 'Invalid origin H3 index: {}',
 'Invalid session timeout: ''{}''', 'Tuple cannot be empty', 'Database name is empty',
 'Table {} is not a Dictionary', 'Expected function, got: {}', 'Unknown identifier: ''{}''',
-'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist'
+'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist',
+'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
+'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
+'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
+'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
+'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
+'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
+'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}'
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
-select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_string), 0) from logs where length(message_format_string) < 10 and message_format_string not in known_short_messages;
+select 'messages shorter than 10', max2(countDistinctOrDefault(message_format_string), 1) from logs where length(message_format_string) < 10 and message_format_string not in known_short_messages;
 
 -- Same as above. Feel free to update the threshold or remove this query if really necessary
-select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 2) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
+select 'messages shorter than 16', max2(countDistinctOrDefault(message_format_string), 3) from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
 
 -- Same as above, but exceptions must be more informative. Feel free to update the threshold or remove this query if really necessary
-select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 27) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%' and message_format_string not in known_short_messages;
+select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_string), 3) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%' and message_format_string not in known_short_messages;
 
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
@@ -98,7 +105,9 @@ select 'incorrect patterns', max2(countDistinct(message_format_string), 15) from
     where ((rand() % 8) = 0)
     and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
     and message not like (s || ' (skipped % similar messages)')
-    and message not like ('%Exception: '||s||'%') group by message_format_string
+    and message not like ('%Exception: '||s||'%')
+    and message not like ('%(skipped % similar messages)%')
+    group by message_format_string
 ) where any_message not like '%Poco::Exception%';
 
 drop table logs;

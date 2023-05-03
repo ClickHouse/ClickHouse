@@ -144,7 +144,8 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
-Pipe StorageMemory::read(
+void StorageMemory::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
@@ -153,29 +154,7 @@ Pipe StorageMemory::read(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    return ReadFromMemoryStorageStep::makePipe(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
-}
-
-void StorageMemory::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    // @TODO it looks like IStorage::readFromPipe. different only step's type.
-    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    if (pipe.empty())
-    {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
-        return;
-    }
-    auto read_step = std::make_unique<ReadFromMemoryStorageStep>(std::move(pipe));
-    query_plan.addStep(std::move(read_step));
+    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries));
 }
 
 
@@ -406,7 +385,7 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto temp_disk = backup_entries_collector.getContext()->getTemporaryVolume()->getDisk(0);
+    auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
@@ -426,7 +405,7 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && total_size_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    auto temp_disk = restorer.getContext()->getTemporaryVolume()->getDisk(0);
+    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
 
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup, temp_disk]

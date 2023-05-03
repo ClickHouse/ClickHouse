@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3/URI.h>
+#include <IO/S3/ProviderType.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -61,9 +62,21 @@ public:
         return uri_override;
     }
 
+    void setProviderType(ProviderType provider_type_) const
+    {
+        provider_type = provider_type_;
+    }
+
 protected:
     mutable std::string region_override;
     mutable std::optional<S3::URI> uri_override;
+    mutable ProviderType provider_type{ProviderType::UNKNOWN};
+};
+
+class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
+{
+public:
+    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
 };
 
 using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
@@ -78,7 +91,6 @@ using UploadPartRequest = ExtendedRequest<Model::UploadPartRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 
 using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
-using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
 using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
 using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
 

@@ -42,12 +42,8 @@
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
-#include <DataTypes/Native.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
-#pragma GCC diagnostic pop
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
 #endif
 
 
