@@ -20,7 +20,7 @@ if [ -n "$WITH_LOCAL_BINARY" ]; then
     clickhouse_source="--clickhouse-source /clickhouse"
 fi
 
-tests_count="--test-count \"$TESTS_TO_RUN\""
+tests_count="--test-count $TESTS_TO_RUN"
 tests_to_run="test-all"
 workload=""
 if [ -n "$WORKLOAD" ]; then
