@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Interpreters/ExternalLoaderFDBDictionaryConfigRepository.h>
@@ -41,6 +42,7 @@ public:
     bool isFirstOpen();
 
 private:
+    std::mutex meta_store_mutex;
     std::shared_ptr<MetadataStoreFoundationDB> meta_store;
     void createRepositoryInfoFromDictInfo(RepositoryInfo & repo_info, DictInfo dict);
     void createRepositoriesFromDicts(

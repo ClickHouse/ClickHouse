@@ -1264,8 +1264,12 @@ try
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
-            global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            if (!global_context->hasMetadataStoreFoundationDB())
+            {
+                global_context->loadOrReloadDictionaries(*config);
+                global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            }
+            global_context->loadOrReloadModels(*config);
 
             global_context->setRemoteHostFilter(*config);
 

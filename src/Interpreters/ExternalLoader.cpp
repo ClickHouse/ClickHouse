@@ -5,11 +5,13 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <Interpreters/DictionariesMetaStoreFDB.h>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <pcg_random.hpp>
+#include <Poco/Util/XMLConfiguration.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
 #include <Common/StatusInfo.h>
@@ -19,9 +21,6 @@
 #include <Common/randomSeed.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
-#include <utility>
-#include <Poco/Util/XMLConfiguration.h>
 
 namespace CurrentStatusInfo
 {
@@ -149,6 +148,15 @@ public:
         {
             ExternalLoaderFDBDictionaryConfigRepository * repo_ptr
                 = dynamic_cast<ExternalLoaderFDBDictionaryConfigRepository *>(repository);
+            LOG_DEBUG(log, "removeConfigRepository {}", repository_name);
+            if (repo_ptr != nullptr && fdb_name_map.find(repository_name) != fdb_name_map.end())
+            {
+                fdb_name_map.erase(repository_name);
+            }
+        }
+        else if (settings.external_config == "function")
+        {
+            ExternalLoaderFDBFunctionConfigRepository * repo_ptr = dynamic_cast<ExternalLoaderFDBFunctionConfigRepository *>(repository);
             LOG_DEBUG(log, "Remove config repository {}", repository_name);
             if (repo_ptr != nullptr && fdb_name_map.find(repository_name) != fdb_name_map.end())
             {
@@ -274,12 +282,41 @@ public:
         fdb_dictionary_repositories = fdb_dictionary_repositories_;
     }
 
+    void setFDBFunctionRepositories(std::shared_ptr<FunctionsMetaStoreFDB> fdb_function_repositories_)
+    {
+        fdb_function_repositories = fdb_function_repositories_;
+    }
+
+    std::vector<std::unique_ptr<Repository>> getAllDictPtr()
+    {
+        std::lock_guard<std::mutex> lock(fdb_dictionary_repositories_mutex);
+        return fdb_dictionary_repositories->getAllDictPtr();
+    }
+    std::vector<std::unique_ptr<Repository>> getAllFunc()
+    {
+        std::lock_guard<std::mutex> lock(fdb_function_repositories_mutex);
+        return fdb_function_repositories->getAllFunc();
+    }
+    std::vector<std::string> listAllFunc()
+    {
+        std::lock_guard<std::mutex> lock(fdb_function_repositories_mutex);
+        return fdb_function_repositories->list();
+    }
     void updateLocalRepositoriesFromFDB()
     {
         /// 1. get all repositories' name from fdb
         /// 2. commpare names from fdb and names at local to find repositories new or deleted.
         /// 3. if repositories is new, system will add them to repositories, otherwise delete them.
-        std::vector<std::unique_ptr<Repository>> repos = fdb_dictionary_repositories->getAllDictPtr();
+        std::vector<std::unique_ptr<Repository>> repos;
+        if (settings.external_config == "dictionary")
+        {
+            repos = getAllDictPtr();
+        }
+        else
+        {
+            repos = getAllFunc();
+        }
+
         std::unordered_map<std::string, bool> fdb_repo_names;
         for (auto & ptr : repos)
         {
@@ -522,7 +559,10 @@ private:
     std::mutex mutex;
     ExternalLoaderConfigSettings settings;
     bool fdb_flag = false;
+    std::mutex fdb_function_repositories_mutex;
+    std::mutex fdb_dictionary_repositories_mutex;
     std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories;
+    std::shared_ptr<FunctionsMetaStoreFDB> fdb_function_repositories;
     std::unordered_map<Repository *, RepositoryInfo> repositories;
     /// fdb_name_map is the map of FDBxxxConfigRepository's name and FDBxxxConfigRepository
     std::unordered_map<std::string, Repository *> fdb_name_map;
@@ -1708,6 +1748,18 @@ void ExternalLoader::setFDBflag(bool flag)
 void ExternalLoader::setFDBDictionaryRepositories(std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories)
 {
     config_files_reader->setFDBDictionaryRepositories(fdb_dictionary_repositories);
+}
+std::vector<std::unique_ptr<Repository>> ExternalLoader::getAllDictPtr()
+{
+    return config_files_reader->getAllDictPtr();
+}
+std::vector<std::string> ExternalLoader::listAllFunc()
+{
+    return config_files_reader->listAllFunc();
+}
+void ExternalLoader::setFDBFunctionRepositories(std::shared_ptr<FunctionsMetaStoreFDB> fdb_function_repositories)
+{
+    config_files_reader->setFDBFunctionRepositories(fdb_function_repositories);
 }
 
 ExternalLoader::LoadablePtr

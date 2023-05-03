@@ -50,6 +50,7 @@ namespace DB
 class ASTSelectQuery;
 
 class DictionariesMetaStoreFDB;
+class FunctionsMetaStoreFDB;
 struct ContextSharedPart;
 class ContextAccess;
 struct User;
@@ -711,6 +712,8 @@ public:
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     std::shared_ptr<DictionariesMetaStoreFDB> getFDBDictionaryLoader() const;
     std::shared_ptr<DictionariesMetaStoreFDB> getFDBDictionaryLoaderUnlocked() const;
+    std::shared_ptr<FunctionsMetaStoreFDB> getFDBFunctionLoader() const;
+    std::shared_ptr<FunctionsMetaStoreFDB> getFDBFunctionLoaderUnlocked() const;
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();

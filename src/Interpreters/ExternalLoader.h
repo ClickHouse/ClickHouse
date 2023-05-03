@@ -45,6 +45,7 @@ struct ExternalLoaderConfigSettings
   * distributed between lifetime.min_sec and lifetime.max_sec.
   * If either of lifetime.min_sec and lifetime.max_sec is zero, such object is never updated.
   */
+class FunctionsMetaStoreFDB;
 class DictionariesMetaStoreFDB;
 class ExternalDictionariesLoader;
 class ExternalLoader
@@ -226,8 +227,12 @@ public:
     /// Get all repositories from fdb.
     std::unordered_map<IExternalLoaderConfigRepository *, RepositoryInfo> getAllLocalRepositories();
     void setFDBflag(bool flag);
+    std::vector<std::unique_ptr<Repository>> getAllDictPtr();
+    std::vector<std::string> listAllFunc();
     void clearRepositories();
     void setFDBDictionaryRepositories(std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_repositories);
+    void setFDBFunctionRepositories(std::shared_ptr<FunctionsMetaStoreFDB> fdb_function_repositories);
+
     void addConfigRepositoryWithoutReturn(std::unique_ptr<IExternalLoaderConfigRepository> repository) const;
 
 protected:

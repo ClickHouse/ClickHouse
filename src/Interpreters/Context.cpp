@@ -56,6 +56,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderFDBDictionaryConfigRepository.h>
+#include <Interpreters/ExternalLoaderFDBFunctionConfigRepository.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -240,6 +241,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries; /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::shared_ptr<DictionariesMetaStoreFDB> fdb_dictionary_loader;
+    mutable std::shared_ptr<FunctionsMetaStoreFDB> fdb_function_loader;
+
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
 
     scope_guard models_repository_guard;
@@ -2045,6 +2048,19 @@ std::shared_ptr<DictionariesMetaStoreFDB> Context::getFDBDictionaryLoaderUnlocke
     }
     return shared->fdb_dictionary_loader;
 }
+std::shared_ptr<FunctionsMetaStoreFDB> Context::getFDBFunctionLoader() const
+{
+    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+    return getFDBFunctionLoaderUnlocked();
+}
+std::shared_ptr<FunctionsMetaStoreFDB> Context::getFDBFunctionLoaderUnlocked() const
+{
+    if (!shared->fdb_function_loader)
+    {
+        shared->fdb_function_loader = std::make_shared<FunctionsMetaStoreFDB>(getGlobalContext());
+    }
+    return shared->fdb_function_loader;
+}
 ExternalDictionariesLoader & Context::getExternalDictionariesLoaderUnlocked()
 {
     if (!shared->external_dictionaries_loader)
@@ -2147,7 +2163,7 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
             shared->external_dictionaries_config_repository = nullptr;
         }
         LOG_DEBUG(shared->log, "Starting get xml dictionaries from fdb");
-        repos = fdb_dictionary_repositories->getAllDictPtr();
+        repos = external_dictionaries_loader.getAllDictPtr();
         for (auto & repo : repos)
         {
             if (repo)
@@ -2162,27 +2178,63 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
 
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
 {
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
-
     std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
+    auto context = createCopy(shared_from_this());
 
     auto & external_user_defined_executable_functions_loader = getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
-
-    if (shared->user_defined_executable_functions_config_repository)
+    bool fdb_first_start = true;
+    bool fdb_flag = hasMetadataStoreFoundationDB();
+    if (fdb_flag)
     {
-        shared->user_defined_executable_functions_config_repository->updatePatterns(patterns);
-        external_user_defined_executable_functions_loader.reloadConfig(
-            shared->user_defined_executable_functions_config_repository->getName());
-        return;
+        fdb_first_start = getMetadataStoreFoundationDB()->isFirstBoot();
+        if (fdb_first_start)
+        {
+            getMetadataStoreFoundationDB()->clearAllFunctions();
+            LOG_DEBUG(shared->log, "Server with foundationdb is first start, local xml udf will be written to foundationdb.");
+        }
     }
+    if (fdb_first_start || !fdb_flag)
+    {
+        auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
+        std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
 
-    auto app_path = getPath();
-    auto config_path = getConfigRef().getString("config-file", "config.xml");
-    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
-    shared->user_defined_executable_functions_config_repository = repository.get();
-    shared->user_defined_executable_functions_xmls
-        = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
+        if (shared->user_defined_executable_functions_config_repository)
+        {
+            shared->user_defined_executable_functions_config_repository->updatePatterns(patterns);
+            external_user_defined_executable_functions_loader.reloadConfig(
+                shared->user_defined_executable_functions_config_repository->getName());
+        }
+        else
+        {
+            auto app_path = getPath();
+            auto config_path = getConfigRef().getString("config-file", "config.xml");
+            auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+            shared->user_defined_executable_functions_config_repository = repository.get();
+            external_user_defined_executable_functions_loader.addConfigRepositoryWithoutReturn(std::move(repository));
+        }
+    }
+    if (fdb_flag)
+    {
+        std::shared_ptr<FunctionsMetaStoreFDB> fdb_function_repositories = getFDBFunctionLoaderUnlocked();
+        external_user_defined_executable_functions_loader.setFDBFunctionRepositories(fdb_function_repositories);
+        external_user_defined_executable_functions_loader.setFDBflag(true);
+
+        if (fdb_first_start)
+        {
+            fdb_function_repositories->addOneFunc(
+                shared->user_defined_executable_functions_config_repository,
+                external_user_defined_executable_functions_loader.getAllLocalRepositories());
+            shared->user_defined_executable_functions_config_repository = nullptr;
+        }
+        LOG_DEBUG(shared->log, "Starting to get functions from fdb");
+        std::vector<std::string> repos = external_user_defined_executable_functions_loader.listAllFunc();
+        for (const auto & repo : repos)
+        {
+            auto repository = std::make_unique<ExternalLoaderFDBFunctionConfigRepository>(repo, context);
+            external_user_defined_executable_functions_loader.addConfigRepositoryWithoutReturn(std::move(repository));
+        }
+    }
+    LOG_DEBUG(shared->log, "Load or reload functions finish.");
 }
 
 const IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader() const

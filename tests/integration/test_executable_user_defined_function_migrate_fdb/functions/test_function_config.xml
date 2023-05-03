@@ -1,0 +1,12 @@
+<functions>
+<function>
+        <type>executable</type>
+        <name>test_function_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.py</command>
+    </function>
+ </functions>

@@ -1,19 +1,20 @@
-#include <Interpreters/DictionariesMetaStoreFDB.h>
-#include <Common/Exception.h>
+#include <memory>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DictionariesMetaStoreFDB.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <IO/WriteBufferFromString.h>
-#include <memory>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <sstream>
-#include <string>
-#include <vector>
+#include <Common/Exception.h>
 namespace DB
 {
 using Repository = IExternalLoaderConfigRepository;
@@ -37,6 +38,7 @@ Poco::Timestamp DictionariesMetaStoreFDB::getUpdateTime(const std::string & dict
 bool DictionariesMetaStoreFDB::addOneDict(
     ExternalLoaderXMLConfigRepository * repository, std::unordered_map<Repository *, RepositoryInfo> & repositories)
 {
+    const std::lock_guard lock(meta_store_mutex);
     if (repository == nullptr)
         return false;
     std::unordered_map<std::string /* path */, FileInfo> files = repositories.at(repository).files;
@@ -67,11 +69,13 @@ bool DictionariesMetaStoreFDB::addOneDict(
 
 bool DictionariesMetaStoreFDB::add(DictInfo & new_dict)
 {
+    const std::lock_guard<std::mutex> lock(meta_store_mutex);
     return meta_store->addOneDictionary(new_dict, new_dict.dict_name());
 }
 
 bool DictionariesMetaStoreFDB::deleteOneDict(const std::string & dict_name)
 {
+    const std::lock_guard<std::mutex> lock(meta_store_mutex);
     return meta_store->deleteOneDictionary(dict_name);
 }
 
@@ -82,6 +86,7 @@ bool DictionariesMetaStoreFDB::exist(const std::string & dict_name) const
 
 RepositoryInfo DictionariesMetaStoreFDB::getOneDict(const std::string & dict_name)
 {
+    std::lock_guard<std::mutex> lock(meta_store_mutex);
     std::unique_ptr<DictInfo> dict = meta_store->getOneDictionary(dict_name);
     RepositoryInfo repository_info;
 
@@ -91,6 +96,7 @@ RepositoryInfo DictionariesMetaStoreFDB::getOneDict(const std::string & dict_nam
 
 DB::LoadablesConfigurationPtr DictionariesMetaStoreFDB::getOneDictConfig(const std::string & dict_name)
 {
+    std::lock_guard<std::mutex> lock(meta_store_mutex);
     std::unique_ptr<DictInfo> fdb_dict = meta_store->getOneDictionary(dict_name);
     return convertStringToConfig(fdb_dict->file_contents());
 }
@@ -98,6 +104,7 @@ DB::LoadablesConfigurationPtr DictionariesMetaStoreFDB::getOneDictConfig(const s
 /// Convert the repositories from fdb into map
 std::unordered_map<Repository *, RepositoryInfo> DictionariesMetaStoreFDB::getAllDict()
 {
+    std::lock_guard<std::mutex> lock(meta_store_mutex);
     std::unordered_map<String, DictInfo> dicts;
     std::vector<std::unique_ptr<DictInfo>> fdb_dicts = meta_store->getAllDictionaries();
     for (auto & fdb_dict : fdb_dicts)
@@ -111,6 +118,7 @@ std::unordered_map<Repository *, RepositoryInfo> DictionariesMetaStoreFDB::getAl
 }
 std::vector<std::unique_ptr<Repository>> DictionariesMetaStoreFDB::getAllDictPtr()
 {
+    std::lock_guard<std::mutex> lock(meta_store_mutex);
     std::vector<std::unique_ptr<Repository>> repos;
     std::vector<std::unique_ptr<DictInfo>> fdb_dicts = meta_store->getAllDictionaries();
     for (auto & fdb_dict : fdb_dicts)
@@ -122,10 +130,12 @@ std::vector<std::unique_ptr<Repository>> DictionariesMetaStoreFDB::getAllDictPtr
 }
 bool DictionariesMetaStoreFDB::isFirstOpen()
 {
+    std::lock_guard<std::mutex> lock(meta_store_mutex);
     return meta_store->isFirstBoot();
 }
 std::vector<std::string> DictionariesMetaStoreFDB::list()
 {
+    std::lock_guard<std::mutex> lock(meta_store_mutex);
     std::vector<std::unique_ptr<DictInfo>> dictionaries = meta_store->getAllDictionaries();
     std::vector<std::string> dictionary_names;
     dictionary_names.reserve(dictionaries.size());
