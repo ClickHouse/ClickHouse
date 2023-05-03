@@ -23,8 +23,8 @@ public:
 
     ProbHashSet() : bl_filt(1000) {}
 
-    ProbHashSet(size_t reserve_for_num_elements) : bl_filt(reserve_for_num_elements)
-    { }
+    // ProbHashSet(size_t reserve_for_num_elements) : bl_filt(reserve_for_num_elements)
+    // { }
 
 
 

@@ -4,8 +4,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/ProbSet.h>
 #include <Disks/IDisk.h>
+#include <QueryPipeline/ProfileInfo.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ namespace DB
 using SetPtr_ = std::shared_ptr<Set>;
 
 // class ProbSet;
-using ProbSetPtr_ = std::shared_ptr<ProbSet>;
+//using ProbSetPtr_ = std::shared_ptr<ProbSet>;
 
 
 /** Common part of StorageSet and StorageJoin.
@@ -116,100 +117,50 @@ StorageSet<is_prob>::StorageSet(
     const String & comment,
     bool persistent_)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
+    , set(std::make_shared<Set>(SizeLimits(), false, true))
 {
-    set = std::make_shared<Set>(SizeLimits(), false, true);
-
-    // if constexpr (!is_prob) {
-    //     set = std::make_shared<Set>(SizeLimits(), false, true);
-    // } else {
-    //     probSet = std::make_shared<ProbSet>(SizeLimits(), false, true);
-    // }
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
-
-     if constexpr (!is_prob) {
-        set->setHeader(header.getColumnsWithTypeAndName());
-    } else {
-        set->setHeader(header.getColumnsWithTypeAndName(), true);
-    }
-   
+    set->setHeader(header.getColumnsWithTypeAndName(), is_prob);
 
     restore();
 }
 
-template <bool is_prob>
-void StorageSet<is_prob>::insertBlock(const Block & block, ContextPtr) { 
-    set->insertFromBlock(block.getColumnsWithTypeAndName()); 
-    // if constexpr (!is_prob) {
-    //     set->insertFromBlock(block.getColumnsWithTypeAndName()); 
-    // } else {
-    //     probSet->insertFromBlock(block.getColumnsWithTypeAndName()); 
-    // }
-}
 
 template <bool is_prob>
-void StorageSet<is_prob>::finishInsert() { 
-    set->finishInsert(); 
-    // if constexpr (!is_prob) {
-    //     set->finishInsert(); 
-    // } else {
-    //     probSet->finishInsert(); 
-    // }
-}
+void StorageSet<is_prob>::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
 
 template <bool is_prob>
-size_t StorageSet<is_prob>::getSize(ContextPtr) const { 
-    return set->getTotalRowCount(); 
-    // if constexpr (!is_prob) {
-    //     return set->getTotalRowCount(); 
-    // } else {
-    //     return probSet->getTotalRowCount(); 
-    // }
-
-}
+void StorageSet<is_prob>::finishInsert() { set->finishInsert(); }
 
 template <bool is_prob>
-std::optional<UInt64> StorageSet<is_prob>::totalRows(const Settings &) const {
-    return set->getTotalRowCount(); 
-    // if constexpr (!is_prob) {
-    //     return set->getTotalRowCount(); 
-    // } else {
-    //     return probSet->getTotalRowCount(); 
-    // } 
-}
+size_t StorageSet<is_prob>::getSize(ContextPtr) const { return set->getTotalRowCount(); }
+
+template <bool is_prob>
+std::optional<UInt64> StorageSet<is_prob>::totalRows(const Settings &) const { return set->getTotalRowCount(); }
 
 
 template <bool is_prob>
-std::optional<UInt64> StorageSet<is_prob>::totalBytes(const Settings &) const { 
-    return set->getTotalByteCount();  
-    // if constexpr (!is_prob) {
-    //     return set->getTotalByteCount();  
-    // } else {
-    //     return probSet->getTotalByteCount();  
-    // } 
-}
+std::optional<UInt64> StorageSet<is_prob>::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
 
 
 template <bool is_prob>
 void StorageSet<is_prob>::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    disk->removeRecursive(path);
+    if (disk->exists(path))
+        disk->removeRecursive(path);
+    else
+        LOG_INFO(&Poco::Logger::get("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
+
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
 
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-
     set = std::make_shared<Set>(SizeLimits(), false, true);
-    if constexpr (!is_prob) {
-        //set = std::make_shared<Set>(SizeLimits(), false, true);
-        set->setHeader(header.getColumnsWithTypeAndName());
-    } else {
-        //probSet = std::make_shared<ProbSet>(SizeLimits(), false, true);
-        set->setHeader(header.getColumnsWithTypeAndName(), true);
-    } 
-    
+    set->setHeader(header.getColumnsWithTypeAndName(), is_prob);
 }
+
 
 }
 

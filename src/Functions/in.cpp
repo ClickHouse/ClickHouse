@@ -27,33 +27,34 @@ namespace
   * notIn(x, set) - and NOT IN.
   */
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, bool prob>
 struct FunctionInName;
 
-template <> struct FunctionInName<false, false, true, false> { static constexpr auto name = "in"; };
-template <> struct FunctionInName<false, true, true, false> { static constexpr auto name = "globalIn"; };
-template <> struct FunctionInName<true, false, true, false> { static constexpr auto name = "notIn"; };
-template <> struct FunctionInName<true, true, true, false> { static constexpr auto name = "globalNotIn"; };
-template <> struct FunctionInName<false, false, false, false> { static constexpr auto name = "nullIn"; };
-template <> struct FunctionInName<false, true, false, false> { static constexpr auto name = "globalNullIn"; };
-template <> struct FunctionInName<true, false, false, false> { static constexpr auto name = "notNullIn"; };
-template <> struct FunctionInName<true, true, false, false> { static constexpr auto name = "globalNotNullIn"; };
-template <> struct FunctionInName<false, false, true, true> { static constexpr auto name = "inIgnoreSet"; };
-template <> struct FunctionInName<false, true, true, true> { static constexpr auto name = "globalInIgnoreSet"; };
-template <> struct FunctionInName<true, false, true, true> { static constexpr auto name = "notInIgnoreSet"; };
-template <> struct FunctionInName<true, true, true, true> { static constexpr auto name = "globalNotInIgnoreSet"; };
-template <> struct FunctionInName<false, false, false, true> { static constexpr auto name = "nullInIgnoreSet"; };
-template <> struct FunctionInName<false, true, false, true> { static constexpr auto name = "globalNullInIgnoreSet"; };
-template <> struct FunctionInName<true, false, false, true> { static constexpr auto name = "notNullInIgnoreSet"; };
-template <> struct FunctionInName<true, true, false, true> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
+template <> struct FunctionInName<false, false, true, false, false> { static constexpr auto name = "in"; };
+template <> struct FunctionInName<false, true, true, false, false> { static constexpr auto name = "globalIn"; };
+template <> struct FunctionInName<false, false, true, false, true> { static constexpr auto name = "probalIn"; };
+template <> struct FunctionInName<true, false, true, false, false> { static constexpr auto name = "notIn"; };
+template <> struct FunctionInName<true, true, true, false, false> { static constexpr auto name = "globalNotIn"; };
+template <> struct FunctionInName<false, false, false, false, false> { static constexpr auto name = "nullIn"; };
+template <> struct FunctionInName<false, true, false, false, false> { static constexpr auto name = "globalNullIn"; };
+template <> struct FunctionInName<true, false, false, false, false> { static constexpr auto name = "notNullIn"; };
+template <> struct FunctionInName<true, true, false, false, false> { static constexpr auto name = "globalNotNullIn"; };
+template <> struct FunctionInName<false, false, true, true, false> { static constexpr auto name = "inIgnoreSet"; };
+template <> struct FunctionInName<false, true, true, true, false> { static constexpr auto name = "globalInIgnoreSet"; };
+template <> struct FunctionInName<true, false, true, true, false> { static constexpr auto name = "notInIgnoreSet"; };
+template <> struct FunctionInName<true, true, true, true, false> { static constexpr auto name = "globalNotInIgnoreSet"; };
+template <> struct FunctionInName<false, false, false, true, false> { static constexpr auto name = "nullInIgnoreSet"; };
+template <> struct FunctionInName<false, true, false, true, false> { static constexpr auto name = "globalNullInIgnoreSet"; };
+template <> struct FunctionInName<true, false, false, true, false> { static constexpr auto name = "notNullInIgnoreSet"; };
+template <> struct FunctionInName<true, true, false, true, false> { static constexpr auto name = "globalNotNullInIgnoreSet"; };
 
-template <bool negative, bool global, bool null_is_skipped, bool ignore_set>
+template <bool negative, bool global, bool null_is_skipped, bool ignore_set, bool prob>
 class FunctionIn : public IFunction
 {
 public:
     /// ignore_set flag means that we don't use set from the second argument, just return zero column.
     /// It is needed to perform type analysis without creation of set.
-    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
+    static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set, prob>::name;
 
     static FunctionPtr create(ContextPtr)
     {
@@ -178,14 +179,20 @@ public:
 template<bool ignore_set>
 void registerFunctionsInImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIn<false, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, true, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<false, true, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, false, false, ignore_set>>();
-    factory.registerFunction<FunctionIn<true, true, false, ignore_set>>();
+    factory.registerFunction<FunctionIn<false, false, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, true, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, false, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, true, true, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, false, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<false, true, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, false, false, ignore_set, false>>();
+    factory.registerFunction<FunctionIn<true, true, false, ignore_set, false>>();
+}
+
+
+void registerFunctionsProbInImpl(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionIn<false, false, true, false, true>>();
 }
 
 }
@@ -194,6 +201,7 @@ REGISTER_FUNCTION(In)
 {
     registerFunctionsInImpl<false>(factory);
     registerFunctionsInImpl<true>(factory);
+    registerFunctionsProbInImpl(factory);
 }
 
 }

@@ -1424,7 +1424,7 @@ FutureSet ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no
                     std::cout << "Prob_SET\n";
                     SetPtr set = storage_prob_set->getSet();
                     data.prepared_sets->set(set_key, set);
-                    return set;
+                    return FutureSet(set);
                 }
             }
         }

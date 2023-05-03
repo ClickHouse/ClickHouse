@@ -92,7 +92,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
             if (size_of_field == 4)
                 return Type::prob_key32;
         }
-        throw Exception("Logical error probal in: numeric column has sizeOfField 32.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error probal in: numeric column has sizeOfField 32.");
     }
 
     bool all_fixed = true;
