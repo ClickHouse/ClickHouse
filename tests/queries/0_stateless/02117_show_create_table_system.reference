@@ -47,7 +47,10 @@ CREATE TABLE system.clusters
     `default_database` String,
     `errors_count` UInt32,
     `slowdowns_count` UInt32,
-    `estimated_recovery_time` UInt32
+    `estimated_recovery_time` UInt32,
+    `database_shard_name` String,
+    `database_replica_name` String,
+    `is_active` Nullable(UInt8)
 )
 ENGINE = SystemClusters
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -281,7 +284,12 @@ CREATE TABLE system.functions
     `alias_to` String,
     `create_query` String,
     `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
-    `description` String
+    `description` String,
+    `syntax` String,
+    `arguments` String,
+    `returned_value` String,
+    `examples` String,
+    `categories` String
 )
 ENGINE = SystemFunctions
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -356,6 +364,7 @@ CREATE TABLE system.merges
     `partition_id` String,
     `is_mutation` UInt8,
     `total_size_bytes_compressed` UInt64,
+    `total_size_bytes_uncompressed` UInt64,
     `total_size_marks` UInt64,
     `bytes_read_uncompressed` UInt64,
     `rows_read` UInt64,
@@ -850,6 +859,7 @@ CREATE TABLE system.replicas
     `is_session_expired` UInt8,
     `future_parts` UInt32,
     `parts_to_check` UInt32,
+    `zookeeper_name` String,
     `zookeeper_path` String,
     `replica_name` String,
     `replica_path` String,
@@ -1117,7 +1127,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6),
+    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7),
     `auth_params` String,
     `host_ip` Array(String),
     `host_names` Array(String),
