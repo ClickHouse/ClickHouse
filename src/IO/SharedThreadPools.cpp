@@ -9,10 +9,10 @@ namespace CurrentMetrics
     extern const Metric IOThreadsActive;
     extern const Metric BackupsIOThreads;
     extern const Metric BackupsIOThreadsActive;
-    extern const Metric PartsLoadingThreads;
-    extern const Metric PartsLoadingThreadsActive;
-    extern const Metric OutdatedPartsLoadingThreads;
-    extern const Metric OutdatedPartsLoadingThreadsActive;
+    extern const Metric MergeTreePartsLoaderThreads;
+    extern const Metric MergeTreePartsLoaderThreadsActive;
+    extern const Metric MergeTreeOutdatedPartsLoaderThreads;
+    extern const Metric MergeTreeOutdatedPartsLoaderThreadsActive;
 }
 
 namespace DB
@@ -89,8 +89,8 @@ void ActivePartsLoadingThreadPool::initialize(size_t max_threads, size_t max_fre
     }
 
     instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::PartsLoadingThreads,
-        CurrentMetrics::PartsLoadingThreadsActive,
+        CurrentMetrics::MergeTreePartsLoaderThreads,
+        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
         max_threads,
         max_free_threads,
         queue_size,
@@ -120,8 +120,8 @@ void OutdatedPartsLoadingThreadPool::initialize(size_t max_threads_, size_t max_
     max_threads_turbo = max_threads_turbo_;
 
     instance = std::make_unique<ThreadPool>(
-        CurrentMetrics::OutdatedPartsLoadingThreads,
-        CurrentMetrics::OutdatedPartsLoadingThreadsActive,
+        CurrentMetrics::MergeTreeOutdatedPartsLoaderThreads,
+        CurrentMetrics::MergeTreeOutdatedPartsLoaderThreadsActive,
         max_threads_,
         max_free_threads_,
         queue_size_,
