@@ -1,8 +1,8 @@
 #include <algorithm>
 #include <vector>
-#include <malloc.h>
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
+#include <stdlib.h>
 #include <boost/math/distributions/chi_squared.hpp>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringUIntToString.h>
@@ -23,7 +23,7 @@ struct RemoveGarbageParametersFromURLImpl
     static bool pearsonIsUniform(const char * c_start, const char * c_end, char a, char b)
     {
         /// Deciding how much intervals to split symbols into and whether the string is long enough to be handled
-        long length = c_end - c_start;
+        int64_t length = c_end - c_start;
         int l = static_cast<int>(3.32 * log10(length)) + 1;
         if (l < 3)
         {
@@ -51,7 +51,7 @@ struct RemoveGarbageParametersFromURLImpl
             {
                 --it;
             }
-            long place = &(*it) - &(*alpha.begin());
+            int64_t place = &(*it) - &(*alpha.begin());
             ++n[place];
         }
 
@@ -315,7 +315,7 @@ struct RemoveGarbageParametersFromURLImpl
         const char * read = pdata;
 
         /// Calculate length of webpage address and copy it
-        long url_size = -1;
+        int64_t url_size = -1;
         for (size_t i = 0; i < size; ++i)
         {
             if (read[i] == '?')
@@ -340,7 +340,7 @@ struct RemoveGarbageParametersFromURLImpl
         read += url_size + 1;
 
         /// Find the first and the last characters of parameters
-        long params_size = size - url_size - 1;
+        int64_t params_size = size - url_size - 1;
         const char * params_start = read;
         const char * params_end = read + params_size;
         std::vector<const char *> p_start;
