@@ -238,7 +238,7 @@ public:
     virtual bool isPartialResultProcessor() const { return false; }
     virtual bool supportPartialResultProcessor() const { return false; }
 
-    virtual ProcessorPtr getPartialResultProcessor(ProcessorPtr /*current_processor*/, UInt64 /*partial_result_limit*/, UInt64 /*partial_result_duration_ms*/)
+    virtual ProcessorPtr getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 /*partial_result_limit*/, UInt64 /*partial_result_duration_ms*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getPartialResultProcessor' is not implemented for {} processor", getName());
     }

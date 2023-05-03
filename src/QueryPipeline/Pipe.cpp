@@ -628,7 +628,7 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::addPartialResultSimpleTransform(ProcessorPtr transform, size_t partial_result_port_id)
+void Pipe::addPartialResultSimpleTransform(const ProcessorPtr & transform, size_t partial_result_port_id)
 {
     if (isPartialResultActive())
     {
@@ -640,7 +640,7 @@ void Pipe::addPartialResultSimpleTransform(ProcessorPtr transform, size_t partia
             return;
         }
 
-        auto partial_result_transform = transform->getPartialResultProcessor(std::move(transform), partial_result_limit, partial_result_duration_ms);
+        auto partial_result_transform = transform->getPartialResultProcessor(transform, partial_result_limit, partial_result_duration_ms);
 
         connectPartialResultPort(partial_result_port, partial_result_transform->getInputs().front());
 
@@ -650,7 +650,7 @@ void Pipe::addPartialResultSimpleTransform(ProcessorPtr transform, size_t partia
     }
 }
 
-void Pipe::addPartialResultTransform(ProcessorPtr transform)
+void Pipe::addPartialResultTransform(const ProcessorPtr & transform)
 {
     if (isPartialResultActive())
     {
@@ -665,7 +665,7 @@ void Pipe::addPartialResultTransform(ProcessorPtr transform)
             return;
         }
 
-        auto partial_result_transform = transform->getPartialResultProcessor(std::move(transform), partial_result_limit, partial_result_duration_ms);
+        auto partial_result_transform = transform->getPartialResultProcessor(transform, partial_result_limit, partial_result_duration_ms);
         auto & inputs = partial_result_transform->getInputs();
 
         if (inputs.size() != partial_result_ports.size())
