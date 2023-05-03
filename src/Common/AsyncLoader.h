@@ -230,13 +230,11 @@ inline LoadJobSet getGoals(const LoadTaskPtrs & tasks)
 
 inline LoadJobSet joinJobs(const LoadJobSet & jobs1, const LoadJobSet & jobs2)
 {
-    if (jobs1.empty())
-        return jobs2;
-    if (jobs2.empty())
-        return jobs1;
     LoadJobSet result;
-    result.insert(jobs1.begin(), jobs1.end());
-    result.insert(jobs2.begin(), jobs2.end());
+    if (!jobs1.empty())
+        result.insert(jobs1.begin(), jobs1.end());
+    if (!jobs2.empty())
+        result.insert(jobs2.begin(), jobs2.end());
     return result;
 }
 
