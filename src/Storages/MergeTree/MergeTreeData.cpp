@@ -7,6 +7,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+#include "Common/thread_local_rng.h"
 #include <Common/escapeForFileName.h>
 #include <Common/Increment.h>
 #include <Common/noexcept_scope.h>
@@ -1426,71 +1427,17 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     UNREACHABLE();
 }
 
-std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
-    ThreadPool & pool,
-    size_t num_parts,
-    std::queue<PartLoadingTreeNodes> & parts_queue,
-    const MergeTreeSettingsPtr & settings)
+std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load)
 {
-    /// Parallel loading of data parts.
-    pool.setMaxThreads(std::min(static_cast<size_t>(settings->max_part_loading_threads), num_parts));
-    size_t num_threads = pool.getMaxThreads();
-    LOG_DEBUG(log, "Going to use {} threads to load parts", num_threads);
+    const size_t num_parts = parts_to_load.size();
 
-    std::vector<size_t> parts_per_thread(num_threads, num_parts / num_threads);
-    for (size_t i = 0ul; i < num_parts % num_threads; ++i)
-        ++parts_per_thread[i];
+    LOG_DEBUG(log, "Will load {} number of parts using {} threads", num_parts, ActivePartsLoadingThreadPool::get().getMaxThreads());
 
-    /// Prepare data parts for parallel loading. Threads will focus on given disk first, then steal
-    /// others' tasks when finish current disk part loading process.
-    std::vector<PartLoadingTreeNodes> threads_parts(num_threads);
-    std::set<size_t> remaining_thread_parts;
-    std::queue<size_t> threads_queue;
+    /// Shuffle all the parts randomly to possible speed up loading them from JBOD.
+    std::shuffle(parts_to_load.begin(), parts_to_load.end(), thread_local_rng);
 
-    for (size_t i = 0; i < num_threads; ++i)
-    {
-        remaining_thread_parts.insert(i);
-        threads_queue.push(i);
-    }
-
-    while (!parts_queue.empty())
-    {
-        assert(!threads_queue.empty());
-        size_t i = threads_queue.front();
-        auto & need_parts = parts_per_thread[i];
-        assert(need_parts > 0);
-
-        auto & thread_parts = threads_parts[i];
-        auto & current_parts = parts_queue.front();
-        assert(!current_parts.empty());
-
-        auto parts_to_grab = std::min(need_parts, current_parts.size());
-        thread_parts.insert(thread_parts.end(), current_parts.end() - parts_to_grab, current_parts.end());
-        current_parts.resize(current_parts.size() - parts_to_grab);
-        need_parts -= parts_to_grab;
-
-        /// Before processing next thread, change disk if possible.
-        /// Different threads will likely start loading parts from different disk,
-        /// which may improve read parallelism for JBOD.
-
-        /// If current disk still has some parts, push it to the tail.
-        if (!current_parts.empty())
-            parts_queue.push(std::move(current_parts));
-
-        parts_queue.pop();
-
-        /// If current thread still want some parts, push it to the tail.
-        if (need_parts > 0)
-            threads_queue.push(i);
-
-        threads_queue.pop();
-    }
-
-    assert(threads_queue.empty());
-    assert(std::all_of(threads_parts.begin(), threads_parts.end(), [](const auto & parts)
-    {
-        return !parts.empty();
-    }));
+    auto runner = threadPoolCallbackRunner<void>(ActivePartsLoadingThreadPool::get(), "ActiveParts");
+    std::vector<std::future<void>> parts_futures;
 
     std::mutex part_select_mutex;
     std::mutex part_loading_mutex;
@@ -1499,81 +1446,77 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 
     try
     {
-        for (size_t thread = 0; thread < num_threads; ++thread)
+        while (true)
         {
-            pool.scheduleOrThrowOnError([&, thread, thread_group = CurrentThread::getGroup()]
             {
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachFromGroupIfNotDetached();
-                );
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
+                std::lock_guard lock(part_select_mutex);
+                if (parts_to_load.empty())
+                    break;
+            }
 
-                while (true)
+            /// Schedule all the tasks we have for now
+            while (true)
+            {
+                PartLoadingTree::NodePtr current_part;
+
                 {
-                    PartLoadingTree::NodePtr thread_part;
-                    size_t thread_idx = thread;
+                    std::lock_guard lock(part_select_mutex);
+                    if (parts_to_load.empty())
+                        break;
 
+                    current_part = parts_to_load.back();
+                    parts_to_load.pop_back();
+                }
+
+                parts_futures.push_back(runner(
+                    [&, part = std::move(current_part)]()
                     {
-                        std::lock_guard lock{part_select_mutex};
+                        /// Pass a separate mutex to guard the set of parts, because this lambda
+                        /// is called concurrently but with already locked @data_parts_mutex.
+                        auto res = loadDataPartWithRetries(
+                            part->info, part->name, part->disk,
+                            DataPartState::Active, part_loading_mutex, loading_parts_initial_backoff_ms,
+                            loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-                        if (remaining_thread_parts.empty())
-                            return;
+                        part->is_loaded = true;
+                        bool is_active_part = res.part->getState() == DataPartState::Active;
 
-                        /// Steal task if nothing to do
-                        if (threads_parts[thread].empty())
+                        /// If part is broken or duplicate or should be removed according to transaction
+                        /// and it has any covered parts then try to load them to replace this part.
+                        if (!is_active_part && !part->children.empty())
                         {
-                            // Try random steal tasks from the next thread
-                            std::uniform_int_distribution<size_t> distribution(0, remaining_thread_parts.size() - 1);
-                            auto it = remaining_thread_parts.begin();
-                            std::advance(it, distribution(thread_local_rng));
-                            thread_idx = *it;
+                            std::lock_guard lock{part_select_mutex};
+                            for (const auto & [_, node] : part->children)
+                                parts_to_load.push_back(node);
                         }
 
-                        auto & thread_parts = threads_parts[thread_idx];
-                        thread_part = thread_parts.back();
-                        thread_parts.pop_back();
-                        if (thread_parts.empty())
-                            remaining_thread_parts.erase(thread_idx);
-                    }
+                        {
+                            std::lock_guard lock(part_loading_mutex);
+                            loaded_parts.push_back(std::move(res));
+                        }
+                    }, 0
+                ));
+            }
 
-                    /// Pass a separate mutex to guard the set of parts, because this lambda
-                    /// is called concurrently but with already locked @data_parts_mutex.
-                    auto res = loadDataPartWithRetries(
-                        thread_part->info, thread_part->name, thread_part->disk,
-                        DataPartState::Active, part_loading_mutex, loading_parts_initial_backoff_ms,
-                        loading_parts_max_backoff_ms, loading_parts_max_tries);
+            /// Wait for all scheduled tasks
+            for (auto & future: parts_futures)
+                future.wait();
 
-                    thread_part->is_loaded = true;
-                    bool is_active_part = res.part->getState() == DataPartState::Active;
+            parts_futures.clear();
 
-                    /// If part is broken or duplicate or should be removed according to transaction
-                    /// and it has any covered parts then try to load them to replace this part.
-                    if (!is_active_part && !thread_part->children.empty())
-                    {
-                        std::lock_guard lock{part_select_mutex};
-                        for (const auto & [_, node] : thread_part->children)
-                            threads_parts[thread].push_back(node);
-                        remaining_thread_parts.insert(thread);
-                    }
-
-                    {
-                        std::lock_guard lock(part_loading_mutex);
-                        loaded_parts.push_back(std::move(res));
-                    }
-                }
-            });
+            /// It is now possible, that some other parts appeared in the queue for processing (parts_to_load)
+            /// So we need to recheck it.
         }
     }
     catch (...)
     {
-        /// If this is not done, then in case of an exception, tasks will be destroyed before the threads are completed, and it will be bad.
-        pool.wait();
+        /// Wait for all scheduled tasks
+        for (auto & future: parts_futures)
+            future.wait();
+
         throw;
     }
 
-    pool.wait();
     return loaded_parts;
 }
 
@@ -1714,28 +1657,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         std::move(disk_parts.begin(), disk_parts.end(), std::back_inserter(parts_to_load));
 
     auto loading_tree = PartLoadingTree::build(std::move(parts_to_load));
-    /// Collect parts by disks' names.
-    std::map<String, PartLoadingTreeNodes> disk_part_map;
+
+    size_t num_parts = 0;
+    PartLoadingTreeNodes active_parts;
 
     /// Collect only "the most covering" parts from the top level of the tree.
     loading_tree.traverse(/*recursive=*/ false, [&](const auto & node)
     {
-        disk_part_map[node->disk->getName()].emplace_back(node);
+        active_parts.emplace_back(node);
     });
 
-    size_t num_parts = 0;
-    std::queue<PartLoadingTreeNodes> parts_queue;
-
-    for (auto & [disk_name, disk_parts] : disk_part_map)
-    {
-        LOG_INFO(log, "Found {} parts for disk '{}' to load", disk_parts.size(), disk_name);
-
-        if (disk_parts.empty())
-            continue;
-
-        num_parts += disk_parts.size();
-        parts_queue.push(std::move(disk_parts));
-    }
+    num_parts += active_parts.size();
 
     auto part_lock = lockParts();
     LOG_TEST(log, "loadDataParts: clearing data_parts_indexes (had {} parts)", data_parts_indexes.size());
@@ -1755,7 +1687,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (num_parts > 0)
     {
-        auto loaded_parts = loadDataPartsFromDisk(pool, num_parts, parts_queue, settings);
+        auto loaded_parts = loadDataPartsFromDisk(active_parts);
 
         for (const auto & res : loaded_parts)
         {
@@ -1999,6 +1931,9 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
     /// Background tasks are not run if storage is static.
     if (isStaticStorage())
         return;
+
+    /// We need to load parts as fast as possible
+    OutdatedPartsLoadingThreadPool::turboMode();
 
     LOG_TRACE(log, "Will wait for outdated data parts to be loaded");
 

@@ -9,6 +9,8 @@ namespace CurrentMetrics
     extern const Metric IOThreadsActive;
     extern const Metric BackupsIOThreads;
     extern const Metric BackupsIOThreadsActive;
+    extern const Metric PartsLoadingThreads;
+    extern const Metric PartsLoadingThreadsActive;
     extern const Metric OutdatedPartsLoadingThreads;
     extern const Metric OutdatedPartsLoadingThreadsActive;
 }
@@ -77,22 +79,63 @@ ThreadPool & BackupsIOThreadPool::get()
     return *instance;
 }
 
-std::unique_ptr<ThreadPool> OutdatedPartsLoadingThreadPool::instance;
+std::unique_ptr<ThreadPool> ActivePartsLoadingThreadPool::instance;
 
-void OutdatedPartsLoadingThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
+void ActivePartsLoadingThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
+{
+    if (instance)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The BackupsIO thread pool is initialized twice");
+    }
+
+    instance = std::make_unique<ThreadPool>(
+        CurrentMetrics::PartsLoadingThreads,
+        CurrentMetrics::PartsLoadingThreadsActive,
+        max_threads,
+        max_free_threads,
+        queue_size,
+        /* shutdown_on_exception= */ false);
+}
+
+ThreadPool & ActivePartsLoadingThreadPool::get()
+{
+    if (!instance)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The BackupsIO thread pool is not initialized");
+    }
+
+    return *instance;
+}
+
+std::unique_ptr<ThreadPool> OutdatedPartsLoadingThreadPool::instance;
+size_t OutdatedPartsLoadingThreadPool::max_threads_turbo;
+
+void OutdatedPartsLoadingThreadPool::initialize(size_t max_threads_, size_t max_threads_turbo_, size_t max_free_threads_, size_t queue_size_)
 {
     if (instance)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is initialized twice");
     }
 
+    max_threads_turbo = max_threads_turbo_;
+
     instance = std::make_unique<ThreadPool>(
         CurrentMetrics::OutdatedPartsLoadingThreads,
         CurrentMetrics::OutdatedPartsLoadingThreadsActive,
-        max_threads,
-        max_free_threads,
-        queue_size,
+        max_threads_,
+        max_free_threads_,
+        queue_size_,
         /* shutdown_on_exception= */ false);
+}
+
+void OutdatedPartsLoadingThreadPool::turboMode()
+{
+    if (!instance)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PartsLoadingThreadPool thread pool is not initialized");
+    }
+
+    instance->setMaxThreads(max_threads_turbo);
 }
 
 ThreadPool & OutdatedPartsLoadingThreadPool::get()
