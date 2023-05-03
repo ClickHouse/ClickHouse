@@ -117,9 +117,14 @@ DatabaseReplicated::DatabaseReplicated(
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 }
 
+String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
+{
+    return shard + '|' + replica;
+}
+
 String DatabaseReplicated::getFullReplicaName() const
 {
-    return shard_name + '|' + replica_name;
+    return getFullReplicaName(shard_name, replica_name);
 }
 
 std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String & name)
@@ -216,7 +221,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
     String current_shard = parseFullReplicaName(hosts.front()).first;
-    std::vector<Strings> shards;
+    std::vector<std::vector<DatabaseReplicaInfo>> shards;
     shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
@@ -232,25 +237,61 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
             if (!shards.back().empty())
                 shards.emplace_back();
         }
-        shards.back().emplace_back(unescapeForFileName(host_port));
+        String hostname = unescapeForFileName(host_port);
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
 
     UInt16 default_port = getContext()->getTCPPort();
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-    return std::make_shared<Cluster>(
-        getContext()->getSettingsRef(),
-        shards,
+    ClusterConnectionParameters params{
         cluster_auth_info.cluster_username,
         cluster_auth_info.cluster_password,
         default_port,
         treat_local_as_remote,
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
-        /*priority=*/1,
+        /*priority=*/ 1,
         TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
-        cluster_auth_info.cluster_secret);
+        cluster_auth_info.cluster_secret};
+
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
+}
+
+std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
+{
+    Strings paths;
+    const auto & addresses_with_failover = cluster->getShardsAddresses();
+    const auto & shards_info = cluster_->getShardsInfo();
+    for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+    {
+        for (const auto & replica : addresses_with_failover[shard_index])
+        {
+            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
+            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+        }
+    }
+
+    try
+    {
+        auto current_zookeeper = getZooKeeper();
+        auto res = current_zookeeper->exists(paths);
+
+        std::vector<UInt8> statuses;
+        statuses.resize(paths.size());
+
+        for (size_t i = 0; i < res.size(); ++i)
+            if (res[i].error == Coordination::Error::ZOK)
+                statuses[i] = 1;
+
+        return statuses;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        return {};
+    }
 }
 
 
@@ -1043,9 +1084,11 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 }
 
 void DatabaseReplicated::dropReplica(
-    DatabaseReplicated * database, const String & database_zookeeper_path, const String & full_replica_name)
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica)
 {
     assert(!database || database_zookeeper_path == database->zookeeper_path);
+
+    String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica);
 
     if (full_replica_name.find('/') != std::string::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
