@@ -20,15 +20,19 @@
 
 #    include <fstream>
 
-namespace DB::S3
-{
-
-namespace
+namespace DB
 {
 namespace ErrorCodes
 {
     extern const int AWS_ERROR;
 }
+}
+
+namespace DB::S3
+{
+
+namespace
+{
 
 bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials, uint64_t expiration_window_seconds)
 {
@@ -38,7 +42,6 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
     const Aws::Utils::DateTime now = Aws::Utils::DateTime::Now();
     return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
 }
-
 
 }
 
