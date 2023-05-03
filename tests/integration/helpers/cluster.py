@@ -268,7 +268,7 @@ async def nats_connect_ssl(
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
     nc = await nats.connect(
-        "tls://localhost:{}".format(nats_port),
+        f"tls://localhost:{nats_port}",
         user=user,
         password=password,
         tls=ssl_ctx,
@@ -1981,7 +1981,7 @@ class ClickHouseCluster:
         run_and_check(self.base_cmd + ["restart", service_name])
 
     def get_instance_ip(self, instance_name: str) -> str:
-        logging.debug("get_instance_ip instance_name={}".format(instance_name))
+        logging.debug(f"get_instance_ip instance_name={instance_name}")
         docker_id = self.get_instance_docker_id(instance_name)
         # for cont in self.docker_client.containers.list():
         # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
@@ -1991,7 +1991,7 @@ class ClickHouseCluster:
         ]
 
     def get_instance_global_ipv6(self, instance_name: str) -> str:
-        logging.debug("get_instance_ip instance_name={}".format(instance_name))
+        logging.debug(f"get_instance_ip instance_name={instance_name}")
         docker_id = self.get_instance_docker_id(instance_name)
         # for cont in self.docker_client.containers.list():
         # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
@@ -3082,7 +3082,7 @@ class ClickHouseCluster:
                 f"Sanitizer assert found for instance {sanitizer_assert_instance}"
             )
         if fatal_log is not None:
-            raise Exception("Fatal messages found: {}".format(fatal_log))
+            raise Exception(f"Fatal messages found: {fatal_log}")
 
     def pause_container(self, instance_name: str) -> None:
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
@@ -3475,7 +3475,7 @@ class ClickHouseInstance:
 
         if result is not None:
             return result
-        raise Exception("Can't execute query {}".format(sql))
+        raise Exception(f"Can't execute query {sql}")
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, sql: str, *args, **kwargs) -> CommandRequest:
@@ -3903,9 +3903,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(
-                    substring
-                ),
+                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'
             ]
         )
         return result
@@ -4047,7 +4045,7 @@ class ClickHouseInstance:
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(
-            ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
+            ["bash", "-c", f"pkill -{signal} clickhouse"], user="root"
         )
         retries = int(stop_start_wait_sec / 0.5)
         local_counter = 0
@@ -4062,7 +4060,7 @@ class ClickHouseInstance:
         if self.get_process_pid("clickhouse server"):
             # server can die before kill, so don't throw exception, it's expected
             self.exec_in_container(
-                ["bash", "-c", "pkill -{} clickhouse".format(9)],
+                ["bash", "-c", "pkill -9 clickhouse"],
                 nothrow=True,
                 user="root",
             )
@@ -4106,7 +4104,7 @@ class ClickHouseInstance:
                 ]
             )
         self.exec_in_container(
-            ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
+            ["bash", "-c", f"{self.clickhouse_start_command} --daemon"],
             user=str(os.getuid()),
         )
 
@@ -4134,13 +4132,11 @@ class ClickHouseInstance:
         handle = self.get_docker_handle()
 
         if start_timeout is None or start_timeout <= 0:
-            raise Exception("Invalid timeout: {}".format(start_timeout))
+            raise Exception(f"Invalid timeout: {start_timeout}")
 
         if connection_timeout is not None and connection_timeout < start_timeout:
             raise Exception(
-                "Connection timeout {} should be grater then start timeout {}".format(
-                    connection_timeout, start_timeout
-                )
+                f"Connection timeout {connection_timeout} should be grater then start timeout {start_timeout}"
             )
 
         start_time = time.time()
@@ -4459,7 +4455,7 @@ class ClickHouseInstance:
                 + "]"
             )
 
-        logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
+        logging.debug(f"Entrypoint cmd: {entrypoint_cmd}")
 
         networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
         if (
@@ -4615,9 +4611,7 @@ class ClickHouseInstance:
             [
                 "bash",
                 "-c",
-                "echo '{}' > {}".format(
-                    content, "/var/lib/clickhouse/format_schemas/" + file_name
-                ),
+                f"echo '{content}' > /var/lib/clickhouse/format_schemas/{file_name}"
             ]
         )
 
