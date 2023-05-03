@@ -384,8 +384,8 @@ bool PocoHTTPClient::tryMakeOneRequest(
             break;
         }
 
-        Int64 request_size = 0;
-        if (request.HasContentLength() && !Poco::NumberParser::tryParse64(request.getContentLength(), request_size)
+        Poco::Int64 request_size = 0;
+        if (request.HasContentLength() && !Poco::NumberParser::tryParse64(request.GetContentLength(), request_size))
             /// Reset the size if it fails to parse the number because under this case its value is undefined
             request_size = 0;
 
