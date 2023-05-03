@@ -16,6 +16,8 @@
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/Client.h>
 
+#    include <Interpreters/HttpClientLog.h>
+
 #    include <fstream>
 
 namespace DB::S3
@@ -454,6 +456,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
                 configuration.put_request_throttler);
+            aws_client_configuration.request_log_report = configuration.request_log_report;
+
             AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration, credentials_configuration.expiration_window_seconds));
         }
 
@@ -518,6 +522,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+
+            aws_client_configuration.request_log_report = configuration.request_log_report;
 
             auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);

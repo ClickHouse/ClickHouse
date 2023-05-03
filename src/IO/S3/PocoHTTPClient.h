@@ -19,6 +19,8 @@
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
 
+#include <Interpreters/HttpClientLog.h>
+
 namespace Aws::Http::Standard
 {
 class StandardHttpResponse;
@@ -56,6 +58,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     void updateSchemeAndRegion();
 
     std::function<void(const ClientConfigurationPerRequest &)> error_report;
+    HttpClientRequestLogger request_log_report;
 
 private:
     PocoHTTPClientConfiguration(
@@ -107,8 +110,19 @@ public:
         return std::move(body_stream);
     }
 
+    void SetContentLength(Int64 _content_length)
+    {
+        content_length = _content_length;
+    }
+
+    Int64 GetContentLength() const
+    {
+        return content_length;
+    }
+
 private:
     Aws::Utils::Stream::ResponseStream body_stream;
+    Int64 content_length = 0;
 };
 
 class PocoHTTPClient : public Aws::Http::HttpClient
@@ -129,6 +143,23 @@ private:
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
+
+    /// A wrap function that makes one HTTP request and records logs and profile envets
+    /// Return true means success otherwise false if retry is needed
+    bool tryMakeOneRequest(
+        unsigned int attempt,
+        Aws::Http::HttpRequest & request,
+        Aws::String & uri,
+        std::shared_ptr<PocoHTTPResponse> & response,
+        Poco::Logger * log) const;
+
+    /// Return true means success otherwise false if retry is needed.
+    /// If retry is needed, the parameter uri contains the new uri that should be used for next iteration
+    bool tryMakeOneRequestImpl(
+        Aws::Http::HttpRequest & request,
+        Aws::String & uri,
+        std::shared_ptr<PocoHTTPResponse> & response,
+        Poco::Logger * log) const;
 
     enum class S3MetricType
     {
@@ -154,6 +185,8 @@ private:
 
     std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     std::function<void(const ClientConfigurationPerRequest &)> error_report;
+    HttpClientRequestLogger request_log_report;
+
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;

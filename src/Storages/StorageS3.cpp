@@ -15,6 +15,7 @@
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/HttpClientLog.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -1241,6 +1242,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
+    client_configuration.request_log_report = &HttpClientLog::addLogEntry;
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
