@@ -1330,6 +1330,11 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
                     uncovered_unexpected_parts.size(), uncovered_unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
                     parts_to_fetch.size(), parts_to_fetch_blocks, covered_unexpected_parts.size(), unexpected_parts_rows - uncovered_unexpected_parts_rows);
     }
+    else
+    {
+        if (!parts_to_fetch.empty())
+            LOG_DEBUG(log, "Found parts to fetch (exist in zookeeper, but not locally): [{}]", fmt::join(parts_to_fetch, ", "));
+    }
 
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
     queue.setBrokenPartsToEnqueueFetchesOnLoading(std::move(parts_to_fetch));
@@ -2470,8 +2475,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         {
             /// We check that it was not suddenly upgraded to new version.
             /// Otherwise it can be upgraded and instantly become lost, but we cannot notice that.
-            ops.push_back(zkutil::makeCreateRequest(fs::path(source_path) / "is_lost", "0", zkutil::CreateMode::Persistent));
-            ops.push_back(zkutil::makeRemoveRequest(fs::path(source_path) / "is_lost", -1));
+            zkutil::addCheckNotExistsRequest(ops, *zookeeper, fs::path(source_path) / "is_lost");
         }
         else /// The replica we clone should not suddenly become lost.
             ops.push_back(zkutil::makeCheckRequest(fs::path(source_path) / "is_lost", source_is_lost_stat.version));
@@ -8874,8 +8878,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 /// We must be sure that this part doesn't exist on other replicas
                 if (!zookeeper->exists(current_part_path))
                 {
-                    ops.emplace_back(zkutil::makeCreateRequest(current_part_path, "", zkutil::CreateMode::Persistent));
-                    ops.emplace_back(zkutil::makeRemoveRequest(current_part_path, -1));
+                    zkutil::addCheckNotExistsRequest(ops, *zookeeper, current_part_path);
                 }
                 else
                 {
