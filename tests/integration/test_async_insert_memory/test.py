@@ -33,7 +33,7 @@ def test_memory_usage():
 
     node.get_query_request("SELECT count() FROM system.numbers", user="A")
 
-    INSERT_QUERY = "INSERT INTO async_table SETTINGS async_insert=1, wait_for_async_insert=1 VALUES ({})"
+    INSERT_QUERY = "INSERT INTO async_table SETTINGS async_insert=1, wait_for_async_insert=1,async_insert_max_data_size=150000000 VALUES ({})"
     for iter in range(10):
         values = list(range(iter * 5000000, (iter + 1) * 5000000))
         node.query(INSERT_QUERY.format(values), user="A")
