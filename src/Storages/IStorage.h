@@ -146,6 +146,8 @@ public:
     virtual bool supportsReplication() const { return false; }
 
     /// Returns true if the storage supports parallel insert.
+    /// If false, each INSERT query will call write() only once.
+    /// Different INSERT queries may write in parallel regardless of this value.
     virtual bool supportsParallelInsert() const { return false; }
 
     /// Returns true if the storage supports deduplication of inserted data blocks.
