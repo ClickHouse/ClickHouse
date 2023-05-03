@@ -551,7 +551,7 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
 {
     LOG_INFO(log, "Waiting mutation: {}", mutation_id);
     {
-        auto check = [version, this]()
+        auto check = [version, wait_for_another_mutation, this]()
         {
             if (shutdown_called)
                 return true;
