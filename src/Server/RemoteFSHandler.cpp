@@ -213,6 +213,7 @@ void RemoteFSHandler::receiveHello()
     readStringBinary(disk_name, *in);
     LOG_TRACE(log, "Received disk name {}", disk_name);
     disk = server.context()->getDisk(disk_name);
+    LOG_TRACE(log, "Disk path {}", disk->getPath());
 }
 
 void RemoteFSHandler::receiveRequest()
@@ -497,6 +498,7 @@ void RemoteFSHandler::writeFile()
     auto write_buf = disk->writeFile(str_data, buf_size, mode);
     writeVarUInt(RemoteFSProtocol::StartWriteFile, *out);
     out->next();
+    LOG_TRACE(log, "Sent {}", RemoteFSProtocol::StartWriteFile);
 
     UInt64 packet_type;
     while (true)
@@ -506,7 +508,7 @@ void RemoteFSHandler::writeFile()
         {
             case RemoteFSProtocol::DataPacket:
                 readStringBinary(str_data, *in);
-                LOG_TRACE(log, "Received data {}", str_data);
+                LOG_TRACE(log, "Received data of size {}", str_data.size());
                 writeString(str_data, *write_buf);
                 write_buf->next(); // TODO maybe remove this line
                 writeVarUInt(RemoteFSProtocol::DataPacket, *out);

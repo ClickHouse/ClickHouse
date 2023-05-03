@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Client/RemoteFSConnectionPool.h>
+
 #include <Common/logger_useful.h>
 #include <Disks/DiskLocalCheckThread.h>
 #include <Disks/IDisk.h>
@@ -15,16 +17,14 @@ namespace DB
 class DiskRemote : public IDisk
 {
 public:
-    friend class DiskLocalCheckThread;
-    friend class DiskLocalReservation;
+    friend class DiskRemoteReservation;
 
-    DiskRemote(const String & name_);
-//    DiskRemote(
-//        const String & name_,
-//        const String & path_,
-//        UInt64 keep_free_space_bytes_,
-//        ContextPtr context,
-//        UInt64 local_disk_check_period_ms);
+    DiskRemote(
+        const String & name, 
+        const String & host, UInt16 port, 
+        const String & remote_disk_name, 
+        unsigned max_connections_ = 20
+    );
 
     const String & getPath() const override;
 
@@ -36,7 +36,7 @@ public:
 
     UInt64 getUnreservedSpace() const override;
 
-    UInt64 getKeepingFreeSpace() const override { return keep_free_space_bytes; } // TODO запрашивать, возможно один раз
+    UInt64 getKeepingFreeSpace() const override { return 0; } // TODO implement this
 
     bool exists(const String & path) const override;
 
@@ -55,8 +55,6 @@ public:
     void moveDirectory(const String & from_path, const String & to_path) override;
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
-
-    // isDirectoryEmpty TODO проверить, что дефолтная реализация ок
 
     void createFile(const String & path) override;
 
@@ -80,7 +78,7 @@ public:
         const String & path,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings) override;
+        const WriteSettings &) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -114,11 +112,13 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
-    MetadataStoragePtr getMetadataStorage() override; // TODO подумать над метаданными
+    MetadataStoragePtr getMetadataStorage() override {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO: not implemented");
+    }
 
     // getSerializedMetadata TODO подумать над метаданными
 
-    DiskObjectStoragePtr createDiskObjectStorage() override; // TODO подумать
+    // DiskObjectStoragePtr createDiskObjectStorage() override; // TODO подумать
 
     bool supportsStat() const override { return false; } // TODO подумать
 //    struct stat stat(const String & path) const override;
@@ -126,12 +126,19 @@ public:
     bool supportsChmod() const override { return false; } // TODO подумать
 //    void chmod(const String & path, mode_t mode) override;
 
-protected:
-    // checkAccessImpl TODO проверить хватает ли исходной реализации.
-
 private:
+    std::optional<UInt64> tryReserve(UInt64 bytes);
+
+    const String host;
+    const UInt16 port;
+    const String remote_disk_name;
+
     const String disk_path;
-    std::atomic<UInt64> keep_free_space_bytes;
+
+    ConnectionTimeouts timeouts;
+
+    mutable RemoteFSConnectionPool conn_pool;
+
     Poco::Logger * logger;
     DataSourceDescription data_source_description;
 

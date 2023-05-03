@@ -25,6 +25,11 @@ public:
     {
     }
 
+    ~RemoteFSConnectionPool() override
+    {
+        LOG_TRACE(log, "Connection pool with remote disk {} destroyed", disk_name);
+    }
+
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
               bool force_connected = true)
     {

@@ -107,25 +107,33 @@ try
     assert((conn->exists("file1") && conn->exists("file2")));
 
     conn->startWriteFile("file1", 5, WriteMode::Append);
-    conn->writeDataPacket("12345");
+    conn->writeData("12345", 5);
     conn->endWriteFile();
 
     assert((conn->getFileSize("file1") == 5));
 
     conn->startWriteFile("file1", 5, WriteMode::Append);
-    conn->writeDataPacket("67890");
+    conn->writeData("67890", 5);
     conn->endWriteFile();
 
     assert((conn->getFileSize("file1") == 10));
 
     conn->startWriteFile("file1", 5, WriteMode::Rewrite);
-    conn->writeDataPacket("abcde");
+    conn->writeData("abcde", 5);
     conn->endWriteFile();
 
     assert((conn->getFileSize("file1") == 5));
 
-    assert((conn->readFile("file1", 0, 5) == "abcde"));
-    assert((conn->readFile("file1", 2, 3) == "cde"));
+    String data;
+    data.resize(5);
+    size_t bytes_read = conn->readFile("file1", 0, 5, data.data());
+    assert(( bytes_read == 5));
+    assert(( data == "abcde"));
+
+    data.resize(3);
+    bytes_read = conn->readFile("file1", 2, 3, data.data());
+    assert(( bytes_read == 3));
+    assert(( data == "cde"));
 
     conn->removeFile("file2");
     assert((!conn->exists("file2")));
@@ -166,7 +174,7 @@ try
     assert((time == conn->getLastModified("file1").epochTime()));
 
     conn->startWriteFile("file1", 5, WriteMode::Append);
-    conn->writeDataPacket("12345");
+    conn->writeData("12345", 5);
     conn->endWriteFile();
     assert((time < conn->getLastModified("file1").epochTime()));
 
@@ -181,7 +189,7 @@ try
     assert((time < conn->getLastChanged("file1")));
 
     conn->startWriteFile("file1", 5, WriteMode::Append);
-    conn->writeDataPacket("12345");
+    conn->writeData("12345", 5);
     conn->endWriteFile();
 
     assert((conn->getFileSize("file2") == 10));

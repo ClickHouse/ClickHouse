@@ -1,0 +1,32 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <remote_disk>
+                <type>remote</type>
+                <host>server</host>
+                <port>9012</port>
+                <remote_disk_name>remote_disk</remote_disk_name>
+            </remote_disk>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <remote_disk>
+                <volumes>
+                    <main>
+                        <disk>remote_disk</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </remote_disk>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+    </merge_tree>
+</clickhouse>

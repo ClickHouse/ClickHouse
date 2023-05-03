@@ -47,9 +47,9 @@ public:
     void copy(const String & from_path, const String & to_path);
     void copyDirectoryContent(const String & from_dir, const String & to_dir);
     void listFiles(const String & path, std::vector<String> & file_names);
-    String readFile(const String & path, size_t offset, size_t size);
+    size_t readFile(const String & path, size_t offset, size_t size, char * data);
     void startWriteFile(const String & path, size_t buf_size, WriteMode mode);
-    void writeDataPacket(String data_packet);
+    void writeData(const char * data_packet, size_t size);
     void endWriteFile();
     void removeFile(const String & path);
     void removeFileIfExists(const String & path);
@@ -106,7 +106,7 @@ private:
         Poco::Logger * get()
         {
             if (!log)
-                log = &Poco::Logger::get("Connection (" + parent.getDescription() + ")");
+                log = &Poco::Logger::get("RemoteFSConnection (" + parent.getDescription() + ")");
 
             return log;
         }

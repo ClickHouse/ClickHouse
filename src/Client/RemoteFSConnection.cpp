@@ -32,7 +32,10 @@ RemoteFSConnection::RemoteFSConnection(const String & host_, UInt16 port_,
     setDescription();
 }
 
-RemoteFSConnection::~RemoteFSConnection() = default;
+RemoteFSConnection::~RemoteFSConnection()
+{
+    LOG_TRACE(log_wrapper.get(), "Connection with remote disk {} destroyed", disk_name);
+}
 
 void RemoteFSConnection::connect(const ConnectionTimeouts & timeouts)
 {
@@ -128,7 +131,7 @@ void RemoteFSConnection::connect(const ConnectionTimeouts & timeouts)
 void RemoteFSConnection::disconnect()
 {
     in = nullptr;
-    out = nullptr; // can write to socket
+    out = nullptr;
     if (socket)
         socket->close();
     socket = nullptr;
@@ -408,7 +411,7 @@ void RemoteFSConnection::listFiles(const String & path, std::vector<String> & fi
     }
 }
 
-String RemoteFSConnection::readFile(const String & path, size_t offset, size_t size)
+size_t RemoteFSConnection::readFile(const String & path, size_t offset, size_t size, char * data)
 {
     LOG_TRACE(log_wrapper.get(), "Send ReadFile");
     writeVarUInt(RemoteFSProtocol::ReadFile, *out);
@@ -418,9 +421,9 @@ String RemoteFSConnection::readFile(const String & path, size_t offset, size_t s
     out->next();
 
     receiveAndCheckPacketType(RemoteFSProtocol::ReadFile, "ReadFile");
-    String data;
-    readStringBinary(data, *in);
-    return data;
+    readVarUInt(size, *in);
+    in->readStrict(data, size);
+    return size;
 }
 
 void RemoteFSConnection::startWriteFile(const String & path, size_t buf_size, WriteMode mode)
@@ -435,11 +438,12 @@ void RemoteFSConnection::startWriteFile(const String & path, size_t buf_size, Wr
     receiveAndCheckPacketType(RemoteFSProtocol::StartWriteFile, "StartWriteFile");
 }
 
-void RemoteFSConnection::writeDataPacket(String data_packet)
+void RemoteFSConnection::writeData(const char * data, size_t size)
 {
     LOG_TRACE(log_wrapper.get(), "Send DataPacket");
     writeVarUInt(RemoteFSProtocol::DataPacket, *out);
-    writeStringBinary(data_packet, *out);
+    writeVarUInt(size, *out);
+    out->write(data, size);
     out->next();
 
     receiveAndCheckPacketType(RemoteFSProtocol::DataPacket, "DataPacket");
@@ -633,6 +637,7 @@ void RemoteFSConnection::receiveAndCheckPacketType(UInt64 expected_packet_type, 
 {
     UInt64 packet_type;
     readVarUInt(packet_type, *in);
+    LOG_TRACE(log_wrapper.get(), "Received {}", RemoteFSProtocol::PacketType(packet_type));
     if (packet_type == expected_packet_type) 
     {
         return;

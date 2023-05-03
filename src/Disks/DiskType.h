@@ -15,6 +15,7 @@ enum class DataSourceType
     HDFS,
     WebServer,
     AzureBlobStorage,
+    Remote,
 };
 
 inline String toString(DataSourceType data_source_type)
@@ -35,6 +36,8 @@ inline String toString(DataSourceType data_source_type)
             return "web";
         case DataSourceType::AzureBlobStorage:
             return "azure_blob_storage";
+        case DataSourceType::Remote:
+            return "remote";
     }
     UNREACHABLE();
 }
