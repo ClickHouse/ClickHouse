@@ -458,18 +458,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Check support for JOINs for parallel replicas
-    if (joined_tables.tablesCount() > 1 && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
+    /// Check support for JOIN for parallel replicas with custom key
+    if (joined_tables.tablesCount() > 1 && (!settings.parallel_replicas_custom_key.value.empty()))
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
-            LOG_WARNING(log, "JOINs are not supported with parallel replicas. Query will be executed without using them.");
-            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            LOG_WARNING(log, "Joins are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
             context->setSetting("parallel_replicas_custom_key", String{""});
         }
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel_replicas_custom_key");
         }
     }
 
