@@ -1947,7 +1947,8 @@ AsyncLoader & Context::getAsyncLoader() const
             CurrentMetrics::AsyncLoaderThreads,
             CurrentMetrics::AsyncLoaderThreadsActive,
             getAsyncLoaderPoolSize(),
-            /* log_failures = */ true);
+            /* log_failures = */ true,
+            /* log_progress = */ true);
     return *shared->async_loader;
 }
 

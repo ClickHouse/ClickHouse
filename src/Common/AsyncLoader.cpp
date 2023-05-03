@@ -156,8 +156,9 @@ void LoadTask::detach()
     jobs.clear();
 }
 
-AsyncLoader::AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_)
+AsyncLoader::AsyncLoader(Metric metric_threads, Metric metric_active_threads, size_t max_threads_, bool log_failures_, bool log_progress_)
     : log_failures(log_failures_)
+    , log_progress(log_progress_)
     , log(&Poco::Logger::get("AsyncLoader"))
     , max_threads(max_threads_)
     , pool(metric_threads, metric_active_threads, max_threads)
@@ -525,7 +526,8 @@ void AsyncLoader::finish(std::unique_lock<std::mutex> & lock, const LoadJobPtr &
     NOEXCEPT_SCOPE({
         ALLOW_ALLOCATIONS_IN_SCOPE;
         finished_jobs.insert(job);
-        logAboutProgress(log, finished_jobs.size() - old_jobs, finished_jobs.size() + scheduled_jobs.size() - old_jobs, stopwatch);
+        if (log_progress)
+            logAboutProgress(log, finished_jobs.size() - old_jobs, finished_jobs.size() + scheduled_jobs.size() - old_jobs, stopwatch);
     });
 }
 
