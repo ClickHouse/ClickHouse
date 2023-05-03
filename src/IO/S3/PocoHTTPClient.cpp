@@ -384,6 +384,11 @@ bool PocoHTTPClient::tryMakeOneRequest(
             break;
         }
 
+        Int64 request_size = 0;
+        if (request.HasContentLength() && !Poco::NumberParser::tryParse64(request.getContentLength(), request_size)
+            /// Reset the size if it fails to parse the number because under this case its value is undefined
+            request_size = 0;
+
         HttpClientLogEntry log_entry
         {
             .http_client = HttpClientLogEntry::HttpClient::AWS,
@@ -391,7 +396,7 @@ bool PocoHTTPClient::tryMakeOneRequest(
             .uri = uri,
             .duration_ms = watch.elapsedMilliseconds(),
             .status_code = status_code,
-            .request_size = request.HasContentLength() ? Poco::NumberParser::parse(request.GetContentLength()) : 0,
+            .request_size = request_size,
             .response_size = response->GetContentLength(),
             .exception = execution_status
         };
