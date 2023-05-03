@@ -710,9 +710,10 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (read_context)
         read_context->cancel();
 
-    /// Query could be cancelled during connection creation or query sending,
-    /// we should check if connections were already created and query were sent.
-    if (connections && sent_query)
+    /// Query could be cancelled during connection creation, query sending or data receiving.
+    /// We should send cancel request if connections were already created, query were sent
+    /// and remote query is not finished.
+    if (connections && sent_query && !finished)
     {
         connections->sendCancel();
         if (log)
