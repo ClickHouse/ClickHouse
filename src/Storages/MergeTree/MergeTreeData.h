@@ -431,6 +431,8 @@ public:
 
     bool supportsLightweightDelete() const override;
 
+    bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
