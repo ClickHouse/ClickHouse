@@ -58,9 +58,11 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseOnFDB.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
+#include <Common/FoundationDB/protos/MetadataDatabase.pb.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -103,6 +105,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_DATABASE_ENGINE;
 }
 
 namespace fs = std::filesystem;
@@ -327,6 +330,147 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
         if (added)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
+
+        throw;
+    }
+
+    return {};
+}
+
+
+BlockIO InterpreterCreateQuery::createDatabaseOnFDB(ASTCreateQuery & create)
+{
+    String database_name = create.getDatabase();
+
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+
+    /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
+    if (DatabaseCatalog::instance().isDatabaseExist(database_name))
+    {
+        if (create.if_not_exists)
+            return {};
+        else
+            throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+    }
+
+    auto meta_store = getContext()->getMetadataStoreFoundationDB();
+
+
+    if (!create.storage)
+    {
+        /// Fill omitted database engine
+        if (create.attach)
+        {
+            auto meta = meta_store->getDatabaseMeta(database_name, true);
+            if (!meta)
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Cannot find database {} on fdb", database_name);
+            auto ast = DatabaseOnFDB::getAttachQueryFromDBMeta(getContext(), *meta);
+            create = ast->as<ASTCreateQuery &>();
+        }
+        else
+        {
+            auto engine = makeASTFunction("OnFDB");
+            engine->no_empty_args = true;
+
+            auto storage = std::make_shared<ASTStorage>();
+            storage->set(storage->engine, engine);
+            create.set(create.storage, storage);
+        }
+    }
+    else
+    {
+        /// Check user-define database engine
+        if (!create.storage->engine)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Database engine must be specified");
+
+        const auto & engine_name = create.storage->engine->name;
+        if (engine_name != "OnFDB")
+        {
+            /// Fallback to local database metadata for internal invoke
+            if (internal)
+            {
+                guard.reset();
+                return createDatabase(create);
+            }
+            else if (
+                engine_name == "Ordinary" || engine_name == "Atomic" || engine_name == "Memory" || engine_name == "Dictionary"
+                || engine_name == "Lazy" || engine_name == "Replicated" || engine_name == "MySQL" || engine_name == "MaterializeMySQL"
+                || engine_name == "MaterializedMySQL" || engine_name == "PostgreSQL" || engine_name == "MaterializedPostgreSQL"
+                || engine_name == "SQLite")
+            {
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_DATABASE_ENGINE,
+                    "Unsupported database engine {} when foundationdb is enabled",
+                    serializeAST(*create.storage));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
+            }
+        }
+
+        if ((create.columns_list
+             && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
+                 || (create.columns_list->projections && !create.columns_list->projections->children.empty()))))
+        {
+            /// Currently, there are no database engines, that support any arguments.
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
+        }
+    }
+
+    /// Check uuid
+    if (create.attach && create.uuid == UUIDHelpers::Nil)
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "UUID must be specified for ATTACH. "
+            "If you want to attach existing database, use just ATTACH DATABASE {};",
+            create.getDatabase());
+    else if (create.uuid == UUIDHelpers::Nil)
+        create.uuid = UUIDHelpers::generateV4();
+
+    if (create.storage->engine->name != "OnFDB")
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_DATABASE_ENGINE,
+            "Unsupported database engine {} when foundationdb is enabled",
+            serializeAST(*create.storage));
+    DatabasePtr database = std::make_shared<DatabaseOnFDB>(database_name, create.uuid, getContext());
+    if (create.comment)
+        database->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
+
+    /// Persist database meta and try to attach to DatabaseCatalog
+
+    /// We attach database before loading it's tables, so do not allow concurrent DDL queries
+    auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
+
+    bool attached = false;
+    try
+    {
+        DatabaseCatalog::instance().attachDatabase(database_name, database);
+        attached = true;
+
+        if (!load_database_without_tables)
+        {
+            /// We use global context here, because storages lifetime is bigger than query context lifetime
+            TablesLoader loader{
+                getContext()->getGlobalContext(),
+                {{database_name, database}},
+                has_force_restore_data_flag,
+                create.attach && force_attach}; //-V560
+            loader.loadTables();
+            loader.startupTables();
+        }
+
+        if (!create.attach)
+        {
+            create.attach = true;
+            auto meta = DatabaseOnFDB::getDBMetaFromQuery(create);
+            meta_store->addDatabaseMeta(*meta, database_name, create.uuid);
+        }
+    }
+    catch (...)
+    {
+        if (attached)
+            DatabaseCatalog::instance().detachDatabase(getContext(), database_name);
 
         throw;
     }
@@ -1700,8 +1844,18 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
+<<<<<<< HEAD
     if (is_create_database)
         return createDatabase(create);
+=======
+    if (create.database && !create.table)
+    {
+        if (getContext()->hasMetadataStoreFoundationDB())
+            return createDatabaseOnFDB(create);
+        else
+            return createDatabase(create);
+    }
+>>>>>>> 83bf1069858... New database engine: DatabaseOnFDB (47f9ab2a5dd)
     else
         return createTable(create);
 }

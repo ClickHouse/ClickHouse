@@ -8,6 +8,8 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
+#include <Common/FoundationDB/ProtobufTypeHelpers.h>
+#include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
@@ -19,10 +21,13 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include <cstddef>
+#include <filesystem>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include <Databases/DatabaseOnFDB.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -813,46 +818,64 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = getContext()->getPath() + "metadata_dropped/";
-
-    if (!std::filesystem::exists(path))
+    bool is_on_fdb = getContext()->hasMetadataStoreFoundationDB();
+    if(is_on_fdb)
     {
-        return;
+        auto meta_store = getContext()->getMetadataStoreFoundationDB();
+        auto table_metas = meta_store->listAllDroppedTableMeta();
+        for (auto & table_meta : table_metas)
+        {
+            auto ast = DatabaseOnFDB::getQueryFromTableMeta(getContext(), *table_meta);
+            auto & ast_create_query = ast->as<ASTCreateQuery &>();
+            StorageID dropped_id = StorageID::createEmpty();
+            dropped_id.table_name = ast_create_query.getTable();
+            dropped_id.database_name = ast_create_query.getDatabase();
+            dropped_id.uuid = ast_create_query.uuid;
+            dropped_metadata.emplace("OnFDB", std::move(dropped_id));
+        }
     }
-
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    else
     {
-        /// File name has the following format:
-        /// database_name.table_name.uuid.sql
+        String path = getContext()->getPath() + "metadata_dropped/";
 
-        /// Ignore unexpected files
-        if (!it.name().ends_with(".sql"))
-            continue;
+        if (!std::filesystem::exists(path))
+        {
+            return;
+        }
 
-        /// Process .sql files with metadata of tables which were marked as dropped
-        StorageID dropped_id = StorageID::createEmpty();
-        size_t dot_pos = it.name().find('.');
-        if (dot_pos == std::string::npos)
-            continue;
-        dropped_id.database_name = unescapeForFileName(it.name().substr(0, dot_pos));
+        Poco::DirectoryIterator dir_end;
+        for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+        {
+            /// File name has the following format:
+            /// database_name.table_name.uuid.sql
 
-        size_t prev_dot_pos = dot_pos;
-        dot_pos = it.name().find('.', prev_dot_pos + 1);
-        if (dot_pos == std::string::npos)
-            continue;
-        dropped_id.table_name = unescapeForFileName(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+            /// Ignore unexpected files
+            if (!it.name().ends_with(".sql"))
+                continue;
 
-        prev_dot_pos = dot_pos;
-        dot_pos = it.name().find('.', prev_dot_pos + 1);
-        if (dot_pos == std::string::npos)
-            continue;
-        dropped_id.uuid = parse<UUID>(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+            /// Process .sql files with metadata of tables which were marked as dropped
+            StorageID dropped_id = StorageID::createEmpty();
+            size_t dot_pos = it.name().find('.');
+            if (dot_pos == std::string::npos)
+                continue;
+            dropped_id.database_name = unescapeForFileName(it.name().substr(0, dot_pos));
 
-        String full_path = path + it.name();
-        dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
+            size_t prev_dot_pos = dot_pos;
+            dot_pos = it.name().find('.', prev_dot_pos + 1);
+            if (dot_pos == std::string::npos)
+                continue;
+            dropped_id.table_name = unescapeForFileName(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+
+            prev_dot_pos = dot_pos;
+            dot_pos = it.name().find('.', prev_dot_pos + 1);
+            if (dot_pos == std::string::npos)
+                continue;
+            dropped_id.uuid = parse<UUID>(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+
+            String full_path = path + it.name();
+            dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
+        }
     }
-
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
     ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive);
@@ -883,10 +906,14 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
 {
+    bool is_on_fdb = getContext()->hasMetadataStoreFoundationDB();
+    auto fdb_meta_store = is_on_fdb ? getContext()->getMetadataStoreFoundationDB() : nullptr;
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
-    assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
-
+    if (!is_on_fdb)
+    {
+        assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
+    }
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
     if (table)
@@ -901,8 +928,9 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     {
         /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
         LOG_INFO(log, "Trying load partially dropped table {} from {}", table_id.getNameForLogs(), dropped_metadata_path);
-        ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(
-            log, getContext(), dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/ false);
+        ASTPtr ast = is_on_fdb ? DatabaseOnFDB::getQueryFromTableMeta(getContext(), *fdb_meta_store->getDroppedTableMeta(table_id.uuid))
+                               : DatabaseOnDisk::parseQueryFromMetadata(
+                                   log, getContext(), dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/ false);
         auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
         assert(!create || create->uuid == table_id.uuid);
 
@@ -931,7 +959,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        drop_time = FS::getModificationTime(dropped_metadata_path);
+        drop_time = is_on_fdb ? fdb_meta_store->getDropTime(table_id.uuid) : FS::getModificationTime(dropped_metadata_path);
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1123,7 +1151,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
-    fs::remove(fs::path(table.metadata_path));
+    if(getContext()->hasMetadataStoreFoundationDB()){
+        getContext()->getMetadataStoreFoundationDB()->removeDroppedTableMeta(table.table_id.uuid);
+    }
+    else
+        fs::remove(fs::path(table.metadata_path));
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);

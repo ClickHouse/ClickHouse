@@ -3,6 +3,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -25,6 +26,13 @@
 #include <filesystem>
 
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
+#include <map>
+#include <memory>
+#include <unordered_set>
+#include <base/logger_useful.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
+#include <Common/FoundationDB/protos/MetadataDatabase.pb.h>
+#include <Databases/DatabaseOnFDB.h>
 
 namespace fs = std::filesystem;
 
@@ -157,6 +165,45 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
                         backQuote(actual_name), backQuote(db.first), backQuote(actual_name));
     }
 }
+static void
+loadDatabase(ContextMutablePtr context, const FoundationDB::Proto::MetadataDatabase & database, const String & key, bool force_restore_data)
+{
+    try
+    {
+        auto ast = DatabaseOnFDB::getAttachQueryFromDBMeta(context, database);
+        InterpreterCreateQuery interpreter(ast, context);
+        interpreter.setInternal(true);
+        interpreter.setForceAttach(true);
+        interpreter.setForceRestoreData(force_restore_data);
+        interpreter.setLoadDatabaseWithoutTables(true);
+        interpreter.execute();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while loading database {} from fdb key={}", database.name(), key);
+        throw;
+    }
+}
+
+static void createDatabase(ContextMutablePtr context, const String & database_name)
+{
+    try
+    {
+        auto ast = std::make_shared<ASTCreateQuery>();
+        ast->setDatabase(database_name);
+        InterpreterCreateQuery interpreter(ast, context);
+        interpreter.setInternal(true);
+        interpreter.setForceAttach(true);
+        interpreter.setLoadDatabaseWithoutTables(true);
+        interpreter.execute();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while create default database {}", database_name);
+        throw;
+    }
+}
+
 
 void loadMetadata(ContextMutablePtr context, const String & default_database_name)
 {
@@ -244,6 +291,106 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
             tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data sanity checks");
         }
     }
+}
+
+void migrateMetadataFromLocalToFDB(ContextMutablePtr context)
+{
+    Poco::Logger * log = &Poco::Logger::get("loadMetadata");
+    auto meta_store = context->getMetadataStoreFoundationDB();
+    String path = context->getPath() + "metadata";
+
+    /// Clear old metadata in fdb
+    meta_store->clearDatabase();
+
+    /// Loop over local databases
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    {
+        if (it->is_symlink())
+            continue;
+
+        if (it->is_directory())
+            continue;
+
+        const auto current_file = it->path().filename().string();
+        if (fs::path(current_file).extension() != ".sql")
+            continue;
+
+        String db_name = fs::path(current_file).stem();
+        if (isSystemOrInformationSchema(db_name))
+            continue;
+
+        String query;
+        ReadBufferFromFile in(it->path(), 1024);
+        readStringUntilEOF(query, in);
+        ParserCreateQuery parser;
+        ASTPtr ast = parseQuery(
+            parser,
+            query.data(),
+            query.data() + query.size(),
+            "in file " + it->path().string(),
+            0,
+            context->getSettingsRef().max_parser_depth);
+
+        auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        ast_create_query.setDatabase(db_name); /// Replace database name placeholder
+
+        if (!ast_create_query.storage || !ast_create_query.storage->engine)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find database engine in {}", it->path().string());
+
+        if (ast_create_query.storage->engine->name != "Atomic")
+        {
+            LOG_WARNING(log, "Database {} is ignored. Only Atomic can be loaded on fdb", db_name);
+            continue;
+        }
+
+        auto engine = makeASTFunction("OnFDB");
+        engine->no_empty_args = true;
+        ast_create_query.storage->set(ast_create_query.storage->engine, engine);
+        ast_create_query.attach = true;
+        auto meta = DatabaseOnFDB::getDBMetaFromQuery(ast_create_query);
+
+        meta_store->addDatabaseMeta(*meta, {db_name}, ast_create_query.uuid);
+    }
+}
+
+void loadMetadataFromFDB(ContextMutablePtr context, const String & default_database_name)
+{
+    auto meta_store = context->getMetadataStoreFoundationDB();
+
+    /// TODO: Support force_restore_data flag on fdb
+    bool has_force_restore_data_flag = false;
+
+    if (meta_store->isFirstBoot())
+        migrateMetadataFromLocalToFDB(context);
+
+    std::map<String, std::unique_ptr<FoundationDB::Proto::MetadataDatabase>> databases;
+    for (auto & database : meta_store->listDatabases())
+    {
+        databases.emplace(database->name(), std::move(database));
+    }
+
+    bool create_default_db_if_not_exists = !default_database_name.empty();
+    bool default_db_already_exists = databases.count(default_database_name);
+    if (create_default_db_if_not_exists && !default_db_already_exists)
+    {
+        databases.emplace(default_database_name, nullptr);
+    }
+
+    TablesLoader::Databases loaded_databases;
+    for (const auto & [name, database] : databases)
+    {
+        if (database)
+            loadDatabase(context, *database, meta_store->getReadableDatabaseKey(name), has_force_restore_data_flag);
+        else
+            createDatabase(context, name);
+
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
+    }
+
+    TablesLoader loader{context, std::move(loaded_databases), has_force_restore_data_flag, /* force_attach */ true};
+    loader.loadTables();
+    loader.startupTables();
 }
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)

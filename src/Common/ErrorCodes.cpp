@@ -658,6 +658,7 @@
 \
     M(1101, FDB_EXCEPTION) \
     M(1102, FDB_META_EXCEPTION) \
+    M(1103, UNSUPPORTED_DATABASE_ENGINE) \
     /* See END */
 
 namespace DB
