@@ -3,7 +3,9 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <stack>
 
+#include <Functions/IFunction.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -120,12 +122,88 @@ void ReadFromMemoryStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+ReadFromMemoryStorageStep::FixedColumns ReadFromMemoryStorageStep::makeFixedColumns()
+{
+    FixedColumns fixed_columns;
+    for (const auto * filter_expression : getFilterNodes().nodes)
+    {
+        if (!filter_expression)
+        {
+            continue;
+        }
+
+        std::stack<const ActionsDAG::Node *> stack;
+        stack.push(filter_expression);
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                const auto & func_name = node->function_base->getName();
+                if (func_name == "and")
+                {
+                    for (const auto * arg : node->children)
+                        stack.push(arg);
+                }
+                else if (func_name == "equals")
+                {
+                    const ActionsDAG::Node * maybe_fixed_column = nullptr;
+                    size_t num_constant_columns = 0;
+                    for (const auto & child : node->children)
+                    {
+                        if (child->column)
+                            ++num_constant_columns;
+                        else
+                            maybe_fixed_column = child;
+                    }
+                    if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
+                    {
+                        fixed_columns.insert(maybe_fixed_column);
+                    }
+                }
+            }
+        }
+    }
+    return fixed_columns;
+}
+
+std::shared_ptr<const Blocks> ReadFromMemoryStorageStep::getBlocksWithNecessaryColumns(std::shared_ptr<const Blocks> blocks_ptr)
+{
+    if (!blocks_ptr || blocks_ptr->empty())
+    {
+        return blocks_ptr;
+    }
+
+    Blocks blocks_with_necessary_columns;
+    blocks_with_necessary_columns.reserve(columns_to_read.size());
+
+    for (const auto & block : *blocks_ptr)
+    {
+        Block block_with_necessary_columns;
+
+        for (const auto & column_to_read : columns_to_read)
+        {
+            if (const auto * p = block.findByName(column_to_read); p != nullptr)
+            {
+                block_with_necessary_columns.insert(*p);
+            }
+        }
+        if (block_with_necessary_columns)
+        {
+            blocks_with_necessary_columns.push_back(std::move(block_with_necessary_columns));
+        }
+    }
+    return std::make_shared<const Blocks>(std::move(blocks_with_necessary_columns));
+}
+
 Pipe ReadFromMemoryStorageStep::makePipe()
 {
     storage_snapshot->check(columns_to_read);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
-    auto current_data = snapshot_data.blocks;
+    auto blocks_with_necessary_columns = getBlocksWithNecessaryColumns(snapshot_data.blocks);
 
     if (delay_read_for_global_sub_queries)
     {
@@ -142,13 +220,13 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             storage_snapshot,
             nullptr /* data */,
             nullptr /* parallel execution index */,
-            [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
+            [blocks_with_necessary_columns](std::shared_ptr<const Blocks> & data_to_initialize)
             {
-                data_to_initialize = current_data;
+                data_to_initialize = blocks_with_necessary_columns;
             }));
     }
 
-    size_t size = current_data->size();
+    size_t size = blocks_with_necessary_columns->size();
 
     if (num_streams > size)
         num_streams = size;
@@ -159,7 +237,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index));
+        pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, blocks_with_necessary_columns, parallel_execution_index));
     }
     return Pipe::unitePipes(std::move(pipes));
 }
