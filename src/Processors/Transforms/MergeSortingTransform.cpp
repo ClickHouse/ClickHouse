@@ -333,7 +333,7 @@ void MergeSortingTransform::remerge()
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
 }
 
-ProcessorPtr MergeSortingTransform::getPartialResultProcessor(ProcessorPtr current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+ProcessorPtr MergeSortingTransform::getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
 {
     if (getName() != current_processor->getName() || current_processor.get() != this)
         throw Exception(
@@ -347,7 +347,7 @@ ProcessorPtr MergeSortingTransform::getPartialResultProcessor(ProcessorPtr curre
             static_cast<void*>(current_processor.get()));
 
     const auto & header = inputs.front().getHeader();
-    const auto & merge_sorting_processor = std::static_pointer_cast<MergeSortingTransform>(current_processor);
+    auto merge_sorting_processor = std::dynamic_pointer_cast<MergeSortingTransform>(current_processor);
     return std::make_shared<MergeSortingPartialResultTransform>(header, std::move(merge_sorting_processor), partial_result_limit, partial_result_duration_ms);
 }
 

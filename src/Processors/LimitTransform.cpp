@@ -366,7 +366,7 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
     return true;
 }
 
-ProcessorPtr LimitTransform::getPartialResultProcessor(ProcessorPtr /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+ProcessorPtr LimitTransform::getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
 {
     const auto & header = inputs.front().getHeader();
     return std::make_shared<LimitPartialResultTransform>(header, partial_result_limit, partial_result_duration_ms, limit, offset);

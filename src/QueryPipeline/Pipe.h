@@ -76,8 +76,8 @@ public:
     void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
-    void addPartialResultTransform(ProcessorPtr transform);
-    void addPartialResultSimpleTransform(ProcessorPtr transform, size_t partial_result_port_id);
+    void addPartialResultTransform(const ProcessorPtr & transform);
+    void addPartialResultSimpleTransform(const ProcessorPtr & transform, size_t partial_result_port_id);
     void connectPartialResultPort(OutputPort * partial_result_port, InputPort & partial_result_transform_port);
 
     enum class StreamType

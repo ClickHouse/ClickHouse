@@ -75,7 +75,7 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
     }
 }
 
-ProcessorPtr LimitsCheckingTransform::getPartialResultProcessor(ProcessorPtr /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+ProcessorPtr LimitsCheckingTransform::getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
 {
     const auto & header = inputs.front().getHeader();
     return std::make_shared<PartialResultTransform>(header, partial_result_limit, partial_result_duration_ms);
