@@ -8249,7 +8249,7 @@ void StorageReplicatedMergeTree::lockSharedData(
     {
         String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
 
-        LOG_TRACE(log, "Trying to create zookeeper persistent lock {}", zookeeper_node);
+        LOG_TRACE(log, "Trying to create zookeeper persistent lock {} with hardlinks [{}]", zookeeper_node, fmt::join(hardlinks, ", "));
 
         createZeroCopyLockNode(
             zookeeper, zookeeper_node, zkutil::CreateMode::Persistent,
@@ -8362,7 +8362,7 @@ namespace
 /// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this part.
 /// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
 /// still need parent part.
-std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
 {
     NameSet files_not_to_remove;
 
@@ -8404,14 +8404,39 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
             /// Get hardlinked files
             String files_not_to_remove_str;
             Coordination::Error code;
-            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
+            zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, &code);
             if (code != Coordination::Error::ZOK)
+            {
                 LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
+                return {true, std::nullopt};
+            }
 
             if (!files_not_to_remove_str.empty())
             {
                 boost::split(files_not_to_remove, files_not_to_remove_str, boost::is_any_of("\n "));
                 LOG_TRACE(log, "Found files not to remove from parent part {}: [{}]", part_candidate_info_str, fmt::join(files_not_to_remove, ", "));
+            }
+            else
+            {
+                std::vector<std::string> children;
+                code = zookeeper_ptr->tryGetChildren(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, children);
+                if (code != Coordination::Error::ZOK)
+                {
+                    LOG_TRACE(log, "Cannot get parent locks in ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
+                    return {true, std::nullopt};
+                }
+
+                if (children.size() > 1 || children.size() == 1 && children[0] != ZeroCopyLock::ZERO_COPY_LOCK_NAME)
+                {
+                    LOG_TRACE(log, "No files not to remove found for part {} from parent {}", part_info_str, part_candidate_info_str);
+                }
+                else
+                {
+                    /// The case when part is actually removed, but some stale replica trying to execute merge/mutation.
+                    /// We shouldn't use the part to check hardlinked blobs, it just doesn't exist.
+                    LOG_TRACE(log, "Part {} is not parent (only merge/mutation locks exist), refusing to use as parent", part_candidate_info_str);
+                    continue;
+                }
             }
 
             return {true, files_not_to_remove};
@@ -8448,6 +8473,12 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
         auto [has_parent, parent_not_to_remove] = getParentLockedBlobs(
             zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_info, data_format_version, logger);
+        if (has_parent && parent_not_to_remove == std::nullopt)
+        {
+            LOG_TRACE(logger, "Failed to get mutation parent on {} for part {}, refusing to remove blobs", zookeeper_part_replica_node, part_name);
+            return {false, {}};
+        }
+
         files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
         String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
@@ -8527,7 +8558,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
             if (error_code == Coordination::Error::ZOK)
             {
-                LOG_TRACE(logger, "Removed last parent zookeeper lock {} for part {} (part is finally unlocked)", zookeeper_part_uniq_node, part_name);
+                LOG_TRACE(logger, "Removed last parent zookeeper lock {} for part {} (part is finally unlocked)", zookeeper_part_node, part_name);
             }
             else if (error_code == Coordination::Error::ZNOTEMPTY)
             {
