@@ -603,7 +603,12 @@ namespace
         for (size_t i = 0; i < rows; ++i)
         {
             if (has_null_map && (*null_map)[i])
+            {
+                /// nulls are not inserted into hash table,
+                /// keep them for RIGHT and FULL joins
+                is_inserted = true;
                 continue;
+            }
 
             /// Check condition for right table from ON section
             if (join_mask && !(*join_mask)[i])
@@ -861,6 +866,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block_, bool check_limits)
 
             if (!multiple_disjuncts && !is_inserted)
             {
+                LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->blocks_allocated_size -= stored_block->allocatedBytes();
                 data->blocks.pop_back();
             }
