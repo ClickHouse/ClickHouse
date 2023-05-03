@@ -669,11 +669,15 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, object_size}},
         read_settings,
-        context->getFilesystemCacheLog());
+        /* cache_log */nullptr);
+
+    auto modified_settings{read_settings};
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     auto async_reader = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(
-        pool_reader, read_settings, std::move(s3_impl),
+        pool_reader, modified_settings, std::move(s3_impl),
         context->getAsyncReadCounters(), context->getFilesystemReadPrefetchesLog());
 
     async_reader->setReadUntilEnd();

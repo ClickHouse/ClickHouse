@@ -107,8 +107,6 @@ IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, 
     file_offset_of_buffer_end = offset;
     bytes_to_ignore = ignore;
 
-    assert(!bytes_to_ignore || initialized());
-
     auto result = nextImpl();
 
     if (result)
