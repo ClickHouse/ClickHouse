@@ -46,7 +46,6 @@ private:
 
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
-    const bool has_throttling;
 };
 
 }

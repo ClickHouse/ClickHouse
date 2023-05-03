@@ -12,6 +12,7 @@ BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & root_pa
     : BackupReaderDefault(&Poco::Logger::get("BackupReaderDisk"), context_)
     , disk(disk_)
     , root_path(root_path_)
+    , data_source_description(disk->getDataSourceDescription())
 {
 }
 
@@ -35,12 +36,18 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & fi
 void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                       DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
-    if ((write_mode == WriteMode::Rewrite) && !encrypted_in_backup)
+    /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
+    bool has_throttling = disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
+    if (!has_throttling && (write_mode == WriteMode::Rewrite) && !encrypted_in_backup)
     {
-        /// Use more optimal way.
-        LOG_TRACE(log, "Copying file {} from disk {} to disk {}", path_in_backup, disk->getName(), destination_disk->getName());
-        disk->copyFile(root_path / path_in_backup, *destination_disk, destination_path, write_settings);
-        return;
+        auto destination_data_source_description = destination_disk->getDataSourceDescription();
+        if (destination_data_source_description.sameKind(data_source_description) && !data_source_description.is_encrypted)
+        {
+            /// Use more optimal way.
+            LOG_TRACE(log, "Copying file {} from disk {} to disk {}", path_in_backup, disk->getName(), destination_disk->getName());
+            disk->copyFile(root_path / path_in_backup, *destination_disk, destination_path, write_settings);
+            return; /// copied!
+        }
     }
 
     /// Fallback to copy through buffers.
@@ -52,6 +59,7 @@ BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_pa
     : BackupWriterDefault(&Poco::Logger::get("BackupWriterDisk"), context_)
     , disk(disk_)
     , root_path(root_path_)
+    , data_source_description(disk->getDataSourceDescription())
 {
 }
 
@@ -97,14 +105,21 @@ void BackupWriterDisk::removeFiles(const Strings & file_names)
 void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                         bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
-    if (!copy_encrypted && !start_pos && (length == src_disk->getFileSize(src_path)))
+    /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
+    bool has_throttling = src_disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
+    if (!has_throttling && !start_pos && !copy_encrypted)
     {
-        /// Use more optimal way.
-        LOG_TRACE(log, "Copying file {} from disk {} to disk {}", src_path, src_disk->getName(), disk->getName());
-        auto dest_file_path = root_path / path_in_backup;
-        disk->createDirectories(dest_file_path.parent_path());
-        src_disk->copyFile(src_path, *disk, dest_file_path, write_settings);
-        return;
+        auto source_data_source_description = src_disk->getDataSourceDescription();
+        if (source_data_source_description.sameKind(data_source_description) && !source_data_source_description.is_encrypted
+            && (length == src_disk->getFileSize(src_path)))
+        {
+            /// Use more optimal way.
+            LOG_TRACE(log, "Copying file {} from disk {} to disk {}", src_path, src_disk->getName(), disk->getName());
+            auto dest_file_path = root_path / path_in_backup;
+            disk->createDirectories(dest_file_path.parent_path());
+            src_disk->copyFile(src_path, *disk, dest_file_path, write_settings);
+            return; /// copied!
+        }
     }
 
     /// Fallback to copy through buffers.
