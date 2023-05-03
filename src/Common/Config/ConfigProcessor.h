@@ -17,6 +17,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
 
 namespace Poco { class Logger; }
 
@@ -31,6 +32,9 @@ namespace DB
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
+using ConfigParamKV = FoundationDB::Proto::MetadataConfigParam;
+using ConfigParamKVPtr = std::shared_ptr<FoundationDB::Proto::MetadataConfigParam>;
+using ConfigParamKVs = std::vector<std::unique_ptr<ConfigParamKV>>;
 
 class ConfigProcessor
 {
@@ -63,7 +67,8 @@ public:
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
-        const zkutil::EventPtr & zk_changed_event = nullptr);
+        const zkutil::EventPtr & zk_changed_event = nullptr,
+        bool * has_fdb = nullptr);
 
 
     /// loadConfig* functions apply processConfig and create Poco::Util::XMLConfiguration.
@@ -76,9 +81,14 @@ public:
         ConfigurationPtr configuration;
         bool has_zk_includes;
         bool loaded_from_preprocessed;
+        bool has_fdb;
+        bool fdb_loaded_from_preprocessed;
         XMLDocumentPtr preprocessed_xml;
         std::string config_path;
     };
+
+    /// push config to FoundationDB
+    void pushConfigToFoundationDB(LoadedConfig & loaded_config, std::shared_ptr<MetadataStoreFoundationDB> meta_store);
 
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
     /// If it is the case, set has_zk_includes to true and don't write config-preprocessed.xml,
@@ -91,6 +101,11 @@ public:
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
+
+    void loadConfigWithFDB(
+        LoadedConfig & loaded_config,
+        std::shared_ptr<MetadataStoreFoundationDB> meta_store,
+        bool fdb_changed, bool fallback_to_preprocessed);
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
@@ -108,6 +123,8 @@ public:
 
     static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
 
+    static void transformXMLToKV(const Poco::XML::Node * root, std::string prefix, ConfigParamKVs & kvs, bool flag, size_t index = -1);
+
 private:
     const std::string path;
     std::string preprocessed_path;
@@ -121,6 +138,8 @@ private:
 
     Poco::AutoPtr<Poco::XML::NamePool> name_pool;
     Poco::XML::DOMParser dom_parser;
+
+    static ConfigParamKVs  config_kv;
 
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 

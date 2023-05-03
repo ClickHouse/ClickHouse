@@ -1,14 +1,14 @@
 <clickhouse>
     <zookeeper>
-        <node index="1">
+        <node>
             <host>zoo1</host>
             <port>2181</port>
         </node>
-        <node index="2">
+        <node>
             <host>zoo2</host>
             <port>2181</port>
         </node>
-        <node index="3">
+        <node>
             <host>zoo3</host>
             <port>2181</port>
         </node>

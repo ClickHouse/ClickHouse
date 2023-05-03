@@ -225,6 +225,7 @@ struct ContextSharedPart : boost::noncopyable
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
     ConfigurationPtr config;                                /// Global configuration settings.
+    XMLDocumentPtr xml_config;                            /// Configuration settings from local files and fdb/zk.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
 
@@ -995,6 +996,15 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
 }
 
+void Context::setXmlConfig(const XMLDocumentPtr & config)
+{
+    auto lock = getLock();
+    shared->xml_config = config;
+}
+const XMLDocumentPtr & Context::getXmlConfigRef() const
+{
+    return shared->xml_config;
+}
 
 AccessControl & Context::getAccessControl()
 {

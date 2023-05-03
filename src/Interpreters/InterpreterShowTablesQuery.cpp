@@ -57,6 +57,27 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
+    /// SHOW CONFIGS
+    if (query.configs)
+    {
+        WriteBufferFromOwnString rewritten_query;
+        rewritten_query << "SELECT * FROM system.configs";
+
+        if (!query.like.empty())
+        {
+            rewritten_query
+                << " WHERE name "
+                << (query.not_like ? "NOT " : "")
+                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                << DB::quote << query.like;
+        }
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length;
+
+        return rewritten_query.str();
+    }
+
     /// SHOW CLUSTER/CLUSTERS
     if (query.clusters)
     {

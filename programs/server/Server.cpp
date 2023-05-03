@@ -63,6 +63,7 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/XMLConfiguration.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -844,6 +845,24 @@ try
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
+    std::shared_ptr<MetadataStoreFoundationDB> meta_store = nullptr;
+    if (loaded_config.has_fdb)
+    {
+        meta_store = global_context->getMetadataStoreFoundationDB();
+        auto old_configuration = loaded_config.configuration;
+        ConfigProcessor config_processor(config_path);
+        if (meta_store->isFirstBoot())
+        {
+            meta_store->clearAllConfigParamMeta();
+            config_processor.pushConfigToFoundationDB(loaded_config, meta_store);
+        }
+        else
+            config_processor.loadConfigWithFDB(
+                loaded_config, meta_store, /* fdb_changed = */ true, /* fallback_to_preprocessed = */ true);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
+        config().removeConfiguration(old_configuration.get());
+        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
@@ -1209,8 +1228,9 @@ try
         include_from_path,
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
+        std::move(meta_store),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr config, XMLDocumentPtr xml_config, bool initial_loading)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
@@ -1260,12 +1280,12 @@ try
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(*config, logger());
+            global_context->setXmlConfig(xml_config);
             global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
-
-            global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            /// global_context->loadOrReloadDictionaries(*config);
+            /// global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
 
             global_context->setRemoteHostFilter(*config);
 

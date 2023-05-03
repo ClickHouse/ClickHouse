@@ -27,7 +27,7 @@ class Context;
 class ConfigReloader
 {
 public:
-    using Updater = std::function<void(ConfigurationPtr, bool)>;
+    using Updater = std::function<void(ConfigurationPtr, XMLDocumentPtr, bool)>;
 
     /** include_from_path is usually /etc/metrika.xml (i.e. value of <include_from> tag)
       */
@@ -36,6 +36,7 @@ public:
             const std::string & include_from_path,
             const std::string & preprocessed_dir,
             zkutil::ZooKeeperNodeCache && zk_node_cache,
+            std::shared_ptr<MetadataStoreFoundationDB> meta_store,
             const zkutil::EventPtr & zk_changed_event,
             Updater && updater,
             bool already_loaded);
@@ -50,12 +51,12 @@ public:
     void stop();
 
     /// Reload immediately. For SYSTEM RELOAD CONFIG query.
-    void reload() { reloadIfNewer(/* force */ true, /* throw_on_error */ true, /* fallback_to_preprocessed */ false, /* initial_loading = */ false); }
+    void reload() { reloadIfNewer(/* force */ true, /* throw_on_error */ true, /* fallback_to_preprocessed */ false, /* initial_loading = */ false, /* fdb_changed = */ true); }
 
 private:
     void run();
 
-    void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading);
+    void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading, bool fdb_changed);
 
     struct FileWithTimestamp;
 
@@ -78,7 +79,9 @@ private:
     std::string preprocessed_dir;
     FilesChangesTracker files;
     zkutil::ZooKeeperNodeCache zk_node_cache;
+    std::shared_ptr<MetadataStoreFoundationDB> meta_store;
     bool need_reload_from_zk = false;
+    bool need_reload_from_fdb = false;
     zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;

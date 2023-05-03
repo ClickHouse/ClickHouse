@@ -6,7 +6,10 @@
 #include "ConfigProcessor.h"
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
-
+#include <Interpreters/Context.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
 
 namespace fs = std::filesystem;
 
@@ -18,17 +21,19 @@ ConfigReloader::ConfigReloader(
         const std::string & include_from_path_,
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
+        std::shared_ptr<MetadataStoreFoundationDB> meta_store_,
         const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_,
         bool already_loaded)
     : path(path_), include_from_path(include_from_path_)
     , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))
+    , meta_store(std::move(meta_store_))
     , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
 {
     if (!already_loaded)
-        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
+        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true, /* fdb_changed = */ true);
 }
 
 
@@ -81,7 +86,7 @@ void ConfigReloader::run()
             if (quit)
                 return;
 
-            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false, /* initial_loading = */ false);
+            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false, /* initial_loading = */ false, /* fdb_changed = */ false);
         }
         catch (...)
         {
@@ -91,12 +96,12 @@ void ConfigReloader::run()
     }
 }
 
-void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading)
+void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading, bool fdb_changed)
 {
     std::lock_guard lock(reload_mutex);
 
     FilesChangesTracker new_files = getNewFileList();
-    if (force || need_reload_from_zk || new_files.isDifferOrNewerThan(files))
+    if (force || fdb_changed || need_reload_from_zk || need_reload_from_fdb || new_files.isDifferOrNewerThan(files))
     {
         ConfigProcessor config_processor(path);
         ConfigProcessor::LoadedConfig loaded_config;
@@ -109,6 +114,20 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
                     zk_node_cache, zk_changed_event, fallback_to_preprocessed);
+            if (loaded_config.has_fdb)
+                config_processor.loadConfigWithFDB(
+                    loaded_config, meta_store, fdb_changed, fallback_to_preprocessed);
+
+        }
+        catch (const DB::FoundationDBException & e)
+        {
+            need_reload_from_fdb = true;
+
+            if (throw_on_error)
+                throw;
+
+            tryLogCurrentException(log, "FoundationDB error when loading config from '" + path + "'. Error:" + e.displayText());
+            return;
         }
         catch (const Coordination::Exception & e)
         {
@@ -141,12 +160,14 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             files = std::move(new_files);
             need_reload_from_zk = false;
         }
+        if (!loaded_config.fdb_loaded_from_preprocessed)
+            need_reload_from_fdb = false;
 
         LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", path);
 
         try
         {
-            updater(loaded_config.configuration, initial_loading);
+            updater(loaded_config.configuration, loaded_config.preprocessed_xml, initial_loading);
         }
         catch (...)
         {

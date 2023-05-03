@@ -1,0 +1,5 @@
+<clickhouse>
+  <foundationdb>
+    <meta_node_id>dev</meta_node_id>
+  </foundationdb>
+</clickhouse>
