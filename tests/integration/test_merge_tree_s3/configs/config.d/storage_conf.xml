@@ -22,6 +22,14 @@
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
             </no_delete_objects_s3>
+            <broken_s3>
+                <type>s3</type>
+                <endpoint>http://resolver:8083/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <s3_retry_attempts>1</s3_retry_attempts>
+                <connect_timeout_ms>20000</connect_timeout_ms>
+            </broken_s3>
             <hdd>
                 <type>local</type>
                 <path>/</path>
@@ -100,6 +108,23 @@
                     </main>
                 </volumes>
             </s3_cache_r>
+            <external_broken_s3>
+                 <volumes>
+                    <main>
+                        <disk>hdd</disk>
+                    </main>
+                    <external>
+                        <disk>broken_s3</disk>
+                    </external>
+                </volumes>
+            </external_broken_s3>
+            <broken_s3>
+                 <volumes>
+                    <main>
+                        <disk>broken_s3</disk>
+                    </main>
+                </volumes>
+            </broken_s3>
         </policies>
     </storage_configuration>
 
