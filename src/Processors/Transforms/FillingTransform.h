@@ -16,7 +16,11 @@ namespace DB
 class FillingTransform : public ISimpleTransform
 {
 public:
-    FillingTransform(const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_);
+    FillingTransform(
+        const Block & header_,
+        const SortDescription & sort_description_,
+        const SortDescription & fill_description_,
+        InterpolateDescriptionPtr interpolate_description_);
 
     String getName() const override { return "FillingTransform"; }
 
@@ -25,7 +29,7 @@ public:
     static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
-    void transform(Chunk & Chunk) override;
+    void transform(Chunk & chunk) override;
 
 private:
     void saveLastRow(const MutableColumns & result_columns);
@@ -46,7 +50,9 @@ private:
         const Columns & input_columns,
         MutableColumns & result_columns);
 
-    const SortDescription sort_description; /// Contains only columns with WITH FILL.
+    const SortDescription sort_description;
+    const SortDescription fill_description; /// Contains only columns with WITH FILL.
+    SortDescription sort_prefix;
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
 
     FillingRow filling_row; /// Current row, which is used to fill gaps.
@@ -56,6 +62,7 @@ private:
     Positions fill_column_positions;
     Positions interpolate_column_positions;
     Positions other_column_positions;
+    Positions sort_prefix_positions;
     std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     Columns last_row;

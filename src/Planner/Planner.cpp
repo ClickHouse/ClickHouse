@@ -622,7 +622,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         interpolate_description = std::make_shared<InterpolateDescription>(std::move(interpolate_actions_dag), empty_aliases);
     }
 
-    auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_description), interpolate_description);
+    auto filling_step = std::make_unique<FillingStep>(
+        query_plan.getCurrentDataStream(), std::move(sort_description), std::move(fill_description), interpolate_description);
     query_plan.addStep(std::move(filling_step));
 }
 
@@ -1432,7 +1433,8 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_node);
         }
 
-        addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
+        if (query_node.hasOrderBy())
+            addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
         bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 

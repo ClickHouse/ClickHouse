@@ -67,12 +67,14 @@ bool FillingRow::next(const FillingRow & to_row)
     ///  we need to generate rows up to 'fill_to' value.
     for (size_t i = row_size - 1; i > pos; --i)
     {
-        if (getFillDescription(i).fill_to.isNull() || row[i].isNull())
+        auto & fill_column_desc = getFillDescription(i);
+
+        if (fill_column_desc.fill_to.isNull() || row[i].isNull())
             continue;
 
-        auto next_value = row[i];
-        getFillDescription(i).step_func(next_value);
-        if (less(next_value, getFillDescription(i).fill_to, getDirection(i)))
+        Field next_value = row[i];
+        fill_column_desc.step_func(next_value);
+        if (less(next_value, fill_column_desc.fill_to, getDirection(i)))
         {
             row[i] = next_value;
             initFromDefaults(i + 1);

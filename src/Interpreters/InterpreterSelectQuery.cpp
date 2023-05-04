@@ -2995,20 +2995,21 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
-        SortDescription order_descr = getSortDescription(query, context);
-        SortDescription fill_descr;
-        for (auto & desc : order_descr)
+        SortDescription sort_description = getSortDescription(query, context);
+        SortDescription fill_description;
+        for (auto & desc : sort_description)
         {
             if (desc.with_fill)
-                fill_descr.push_back(desc);
+                fill_description.push_back(desc);
         }
 
-        if (fill_descr.empty())
+        if (fill_description.empty())
             return;
 
         InterpolateDescriptionPtr interpolate_descr =
             getInterpolateDescription(query, source_header, result_header, syntax_analyzer_result->aliases, context);
-        auto filling_step = std::make_unique<FillingStep>(query_plan.getCurrentDataStream(), std::move(fill_descr), interpolate_descr);
+        auto filling_step = std::make_unique<FillingStep>(
+            query_plan.getCurrentDataStream(), std::move(sort_description), std::move(fill_description), interpolate_descr);
         query_plan.addStep(std::move(filling_step));
     }
 }
