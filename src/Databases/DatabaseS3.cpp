@@ -20,8 +20,6 @@
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 
-#include "DatabaseS3.h"
-
 namespace fs = std::filesystem;
 
 namespace DB
