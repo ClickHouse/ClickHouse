@@ -256,6 +256,9 @@ namespace
                 if (!query.cluster.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can't grant on cluster using config file");
 
+                if (query.grantees)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can't specify grantees in query using config file");
+
                 for (auto & element : query.access_rights_elements)
                 {
                     if (query.is_revoke)
