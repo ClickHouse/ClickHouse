@@ -96,6 +96,7 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
 
 std::unique_ptr<Client> Client::create(
     size_t max_redirects_,
+    ServerSideEncryptionKMSConfig sse_kms_config_,
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
     const Aws::Client::ClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
@@ -103,7 +104,7 @@ std::unique_ptr<Client> Client::create(
 {
     verifyClientConfiguration(client_configuration);
     return std::unique_ptr<Client>(
-        new Client(max_redirects_, credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
 }
 
 std::unique_ptr<Client> Client::create(const Client & other)
@@ -113,18 +114,24 @@ std::unique_ptr<Client> Client::create(const Client & other)
 
 Client::Client(
     size_t max_redirects_,
+    ServerSideEncryptionKMSConfig sse_kms_config_,
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
     const Aws::Client::ClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
     bool use_virtual_addressing)
     : Aws::S3::S3Client(credentials_provider, client_configuration, std::move(sign_payloads), use_virtual_addressing)
     , max_redirects(max_redirects_)
+    , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
     endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
-    detect_region = explicit_region == Aws::Region::AWS_GLOBAL && initial_endpoint.find(".amazonaws.com") != std::string::npos;
+
+    provider_type = getProviderTypeFromURL(initial_endpoint);
+    LOG_TRACE(log, "Provider type: {}", toString(provider_type));
+
+    detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
@@ -135,7 +142,9 @@ Client::Client(const Client & other)
     , initial_endpoint(other.initial_endpoint)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
+    , provider_type(other.provider_type)
     , max_redirects(other.max_redirects)
+    , sse_kms_config(other.sse_kms_config)
     , log(&Poco::Logger::get("S3Client"))
 {
     cache = std::make_shared<ClientCache>(*other.cache);
@@ -173,9 +182,33 @@ void Client::insertRegionOverride(const std::string & bucket, const std::string 
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
 
+template <typename RequestType>
+void Client::setKMSHeaders(RequestType & request) const
+{
+    // Don't do anything unless a key ID was specified
+    if (sse_kms_config.key_id)
+    {
+        request.SetServerSideEncryption(Model::ServerSideEncryption::aws_kms);
+        // If the key ID was specified but is empty, treat it as using the AWS managed key and omit the header
+        if (!sse_kms_config.key_id->empty())
+            request.SetSSEKMSKeyId(*sse_kms_config.key_id);
+        if (sse_kms_config.encryption_context)
+            request.SetSSEKMSEncryptionContext(*sse_kms_config.encryption_context);
+        if (sse_kms_config.bucket_key_enabled)
+            request.SetBucketKeyEnabled(*sse_kms_config.bucket_key_enabled);
+    }
+}
+
+// Explicitly instantiate this method only for the request types that support KMS headers
+template void Client::setKMSHeaders<CreateMultipartUploadRequest>(CreateMultipartUploadRequest & request) const;
+template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & request) const;
+template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
+
 Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
+
+    request.setProviderType(provider_type);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -315,6 +348,7 @@ std::invoke_result_t<RequestFn, RequestType>
 Client::doRequest(const RequestType & request, RequestFn request_fn) const
 {
     const auto & bucket = request.GetBucket();
+    request.setProviderType(provider_type);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -387,6 +421,11 @@ Client::doRequest(const RequestType & request, RequestFn request_fn) const
     throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
 }
 
+ProviderType Client::getProviderType() const
+{
+    return provider_type;
+}
+
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
@@ -395,7 +434,6 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
 
     if (!force_detect && !detect_region)
         return "";
-
 
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
@@ -562,10 +600,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & access_key_id,
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
+    ServerSideEncryptionKMSConfig sse_kms_config,
     HTTPHeaderEntries headers,
-    bool use_environment_credentials,
-    bool use_insecure_imds_request,
-    uint64_t expiration_window_seconds)
+    CredentialsConfiguration credentials_configuration)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -586,19 +623,19 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
     }
 
+    // These will be added after request signing
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
     auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
             client_configuration,
             std::move(credentials),
-            use_environment_credentials,
-            use_insecure_imds_request,
-            expiration_window_seconds);
+            credentials_configuration);
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(
         client_configuration.s3_max_redirects,
+        std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,

@@ -4,7 +4,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -23,10 +22,10 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 #include <atomic>
 #include <chrono>
+
 
 namespace ProfileEvents
 {
@@ -195,6 +194,7 @@ Chain buildPushingToViewsChain(
     const ASTPtr & query_ptr,
     bool no_destination,
     ThreadStatusesHolderPtr thread_status_holder,
+    ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms,
     const Block & live_view_header)
 {
@@ -269,12 +269,6 @@ Chain buildPushingToViewsChain(
 
         ASTPtr query;
         Chain out;
-
-        ThreadGroupStatusPtr running_group;
-        if (current_thread && current_thread->getThreadGroup())
-            running_group = current_thread->getThreadGroup();
-        else
-            running_group = std::make_shared<ThreadGroupStatus>();
 
         /// We are creating a ThreadStatus per view to store its metrics individually
         /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
@@ -351,18 +345,24 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms, storage_header);
+                view, view_metadata_snapshot, insert_context, ASTPtr(),
+                /* no_destination= */ true,
+                thread_status_holder, running_group, view_counter_ms, storage_header);
         }
         else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
         {
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(), true, thread_status_holder, view_counter_ms);
+                view, view_metadata_snapshot, insert_context, ASTPtr(),
+                /* no_destination= */ true,
+                thread_status_holder, running_group, view_counter_ms);
         }
         else
             out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(), false, thread_status_holder, view_counter_ms);
+                view, view_metadata_snapshot, insert_context, ASTPtr(),
+                /* no_destination= */ false,
+                thread_status_holder, running_group, view_counter_ms);
 
         views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),

@@ -11,6 +11,7 @@ import shutil
 import sys
 import os
 import os.path
+import platform
 import signal
 import re
 import copy
@@ -77,7 +78,7 @@ def trim_for_log(s):
         return s
     lines = s.splitlines()
     if len(lines) > 10000:
-        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" +  "-" * 40
+        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
         return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
@@ -95,7 +96,13 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5, retry_error_codes=False
+    base_args,
+    query,
+    timeout=30,
+    settings=None,
+    default_format=None,
+    max_http_retries=5,
+    retry_error_codes=False,
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -138,7 +145,7 @@ def clickhouse_execute_http(
         except Exception as ex:
             if i == max_http_retries - 1:
                 raise ex
-
+            client.close()
             sleep(i + 1)
 
     if res.status != 200:
@@ -146,12 +153,36 @@ def clickhouse_execute_http(
 
     return data
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5, retry_error_codes=False):
-    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries, retry_error_codes=retry_error_codes).strip()
+
+def clickhouse_execute(
+    base_args,
+    query,
+    timeout=30,
+    settings=None,
+    max_http_retries=5,
+    retry_error_codes=False,
+):
+    return clickhouse_execute_http(
+        base_args,
+        query,
+        timeout,
+        settings,
+        max_http_retries=max_http_retries,
+        retry_error_codes=retry_error_codes,
+    ).strip()
 
 
-def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
-    data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow", max_http_retries=max_http_retries)
+def clickhouse_execute_json(
+    base_args, query, timeout=60, settings=None, max_http_retries=5
+):
+    data = clickhouse_execute_http(
+        base_args,
+        query,
+        timeout,
+        settings,
+        "JSONEachRow",
+        max_http_retries=max_http_retries,
+    )
     if not data:
         return None
     rows = []
@@ -248,7 +279,7 @@ def need_retry(args, stdout, stderr, total_time):
 def get_processlist_with_stacktraces(args):
     try:
         if args.replicated_database:
-            return clickhouse_execute_json(
+            return clickhouse_execute(
                 args,
                 """
             SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
@@ -265,14 +296,14 @@ def get_processlist_with_stacktraces(args):
                 WHERE query NOT LIKE '%system.processes%'
                 GROUP BY p.*
             ))
-            ORDER BY elapsed DESC
+            ORDER BY elapsed DESC FORMAT Vertical
             """,
                 settings={
                     "allow_introspection_functions": 1,
                 },
             )
         else:
-            return clickhouse_execute_json(
+            return clickhouse_execute(
                 args,
                 """
             SELECT
@@ -285,7 +316,7 @@ def get_processlist_with_stacktraces(args):
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
             GROUP BY p.*
-            ORDER BY elapsed DESC
+            ORDER BY elapsed DESC FORMAT Vertical
             """,
                 settings={
                     "allow_introspection_functions": 1,
@@ -512,11 +543,32 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
+            # Allow to use uring only when running on Linux
             ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
+            if platform.system().lower() == "linux"
+            else ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
+            0, 1
+        ),
+        "filesystem_prefetch_max_memory_usage": lambda: random.choice(
+            ["32Mi", "64Mi", "128Mi"]
+        ),
+        "filesystem_prefetches_limit": lambda: random.choice(
+            [0, 10]
+        ),  # 0 means unlimited (but anyway limited by prefetch_max_memory_usage)
+        "filesystem_prefetch_min_bytes_for_single_read_task": lambda: random.choice(
+            ["1Mi", "8Mi", "16Mi"]
+        ),
+        "filesystem_prefetch_step_marks": lambda: random.choice(
+            [0, 50]
+        ),  # 0 means 'auto'
+        "filesystem_prefetch_step_bytes": lambda: random.choice(
+            [0, "100Mi"]
+        ),  # 0 means 'auto'
         "compile_expressions": lambda: random.randint(0, 1),
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
@@ -531,10 +583,17 @@ class SettingsRandomizer:
     }
 
     @staticmethod
-    def get_random_settings():
+    def get_random_settings(args):
         random_settings = []
+        is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
-            random_settings.append(f"{setting}={generator()}")
+            if (
+                is_debug
+                and setting == "allow_prefetched_read_pool_for_remote_filesystem"
+            ):
+                random_settings.append(f"{setting}=0")
+            else:
+                random_settings.append(f"{setting}={generator()}")
         return random_settings
 
 
@@ -552,6 +611,9 @@ class MergeTreeSettingsRandomizer:
         "vertical_merge_algorithm_min_columns_to_activate": threshold_generator(
             0.4, 0.4, 1, 100
         ),
+        "allow_vertical_merges_from_compact_to_wide_parts": lambda: random.randint(
+            0, 1
+        ),
         "min_merge_bytes_to_use_direct_io": threshold_generator(
             0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -559,6 +621,10 @@ class MergeTreeSettingsRandomizer:
         "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
         "index_granularity": lambda: random.randint(1, 65536),
         "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
+        "compress_marks": lambda: random.randint(0, 1),
+        "compress_primary_key": lambda: random.randint(0, 1),
+        "marks_compress_block_size": lambda: random.randint(8000, 100000),
+        "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
     }
 
     @staticmethod
@@ -648,7 +714,9 @@ class TestCase:
 
             clickhouse_execute(
                 args,
-                "CREATE DATABASE IF NOT EXISTS " + database + get_db_engine(testcase_args, database),
+                "CREATE DATABASE IF NOT EXISTS "
+                + database
+                + get_db_engine(testcase_args, database),
                 settings=get_create_database_settings(args, testcase_args),
             )
 
@@ -760,7 +828,7 @@ class TestCase:
         )
 
         if self.randomize_settings:
-            self.random_settings = SettingsRandomizer.get_random_settings()
+            self.random_settings = SettingsRandomizer.get_random_settings(args)
 
         if self.randomize_merge_tree_settings:
             self.merge_tree_random_settings = (
@@ -831,7 +899,8 @@ class TestCase:
 
         # TODO: remove checking "no-upgrade-check" after 23.1
         elif args.upgrade_check and (
-                "no-upgrade-check" in tags or "no-upgrade-check" in tags):
+            "no-upgrade-check" in tags or "no-upgrade-check" in tags
+        ):
             return FailureReason.NO_UPGRADE_CHECK
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
@@ -1051,7 +1120,11 @@ class TestCase:
     @staticmethod
     def send_test_name_failed(suite: str, case: str):
         pid = os.getpid()
-        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'", retry_error_codes=True)
+        clickhouse_execute(
+            args,
+            f"SELECT 'Running test {suite}/{case} from pid={pid}'",
+            retry_error_codes=True,
+        )
 
     def run_single_test(
         self, server_logs_level, client_options
@@ -1076,10 +1149,7 @@ class TestCase:
 
         # >> append to stderr (but not stdout since it is not used there),
         # because there are also output of per test database creation
-        if not args.database:
-            pattern = "{test} > {stdout} 2> {stderr}"
-        else:
-            pattern = "{test} > {stdout} 2> {stderr}"
+        pattern = "{test} > {stdout} 2> {stderr}"
 
         if self.ext == ".sql":
             pattern = (
@@ -2019,12 +2089,42 @@ def reportLogStats(args):
               'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
               'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
               'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', 'Query was cancelled',
-              'Table {} already exists', '{}%', 'Cancelled merging parts', 'All replicas are lost',
+              'Table {} already exists.', '{}%', 'Cancelled merging parts', 'All replicas are lost',
               'Cancelled mutating parts', 'Read object: {}', 'New segment: {}', 'Unknown geometry type {}',
               'Table {} is not replicated', '{} {}.{} already exists', 'Attempt to read after eof',
               'Replica {} already exists', 'Convert overflow', 'key must be a tuple', 'Division by zero',
               'No part {} in committed state', 'Files set to {}', 'Bytes set to {}', 'Sharding key {} is not used',
-              'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow'
+              'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow',
+              'Polygon is not valid: {}', 'Decimal math overflow', '{} only accepts maps', 'Dictionary ({}) not found',
+              'Unknown format {}', 'Invalid IPv4 value', 'Invalid IPv6 value', 'Unknown setting {}',
+              'Unknown table function {}', 'Database {} already exists.', 'Table {} doesn''t exist',
+              'Invalid credentials', 'Part {} already exists', 'Invalid mode: {}', 'Log pulling is cancelled',
+              'JOIN {} cannot get JOIN keys', 'Unknown function {}{}', 'Cannot parse IPv6 {}',
+              'Not found address of host: {}', '{} must contain a tuple', 'Unknown codec family: {}',
+              'Expected const String column', 'Invalid partition format: {}', 'Cannot parse IPv4 {}',
+              'AST is too deep. Maximum: {}', 'Array sizes are too large: {}', 'Unable to connect to HDFS: {}',
+              'Shutdown is called for table', 'File is not inside {}',
+              'Table {} doesn''t exist', 'Database {} doesn''t exist', 'Table {}.{} doesn''t exist',
+              'File {} doesn''t exist', 'No such attribute ''{}''', 'User name ''{}'' is reserved',
+              'Could not find table: {}', 'Detached part "{}" not found', 'Unknown data type family: {}',
+              'Unknown input format {}', 'Cannot UPDATE key column {}', 'Substitution {} is not set',
+              'Cannot OPTIMIZE table: {}', 'User name is empty', 'Table name is empty', 'AST is too big. Maximum: {}',
+              'Unsupported cipher mode', 'Unknown explain kind ''{}''', 'Table {} was suddenly removed',
+              'No cache found by path: {}', 'No such column {} in table {}', 'There is no port named {}',
+              'Function {} cannot resize {}', 'Function {} is not parametric', 'Unknown key attribute ''{}''',
+              'Transaction was cancelled', 'Unknown parent id {}', 'Session {} not found', 'Mutation {} was killed',
+              'Table {}.{} doesn''t exist.', 'Table is not initialized yet', '{} is not an identifier',
+              'Column ''{}'' already exists', 'No macro {} in config', 'Invalid origin H3 index: {}',
+              'Invalid session timeout: ''{}''', 'Tuple cannot be empty', 'Database name is empty',
+              'Table {} is not a Dictionary', 'Expected function, got: {}', 'Unknown identifier: ''{}''',
+              'Failed to {} input ''{}''', '{}.{} is not a VIEW', 'Cannot convert NULL to {}', 'Dictionary {} doesn''t exist',
+              'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
+              'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
+              'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
+              'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
+              'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
+              'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
+              'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
@@ -2032,7 +2132,7 @@ def reportLogStats(args):
             AND (length(message_format_string) < 16
                 OR (length(message_format_string) < 30 AND message ilike '%DB::Exception%'))
             AND message_format_string NOT IN known_short_messages
-        GROUP BY message_format_string ORDER BY c DESC LIMIT 30 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")
@@ -2163,7 +2263,7 @@ def main(args):
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(json.dumps(processlist, indent=4))
+            print(processlist)
             print(get_transactions_list(args))
 
             print_stacktraces()
@@ -2220,6 +2320,7 @@ def find_binary(name):
 
     raise Exception(f"{name} was not found in PATH")
 
+
 def find_clickhouse_command(binary, command):
     symlink = binary + "-" + command
     if os.access(symlink, os.X_OK):
@@ -2227,6 +2328,7 @@ def find_clickhouse_command(binary, command):
 
     # To avoid requiring symlinks (in case you download binary from CI)
     return binary + " " + command
+
 
 def get_additional_client_options(args):
     if args.client_option:
@@ -2569,7 +2671,9 @@ if __name__ == "__main__":
             "WARNING: --extract_from_config option is deprecated and will be removed the the future",
             file=sys.stderr,
         )
-    args.extract_from_config = find_clickhouse_command(args.binary, "extract-from-config")
+    args.extract_from_config = find_clickhouse_command(
+        args.binary, "extract-from-config"
+    )
 
     if args.configclient:
         args.client += " --config-file=" + args.configclient

@@ -128,7 +128,7 @@ SELECT
     user_agent,
     sum(pages_visited)
 FROM visits
-GROUP BY user_id
+GROUP BY user_agent
 ```
 
 As mentioned before, we could review the `system.query_log` table. On the `projections` field we have the name of the projection used or empty if none has been used:

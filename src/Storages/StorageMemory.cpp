@@ -9,15 +9,13 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
 #include <DataTypes/ObjectUtils.h>
-#include <Columns/ColumnObject.h>
 
 #include <IO/WriteHelpers.h>
-#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Common/FileChecker.h>
@@ -43,85 +41,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
 }
-
-
-class MemorySource : public ISource
-{
-    using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
-public:
-
-    MemorySource(
-        Names column_names_,
-        const StorageSnapshotPtr & storage_snapshot,
-        std::shared_ptr<const Blocks> data_,
-        std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
-        InitializerFunc initializer_func_ = {})
-        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
-        , column_names_and_types(storage_snapshot->getColumnsByNames(
-            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
-        , data(data_)
-        , parallel_execution_index(parallel_execution_index_)
-        , initializer_func(std::move(initializer_func_))
-    {
-    }
-
-    String getName() const override { return "Memory"; }
-
-protected:
-    Chunk generate() override
-    {
-        if (initializer_func)
-        {
-            initializer_func(data);
-            initializer_func = {};
-        }
-
-        size_t current_index = getAndIncrementExecutionIndex();
-
-        if (!data || current_index >= data->size())
-        {
-            return {};
-        }
-
-        const Block & src = (*data)[current_index];
-
-        Columns columns;
-        size_t num_columns = column_names_and_types.size();
-        columns.reserve(num_columns);
-
-        auto name_and_type = column_names_and_types.begin();
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            columns.emplace_back(tryGetColumnFromBlock(src, *name_and_type));
-            ++name_and_type;
-        }
-
-        fillMissingColumns(columns, src.rows(), column_names_and_types, column_names_and_types, {}, nullptr);
-        assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
-
-        return Chunk(std::move(columns), src.rows());
-    }
-
-private:
-    size_t getAndIncrementExecutionIndex()
-    {
-        if (parallel_execution_index)
-        {
-            return (*parallel_execution_index)++;
-        }
-        else
-        {
-            return execution_index++;
-        }
-    }
-
-    const NamesAndTypesList column_names_and_types;
-    size_t execution_index = 0;
-    std::shared_ptr<const Blocks> data;
-    std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
-    InitializerFunc initializer_func;
-};
-
 
 class MemorySink : public SinkToStorage
 {
@@ -193,83 +112,6 @@ private:
 };
 
 
-class ReadFromMemoryStorageStep final : public ISourceStep
-{
-public:
-    explicit ReadFromMemoryStorageStep(Pipe pipe_) :
-        ISourceStep(DataStream{.header = pipe_.getHeader()}),
-        pipe(std::move(pipe_))
-    {
-    }
-
-    ReadFromMemoryStorageStep() = delete;
-    ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep &) = delete;
-    ReadFromMemoryStorageStep & operator=(const ReadFromMemoryStorageStep &) = delete;
-
-    ReadFromMemoryStorageStep(ReadFromMemoryStorageStep &&) = default;
-    ReadFromMemoryStorageStep & operator=(ReadFromMemoryStorageStep &&) = default;
-
-    String getName() const override { return name; }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        // use move - make sure that the call will only be made once.
-        pipeline.init(std::move(pipe));
-    }
-
-    static Pipe makePipe(const Names & columns_to_read_,
-                         const StorageSnapshotPtr & storage_snapshot_,
-                         size_t num_streams_,
-                         const bool delay_read_for_global_subqueries_)
-    {
-        storage_snapshot_->check(columns_to_read_);
-
-        const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot_->data);
-        auto current_data = snapshot_data.blocks;
-
-        if (delay_read_for_global_subqueries_)
-        {
-            /// Note: for global subquery we use single source.
-            /// Mainly, the reason is that at this point table is empty,
-            /// and we don't know the number of blocks are going to be inserted into it.
-            ///
-            /// It may seem to be not optimal, but actually data from such table is used to fill
-            /// set for IN or hash table for JOIN, which can't be done concurrently.
-            /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
-
-            return Pipe(std::make_shared<MemorySource>(
-                columns_to_read_,
-                storage_snapshot_,
-                nullptr /* data */,
-                nullptr /* parallel execution index */,
-                [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
-                {
-                    data_to_initialize = current_data;
-                }));
-        }
-
-        size_t size = current_data->size();
-
-        if (num_streams_ > size)
-            num_streams_ = size;
-
-        Pipes pipes;
-
-        auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
-
-        for (size_t stream = 0; stream < num_streams_; ++stream)
-        {
-            pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read_, storage_snapshot_, current_data, parallel_execution_index));
-        }
-        return Pipe::unitePipes(std::move(pipes));
-    }
-
-private:
-    static constexpr auto name = "ReadFromMemoryStorage";
-    Pipe pipe;
-};
-
-
 StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
@@ -302,7 +144,8 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
-Pipe StorageMemory::read(
+void StorageMemory::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
@@ -311,29 +154,7 @@ Pipe StorageMemory::read(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    return ReadFromMemoryStorageStep::makePipe(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
-}
-
-void StorageMemory::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    // @TODO it looks like IStorage::readFromPipe. different only step's type.
-    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    if (pipe.empty())
-    {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
-        return;
-    }
-    auto read_step = std::make_unique<ReadFromMemoryStorageStep>(std::move(pipe));
-    query_plan.addStep(std::move(read_step));
+    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries));
 }
 
 
@@ -448,12 +269,14 @@ namespace
     {
     public:
         MemoryBackup(
+            ContextPtr context_,
             const StorageMetadataPtr & metadata_snapshot_,
             const std::shared_ptr<const Blocks> blocks_,
             const String & data_path_in_backup,
             const DiskPtr & temp_disk_,
             UInt64 max_compress_block_size_)
-            : metadata_snapshot(metadata_snapshot_)
+            : context(context_)
+            , metadata_snapshot(metadata_snapshot_)
             , blocks(blocks_)
             , temp_disk(temp_disk_)
             , max_compress_block_size(max_compress_block_size_)
@@ -484,6 +307,8 @@ namespace
 
         BackupEntries generate() override
         {
+            ReadSettings read_settings = context->getBackupReadSettings();
+
             BackupEntries backup_entries;
             backup_entries.resize(file_paths.size());
 
@@ -500,7 +325,7 @@ namespace
                 NativeWriter block_out{data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
-                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path)};
+                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path, read_settings)};
             }
 
             /// Writing index.mrk
@@ -509,7 +334,7 @@ namespace
                 auto index_mrk_out_compressed = temp_disk->writeFile(index_mrk_path);
                 CompressedWriteBuffer index_mrk_out{*index_mrk_out_compressed};
                 index.write(index_mrk_out);
-                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path)};
+                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path, read_settings)};
             }
 
             /// Writing columns.txt
@@ -547,6 +372,7 @@ namespace
             return backup_entries;
         }
 
+        ContextPtr context;
         StorageMetadataPtr metadata_snapshot;
         std::shared_ptr<const Blocks> blocks;
         DiskPtr temp_disk;
@@ -559,11 +385,15 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto temp_disk = backup_entries_collector.getContext()->getTemporaryVolume()->getDisk(0);
+    auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
-    backup_entries_collector.addBackupEntries(
-        std::make_shared<MemoryBackup>(getInMemoryMetadataPtr(), data.get(), data_path_in_backup, temp_disk, max_compress_block_size)
-            ->getBackupEntries());
+    backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
+        backup_entries_collector.getContext(),
+        getInMemoryMetadataPtr(),
+        data.get(),
+        data_path_in_backup,
+        temp_disk,
+        max_compress_block_size)->getBackupEntries());
 }
 
 void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
@@ -575,7 +405,7 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && total_size_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    auto temp_disk = restorer.getContext()->getTemporaryVolume()->getDisk(0);
+    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
 
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup, temp_disk]

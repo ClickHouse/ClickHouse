@@ -19,7 +19,6 @@
 #include <utility>
 #include <memory>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -157,6 +156,13 @@ private:
     /// Original name -> name. Only renamed columns.
     std::unordered_map<String, String> renames;
 
+    /// Map column name to actual key name that can be an alias.
+    /// Example: SELECT r.id as rid from t JOIN r ON t.id = rid
+    /// Map: r.id -> rid
+    /// Required only for StorageJoin to map join keys back to original column names.
+    /// (workaround for ExpressionAnalyzer)
+    std::unordered_map<String, String> right_key_aliases;
+
     VolumePtr tmp_volume;
 
     std::shared_ptr<StorageJoin> right_storage_join;
@@ -209,7 +215,7 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getTemporaryVolume() { return tmp_volume; }
+    VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
@@ -334,6 +340,7 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+    String renamedRightColumnNameWithAlias(const String & name) const;
     void setRename(const String & from, const String & to);
 
     void resetKeys();

@@ -85,6 +85,7 @@ def test_create_and_drop():
 
 def test_create_and_replace():
     node1.query("CREATE FUNCTION f1 AS (x, y) -> x + y")
+    assert node1.query("SELECT f1(12, 3)") == "15\n"
 
     expected_error = "User-defined function 'f1' already exists"
     assert expected_error in node1.query_and_get_error(
@@ -253,3 +254,27 @@ def test_reload_zookeeper():
     # switch to the original version of zookeeper config
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
     revert_zookeeper_config()
+
+
+# Start without ZooKeeper must be possible, user-defined functions will be loaded after connecting to ZooKeeper.
+def test_start_without_zookeeper():
+    node2.stop_clickhouse()
+
+    node1.query("CREATE FUNCTION f1 AS (x, y) -> x + y")
+
+    cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+    node2.start_clickhouse()
+
+    assert (
+        node2.query("SELECT create_query FROM system.functions WHERE name='f1'") == ""
+    )
+
+    cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+    wait_zookeeper_node_to_start(["zoo1", "zoo2", "zoo3"])
+
+    assert_eq_with_retry(
+        node2,
+        "SELECT create_query FROM system.functions WHERE name='f1'",
+        "CREATE FUNCTION f1 AS (x, y) -> (x + y)\n",
+    )
+    node1.query("DROP FUNCTION f1")

@@ -33,6 +33,7 @@
 #include <Schema.hh>
 
 #include <re2/re2.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -110,6 +111,19 @@ AvroSerializer::SchemaWithSerializeFn createDecimalSchemaWithSerializeFn(const D
     }};
 }
 
+template <typename BigIntegerType>
+AvroSerializer::SchemaWithSerializeFn createBigIntegerSchemaWithSerializeFn(const DataTypePtr & data_type, size_t type_name_increment)
+{
+    auto schema = avro::FixedSchema(sizeof(BigIntegerType), boost::algorithm::to_lower_copy(data_type->getName()) + std::to_string(type_name_increment));
+    return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+    {
+        const auto & col = assert_cast<const ColumnVector<BigIntegerType> &>(column);
+        WriteBufferFromOwnString buf;
+        writeBinary(col.getElement(row_num), buf);
+        encoder.encodeFixed(reinterpret_cast<const uint8_t *>(buf.str().data()), buf.str().size());
+    }};
+}
+
 }
 
 AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name)
@@ -180,6 +194,14 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 encoder.encodeDouble(assert_cast<const ColumnFloat64 &>(column).getElement(row_num));
             }};
+        case TypeIndex::Int128:
+            return createBigIntegerSchemaWithSerializeFn<Int128>(data_type, type_name_increment);
+        case TypeIndex::UInt128:
+            return createBigIntegerSchemaWithSerializeFn<UInt128>(data_type, type_name_increment);
+        case TypeIndex::Int256:
+            return createBigIntegerSchemaWithSerializeFn<Int256>(data_type, type_name_increment);
+        case TypeIndex::UInt256:
+            return createBigIntegerSchemaWithSerializeFn<UInt256>(data_type, type_name_increment);
         case TypeIndex::Date:
         {
             auto schema = avro::IntSchema();
@@ -210,7 +232,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             else if (provided_type.getScale() == 6)
                 schema.root()->setLogicalType(avro::LogicalType(avro::LogicalType::TIMESTAMP_MICROS));
             else
-                break;
+                return createDecimalSchemaWithSerializeFn<DataTypeDateTime64>(data_type);
 
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
@@ -386,7 +408,9 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             const auto & nested_names = tuple_type.getElementNames();
             std::vector<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
-            auto schema = avro::RecordSchema(column_name);
+            /// We should use unique names for records. Otherwise avro will reuse schema of this record later
+            /// for all records with the same name.
+            auto schema = avro::RecordSchema(column_name + "_" + std::to_string(type_name_increment));
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
                 auto nested_mapping = createSchemaWithSerializeFn(nested_types[i], type_name_increment, nested_names[i]);
@@ -406,13 +430,13 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         {
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             const auto & keys_type = map_type.getKeyType();
-            if (!isStringOrFixedString(keys_type))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro Maps support only keys with type String, got {}", keys_type->getName());
+            auto keys_serialization = keys_type->getDefaultSerialization();
 
-            auto keys_serializer = [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            auto keys_serializer = [keys_serialization, this](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const std::string_view & s = column.getDataAt(row_num).toView();
-                encoder.encodeString(std::string(s));
+                WriteBufferFromOwnString buf;
+                keys_serialization->serializeText(column, row_num, buf, settings);
+                encoder.encodeString(buf.str());
             };
 
             const auto & values_type = map_type.getValueType();
@@ -450,8 +474,8 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
 }
 
 
-AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_)
-    : traits(std::move(traits_))
+AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_, const FormatSettings & settings_)
+    : traits(std::move(traits_)), settings(settings_)
 {
     avro::RecordSchema record_schema("row");
 
@@ -507,7 +531,7 @@ AvroRowOutputFormat::AvroRowOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_)
     , settings(settings_)
-    , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings))
+    , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
 {
 }
 
@@ -541,6 +565,11 @@ void AvroRowOutputFormat::write(const Columns & columns, size_t row_num)
 
 void AvroRowOutputFormat::finalizeImpl()
 {
+    /// If file writer weren't created, we should create it here to write file prefix/suffix
+    /// even without actual data so the file will be valid Avro file
+    if (!file_writer_ptr)
+        createFileWriter();
+
     file_writer_ptr->close();
 }
 

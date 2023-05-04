@@ -15,11 +15,11 @@ s3Cluster(cluster_name, source, [,access_key_id, secret_access_key] [,format] [,
 
 **Arguments**
 
--   `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
--   `source` — URL to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
--   `access_key_id` and `secret_access_key` — Keys that specify credentials to use with given endpoint. Optional.
--   `format` — The [format](../../interfaces/formats.md#formats) of the file.
--   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
+- `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
+- `source` — URL to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
+- `access_key_id` and `secret_access_key` — Keys that specify credentials to use with given endpoint. Optional.
+- `format` — The [format](../../interfaces/formats.md#formats) of the file.
+- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Returned value**
 
@@ -42,11 +42,11 @@ SELECT * FROM s3Cluster(
 
 Count the total amount of rows in all files in the cluster `cluster_simple`:
 
-:::warning    
+:::tip    
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
 **See Also**
 
--   [S3 engine](../../engines/table-engines/integrations/s3.md)
--   [s3 table function](../../sql-reference/table-functions/s3.md)
+- [S3 engine](../../engines/table-engines/integrations/s3.md)
+- [s3 table function](../../sql-reference/table-functions/s3.md)
