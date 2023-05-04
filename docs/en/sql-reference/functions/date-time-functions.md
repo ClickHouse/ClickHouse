@@ -289,7 +289,7 @@ Aliases: `DAYOFMONTH`, `DAY`.
 
 Converts a date or date with time to the number of the day in the week as UInt8 value.
 
-The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is ommited, the default mode is 0. The time zone of the date can be specified as the third argument.
+The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is omitted, the default mode is 0. The time zone of the date can be specified as the third argument.
 
 | Mode | First day of week | Range                                          |
 |------|-------------------|------------------------------------------------|
