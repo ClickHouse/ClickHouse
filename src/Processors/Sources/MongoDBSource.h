@@ -6,6 +6,8 @@
 #include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
 
+#include <Core/Field.h>
+
 
 namespace Poco
 {
