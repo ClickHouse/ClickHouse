@@ -8263,6 +8263,29 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
+    if (part.getState() == MergeTreeDataPartState::Temporary && part.is_temp)
+    {
+        /// Part {} is in temporary state and has it_temp flag. it means that it is under construction.
+        /// That path hasn't been added to active set, no commit procedure has begun.
+        /// The metadata files is about to delete now.
+        /// However remote data might be shared and has to be unlocked in the keper before removing.
+        /// Actually there is some cases when it is clear without keper:
+        /// When the part has been fetched then remote data has to be  preserved, part doesn't own it.
+        /// When the part has been merged then remote data can to removed, part own it.
+        /// In opposition, when the part has been mutated in generally it hardlinks the files.
+        /// Therefore remote data is shared, it has to be unlocked in the keper.
+
+        std::lock_guard lock(currently_fetching_parts_mutex);
+        if (!currently_fetching_parts.contains(part.name))
+        {
+            LOG_TRACE(log, "Part {} is temporary result of failed fetch."
+                           "Remove it without unlocking shared state preserving shared data.", part.name);
+            return std::make_pair(false, NameSet{});
+        }
+
+        /// The other cases (merge/mutate) is harder to distinguish. Fall back to unlock part in the keper.
+    }
+
     if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
     {
         if (zookeeper->exists(zookeeper_path))

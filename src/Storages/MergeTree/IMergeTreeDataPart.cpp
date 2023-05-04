@@ -1684,12 +1684,6 @@ void IMergeTreeDataPart::remove()
             return CanRemoveDescription{.can_remove_anything = true, .files_not_to_remove = {} };
         }
 
-        if (getState() == MergeTreeDataPartState::Temporary)
-        {
-            LOG_TRACE(storage.log, "Part {} in temporary state can be removed without unlocking shared state", name);
-            return CanRemoveDescription{.can_remove_anything = false, .files_not_to_remove = {} };
-        }
-
         auto [can_remove, files_not_to_remove] = canRemovePart();
         if (!can_remove)
             LOG_TRACE(storage.log, "Blobs of part {} cannot be removed", name);
