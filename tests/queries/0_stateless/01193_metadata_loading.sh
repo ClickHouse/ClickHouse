@@ -13,6 +13,7 @@ threads=10
 count_multiplier=1
 max_time_ms=1000
 
+# In case of s390x, the query execution time seems to be approximately ~1.1 to ~1.2 secs. So, to match the query execution time, set max_time_ms=1500
 if [[ $(uname -a | grep s390x) ]]; then
     max_time_ms=1500
 fi
