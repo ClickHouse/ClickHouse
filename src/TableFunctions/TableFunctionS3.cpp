@@ -215,6 +215,48 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 }
 
 
+class TableFunctionGCS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "gcs";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "GCS"; }
+};
+
+class TableFunctionCOS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "cosn";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "COSN"; }
+};
+
+class TableFunctionOSS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "oss";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "OSS"; }
+};
+
+
+void registerTableFunctionGCS(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionGCS>();
+}
+
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionS3>();
@@ -228,11 +270,6 @@ void registerTableFunctionCOS(TableFunctionFactory & factory)
 void registerTableFunctionOSS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionOSS>();
-}
-
-void registerTableFunctionGCS(TableFunctionFactory & factory)
-{
-    factory.registerFunction<TableFunctionGCS>();
 }
 
 }
