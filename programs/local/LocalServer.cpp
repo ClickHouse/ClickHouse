@@ -1,5 +1,8 @@
 #include "LocalServer.h"
 
+#include <sys/resource.h>
+#include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
@@ -23,12 +26,13 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
@@ -37,7 +41,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -132,7 +135,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionUtils::loadFromConfig(config());
+    OutdatedPartsLoadingThreadPool::initialize(
+        config().getUInt("max_outdated_parts_loading_thread_pool_size", 16),
+        0, // We don't need any threads one all the parts will be loaded
+        config().getUInt("outdated_part_loading_thread_pool_queue_size", 10000));
 }
 
 
@@ -182,9 +188,9 @@ void LocalServer::tryInitPath()
             parent_folder = std::filesystem::temp_directory_path();
 
         }
-        catch (const fs::filesystem_error& e)
+        catch (const fs::filesystem_error & e)
         {
-            // tmp folder don't exists? misconfiguration? chroot?
+            // The tmp folder doesn't exist? Is it a misconfiguration? Or chroot?
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
@@ -223,8 +229,6 @@ void LocalServer::tryInitPath()
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
-
-    NamedCollectionUtils::loadFromSQL(global_context);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
@@ -394,6 +398,21 @@ try
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
+
+    /// Try to increase limit on number of open files.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NOFILE, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur < rlim.rlim_max)
+        {
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
+            int rc = setrlimit(RLIMIT_NOFILE, &rlim);
+            if (rc != 0)
+                std::cerr << fmt::format("Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString()) << '\n';
+        }
+    }
 
 #if defined(FUZZING_MODE)
     static bool first_time = true;
@@ -587,13 +606,13 @@ void LocalServer::processConfig()
     String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+        global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables).
     String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+        global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);

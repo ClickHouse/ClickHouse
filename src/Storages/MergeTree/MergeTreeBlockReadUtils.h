@@ -13,6 +13,7 @@ namespace DB
 
 class MergeTreeData;
 struct MergeTreeReadTask;
+struct MergeTreeReaderSettings;
 struct MergeTreeBlockSizePredictor;
 class IMergeTreeDataPartInfoForReader;
 
@@ -58,14 +59,12 @@ struct MergeTreeReadTask
     const NameSet & column_name_set;
     /// column names to read during PREWHERE and WHERE
     const MergeTreeReadTaskColumns & task_columns;
-    /// should PREWHERE column be returned to requesting side?
-    const bool remove_prewhere_column;
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
     /// Used to save current range processing status
     MergeTreeRangeReader range_reader;
     /// Range readers for multiple filtering steps: row level security, PREWHERE etc.
-    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but noit a vector
+    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but not a vector
     std::deque<MergeTreeRangeReader> pre_range_readers;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
@@ -86,7 +85,6 @@ struct MergeTreeReadTask
         size_t part_index_in_query_,
         const NameSet & column_name_set_,
         const MergeTreeReadTaskColumns & task_columns_,
-        bool remove_prewhere_column_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
         int64_t priority_ = 0,
         std::future<MergeTreeReaderPtr> reader_ = {},
@@ -102,6 +100,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const Names & required_columns,
     const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);
 
 struct MergeTreeBlockSizePredictor

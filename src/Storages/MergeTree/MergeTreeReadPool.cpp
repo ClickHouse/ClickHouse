@@ -1,8 +1,9 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include "Common/Stopwatch.h"
+#include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 
 
@@ -27,6 +28,8 @@ MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
+    const ExpressionActionsSettings & actions_settings_,
+    const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const Names & virtual_column_names_,
     ContextPtr context_,
@@ -36,6 +39,8 @@ MergeTreeReadPool::MergeTreeReadPool(
     , virtual_column_names(virtual_column_names_)
     , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
     , prewhere_info(prewhere_info_)
+    , actions_settings(actions_settings_)
+    , reader_settings(reader_settings_)
     , parts_ranges(std::move(parts_))
     , predict_block_size_bytes(context_->getSettingsRef().preferred_block_size_bytes > 0)
     , do_not_steal_tasks(do_not_steal_tasks_)
@@ -46,7 +51,8 @@ MergeTreeReadPool::MergeTreeReadPool(
     const auto per_part_sum_marks = fillPerPartInfo(
         parts_ranges, storage_snapshot, is_part_on_remote_disk,
         do_not_steal_tasks, predict_block_size_bytes,
-        column_names, virtual_column_names, prewhere_info, per_part_params);
+        column_names, virtual_column_names, prewhere_info,
+        actions_settings, reader_settings, per_part_params);
 
     fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges);
 }
@@ -60,6 +66,8 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
     const Names & column_names,
     const Names & virtual_column_names,
     const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings,
     std::vector<MergeTreeReadPool::PerPartParams> & per_part_params)
 {
     std::vector<size_t> per_part_sum_marks;
@@ -86,7 +94,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         auto task_columns = getReadTaskColumns(
             LoadedMergeTreeDataPartInfoForReader(part.data_part), storage_snapshot,
-            column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
+            column_names, virtual_column_names, prewhere_info, actions_settings, reader_settings, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : IMergeTreeSelectAlgorithm::getSizePredictor(part.data_part, task_columns, sample_block);
@@ -104,7 +112,6 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
     return per_part_sum_marks;
 }
-
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t thread)
 {
@@ -202,7 +209,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t thread)
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query,
         per_part.column_name_set, per_part.task_columns,
-        prewhere_info && prewhere_info->remove_prewhere_column, std::move(curr_task_size_predictor));
+        std::move(curr_task_size_predictor));
 }
 
 Block MergeTreeReadPool::getHeader() const
@@ -453,7 +460,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t thread)
         part.part_index_in_query,
         per_part.column_name_set,
         per_part.task_columns,
-        prewhere_info && prewhere_info->remove_prewhere_column,
         std::move(curr_task_size_predictor));
 }
 

@@ -20,7 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace
@@ -118,7 +118,7 @@ public:
             const auto * rhs_array = assert_cast<const ColumnArray *>(arguments[i].column.get());
 
             if (!lhs_array->hasEqualOffsets(*rhs_array))
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "The argument 1 and argument {} of function {} have different array offsets",
                     i + 1,
                     getName());

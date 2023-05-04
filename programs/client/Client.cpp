@@ -277,11 +277,11 @@ void Client::initialize(Poco::Util::Application & self)
       */
 
     const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT(concurrency-mt-unsafe)
-    if (env_user)
+    if (env_user && !config().has("user"))
         config().setString("user", env_user);
 
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
-    if (env_password)
+    if (env_password && !config().has("password"))
         config().setString("password", env_password);
 
     parseConnectionsCredentials();
@@ -327,7 +327,21 @@ try
         showClientVersion();
     }
 
-    connect();
+    try
+    {
+        connect();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED ||
+            config().has("password") ||
+            config().getBool("ask-password", false) ||
+            !is_interactive)
+            throw;
+
+        config().setBool("ask-password", true);
+        connect();
+    }
 
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))

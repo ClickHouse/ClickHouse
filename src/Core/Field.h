@@ -108,7 +108,8 @@ struct CustomType
     {
         virtual ~CustomTypeImpl() = default;
         virtual const char * getTypeName() const = 0;
-        virtual String toString() const = 0;
+        virtual String toString(bool show_secrets) const = 0;
+        virtual bool isSecret() const = 0;
 
         virtual bool operator < (const CustomTypeImpl &) const = 0;
         virtual bool operator <= (const CustomTypeImpl &) const = 0;
@@ -120,8 +121,9 @@ struct CustomType
     CustomType() = default;
     explicit CustomType(std::shared_ptr<const CustomTypeImpl> impl_) : impl(impl_) {}
 
+    bool isSecret() const { return impl->isSecret(); }
     const char * getTypeName() const { return impl->getTypeName(); }
-    String toString() const { return impl->toString(); }
+    String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
     const CustomTypeImpl & getImpl() { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
@@ -1017,7 +1019,7 @@ struct fmt::formatter<DB::Field>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("Invalid format");
+            throw fmt::format_error("Invalid format");
 
         return it;
     }
@@ -1025,6 +1027,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", toString(x));
+        return fmt::format_to(ctx.out(), "{}", toString(x));
     }
 };

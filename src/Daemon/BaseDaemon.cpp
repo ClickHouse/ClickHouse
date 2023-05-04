@@ -1,6 +1,4 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
@@ -65,7 +63,7 @@
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
-#   pragma GCC diagnostic ignored "-Wunused-macros"
+#   pragma clang diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
@@ -134,6 +132,8 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 }
 
 
+static std::atomic_flag fatal_error_printed;
+
 /** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
 static void signalHandler(int sig, siginfo_t * info, void * context)
@@ -159,7 +159,16 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
+        /// Under MSan full stack unwinding with DWARF info about inline functions takes 101 seconds in one case.
+        for (size_t i = 0; i < 300; ++i)
+        {
+            /// We will synchronize with the thread printing the messages with an atomic variable to finish earlier.
+            if (fatal_error_printed.test())
+                break;
+
+            /// This coarse method of synchronization is perfectly ok for fatal signals.
+            sleepForSeconds(1);
+        }
         call_default_signal_handler(sig);
     }
 
@@ -301,15 +310,13 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = std::string(thread_ptr->getQueryId());
-
-            if (auto thread_group = thread_ptr->getThreadGroup())
-            {
-                query = DB::toOneLineQuery(thread_group->query);
-            }
+            query_id = thread_ptr->getQueryId();
+            query = thread_ptr->getQueryForLog();
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
+            {
                 DB::CurrentThread::attachInternalTextLogsQueue(logs_queue, DB::LogsLevel::trace);
+            }
         }
 
         std::string signal_description = "Unknown signal";
@@ -361,7 +368,7 @@ private:
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, fmt::runtime(s)); });
+        stack_trace.toStringEveryLine([&](std::string_view s) { LOG_FATAL(log, fmt::runtime(s)); });
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
@@ -407,6 +414,8 @@ private:
         /// When everything is done, we will try to send these error messages to client.
         if (thread_ptr)
             thread_ptr->onFatalError();
+
+        fatal_error_printed.test_and_set();
     }
 };
 
@@ -1116,15 +1125,20 @@ void BaseDaemon::setupWatchdog()
             logger().information("Child process no longer exists.");
             _exit(WEXITSTATUS(status));
         }
-        else if (WIFEXITED(status))
+
+        if (WIFEXITED(status))
         {
             logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
             _exit(WEXITSTATUS(status));
         }
 
+        int exit_code;
+
         if (WIFSIGNALED(status))
         {
             int sig = WTERMSIG(status);
+
+            exit_code = 128 + sig;
 
             if (sig == SIGKILL)
             {
@@ -1137,12 +1151,14 @@ void BaseDaemon::setupWatchdog()
                 logger().fatal(fmt::format("Child process was terminated by signal {}.", sig));
 
                 if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-                    _exit(128 + sig);
+                    _exit(exit_code);
             }
         }
         else
         {
+            // According to POSIX, this should never happen.
             logger().fatal("Child process was not exited normally by unknown reason.");
+            exit_code = 42;
         }
 
         if (restart)
@@ -1152,7 +1168,7 @@ void BaseDaemon::setupWatchdog()
                 memcpy(argv0, original_process_name.c_str(), original_process_name.size());
         }
         else
-            _exit(WEXITSTATUS(status));
+            _exit(exit_code);
     }
 }
 

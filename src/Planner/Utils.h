@@ -17,6 +17,8 @@
 
 #include <Planner/PlannerContext.h>
 
+#include <Storages/SelectQueryInfo.h>
+
 namespace DB
 {
 
@@ -63,7 +65,25 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 /// Returns `and` function node that has condition nodes as its arguments
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
 
-/// Try extract boolean constant from condition node
-std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
+/// Replace tables nodes and table function nodes with dummy table nodes
+using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
+QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
+    const ContextPtr & context,
+    ResultReplacementMap * result_replacement_map = nullptr);
+
+/// Build subquery to read specified columns from table expression
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context);
+
+SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
+
+/// Build filter for specific table_expression
+FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter = {});
+
+ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
 }

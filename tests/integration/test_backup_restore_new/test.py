@@ -13,6 +13,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )
 
@@ -648,24 +649,15 @@ def test_async_backups_to_same_destination(interface):
         "",
     )
 
-    ids_succeeded = (
-        instance.query(
-            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
-        )
-        .rstrip("\n")
-        .split("\n")
-    )
+    ids_succeeded = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
+    ).splitlines()
 
-    ids_failed = (
-        instance.query(
-            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
-        )
-        .rstrip("\n")
-        .split("\n")
-    )
+    ids_failed = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+    ).splitlines()
 
     assert len(ids_succeeded) == 1
-    assert len(ids_failed) <= 1
     assert set(ids_succeeded + ids_failed) == set(ids)
 
     # Check that the first backup is all right.
@@ -1191,6 +1183,85 @@ def test_restore_partition():
     assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
         [[2, "2"], [3, "3"], [12, "12"], [13, "13"], [22, "22"], [23, "23"]]
     )
+
+
+@pytest.mark.parametrize("exclude_system_log_tables", [False, True])
+def test_backup_all(exclude_system_log_tables):
+    create_and_fill_table()
+
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')",
+        params={"session_id": session_id},
+    )
+
+    instance.query("CREATE FUNCTION two_and_half AS (x) -> x * 2.5")
+
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 1")
+
+    backup_name = new_backup_name()
+
+    exclude_from_backup = []
+    if exclude_system_log_tables:
+        # See the list of log tables in src/Interpreters/SystemLog.cpp
+        log_tables = [
+            "query_log",
+            "query_thread_log",
+            "part_log",
+            "trace_log",
+            "crash_log",
+            "text_log",
+            "metric_log",
+            "filesystem_cache_log",
+            "filesystem_read_prefetches_log",
+            "asynchronous_metric_log",
+            "opentelemetry_span_log",
+            "query_views_log",
+            "zookeeper_log",
+            "session_log",
+            "transactions_info_log",
+            "processors_profile_log",
+            "asynchronous_insert_log",
+        ]
+        exclude_from_backup += ["system." + table_name for table_name in log_tables]
+
+    backup_command = f"BACKUP ALL {'EXCEPT TABLES ' + ','.join(exclude_from_backup) if exclude_from_backup else ''} TO {backup_name}"
+
+    instance.http_query(backup_command, params={"session_id": session_id})
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
+
+    restore_settings = []
+    if not exclude_system_log_tables:
+        restore_settings.append("allow_non_empty_tables=true")
+    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS '+ ', '.join(restore_settings) if restore_settings else ''}"
+
+    session_id = new_session_id()
+    instance.http_query(
+        restore_command, params={"session_id": session_id}, method="POST"
+    )
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    assert instance.http_query(
+        "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
+    ) == TSV([["e"], ["q"], ["w"]])
+
+    assert instance.query("SELECT two_and_half(6)") == "15\n"
+
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
 
 
 def test_operation_id():

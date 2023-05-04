@@ -25,7 +25,6 @@ namespace Poco
 {
 
 
-#if   defined(__GNUC__) || defined(__clang__)
 //
 // Unix/GCC/Clang
 //
@@ -46,8 +45,6 @@ typedef unsigned long UInt64;
 typedef signed long long Int64;
 typedef unsigned long long UInt64;
 #        endif
-#    define POCO_HAVE_INT64 1
-#endif
 
 
 } // namespace Poco

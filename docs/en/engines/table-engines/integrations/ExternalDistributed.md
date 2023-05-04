@@ -22,17 +22,17 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 
 The table structure can differ from the original table structure:
 
--   Column names should be the same as in the original table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the original table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+- Column names should be the same as in the original table, but you can use just some of these columns and in any order.
+- Column types may differ from those in the original table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 
--   `engine` — The table engine `MySQL` or `PostgreSQL`.
--   `host:port` — MySQL or PostgreSQL server address.
--   `database` — Remote database name.
--   `table` — Remote table name.
--   `user` — User name.
--   `password` — User password.
+- `engine` — The table engine `MySQL` or `PostgreSQL`.
+- `host:port` — MySQL or PostgreSQL server address.
+- `database` — Remote database name.
+- `table` — Remote table name.
+- `user` — User name.
+- `password` — User password.
 
 ## Implementation Details {#implementation-details}
 
@@ -48,6 +48,6 @@ You can specify any number of shards and any number of replicas for each shard.
 
 **See Also**
 
--   [MySQL table engine](../../../engines/table-engines/integrations/mysql.md)
--   [PostgreSQL table engine](../../../engines/table-engines/integrations/postgresql.md)
--   [Distributed table engine](../../../engines/table-engines/special/distributed.md)
+- [MySQL table engine](../../../engines/table-engines/integrations/mysql.md)
+- [PostgreSQL table engine](../../../engines/table-engines/integrations/postgresql.md)
+- [Distributed table engine](../../../engines/table-engines/special/distributed.md)

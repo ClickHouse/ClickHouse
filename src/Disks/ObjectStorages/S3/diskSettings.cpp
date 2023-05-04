@@ -13,6 +13,7 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
+#include <IO/S3/Credentials.h>
 
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
@@ -127,7 +128,7 @@ std::unique_ptr<S3::Client> getClient(
     if (uri.key.back() != '/')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 
-    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
+    client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 1000);
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
     client_configuration.endpointOverride = uri.endpoint;
@@ -151,8 +152,13 @@ std::unique_ptr<S3::Client> getClient(
         config.getString(config_prefix + ".secret_access_key", ""),
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
         {},
-        config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-        config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
+        S3::CredentialsConfiguration
+        {
+            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", true)),
+            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)),
+            config.getUInt64(config_prefix + ".expiration_window_seconds", config.getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
+            config.getBool(config_prefix + ".no_sign_request", config.getBool("s3.no_sign_request", false))
+        });
 }
 
 }

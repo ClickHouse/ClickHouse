@@ -321,6 +321,11 @@ ReturnType parseDateTimeBestEffortImpl(
                             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits after hour and minute: {}", num_digits);
                     }
                 }
+                else if (checkChar(',', in))
+                {
+                    if (month && !day_of_month)
+                        day_of_month = hour_or_day_of_month_or_month;
+                }
                 else if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                 {
                     if (day_of_month)

@@ -3,7 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ReadFromStorageProgress.h>
 
@@ -34,6 +34,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ResizeProcessor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -368,8 +369,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         if (paths.empty())
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Cannot get table structure from file, because no files match specified name");
 
-        auto source = StorageDistributedDirectoryMonitor::createSourceFromFile(paths[0]);
-        return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
+        return ColumnsDescription(DistributedAsyncInsertSource(paths[0]).getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
@@ -597,7 +597,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
+                        pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -701,7 +701,7 @@ Pipe StorageFile::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    const size_t max_num_streams)
 {
     if (use_table_fd)
     {
@@ -732,7 +732,8 @@ Pipe StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    if (num_streams > paths.size())
+    size_t num_streams = max_num_streams;
+    if (max_num_streams > paths.size())
         num_streams = paths.size();
 
     Pipes pipes;

@@ -1,3 +1,5 @@
+set optimize_group_by_function_keys=0;
+
 SELECT
     number,
     grouping(number, number % 2, number % 3) AS gr

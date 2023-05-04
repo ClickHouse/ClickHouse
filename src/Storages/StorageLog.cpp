@@ -118,7 +118,7 @@ private:
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, file_size - offset, false);
+                limited.emplace(*plain, file_size - offset, /* trow_exception */ false, /* exact_limit */ std::optional<size_t>());
                 compressed.emplace(*limited);
             }
             else
@@ -926,7 +926,10 @@ std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
 
 void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
+    auto local_context = backup_entries_collector.getContext();
+    ReadSettings read_settings = local_context->getBackupReadSettings();
+
+    auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
@@ -951,7 +954,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         backup_entries_collector.addBackupEntry(
             data_path_in_backup_fs / data_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
+                disk, hardlink_file_path, read_settings, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
     }
 
     /// __marks.mrk
@@ -964,7 +967,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         backup_entries_collector.addBackupEntry(
             data_path_in_backup_fs / marks_file_name,
             std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
+                disk, hardlink_file_path, read_settings, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
@@ -1027,11 +1030,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto in = backup_entry->getReadBuffer();
-            auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
-            copyData(*in, *out);
-            out->finalize();
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append);
         }
 
         if (use_marks_file)
@@ -1062,8 +1061,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
                 old_num_rows[i] = num_marks ? data_files[i].marks[num_marks - 1].rows : 0;
             }
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto marks_rb = backup_entry->getReadBuffer();
+            auto marks_rb = backup->readFile(file_path_in_backup);
 
             for (size_t i = 0; i != num_extra_marks; ++i)
             {

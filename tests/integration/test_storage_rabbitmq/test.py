@@ -1034,8 +1034,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_num_consumers = 2,
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -1045,8 +1044,6 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'over',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
@@ -1087,6 +1084,9 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
+    for thread in threads:
+        thread.join()
+
     while True:
         result = instance.query("SELECT count() FROM test.view_overload")
         expected = messages_num * threads_num
@@ -1097,15 +1097,12 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload;
-        DROP TABLE test.view_overload;
-        DROP TABLE test.rabbitmq_consume;
-        DROP TABLE test.rabbitmq_overload;
+        DROP TABLE test.consumer_overload NO DELAY;
+        DROP TABLE test.view_overload NO DELAY;
+        DROP TABLE test.rabbitmq_consume NO DELAY;
+        DROP TABLE test.rabbitmq_overload NO DELAY;
     """
     )
-
-    for thread in threads:
-        thread.join()
 
     assert (
         int(result) == messages_num * threads_num
@@ -2677,7 +2674,7 @@ def test_rabbitmq_issue_30691(rabbitmq_cluster):
 def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+        CREATE TABLE test.drop_mv (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
@@ -2696,7 +2693,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
+            SELECT * FROM test.drop_mv;
     """
     )
 
@@ -2713,15 +2710,15 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
 
-    start = time.time()
-    while time.time() - start < 30:
+    while True:
         res = instance.query("SELECT COUNT(*) FROM test.view")
-        if "20" == res:
+        print(f"Current count (1): {res}")
+        if int(res) == 20:
             break
         else:
             logging.debug(f"Number of rows in test.view: {res}")
 
-    instance.query("DROP VIEW test.consumer")
+    instance.query("DROP VIEW test.consumer SYNC")
     for i in range(20, 40):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
@@ -2730,7 +2727,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
+            SELECT * FROM test.drop_mv;
     """
     )
     for i in range(40, 50):
@@ -2739,11 +2736,13 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         )
 
     while True:
-        result = instance.query("SELECT * FROM test.view ORDER BY key")
-        if rabbitmq_check_result(result):
+        result = instance.query("SELECT count() FROM test.view")
+        print(f"Current count (2): {result}")
+        if int(result) == 50:
             break
         time.sleep(1)
 
+    result = instance.query("SELECT * FROM test.view ORDER BY key")
     rabbitmq_check_result(result, True)
 
     instance.query("DROP VIEW test.consumer NO DELAY")
@@ -2757,10 +2756,11 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     count = 0
     start = time.time()
     while time.time() - start < 30:
-        count = int(instance.query("SELECT count() FROM test.rabbitmq"))
+        count = int(instance.query("SELECT count() FROM test.drop_mv"))
         if count:
             break
 
+    instance.query("DROP TABLE test.drop_mv")
     assert count > 0
 
 
@@ -2867,7 +2867,6 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
 
 
 def test_rabbitmq_msgpack(rabbitmq_cluster):
-
     instance.query(
         """
         drop table if exists rabbit_in;
@@ -2911,7 +2910,6 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
 
 
 def test_rabbitmq_address(rabbitmq_cluster):
-
     instance2.query(
         """
         drop table if exists rabbit_in;
@@ -3246,7 +3244,6 @@ def test_block_based_formats_2(rabbitmq_cluster):
         "ORC",
         "JSONCompactColumns",
     ]:
-
         print(format_name)
 
         instance.query(
