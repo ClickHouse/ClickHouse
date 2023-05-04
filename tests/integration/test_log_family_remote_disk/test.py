@@ -7,24 +7,33 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 
-remote_disk_path = pathlib.Path(__file__).parent / "_instances" / "server" / "database" / "remote_disk"
+remote_disk_path = (
+    pathlib.Path(__file__).parent / "_instances" / "server" / "database" / "remote_disk"
+)
 
 
 def files_number_in_disk():
-    return len([p.relative_to(remote_disk_path) for p in remote_disk_path.rglob("*") if p.is_file()])
+    return len(
+        [
+            p.relative_to(remote_disk_path)
+            for p in remote_disk_path.rglob("*")
+            if p.is_file()
+        ]
+    )
 
 
 def wait_for_client(client):
     for i in range(11):
         try:
-            assert (client.query("SELECT 1") == "1\n")
+            assert client.query("SELECT 1") == "1\n"
         except QueryRuntimeException as e:
             if i == 10:
                 raise
-            if e.returncode != 209 and e.returncode != 210: # Timeout or Connection reset by peer
+            if (
+                e.returncode != 209 and e.returncode != 210
+            ):  # Timeout or Connection reset by peer
                 raise
         time.sleep(20)
-
 
 
 @pytest.fixture(scope="module")
@@ -61,11 +70,7 @@ def cluster():
 # files_overhead=1, files_overhead_per_insert=2
 @pytest.mark.parametrize(
     "log_engine,files_overhead",
-    [
-        ("TinyLog", 2), 
-        ("Log", 3), 
-        ("StripeLog", 3)
-    ],
+    [("TinyLog", 2), ("Log", 3), ("StripeLog", 3)],
 )
 def test_log_family_remote_disk(cluster, log_engine, files_overhead):
     node = cluster.instances["client"]
@@ -79,23 +84,23 @@ def test_log_family_remote_disk(cluster, log_engine, files_overhead):
     try:
         node.query("INSERT INTO remote_disk_test SELECT number FROM numbers(5)")
         assert node.query("SELECT * FROM remote_disk_test") == "0\n1\n2\n3\n4\n"
-        assert (files_number_in_disk() == files_overhead)
+        assert files_number_in_disk() == files_overhead
 
         node.query("INSERT INTO remote_disk_test SELECT number + 5 FROM numbers(3)")
         assert (
             node.query("SELECT * FROM remote_disk_test order by id")
             == "0\n1\n2\n3\n4\n5\n6\n7\n"
         )
-        assert (files_number_in_disk() == files_overhead)
+        assert files_number_in_disk() == files_overhead
 
         node.query("INSERT INTO remote_disk_test SELECT number + 8 FROM numbers(1)")
         assert (
             node.query("SELECT * FROM remote_disk_test order by id")
             == "0\n1\n2\n3\n4\n5\n6\n7\n8\n"
         )
-        assert (files_number_in_disk() == files_overhead)
+        assert files_number_in_disk() == files_overhead
 
         node.query("TRUNCATE TABLE remote_disk_test")
-        assert (files_number_in_disk() == 0)
+        assert files_number_in_disk() == 0
     finally:
         node.query("DROP TABLE remote_disk_test NO DELAY")

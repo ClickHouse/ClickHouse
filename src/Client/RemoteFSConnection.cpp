@@ -5,8 +5,8 @@
 #include "Core/RemoteFSProtocol.h"
 
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/TimeoutSetter.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/Net/NetException.h>
 
@@ -19,14 +19,10 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
-    extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
-RemoteFSConnection::RemoteFSConnection(const String & host_, UInt16 port_,
-    const String & disk_name_, size_t conn_id_)
-    : host(host_), port(port_), disk_name(disk_name_)
-    , conn_id(conn_id_)
-    , log_wrapper(*this)
+RemoteFSConnection::RemoteFSConnection(const String & host_, UInt16 port_, const String & disk_name_, size_t conn_id_)
+    : host(host_), port(port_), disk_name(disk_name_), conn_id(conn_id_), log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
 
@@ -81,13 +77,15 @@ void RemoteFSConnection::connect(const ConnectionTimeouts & timeouts)
         if (tcp_keep_alive_timeout_in_sec)
         {
             socket->setKeepAlive(true);
-            socket->setOption(IPPROTO_TCP,
+            socket->setOption(
+                IPPROTO_TCP,
 #if defined(TCP_KEEPALIVE)
                 TCP_KEEPALIVE
 #else
-                TCP_KEEPIDLE  // __APPLE__
+                TCP_KEEPIDLE // __APPLE__
 #endif
-                , tcp_keep_alive_timeout_in_sec);
+                ,
+                tcp_keep_alive_timeout_in_sec);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
@@ -142,7 +140,7 @@ void RemoteFSConnection::disconnect()
 void RemoteFSConnection::forceConnected(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
-    {   
+    {
         connect(timeouts);
     }
     else if (!ping(timeouts))
@@ -185,7 +183,7 @@ void RemoteFSConnection::setDescription()
     }
 }
 
-UInt64 RemoteFSConnection::getTotalSpace() 
+UInt64 RemoteFSConnection::getTotalSpace()
 {
     LOG_TRACE(log_wrapper.get(), "Send GetTotalSpace");
     writeVarUInt(RemoteFSProtocol::GetTotalSpace, *out);
@@ -320,7 +318,7 @@ bool RemoteFSConnection::nextDirectoryIteratorEntry(String & entry)
 {
     UInt64 packet_type;
     readVarUInt(packet_type, *in);
-    switch (packet_type) 
+    switch (packet_type)
     {
         case RemoteFSProtocol::DataPacket:
             readStringBinary(entry, *in);
@@ -403,7 +401,7 @@ void RemoteFSConnection::listFiles(const String & path, std::vector<String> & fi
     readVarUInt(count, *in);
     file_names.clear();
     file_names.reserve(count);
-    for (size_t i = 0; i < count; i++) 
+    for (size_t i = 0; i < count; i++)
     {
         receiveAndCheckPacketType(RemoteFSProtocol::DataPacket, "DataPacket");
         String entry;
@@ -639,15 +637,15 @@ void RemoteFSConnection::receiveAndCheckPacketType(UInt64 expected_packet_type, 
     UInt64 packet_type;
     readVarUInt(packet_type, *in);
     LOG_TRACE(log_wrapper.get(), "Received {}", RemoteFSProtocol::PacketType(packet_type));
-    if (packet_type == expected_packet_type) 
+    if (packet_type == expected_packet_type)
     {
         return;
     }
-    else if (packet_type == RemoteFSProtocol::Exception) 
+    else if (packet_type == RemoteFSProtocol::Exception)
     {
         receiveException()->rethrow();
     }
-    else 
+    else
     {
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
@@ -662,9 +660,12 @@ std::unique_ptr<Exception> RemoteFSConnection::receiveException() const
 
 void RemoteFSConnection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {
-    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-            "Unexpected packet from server {} (expected {}, got {})",
-                       getDescription(), expected, packet_type);
+    throw NetException(
+        ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+        "Unexpected packet from server {} (expected {}, got {})",
+        getDescription(),
+        expected,
+        packet_type);
 }
 
 }

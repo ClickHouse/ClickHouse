@@ -12,11 +12,19 @@ from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 
 
-remote_disk_path = pathlib.Path(__file__).parent / "_instances" / "server" / "database" / "remote_disk"
+remote_disk_path = (
+    pathlib.Path(__file__).parent / "_instances" / "server" / "database" / "remote_disk"
+)
 
 
 def files_number_in_disk():
-    return len([p.relative_to(remote_disk_path) for p in remote_disk_path.rglob("*") if p.is_file()])
+    return len(
+        [
+            p.relative_to(remote_disk_path)
+            for p in remote_disk_path.rglob("*")
+            if p.is_file()
+        ]
+    )
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -80,16 +88,16 @@ def wait_for_delete_files(expected, num_tries=30):
     assert files_number_in_disk() == expected
 
 
-
 def wait_for_client(client):
     for _ in range(5):
         try:
-            assert (client.query("SELECT 1") == "1\n")
+            assert client.query("SELECT 1") == "1\n"
         except QueryRuntimeException as e:
-            if e.returncode != 209 and e.returncode != 210: # Timeout or Connection reset by peer
+            if (
+                e.returncode != 209 and e.returncode != 210
+            ):  # Timeout or Connection reset by peer
                 raise
         time.sleep(15)
-
 
 
 @pytest.fixture(scope="module")
@@ -129,10 +137,10 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
     values1 = generate_values("2020-01-03", 4096)
     node.query("INSERT INTO remote_disk_test VALUES {}".format(values1))
     assert (
-        node.query("SELECT * FROM remote_disk_test order by dt, id FORMAT Values") == values1
+        node.query("SELECT * FROM remote_disk_test order by dt, id FORMAT Values")
+        == values1
     )
 
-    
     assert files_number_in_disk() == FILES_OVERHEAD + files_per_part
 
     values2 = generate_values("2020-01-04", 4096)
@@ -145,7 +153,8 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
     assert files_number_in_disk() == FILES_OVERHEAD + files_per_part * 2
 
     assert (
-        node.query("SELECT count(*) FROM remote_disk_test where id = 1 FORMAT Values") == "(2)"
+        node.query("SELECT count(*) FROM remote_disk_test where id = 1 FORMAT Values")
+        == "(2)"
     )
 
 
@@ -155,7 +164,9 @@ def test_alter_table_columns(cluster):
     node = cluster.instances["client"]
 
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-03", 4096)
+        )
     )
     node.query(
         "INSERT INTO remote_disk_test VALUES {}".format(
@@ -167,7 +178,9 @@ def test_alter_table_columns(cluster):
     # To ensure parts have merged
     node.query("OPTIMIZE TABLE remote_disk_test")
 
-    assert node.query("SELECT sum(col1) FROM remote_disk_test FORMAT Values") == "(8192)"
+    assert (
+        node.query("SELECT sum(col1) FROM remote_disk_test FORMAT Values") == "(8192)"
+    )
     assert (
         node.query("SELECT sum(col1) FROM remote_disk_test WHERE id > 0 FORMAT Values")
         == "(4096)"
@@ -181,18 +194,21 @@ def test_alter_table_columns(cluster):
         settings={"mutations_sync": 2},
     )
 
-    assert node.query("SELECT distinct(col1) FROM remote_disk_test FORMAT Values") == "('1')"
+    assert (
+        node.query("SELECT distinct(col1) FROM remote_disk_test FORMAT Values")
+        == "('1')"
+    )
     # and file with mutation
     wait_for_delete_files(
         FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1,
     )
 
-    node.query("ALTER TABLE remote_disk_test DROP COLUMN col1", settings={"mutations_sync": 2})
+    node.query(
+        "ALTER TABLE remote_disk_test DROP COLUMN col1", settings={"mutations_sync": 2}
+    )
 
     # and 2 files with mutations
-    wait_for_delete_files(
-        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
-    )
+    wait_for_delete_files(FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2)
 
 
 def test_attach_detach_partition(cluster):
@@ -201,10 +217,14 @@ def test_attach_detach_partition(cluster):
     node = cluster.instances["client"]
 
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-03", 4096)
+        )
     )
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-04", 4096)
+        )
     )
     assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
@@ -214,9 +234,7 @@ def test_attach_detach_partition(cluster):
     assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(4096)"
     wait_for_delete_empty_parts(node, "remote_disk_test")
     wait_for_delete_inactive_parts(node, "remote_disk_test")
-    wait_for_delete_files(
-        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
+    wait_for_delete_files(FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE remote_disk_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
@@ -246,10 +264,14 @@ def test_move_partition_to_another_disk(cluster):
     node = cluster.instances["client"]
 
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-03", 4096)
+        )
     )
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-04", 4096)
+        )
     )
     assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
@@ -260,7 +282,9 @@ def test_move_partition_to_another_disk(cluster):
 
     assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
 
-    node.query("ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-04' TO DISK 'remote_disk'")
+    node.query(
+        "ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-04' TO DISK 'remote_disk'"
+    )
     assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
     assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
@@ -272,14 +296,20 @@ def test_table_manipulations(cluster):
     node = cluster.instances["client"]
 
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-03", 4096)
+        )
     )
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-04", 4096)
+        )
     )
 
     node.query("RENAME TABLE remote_disk_test TO remote_disk_renamed")
-    assert node.query("SELECT count(*) FROM remote_disk_renamed FORMAT Values") == "(8192)"
+    assert (
+        node.query("SELECT count(*) FROM remote_disk_renamed FORMAT Values") == "(8192)"
+    )
 
     assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
@@ -305,10 +335,14 @@ def test_move_replace_partition_to_another_table(cluster):
     node = cluster.instances["client"]
 
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-03", 4096)
+        )
     )
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-04", 4096)
+        )
     )
     node.query(
         "INSERT INTO remote_disk_test VALUES {}".format(
@@ -321,21 +355,31 @@ def test_move_replace_partition_to_another_table(cluster):
         )
     )
     assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
-    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    assert (
+        node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    )
 
     assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
 
     create_table(cluster, "remote_disk_clone")
 
-    node.query("ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-03' TO TABLE remote_disk_clone")
-    node.query("ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-05' TO TABLE remote_disk_clone")
+    node.query(
+        "ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-03' TO TABLE remote_disk_clone"
+    )
+    node.query(
+        "ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-05' TO TABLE remote_disk_clone"
+    )
     assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
     assert node.query("SELECT sum(id) FROM remote_disk_clone FORMAT Values") == "(0)"
-    assert node.query("SELECT count(*) FROM remote_disk_clone FORMAT Values") == "(8192)"
+    assert (
+        node.query("SELECT count(*) FROM remote_disk_clone FORMAT Values") == "(8192)"
+    )
 
     # Number of objects on remote disk should be unchanged.
-    assert files_number_in_disk() == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
+    assert (
+        files_number_in_disk() == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
+    )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
     node.query(
@@ -344,28 +388,46 @@ def test_move_replace_partition_to_another_table(cluster):
         )
     )
     node.query(
-        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-05", 4096))
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-05", 4096)
+        )
     )
     assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
-    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    assert (
+        node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    )
 
-    assert files_number_in_disk() == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6
+    assert (
+        files_number_in_disk() == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6
+    )
 
-    node.query("ALTER TABLE remote_disk_test REPLACE PARTITION '2020-01-03' FROM remote_disk_clone")
-    node.query("ALTER TABLE remote_disk_test REPLACE PARTITION '2020-01-05' FROM remote_disk_clone")
+    node.query(
+        "ALTER TABLE remote_disk_test REPLACE PARTITION '2020-01-03' FROM remote_disk_clone"
+    )
+    node.query(
+        "ALTER TABLE remote_disk_test REPLACE PARTITION '2020-01-05' FROM remote_disk_clone"
+    )
     assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
-    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    assert (
+        node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    )
     assert node.query("SELECT sum(id) FROM remote_disk_clone FORMAT Values") == "(0)"
-    assert node.query("SELECT count(*) FROM remote_disk_clone FORMAT Values") == "(8192)"
+    assert (
+        node.query("SELECT count(*) FROM remote_disk_clone FORMAT Values") == "(8192)"
+    )
 
     # Wait for outdated partitions deletion.
     wait_for_delete_files(
-        FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6 # TODO find out why in hdfs and s3 tests there is 4 instead of 6
+        FILES_OVERHEAD * 2
+        + FILES_OVERHEAD_PER_PART_WIDE
+        * 6  # TODO find out why in hdfs and s3 tests there is 4 instead of 6
     )
 
     node.query("DROP TABLE remote_disk_clone NO DELAY")
     assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
-    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    assert (
+        node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    )
 
     # Data should remain on remote disk
     assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4

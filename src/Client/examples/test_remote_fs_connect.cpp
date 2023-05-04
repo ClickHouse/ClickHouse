@@ -1,15 +1,15 @@
 #include <cassert>
 
+#include <atomic>
+#include <chrono>
 #include <iostream>
 #include <thread>
-#include <chrono>
-#include <atomic>
 
-#include <Client/RemoteFSConnectionPool.h>
 #include <Client/RemoteFSConnection.h>
+#include <Client/RemoteFSConnectionPool.h>
 
-#include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
+#include <Poco/Logger.h>
 
 using namespace DB;
 using namespace std::chrono_literals;
@@ -24,14 +24,14 @@ try
     ConnectionTimeouts timeouts(
         Poco::Timespan(1000000), /// Connection timeout.
         Poco::Timespan(1000000), /// Send timeout.
-        Poco::Timespan(1000000)  /// Receive timeout.
+        Poco::Timespan(1000000) /// Receive timeout.
     );
     RemoteFSConnectionPool pool(2, "localhost", 9012, "test_disk");
     auto conn = pool.get(timeouts, true);
     auto conn2 = pool.get(timeouts, true);
 
     conn->clearDirectory("");
-    
+
     assert((conn->getAvailableSpace() != 0));
     assert((conn2->getTotalSpace() != 0));
 
@@ -46,7 +46,7 @@ try
         conn->createDirectory("dir/path");
         assert(false);
     }
-    catch(...)
+    catch (...)
     {
         std::cerr << "CreateDirectory expected error" << '\n';
     }
@@ -66,7 +66,7 @@ try
     conn->startIterateDirectory("");
     String dir_entry;
     size_t entry_count = 0;
-    while (conn->nextDirectoryIteratorEntry(dir_entry)) 
+    while (conn->nextDirectoryIteratorEntry(dir_entry))
     {
         assert((dir_entry == "dir1/" || dir_entry == "dir2/"));
         entry_count++;
@@ -76,7 +76,7 @@ try
     std::vector<String> files;
     conn->listFiles("", files);
     assert((files.size() == 2));
-    for (const auto & file : files) 
+    for (const auto & file : files)
     {
         assert((file == "dir1" || file == "dir2"));
     }
@@ -88,7 +88,7 @@ try
 
     conn->moveFile("file1", "file3");
     assert((!conn->exists("file1") && conn->exists("file3")));
-    try 
+    try
     {
         conn->moveFile("file3", "file2");
         assert(false);
@@ -127,13 +127,13 @@ try
     String data;
     data.resize(5);
     size_t bytes_read = conn->readFile("file1", 0, 5, data.data());
-    assert(( bytes_read == 5));
-    assert(( data == "abcde"));
+    assert((bytes_read == 5));
+    assert((data == "abcde"));
 
     data.resize(3);
     bytes_read = conn->readFile("file1", 2, 3, data.data());
-    assert(( bytes_read == 3));
-    assert(( data == "cde"));
+    assert((bytes_read == 3));
+    assert((data == "cde"));
 
     conn->removeFile("file2");
     assert((!conn->exists("file2")));

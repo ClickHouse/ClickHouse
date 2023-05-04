@@ -4,10 +4,10 @@
 
 #include <Poco/Net/StreamSocket.h>
 
+#include <Disks/WriteMode.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Disks/WriteMode.h>
 
 namespace DB
 {
@@ -18,8 +18,7 @@ using RemoteFSConnectionPtr = std::shared_ptr<RemoteFSConnection>;
 class RemoteFSConnection
 {
 public:
-    RemoteFSConnection(const String & host_, UInt16 port_,
-        const String & disk_name_, size_t conn_id_);
+    RemoteFSConnection(const String & host_, UInt16 port_, const String & disk_name_, size_t conn_id_);
 
     ~RemoteFSConnection();
 
@@ -62,7 +61,7 @@ public:
     void createHardLink(const String & src_path, const String & dst_path);
     void truncateFile(const String & path, size_t size);
 
-    void forceConnected(const ConnectionTimeouts & timeouts); 
+    void forceConnected(const ConnectionTimeouts & timeouts);
     bool isConnected() const { return connected; }
     bool checkConnected(const ConnectionTimeouts & timeouts) { return connected && ping(timeouts); }
     void disconnect();
@@ -100,10 +99,7 @@ private:
     class LoggerWrapper
     {
     public:
-        explicit LoggerWrapper(RemoteFSConnection & parent_)
-            : log(nullptr), parent(parent_)
-        {
-        }
+        explicit LoggerWrapper(RemoteFSConnection & parent_) : log(nullptr), parent(parent_) { }
 
         Poco::Logger * get()
         {

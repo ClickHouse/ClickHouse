@@ -5,7 +5,7 @@ namespace DB
 
 namespace RemoteFSProtocol
 {
-    enum PacketType 
+    enum PacketType
     {
         Hello = 0,
         Ping = 1,

@@ -2,32 +2,34 @@
 #include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
-#include <Disks/LocalDirectorySyncGuard.h>
-#include <Interpreters/Context.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/quoteString.h>
-#include <Common/atomicRename.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Disks/IO/ReadBufferFromRemoteDisk.h>
 #include <Disks/IO/WriteBufferFromRemoteDisk.h>
-#include <Disks/ObjectStorages/LocalObjectStorage.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
+#include <Interpreters/Context.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/atomicRename.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/quoteString.h>
 
 #include <fstream>
-#include <unistd.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
-#include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 std::mutex DiskRemote::reservation_mutex;
 
@@ -37,10 +39,9 @@ class DiskRemoteReservation : public IReservation
 {
 public:
     DiskRemoteReservation(const DiskRemotePtr & disk_, UInt64 size_, UInt64 unreserved_space_)
-        : disk(disk_)
-        , size(size_)
-        , unreserved_space(unreserved_space_)
-    {}
+        : disk(disk_), size(size_), unreserved_space(unreserved_space_)
+    {
+    }
 
     UInt64 getSize() const override { return size; }
     UInt64 getUnreservedSpace() const override { return unreserved_space; }
@@ -98,8 +99,7 @@ class DiskRemoteDirectoryIterator final : public IDirectoryIterator
 {
 public:
     DiskRemoteDirectoryIterator() = default;
-    DiskRemoteDirectoryIterator(RemoteFSConnectionPool::Entry && conn_, const String & dir_path_)
-        : conn(conn_), dir_path(dir_path_)
+    DiskRemoteDirectoryIterator(RemoteFSConnectionPool::Entry && conn_, const String & dir_path_) : conn(conn_), dir_path(dir_path_)
     {
         conn->startIterateDirectory(dir_path);
         next();
@@ -112,7 +112,8 @@ public:
             valid = conn->nextDirectoryIteratorEntry(entry);
     }
 
-    void next() override {
+    void next() override
+    {
         if (!valid)
             return;
         valid = conn->nextDirectoryIteratorEntry(entry);
@@ -125,9 +126,7 @@ public:
     String path() const override { return entry; }
 
 
-    String name() const override { 
-        return fs::path(entry).filename();
-    }
+    String name() const override { return fs::path(entry).filename(); }
 
 private:
     RemoteFSConnectionPool::Entry conn;
@@ -137,21 +136,17 @@ private:
 };
 
 DiskRemote::DiskRemote(
-    const String & name_, 
-    const String & host_, 
-    UInt16 port_, 
-    const String & remote_disk_name_,
-    unsigned max_connections_
-)
+    const String & name_, const String & host_, UInt16 port_, const String & remote_disk_name_, unsigned max_connections_)
     : IDisk(name_)
-    , host(host_), port(port_)
+    , host(host_)
+    , port(port_)
     , remote_disk_name(remote_disk_name_)
     , disk_path(fmt::format("{}:{}/{}", host, port, remote_disk_name)) // TODO maybe change this
     , timeouts( // TODO get timeouts from somewhere else
-        Poco::Timespan(1000000), /// Connection timeout.
-        Poco::Timespan(1000000), /// Send timeout.
-        Poco::Timespan(1000000)  /// Receive timeout.
-    )
+          Poco::Timespan(1000000), /// Connection timeout.
+          Poco::Timespan(1000000), /// Send timeout.
+          Poco::Timespan(1000000) /// Receive timeout.
+          )
     , conn_pool(max_connections_, host_, port_, remote_disk_name_)
     , logger(&Poco::Logger::get("DiskRemote"))
 {
@@ -163,7 +158,7 @@ DiskRemote::DiskRemote(
 
 const String & DiskRemote::getPath() const
 {
-   return disk_path;
+    return disk_path;
 }
 
 ReservationPtr DiskRemote::reserve(UInt64 bytes)
@@ -172,8 +167,7 @@ ReservationPtr DiskRemote::reserve(UInt64 bytes)
     if (!unreserved_space.has_value())
         return {};
     return std::make_unique<DiskRemoteReservation>(
-        std::static_pointer_cast<DiskRemote>(shared_from_this()),
-        bytes, unreserved_space.value());
+        std::static_pointer_cast<DiskRemote>(shared_from_this()), bytes, unreserved_space.value());
 }
 
 std::optional<UInt64> DiskRemote::tryReserve(UInt64 bytes)
@@ -216,80 +210,94 @@ UInt64 DiskRemote::getTotalSpace() const
     return conn->getTotalSpace();
 }
 
-UInt64 DiskRemote::getAvailableSpace() const {
+UInt64 DiskRemote::getAvailableSpace() const
+{
     auto conn = conn_pool.get(timeouts, true);
     return conn->getAvailableSpace();
 }
 
 UInt64 DiskRemote::getUnreservedSpace() const
 {
-   std::lock_guard lock(DiskRemote::reservation_mutex);
-   auto available_space = getAvailableSpace();
-   available_space -= std::min(available_space, reserved_bytes);
-   return available_space;
+    std::lock_guard lock(DiskRemote::reservation_mutex);
+    auto available_space = getAvailableSpace();
+    available_space -= std::min(available_space, reserved_bytes);
+    return available_space;
 }
 
-bool DiskRemote::exists(const String & path) const {
+bool DiskRemote::exists(const String & path) const
+{
     auto conn = conn_pool.get(timeouts, true);
     return conn->exists(path);
 }
 
-bool DiskRemote::isFile(const String & path) const {
+bool DiskRemote::isFile(const String & path) const
+{
     auto conn = conn_pool.get(timeouts, true);
     return conn->isFile(path);
 }
 
-bool DiskRemote::isDirectory(const String & path) const {
+bool DiskRemote::isDirectory(const String & path) const
+{
     auto conn = conn_pool.get(timeouts, true);
     return conn->isDirectory(path);
 }
 
-size_t DiskRemote::getFileSize(const String & path) const {
+size_t DiskRemote::getFileSize(const String & path) const
+{
     auto conn = conn_pool.get(timeouts, true);
     return conn->getFileSize(path);
 }
 
-void DiskRemote::createDirectory(const String & path) {
+void DiskRemote::createDirectory(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->createDirectory(path);
 }
 
-void DiskRemote::createDirectories(const String & path) {
+void DiskRemote::createDirectories(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->createDirectories(path);
 }
 
-void DiskRemote::clearDirectory(const String & path) {
+void DiskRemote::clearDirectory(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->clearDirectory(path);
 }
 
-void DiskRemote::moveDirectory(const String & from_path, const String & to_path) {
+void DiskRemote::moveDirectory(const String & from_path, const String & to_path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->moveDirectory(from_path, to_path);
 }
 
-DirectoryIteratorPtr DiskRemote::iterateDirectory(const String & path) const {
+DirectoryIteratorPtr DiskRemote::iterateDirectory(const String & path) const
+{
     return std::make_unique<DiskRemoteDirectoryIterator>(conn_pool.get(timeouts, true), path);
 }
 
-void DiskRemote::createFile(const String & path) {
+void DiskRemote::createFile(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->createFile(path);
 }
 
-void DiskRemote::moveFile(const String & from_path, const String & to_path) {
+void DiskRemote::moveFile(const String & from_path, const String & to_path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->moveFile(from_path, to_path);
 }
 
-void DiskRemote::replaceFile(const String & from_path, const String & to_path) {
+void DiskRemote::replaceFile(const String & from_path, const String & to_path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->replaceFile(from_path, to_path);
 }
 
-void DiskRemote::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) {
-    if (to_disk.get() == this) 
+void DiskRemote::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+{
+    if (to_disk.get() == this)
     {
         auto conn = conn_pool.get(timeouts, true);
         conn->copy(from_path, to_path);
@@ -298,8 +306,9 @@ void DiskRemote::copy(const String & from_path, const std::shared_ptr<IDisk> & t
         copyThroughBuffers(from_path, to_disk, to_path, /* copy_root_dir */ true); /// Base implementation.
 }
 
-void DiskRemote::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) {
-    if (to_disk.get() == this) 
+void DiskRemote::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+{
+    if (to_disk.get() == this)
     {
         auto conn = conn_pool.get(timeouts, true);
         conn->copyDirectoryContent(from_dir, to_dir);
@@ -308,116 +317,126 @@ void DiskRemote::copyDirectoryContent(const String & from_dir, const std::shared
         copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir */ false); /// Base implementation.
 }
 
-void DiskRemote::listFiles(const String & path, std::vector<String> & file_names) const {
+void DiskRemote::listFiles(const String & path, std::vector<String> & file_names) const
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->listFiles(path, file_names);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskRemote::readFile(
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> /*read_hint*/,
-    std::optional<size_t> /*file_size*/) const {
+    const String & path, const ReadSettings & settings, std::optional<size_t> /*read_hint*/, std::optional<size_t> /*file_size*/) const
+{
     auto conn = conn_pool.get(timeouts, true);
     return std::make_unique<ReadBufferFromRemoteDisk>(conn, path, settings);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskRemote::writeFile(
-    const String & path,
-    size_t buf_size,
-    WriteMode mode,
-    const WriteSettings &) {
+std::unique_ptr<WriteBufferFromFileBase> DiskRemote::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->startWriteFile(path, buf_size, mode);
     return std::make_unique<WriteBufferFromRemoteDisk>(conn, path, buf_size);
 }
 
-void DiskRemote::removeFile(const String & path) {
+void DiskRemote::removeFile(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->removeFile(path);
 }
 
-void DiskRemote::removeFileIfExists(const String & path) {
+void DiskRemote::removeFileIfExists(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->removeFileIfExists(path);
 }
 
-void DiskRemote::removeDirectory(const String & path) {
+void DiskRemote::removeDirectory(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->removeDirectory(path);
 }
 
-void DiskRemote::removeRecursive(const String & path) {
+void DiskRemote::removeRecursive(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->removeRecursive(path);
 }
 
-void DiskRemote::setLastModified(const String & path, const Poco::Timestamp & timestamp) {
+void DiskRemote::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->setLastModified(path, timestamp);
 }
 
-Poco::Timestamp DiskRemote::getLastModified(const String & path) const {
+Poco::Timestamp DiskRemote::getLastModified(const String & path) const
+{
     auto conn = conn_pool.get(timeouts, true);
     return conn->getLastModified(path);
 }
 
-time_t DiskRemote::getLastChanged(const String & path) const {
+time_t DiskRemote::getLastChanged(const String & path) const
+{
     auto conn = conn_pool.get(timeouts, true);
     return conn->getLastChanged(path);
 }
 
-void DiskRemote::setReadOnly(const String & path) {
+void DiskRemote::setReadOnly(const String & path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->setReadOnly(path);
 }
 
-void DiskRemote::createHardLink(const String & src_path, const String & dst_path) {
+void DiskRemote::createHardLink(const String & src_path, const String & dst_path)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->createHardLink(src_path, dst_path);
 }
 
-void DiskRemote::truncateFile(const String & path, size_t size) {
+void DiskRemote::truncateFile(const String & path, size_t size)
+{
     auto conn = conn_pool.get(timeouts, true);
     conn->truncateFile(path, size);
 }
 
-DataSourceDescription DiskRemote::getDataSourceDescription() const {
+DataSourceDescription DiskRemote::getDataSourceDescription() const
+{
     return data_source_description;
 }
 
-void DiskRemote::shutdown() {
+void DiskRemote::shutdown()
+{
     // TODO
 }
 
-void DiskRemote::startupImpl(ContextPtr /*context*/) {
+void DiskRemote::startupImpl(ContextPtr /*context*/)
+{
 }
 
-void DiskRemote::applyNewSettings(const Poco::Util::AbstractConfiguration & /*config*/, ContextPtr /*context*/, const String & /*config_prefix*/, const DisksMap &) {
+void DiskRemote::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & /*config*/, ContextPtr /*context*/, const String & /*config_prefix*/, const DisksMap &)
+{
     // TODO
 }
 
 void registerDiskRemote(DiskFactory & factory, bool global_skip_access_check)
 {
-   auto creator = [global_skip_access_check](
-       const String & name,
-       const Poco::Util::AbstractConfiguration & config,
-       const String & config_prefix,
-       ContextPtr context,
-       const DisksMap & /*map*/) -> DiskPtr
-   {
+    auto creator = [global_skip_access_check](
+                       const String & name,
+                       const Poco::Util::AbstractConfiguration & config,
+                       const String & config_prefix,
+                       ContextPtr context,
+                       const DisksMap & /*map*/) -> DiskPtr
+    {
         String host = config.getString(config_prefix + ".host");
         UInt16 port = static_cast<UInt16>(config.getUInt(config_prefix + ".port"));
         String remote_disk_name = config.getString(config_prefix + ".remote_disk_name");
         unsigned max_connections = config.getUInt(config_prefix + ".port", 20); // TODO define default const
 
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
-        std::shared_ptr<IDisk> disk
-            = std::make_shared<DiskRemote>(name, host, port, remote_disk_name, max_connections);
+        std::shared_ptr<IDisk> disk = std::make_shared<DiskRemote>(name, host, port, remote_disk_name, max_connections);
         disk->startup(context, skip_access_check);
         return disk;
-   };
-   factory.registerDiskType("remote", creator);
+    };
+    factory.registerDiskType("remote", creator);
 }
 
 } // DB
