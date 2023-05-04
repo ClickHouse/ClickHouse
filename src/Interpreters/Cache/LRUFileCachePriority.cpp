@@ -28,7 +28,8 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
 #ifndef NDEBUG
     for (const auto & entry : queue)
     {
-        if (entry.key == key && entry.offset == offset)
+        /// entry.size == 0 means entry was invalidated.
+        if (entry.size != 0 && entry.key == key && entry.offset == offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. (Key: {}, offset: {}, size: {})",
