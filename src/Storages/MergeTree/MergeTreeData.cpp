@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -59,6 +60,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -5206,20 +5208,57 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
+    ASTPtr partition_value_ast = partition_ast.value;
 
     if (partition_ast.all)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only Support DETACH PARTITION ALL currently");
 
-    if (!partition_ast.value)
+    if (!partition_value_ast)
     {
         MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
     }
 
+    size_t partition_ast_fields_count;
+    if (partition_value_ast->as<ASTQueryParameter>())
+    {
+        assert(!partition_ast.fields_count);
+
+        ReplaceQueryParameterVisitor param_visitor(local_context->getQueryParameters());
+        param_visitor.visit(partition_value_ast);
+
+        if (partition_value_ast->as<ASTLiteral>())
+        {
+            partition_ast_fields_count = 1;
+        }
+        else if (const auto * tuple_ast = partition_value_ast->as<ASTFunction>())
+        {
+            if (tuple_ast->name != "tuple")
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                                "Expected tuple for complex partition key, got {}", tuple_ast->name);
+
+            const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+            if (arguments_ast)
+                partition_ast_fields_count = arguments_ast->children.size();
+            else
+                partition_ast_fields_count = 0;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
+        }
+    }
+    else
+    {
+        assert(partition_ast.fields_count);
+        partition_ast_fields_count = partition_ast.fields_count.value();
+    }
+
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition ID can be passed in the partition value.
-        const auto * partition_lit = partition_ast.value->as<ASTLiteral>();
+        const auto * partition_lit = partition_value_ast->as<ASTLiteral>();
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
@@ -5232,29 +5271,28 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
     size_t fields_count = key_sample_block.columns();
-    if (partition_ast.fields_count != fields_count)
+    if (partition_ast_fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Wrong number of fields in the partition expression: {}, must be: {}",
-                        partition_ast.fields_count, fields_count);
+                        partition_ast_fields_count, fields_count);
 
     Row partition_row(fields_count);
     if (fields_count == 0)
     {
         /// Function tuple(...) requires at least one argument, so empty key is a special case
-        assert(!partition_ast.fields_count);
-        assert(typeid_cast<ASTFunction *>(partition_ast.value.get()));
-        assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
-        assert(partition_ast.value->as<ASTFunction>()->arguments);
-        auto args = partition_ast.value->as<ASTFunction>()->arguments;
+        assert(!partition_ast_fields_count);
+        assert(typeid_cast<ASTFunction *>(partition_value_ast.get()));
+        assert(partition_value_ast->as<ASTFunction>()->name == "tuple");
+        assert(partition_value_ast->as<ASTFunction>()->arguments);
+        auto args = partition_value_ast->as<ASTFunction>()->arguments;
         if (!args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
-        bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
+        bool empty_tuple = partition_value_ast->as<ASTFunction>()->arguments->children.empty();
         if (!empty_tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
     }
     else if (fields_count == 1)
     {
-        ASTPtr partition_value_ast = partition_ast.value;
         if (auto * tuple = partition_value_ast->as<ASTFunction>())
         {
             assert(tuple->name == "tuple");
@@ -5269,7 +5307,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     else
     {
         /// Complex key, need to evaluate, untuple and cast
-        Field partition_key_value = evaluateConstantExpression(partition_ast.value, local_context).first;
+        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
         if (partition_key_value.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                             "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
