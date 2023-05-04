@@ -1055,7 +1055,8 @@ bool StorageMergeTree::merge(
     bool cleanup,
     const MergeTreeTransactionPtr & txn,
     String & out_disable_reason,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool async)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -1089,16 +1090,38 @@ bool StorageMergeTree::merge(
     if (!merge_mutate_entry)
         return false;
 
-    /// Copying a vector of columns `deduplicate by columns.
-    IExecutableTask::TaskResultCallback f = [](bool) {};
-    auto task = std::make_shared<MergePlainMergeTreeTask>(
-        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_mutate_entry, table_lock_holder, f);
+    if (!async)
+    {
+        /// Copying a vector of columns `deduplicate by columns.
+        IExecutableTask::TaskResultCallback f = [](bool) {};
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_mutate_entry, table_lock_holder, f);
 
-    task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
+        task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
-    executeHere(task);
+        executeHere(task);
 
-    return true;
+        return true;
+    }
+    else
+    {
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this,
+            metadata_snapshot,
+            deduplicate,
+            deduplicate_by_columns,
+            cleanup,
+            merge_mutate_entry,
+            table_lock_holder,
+            common_assignee_trigger);
+        task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
+        bool scheduled = background_operations_assignee.scheduleMergeMutateTask(task);
+        /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
+        /// in MergePlainMergeTreeTask. So, this slot will never be freed.
+        if (!scheduled && isTTLMergeType(merge_mutate_entry->future_part->merge_type))
+            getContext()->getMergeList().cancelMergeWithTTL();
+        return scheduled;
+    }
 }
 
 
@@ -1526,7 +1549,8 @@ bool StorageMergeTree::optimize(
                     cleanup,
                     txn,
                     disable_reason,
-                    local_context->getSettingsRef().optimize_skip_merged_partitions))
+                    local_context->getSettingsRef().optimize_skip_merged_partitions,
+                    true))
             {
                 constexpr auto message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.empty())
