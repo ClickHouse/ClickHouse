@@ -116,6 +116,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
@@ -4081,11 +4082,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (apply_transformer_was_used || replace_transformer_was_used)
                     continue;
 
-                replace_transformer_was_used = true;
-
                 auto replace_expression = replace_transformer->findReplacementExpression(column_name);
                 if (!replace_expression)
                     continue;
+
+                replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
                     strict_transformer_to_used_column_names[replace_transformer].insert(column_name);
@@ -4819,6 +4820,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     lambda_expression_untyped->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 
+            if (!parameters.empty())
+            {
+                throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_node.formatASTForErrorMessage());
+            }
+
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope lambda_scope(lambda_expression_clone, &scope /*parent_scope*/);
@@ -4935,9 +4941,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
+    bool is_executable_udf = false;
 
     if (!function)
         function = FunctionFactory::instance().tryGet(function_name, scope.context);
+    else
+        is_executable_udf = true;
 
     if (!function)
     {
@@ -4986,6 +4995,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
         return result_projection_names;
+    }
+
+    /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
+    if (!parameters.empty() && !is_executable_udf)
+    {
+        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", function_name);
     }
 
     /** For lambda arguments we need to initialize lambda argument types DataTypeFunction using `getLambdaArgumentTypes` function.
@@ -6679,7 +6694,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
-    if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.isGroupByWithTotals())
+    if (query_node_typed.isGroupByWithGroupingSets()
+        && query_node_typed.isGroupByWithTotals()
+        && query_node_typed.getGroupBy().getNodes().size() != 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and GROUPING SETS are not supported together");
 
     if (query_node_typed.isGroupByWithGroupingSets() && is_rollup_or_cube)
