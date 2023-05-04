@@ -59,10 +59,22 @@ def test_drop_replica_in_auxiliary_zookeeper(started_cluster):
     node2.stop_clickhouse()
     time.sleep(5)
 
+    # check is_active
+    retries = 0
+    max_retries = 5
+    zk = cluster.get_kazoo_client("zoo1")
+    while True:
+        if zk.exists("/clickhouse/tables/test/test_auxiliary_zookeeper/replicas/node2/is_active") is None:
+            break
+        else:
+            retries += 1
+            if retries > max_retries:
+                raise Exception("Failed to stop server.")
+            time.sleep(1)
+
     # drop replica node2
     node1.query("SYSTEM DROP REPLICA 'node2'")
 
-    zk = cluster.get_kazoo_client("zoo1")
     assert zk.exists("/clickhouse/tables/test/test_auxiliary_zookeeper")
     assert (
         zk.exists("/clickhouse/tables/test/test_auxiliary_zookeeper/replicas/node2")
