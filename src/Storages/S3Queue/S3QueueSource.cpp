@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include "IO/IOThreadPool.h"
 #include "IO/ParallelReadBuffer.h"
 #include "Parsers/ASTCreateQuery.h"
 #include "config.h"
