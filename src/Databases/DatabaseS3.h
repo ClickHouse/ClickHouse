@@ -23,7 +23,17 @@ class Context;
 class DatabaseS3 : public IDatabase, protected WithContext
 {
 public:
-    DatabaseS3(const String & name, const String & key_id, const String & secret_key, ContextPtr context);
+    struct Configuration
+    {
+        std::string url_prefix;
+
+        bool no_sign_request = false;
+
+        std::optional<std::string> access_key_id;
+        std::optional<std::string> secret_access_key;
+    };
+
+    DatabaseS3(const String & name, const Configuration& config, ContextPtr context);
 
     String getEngineName() const override { return "S3"; }
 
@@ -44,6 +54,8 @@ public:
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &) const override;
 
+    static Configuration parseArguments(ASTs engine_args, ContextPtr context);
+
 protected:
     StoragePtr getTableImpl(const String & url, ContextPtr context) const;
 
@@ -51,9 +63,11 @@ protected:
 
     bool checkUrl(const std::string & url, ContextPtr context_, bool throw_on_error) const;
 
+    std::string getFullUrl(const std::string & name) const;
+
 private:
-    const String access_key_id;
-    const String secret_access_key;
+    const Configuration config;
+
     mutable Tables loaded_tables TSA_GUARDED_BY(mutex);
     Poco::Logger * log;
 };
