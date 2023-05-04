@@ -683,8 +683,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
     {
         /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
         /// and getQueueIterator() is assigned on first space reservation attempt.
-        queue_iterator = main_priority->add(
-            file_segment.getKeyMetadata(), file_segment.offset(), size, cache_lock);
+        queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, cache_lock);
         file_segment.setQueueIterator(queue_iterator);
     }
 
@@ -697,7 +696,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, size_t size)
         if (query_queue_it)
             query_queue_it->updateSize(size);
         else
-            query_context->add(file_segment, cache_lock);
+            query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, cache_lock);
     }
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
