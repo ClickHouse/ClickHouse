@@ -1073,7 +1073,7 @@ void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path,
     if (zookeeper->exists(drop_zookeeper_path + "/replicas/" + drop_replica + "/is_active"))
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", drop_replica);
 
-    dropReplica(zookeeper, drop_zookeeper_path, drop_replica, logger, table_settings, has_metadata_out);
+    dropReplica(zookeeper, drop_zookeeper_path, drop_replica, logger);
 }
 
 
