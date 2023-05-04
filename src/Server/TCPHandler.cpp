@@ -416,6 +416,7 @@ void TCPHandler::runImpl()
                 return res;
             });
 
+            CurrentThread::getGroup()->memory_tracker.getParent()->logCurrentMemoryUsage();
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
 
@@ -501,11 +502,14 @@ void TCPHandler::runImpl()
                 sendEndOfStream();
             }
 
+            CurrentThread::getGroup()->memory_tracker.getParent()->logCurrentMemoryUsage();
+
             /// QueryState should be cleared before QueryScope, since otherwise
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
+            CurrentThread::getGroup()->memory_tracker.getParent()->logCurrentMemoryUsage();
             last_sent_snapshots.clear();
             thread_trace_context.reset();
         }

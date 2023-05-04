@@ -126,6 +126,11 @@ void MemoryTracker::logPeakMemoryUsage()
         "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
 }
 
+void MemoryTracker::logCurrentMemoryUsage()
+{
+    logMemoryUsage(amount.load(std::memory_order_relaxed));
+}
+
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);

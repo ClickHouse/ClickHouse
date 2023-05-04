@@ -216,6 +216,8 @@ public:
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
 
+    void logCurrentMemoryUsage();
+
     void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
 };
 
