@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} -n --query "
 DROP TABLE IF EXISTS t_limit_mutations SYNC;
 
 CREATE TABLE t_limit_mutations (id UInt64, v UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_limit_mutations/', '1') ORDER BY id
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_limit_mutations', '1') ORDER BY id
 SETTINGS number_of_mutations_to_throw = 2;
 
 SET mutations_sync = 0;
