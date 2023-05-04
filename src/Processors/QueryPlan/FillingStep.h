@@ -10,7 +10,11 @@ namespace DB
 class FillingStep : public ITransformingStep
 {
 public:
-    FillingStep(const DataStream & input_stream_, SortDescription sort_description_, InterpolateDescriptionPtr interpolate_description_);
+    FillingStep(
+        const DataStream & input_stream_,
+        SortDescription sort_description_,
+        SortDescription fill_description_,
+        InterpolateDescriptionPtr interpolate_description_);
 
     String getName() const override { return "Filling"; }
 
@@ -25,6 +29,7 @@ private:
     void updateOutputStream() override;
 
     SortDescription sort_description;
+    SortDescription fill_description;
     InterpolateDescriptionPtr interpolate_description;
 };
 

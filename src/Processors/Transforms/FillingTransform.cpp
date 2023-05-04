@@ -187,9 +187,10 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 }
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_)
+        const Block & header_, const SortDescription & sort_description_, const SortDescription& fill_description_, InterpolateDescriptionPtr interpolate_description_)
         : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
         , sort_description(sort_description_)
+        , fill_description(fill_description_)
         , interpolate_description(interpolate_description_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
@@ -198,14 +199,14 @@ FillingTransform::FillingTransform(
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
 
     std::vector<bool> is_fill_column(header_.columns());
-    for (size_t i = 0, size = sort_description.size(); i < size; ++i)
+    for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
-        if (interpolate_description && interpolate_description->result_columns_set.contains(sort_description[i].column_name))
+        if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
-                sort_description[i].column_name);
+                fill_description[i].column_name);
 
-        size_t block_position = header_.getPositionByName(sort_description[i].column_name);
+        size_t block_position = header_.getPositionByName(fill_description[i].column_name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
 
@@ -231,6 +232,21 @@ FillingTransform::FillingTransform(
     for (auto pos : fill_column_positions)
         if (!unique_positions.insert(pos).second)
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
+
+    /// build sorting prefix for first fill column
+    for (const auto & desc : sort_description)
+    {
+        if (desc.column_name == fill_description[0].column_name)
+            break;
+
+        size_t pos = header_.getPositionByName(desc.column_name);
+        sort_prefix_positions.push_back(pos);
+
+        sort_prefix.push_back(desc);
+    }
+    logDebug("sort prefix", dumpSortDescription(sort_prefix));
+
+    /// TODO: check conflict in positions between interpolate and sorting prefix columns
 
     size_t idx = 0;
     for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())

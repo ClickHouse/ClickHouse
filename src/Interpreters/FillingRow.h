@@ -32,6 +32,7 @@ public:
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
+    const FillColumnDescription & getFillDescription(size_t index) const { return sort_description[index].fill_description; }
 
     String dump() const;
 
