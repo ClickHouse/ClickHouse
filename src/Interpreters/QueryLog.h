@@ -6,6 +6,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <IO/AsyncReadCounters.h>
 #include <Parsers/IAST.h>
 
 
@@ -88,6 +89,7 @@ struct QueryLogElement
 
     std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
 
     TransactionID tid;

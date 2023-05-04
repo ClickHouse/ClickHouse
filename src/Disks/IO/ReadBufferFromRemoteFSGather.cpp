@@ -3,9 +3,10 @@
 #include <IO/SeekableReadBuffer.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Common/logger_useful.h>
 #include <iostream>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
 
@@ -26,35 +27,33 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , read_buffer_creator(std::move(read_buffer_creator_))
     , blobs_to_read(blobs_to_read_)
     , settings(settings_)
+    , current_object(!blobs_to_read_.empty() ? blobs_to_read_.front() : throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read zero number of objects"))
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
     , enable_cache_log(!query_id.empty() && settings.enable_filesystem_cache_log)
 {
-    if (blobs_to_read.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read zero number of objects");
-
     with_cache = settings.remote_fs_cache
         && settings.enable_filesystem_cache
-        && (!FileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
+        && (!query_id.empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
 }
 
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
 {
-    if (current_object && !with_cache && enable_cache_log)
+    if (current_buf != nullptr && !with_cache && enable_cache_log)
     {
         appendFilesystemCacheLog();
     }
 
     current_object = object;
     total_bytes_read_from_current_file = 0;
-    const auto & object_path = object.absolute_path;
+    const auto & object_path = object.remote_path;
 
     size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
     auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
 
     if (with_cache)
     {
-        auto cache_key = settings.remote_fs_cache->hash(object_path);
+        auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
         return std::make_shared<CachedOnDiskReadBufferFromFile>(
             object_path,
             cache_key,
@@ -73,15 +72,13 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
 void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
 {
-    if (!current_object)
-        return;
-
+    chassert(!current_object.remote_path.empty());
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
-        .source_file_path = current_object->absolute_path,
-        .file_segment_range = { 0, current_object->bytes_size },
+        .source_file_path = current_object.remote_path,
+        .file_segment_range = { 0, current_object.bytes_size },
         .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
         .file_segment_size = total_bytes_read_from_current_file,
         .read_from_cache_attempted = false,
@@ -107,9 +104,9 @@ IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, 
     auto result = nextImpl();
 
     if (result)
-        return {working_buffer.size(), BufferBase::offset()};
+        return { working_buffer.size(), BufferBase::offset(), nullptr };
 
-    return {0, 0};
+    return {0, 0, nullptr};
 }
 
 void ReadBufferFromRemoteFSGather::initialize()
@@ -122,6 +119,8 @@ void ReadBufferFromRemoteFSGather::initialize()
 
         if (object.bytes_size > current_buf_offset)
         {
+            LOG_TEST(log, "Reading from file: {} ({})", object.remote_path, object.local_path);
+
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || current_buf_idx != i)
             {
@@ -173,6 +172,7 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
     ++current_buf_idx;
 
     const auto & object = blobs_to_read[current_buf_idx];
+    LOG_TEST(log, "Reading from next file: {} ({})", object.remote_path, object.local_path);
     current_buf = createImplementationBuffer(object);
 
     return true;
@@ -245,9 +245,7 @@ void ReadBufferFromRemoteFSGather::reset()
 
 String ReadBufferFromRemoteFSGather::getFileName() const
 {
-    if (current_object)
-        return current_object->absolute_path;
-    return blobs_to_read[0].absolute_path;
+    return current_object.remote_path;
 }
 
 size_t ReadBufferFromRemoteFSGather::getFileSize() const

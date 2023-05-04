@@ -9,9 +9,13 @@
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/endpoint/EndpointParameter.h>
+#include <aws/core/utils/HashingUtils.h>
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/PocoHTTPClientFactory.h>
+#include <IO/S3/AWSLogger.h>
+#include <IO/S3/Credentials.h>
 
 #include <Common/assert_cast.h>
 
@@ -23,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_REDIRECTS;
 }
 
 namespace S3
@@ -76,6 +81,76 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
     return wrapped_strategy->RequestBookkeeping(httpResponseOutcome, lastError);
 }
 
+namespace
+{
+
+void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_config)
+{
+    if (!client_config.retryStrategy)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The S3 client can only be used with Client::RetryStrategy, define it in the client configuration");
+
+    assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
+}
+
+}
+
+std::unique_ptr<Client> Client::create(
+    size_t max_redirects_,
+    ServerSideEncryptionKMSConfig sse_kms_config_,
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const Aws::Client::ClientConfiguration & client_configuration,
+    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+    bool use_virtual_addressing)
+{
+    verifyClientConfiguration(client_configuration);
+    return std::unique_ptr<Client>(
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
+}
+
+std::unique_ptr<Client> Client::create(const Client & other)
+{
+    return std::unique_ptr<Client>(new Client(other));
+}
+
+Client::Client(
+    size_t max_redirects_,
+    ServerSideEncryptionKMSConfig sse_kms_config_,
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const Aws::Client::ClientConfiguration & client_configuration,
+    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+    bool use_virtual_addressing)
+    : Aws::S3::S3Client(credentials_provider, client_configuration, std::move(sign_payloads), use_virtual_addressing)
+    , max_redirects(max_redirects_)
+    , sse_kms_config(std::move(sse_kms_config_))
+    , log(&Poco::Logger::get("S3Client"))
+{
+    auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
+    endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
+    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
+
+    provider_type = getProviderTypeFromURL(initial_endpoint);
+    LOG_TRACE(log, "Provider type: {}", toString(provider_type));
+
+    detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
+
+    cache = std::make_shared<ClientCache>();
+    ClientCacheRegistry::instance().registerClient(cache);
+}
+
+Client::Client(const Client & other)
+    : Aws::S3::S3Client(other)
+    , initial_endpoint(other.initial_endpoint)
+    , explicit_region(other.explicit_region)
+    , detect_region(other.detect_region)
+    , provider_type(other.provider_type)
+    , max_redirects(other.max_redirects)
+    , sse_kms_config(other.sse_kms_config)
+    , log(&Poco::Logger::get("S3Client"))
+{
+    cache = std::make_shared<ClientCache>(*other.cache);
+    ClientCacheRegistry::instance().registerClient(cache);
+}
+
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
     if (detect_region)
@@ -107,9 +182,33 @@ void Client::insertRegionOverride(const std::string & bucket, const std::string 
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
 
+template <typename RequestType>
+void Client::setKMSHeaders(RequestType & request) const
+{
+    // Don't do anything unless a key ID was specified
+    if (sse_kms_config.key_id)
+    {
+        request.SetServerSideEncryption(Model::ServerSideEncryption::aws_kms);
+        // If the key ID was specified but is empty, treat it as using the AWS managed key and omit the header
+        if (!sse_kms_config.key_id->empty())
+            request.SetSSEKMSKeyId(*sse_kms_config.key_id);
+        if (sse_kms_config.encryption_context)
+            request.SetSSEKMSEncryptionContext(*sse_kms_config.encryption_context);
+        if (sse_kms_config.bucket_key_enabled)
+            request.SetBucketKeyEnabled(*sse_kms_config.bucket_key_enabled);
+    }
+}
+
+// Explicitly instantiate this method only for the request types that support KMS headers
+template void Client::setKMSHeaders<CreateMultipartUploadRequest>(CreateMultipartUploadRequest & request) const;
+template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & request) const;
+template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
+
 Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
+
+    request.setProviderType(provider_type);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -131,7 +230,7 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
     if (checkIfWrongRegionDefined(bucket, error, new_region))
     {
         request.overrideRegion(new_region);
-        return HeadObject(request);
+        return Aws::S3::S3Client::HeadObject(request);
     }
 
     if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
@@ -244,6 +343,89 @@ Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & r
     return doRequest(request, [this](const Model::DeleteObjectsRequest & req) { return Aws::S3::S3Client::DeleteObjects(req); });
 }
 
+template <typename RequestType, typename RequestFn>
+std::invoke_result_t<RequestFn, RequestType>
+Client::doRequest(const RequestType & request, RequestFn request_fn) const
+{
+    const auto & bucket = request.GetBucket();
+    request.setProviderType(provider_type);
+
+    if (auto region = getRegionForBucket(bucket); !region.empty())
+    {
+        if (!detect_region)
+            LOG_INFO(log, "Using region override {} for bucket {}", region, bucket);
+
+        request.overrideRegion(std::move(region));
+    }
+
+    if (auto uri = getURIForBucket(bucket); uri.has_value())
+        request.overrideURI(std::move(*uri));
+
+
+    bool found_new_endpoint = false;
+    // if we found correct endpoint after 301 responses, update the cache for future requests
+    SCOPE_EXIT(
+        if (found_new_endpoint)
+        {
+            auto uri_override = request.getURIOverride();
+            assert(uri_override.has_value());
+            updateURIForBucket(bucket, std::move(*uri_override));
+        }
+    );
+
+    for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
+    {
+        auto result = request_fn(request);
+        if (result.IsSuccess())
+            return result;
+
+        const auto & error = result.GetError();
+
+        std::string new_region;
+        if (checkIfWrongRegionDefined(bucket, error, new_region))
+        {
+            request.overrideRegion(new_region);
+            continue;
+        }
+
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+            return result;
+
+        // maybe we detect a correct region
+        if (!detect_region)
+        {
+            if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
+            {
+                request.overrideRegion(region);
+                insertRegionOverride(bucket, region);
+            }
+        }
+
+        // we possibly got new location, need to try with that one
+        auto new_uri = getURIFromError(error);
+        if (!new_uri)
+            return result;
+
+        const auto & current_uri_override = request.getURIOverride();
+        /// we already tried with this URI
+        if (current_uri_override && current_uri_override->uri == new_uri->uri)
+        {
+            LOG_INFO(log, "Getting redirected to the same invalid location {}", new_uri->uri.toString());
+            return result;
+        }
+
+        found_new_endpoint = true;
+        request.overrideURI(*new_uri);
+    }
+
+    throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
+}
+
+ProviderType Client::getProviderType() const
+{
+    return provider_type;
+}
+
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
@@ -252,7 +434,6 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
 
     if (!force_detect && !detect_region)
         return "";
-
 
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
@@ -391,6 +572,94 @@ void ClientCacheRegistry::clearCacheForAll()
         }
     }
 
+}
+
+ClientFactory::ClientFactory()
+{
+    aws_options = Aws::SDKOptions{};
+    Aws::InitAPI(aws_options);
+    Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
+    Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
+}
+
+ClientFactory::~ClientFactory()
+{
+    Aws::Utils::Logging::ShutdownAWSLogging();
+    Aws::ShutdownAPI(aws_options);
+}
+
+ClientFactory & ClientFactory::instance()
+{
+    static ClientFactory ret;
+    return ret;
+}
+
+std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
+    const PocoHTTPClientConfiguration & cfg_,
+    bool is_virtual_hosted_style,
+    const String & access_key_id,
+    const String & secret_access_key,
+    const String & server_side_encryption_customer_key_base64,
+    ServerSideEncryptionKMSConfig sse_kms_config,
+    HTTPHeaderEntries headers,
+    CredentialsConfiguration credentials_configuration)
+{
+    PocoHTTPClientConfiguration client_configuration = cfg_;
+    client_configuration.updateSchemeAndRegion();
+
+    if (!server_side_encryption_customer_key_base64.empty())
+    {
+        /// See Client::GeneratePresignedUrlWithSSEC().
+
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
+            Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
+
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
+            server_side_encryption_customer_key_base64});
+
+        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
+        String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+    }
+
+    // These will be added after request signing
+    client_configuration.extra_headers = std::move(headers);
+
+    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+    auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+            client_configuration,
+            std::move(credentials),
+            credentials_configuration);
+
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
+    return Client::create(
+        client_configuration.s3_max_redirects,
+        std::move(sse_kms_config),
+        credentials_provider,
+        client_configuration, // Client configuration.
+        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.
+    );
+}
+
+PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
+    const String & force_region,
+    const RemoteHostFilter & remote_host_filter,
+    unsigned int s3_max_redirects,
+    bool enable_s3_requests_logging,
+    bool for_disk_s3,
+    const ThrottlerPtr & get_request_throttler,
+    const ThrottlerPtr & put_request_throttler)
+{
+    return PocoHTTPClientConfiguration(
+        force_region,
+        remote_host_filter,
+        s3_max_redirects,
+        enable_s3_requests_logging,
+        for_disk_s3,
+        get_request_throttler,
+        put_request_throttler);
 }
 
 }

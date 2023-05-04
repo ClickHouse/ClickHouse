@@ -9,6 +9,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 
@@ -60,7 +61,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 class FunctionArrayEnumerateUniqRanked;
@@ -194,7 +195,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         {
             if (*offsets_by_depth[0] != array->getOffsets())
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                                 "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
             }
         }
@@ -217,7 +218,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             {
                 if (*offsets_by_depth[col_depth] != array->getOffsets())
                 {
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                                 "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
                 }
             }
@@ -225,7 +226,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
         if (col_depth < arrays_depths.depths[array_num])
         {
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                             "{}: Passed array number {} depth ({}) is more than the actual array depth ({}).",
                             getName(), array_num, std::to_string(arrays_depths.depths[array_num]), col_depth);
         }

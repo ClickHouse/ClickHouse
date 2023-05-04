@@ -5,7 +5,21 @@ file (GLOB SRCS_PCRE src/pcre_*.c)
 add_library (_poco_foundation_pcre ${SRCS_PCRE})
 add_library (Poco::Foundation::PCRE ALIAS _poco_foundation_pcre)
 
-target_compile_options (_poco_foundation_pcre PRIVATE -Wno-sign-compare)
+# TODO: remove these warning exclusions
+target_compile_options (_poco_foundation_pcre
+    PRIVATE
+        -Wno-cast-align
+        -Wno-cast-qual
+        -Wno-comma
+        -Wno-conditional-uninitialized
+        -Wno-extra-semi-stmt
+        -Wno-implicit-fallthrough
+        -Wno-reserved-identifier
+        -Wno-sign-compare
+        -Wno-unknown-pragmas
+        -Wno-unreachable-code-break
+        -Wno-unused-macros
+)
 
 # Foundation
 
@@ -17,8 +31,6 @@ set (SRCS
     src/ASCIIEncoding.cpp
     src/AsyncChannel.cpp
     src/AtomicCounter.cpp
-    src/Base32Decoder.cpp
-    src/Base32Encoder.cpp
     src/Base64Decoder.cpp
     src/Base64Encoder.cpp
     src/BinaryReader.cpp
@@ -67,9 +79,6 @@ set (SRCS
     src/HexBinaryEncoder.cpp
     src/InflatingStream.cpp
     src/JSONString.cpp
-    src/Latin1Encoding.cpp
-    src/Latin2Encoding.cpp
-    src/Latin9Encoding.cpp
     src/LineEndingConverter.cpp
     src/LocalDateTime.cpp
     src/LogFile.cpp
@@ -77,8 +86,6 @@ set (SRCS
     src/LoggingFactory.cpp
     src/LoggingRegistry.cpp
     src/LogStream.cpp
-    src/Manifest.cpp
-    src/MD4Engine.cpp
     src/MD5Engine.cpp
     src/MemoryPool.cpp
     src/MemoryStream.cpp
@@ -99,7 +106,6 @@ set (SRCS
     src/PatternFormatter.cpp
     src/Pipe.cpp
     src/PipeImpl.cpp
-    src/PipeStream.cpp
     src/PriorityNotificationQueue.cpp
     src/Process.cpp
     src/PurgeStrategy.cpp
@@ -122,10 +128,8 @@ set (SRCS
     src/StreamChannel.cpp
     src/StreamConverter.cpp
     src/StreamCopier.cpp
-    src/StreamTokenizer.cpp
     src/String.cpp
     src/StringTokenizer.cpp
-    src/SynchronizedObject.cpp
     src/SyslogChannel.cpp
     src/Task.cpp
     src/TaskManager.cpp
@@ -161,29 +165,44 @@ set (SRCS
     src/VarHolder.cpp
     src/VarIterator.cpp
     src/Void.cpp
-    src/Windows1250Encoding.cpp
-    src/Windows1251Encoding.cpp
-    src/Windows1252Encoding.cpp
 )
 
 add_library (_poco_foundation ${SRCS})
 add_library (Poco::Foundation ALIAS _poco_foundation)
 
+# TODO: remove these warning exclusions
 target_compile_options (_poco_foundation
     PRIVATE
+        -Wno-array-bounds
         -Wno-atomic-implicit-seq-cst
+        -Wno-cast-align
+        -Wno-cast-qual
+        -Wno-class-varargs
+        -Wno-covered-switch-default
         -Wno-deprecated
         -Wno-extra-semi-stmt
-        -Wno-zero-as-null-pointer-constant
+        -Wno-implicit-fallthrough
         -Wno-implicit-int-float-conversion
+        -Wno-misleading-indentation
+        -Wno-missing-noreturn
+        -Wno-old-style-cast
+        -Wno-redundant-parens
+        -Wno-reserved-identifier
+        -Wno-reserved-macro-identifier
+        -Wno-shadow
+        -Wno-shorten-64-to-32
+        -Wno-sign-compare
+        -Wno-suggest-destructor-override
+        -Wno-suggest-override
+        -Wno-tautological-unsigned-zero-compare
         -Wno-thread-safety-analysis
         -Wno-thread-safety-negative
-)
-
-target_compile_options (_poco_foundation
-    PRIVATE
-        -Wno-sign-compare
+        -Wno-undef
+        -Wno-unreachable-code-return
+        -Wno-unused-exception-parameter
+        -Wno-unused-macros
         -Wno-unused-parameter
+        -Wno-zero-as-null-pointer-constant
 )
 
 target_compile_definitions (_poco_foundation
@@ -201,7 +220,8 @@ target_link_libraries (_poco_foundation
     PRIVATE
         Poco::Foundation::PCRE
         ch_contrib::zlib
-        ch_contrib::lz4)
+        ch_contrib::lz4
+        ch_contrib::double_conversion)
 
 if(OS_DARWIN AND ARCH_AARCH64)
     target_compile_definitions (_poco_foundation

@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT -q "SELECT a FROM m ORDER BY a LIMIT 5"
 $CLICKHOUSE_CLIENT -q "SELECT a, s FROM m ORDER BY a, s LIMIT 10"
 
 # Not a single .sql test with max_rows_to_read because it doesn't work with Merge storage
-rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM m ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 | grep "rows_read" | sed 's/[^0-9]*//g')
+rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM m ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1  --allow_prefetched_read_pool_for_remote_filesystem=0  --allow_prefetched_read_pool_for_local_filesystem=0 | grep "rows_read" | sed 's/[^0-9]*//g')
 
 # Expected number of read rows with a bit margin
 if [[ $rows_read -lt 500 ]]
@@ -36,7 +36,7 @@ fi
 $CLICKHOUSE_CLIENT -q "SELECT '---StorageBuffer---'"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE buf (a UInt32, s String) engine = Buffer('$CLICKHOUSE_DATABASE', s2, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
 $CLICKHOUSE_CLIENT -q "SELECT a, s FROM buf ORDER BY a, s LIMIT 10"
-rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM buf ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 | grep "rows_read" | sed 's/[^0-9]*//g')
+rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM buf ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1  --allow_prefetched_read_pool_for_remote_filesystem=0  --allow_prefetched_read_pool_for_local_filesystem=0 | grep "rows_read" | sed 's/[^0-9]*//g')
 
 # Expected number of read rows with a bit margin
 if [[ $rows_read -lt 500 ]]

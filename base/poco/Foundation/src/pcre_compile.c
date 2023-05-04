@@ -5839,7 +5839,7 @@ for (;; ptr++)
       else
 #endif /* SUPPORT_UTF */
 
-      /* Handle the case of a single charater - either with no UTF support, or
+      /* Handle the case of a single character - either with no UTF support, or
       with UTF disabled, or for a single character UTF character. */
         {
         c = code[-1];

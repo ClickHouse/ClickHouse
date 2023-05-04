@@ -6,13 +6,14 @@
 #include <atomic>
 #include <vector>
 #include <base/types.h>
+#include <base/strong_typedef.h>
 #include <mutex>
 #include <unordered_map>
 
 
 namespace CurrentStatusInfo
 {
-    using Status = size_t;
+    using Status = StrongTypedef<size_t, struct StatusTag>;
     using Key = std::string;
 
     const char * getName(Status event);
@@ -26,13 +27,13 @@ namespace CurrentStatusInfo
 
     inline void set(Status status, Key key, Int8 value)
     {
-        std::lock_guard<std::mutex> lock(locks[status]);
+        std::lock_guard lock(locks[status]);
         values[status][key] = value;
     }
 
     inline void unset(Status status, Key key)
     {
-        std::lock_guard<std::mutex> lock(locks[status]);
+        std::lock_guard lock(locks[status]);
         values[status].erase(key);
     }
 }

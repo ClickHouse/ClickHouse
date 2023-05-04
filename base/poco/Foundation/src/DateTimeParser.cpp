@@ -276,11 +276,11 @@ int DateTimeParser::parseTZD(std::string::const_iterator& it, const std::string:
 		{"PDT",   -7*3600},
 		{"AKST",  -9*3600},
 		{"AKDT",  -8*3600},
-		{"HST",  -10*3600},
+		{"HST", -10*3600},
 		{"AEST",  10*3600},
 		{"AEDT",  11*3600},
-		{"ACST",   9*3600+1800},
-		{"ACDT",  10*3600+1800},
+		{"ACST", 9*3600+1800},
+		{"ACDT", 10*3600+1800},
 		{"AWST",   8*3600},
 		{"AWDT",   9*3600}
 	};

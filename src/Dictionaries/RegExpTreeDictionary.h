@@ -10,7 +10,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
-#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
@@ -33,6 +32,7 @@ namespace ErrorCodes
 
 class RegExpTreeDictionary : public IDictionary
 {
+    friend struct MatchContext;
 public:
     struct Configuration
     {
@@ -162,6 +162,8 @@ private:
     std::unordered_map<UInt64, UInt64> topology_order;
     #if USE_VECTORSCAN
     MultiRegexps::DeferredConstructedRegexpsPtr hyperscan_regex;
+    MultiRegexps::ScratchPtr origin_scratch;
+    hs_database_t* origin_db;
     #endif
 
     Poco::Logger * logger;

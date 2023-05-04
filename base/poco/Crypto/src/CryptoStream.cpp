@@ -111,7 +111,7 @@ int CryptoStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 	{
 		int m = (static_cast<int>(length) - count)/2 - static_cast<int>(_pTransform->blockSize());
 
-		// Make sure we can read at least one more block. Explicitely check
+		// Make sure we can read at least one more block. Explicitly check
 		// for m < 0 since blockSize() returns an unsigned int and the
 		// comparison might give false results for m < 0.
 		if (m <= 0)

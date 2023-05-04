@@ -18,35 +18,36 @@
 #define Foundation_Environment_UNIX_INCLUDED
 
 
+#include <map>
 #include "Poco/Foundation.h"
 #include "Poco/Mutex.h"
-#include <map>
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API EnvironmentImpl
 {
 public:
-	typedef UInt8 NodeId[6]; /// Ethernet address.
+    typedef UInt8 NodeId[6]; /// Ethernet address.
 
-	static std::string getImpl(const std::string& name);	
-	static bool hasImpl(const std::string& name);	
-	static void setImpl(const std::string& name, const std::string& value);
-	static std::string osNameImpl();
-	static std::string osDisplayNameImpl();
-	static std::string osVersionImpl();
-	static std::string osArchitectureImpl();
-	static std::string nodeNameImpl();
-	static void nodeIdImpl(NodeId& id);
-	static unsigned processorCountImpl();
+    static std::string getImpl(const std::string & name);
+    static bool hasImpl(const std::string & name);
+    static void setImpl(const std::string & name, const std::string & value);
+    static std::string osNameImpl();
+    static std::string osDisplayNameImpl();
+    static std::string osVersionImpl();
+    static std::string osArchitectureImpl();
+    static std::string nodeNameImpl();
+    static void nodeIdImpl(NodeId & id);
+    static unsigned processorCountImpl();
 
 private:
-	typedef std::map<std::string, std::string> StringMap;
-	
-	static StringMap _map;
-	static FastMutex _mutex;
+    typedef std::map<std::string, std::string> StringMap;
+
+    static StringMap _map;
+    static FastMutex _mutex;
 };
 
 

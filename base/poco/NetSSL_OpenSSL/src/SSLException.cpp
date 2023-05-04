@@ -22,7 +22,7 @@ namespace Net {
 
 POCO_IMPLEMENT_EXCEPTION(SSLException, NetException, "SSL Exception")
 POCO_IMPLEMENT_EXCEPTION(SSLContextException, SSLException, "SSL context exception")
-POCO_IMPLEMENT_EXCEPTION(InvalidCertificateException, SSLException, "Invalid certficate")
+POCO_IMPLEMENT_EXCEPTION(InvalidCertificateException, SSLException, "Invalid certificate")
 POCO_IMPLEMENT_EXCEPTION(CertificateValidationException, SSLException, "Certificate validation error")
 POCO_IMPLEMENT_EXCEPTION(SSLConnectionUnexpectedlyClosedException, SSLException, "SSL connection unexpectedly closed")
 

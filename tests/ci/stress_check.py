@@ -16,13 +16,12 @@ from clickhouse_helper import (
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import post_commit_status
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from docker_pull_helper import get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, read_test_results
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -36,7 +35,6 @@ def get_run_command(
         "docker run --cap-add=SYS_PTRACE "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
-        f"-e DISABLE_BC_CHECK={os.environ.get('DISABLE_BC_CHECK', '0')} "
         # For dmesg and sysctl
         "--privileged "
         f"--volume={build_path}:/package_folder "
@@ -109,7 +107,7 @@ def process_results(
     return state, description, test_results, additional_files
 
 
-def main():
+def run_stress_test(docker_image_name):
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -126,13 +124,14 @@ def main():
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/stress-test")
+    docker_image = get_image_with_version(reports_path, docker_image_name)
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
@@ -181,7 +180,7 @@ def main():
     )
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -199,4 +198,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_stress_test("clickhouse/stress-test")

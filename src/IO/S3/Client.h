@@ -1,32 +1,46 @@
 #pragma once
 
+#include <optional>
+#include <base/types.h>
+
 #include "config.h"
+
+namespace DB::S3
+{
+
+/// See https://docs.aws.amazon.com/AmazonS3/latest/userguide/specifying-kms-encryption.html
+/// Needed by S3Common.h even if USE_AWS_S3 is 0
+struct ServerSideEncryptionKMSConfig
+{
+    // If key_id is non-null, enable SSE-KMS. If key_id is "", use the AWS managed key
+    std::optional<String> key_id = std::nullopt;
+    std::optional<String> encryption_context = std::nullopt;
+    std::optional<bool> bucket_key_enabled = std::nullopt;
+
+    bool operator==(const ServerSideEncryptionKMSConfig & other) const = default;
+};
+
+}
 
 #if USE_AWS_S3
 
-#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Credentials.h>
+#include <IO/S3/ProviderType.h>
 
+#include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3ServiceClientModel.h>
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_REDIRECTS;
-}
-
-namespace S3
+namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
@@ -78,15 +92,26 @@ private:
 /// - automatically detect endpoint and regions for each bucket and cache them
 ///
 /// For this client to work correctly both Client::RetryStrategy and Requests defined in <IO/S3/Requests.h> should be used.
-class Client : public Aws::S3::S3Client
+///
+/// To add support for new type of request
+/// - ExtendedRequest should be defined inside IO/S3/Requests.h
+/// - new method accepting that request should be defined in this Client (check other requests for reference)
+/// - method handling the request from Aws::S3::S3Client should be left to private so we don't use it by accident
+class Client : private Aws::S3::S3Client
 {
 public:
-    template <typename... Args>
-    static std::unique_ptr<Client> create(Args &&... args)
-    {
-        (verifyArgument(args), ...);
-        return std::unique_ptr<Client>(new Client(std::forward<Args>(args)...));
-    }
+    /// we use a factory method to verify arguments before creating a client because
+    /// there are certain requirements on arguments for it to work correctly
+    /// e.g. Client::RetryStrategy should be used
+    static std::unique_ptr<Client> create(
+            size_t max_redirects_,
+            ServerSideEncryptionKMSConfig sse_kms_config_,
+            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+            const Aws::Client::ClientConfiguration & client_configuration,
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+            bool use_virtual_addressing);
+
+    static std::unique_ptr<Client> create(const Client & other);
 
     Client & operator=(const Client &) = delete;
 
@@ -106,7 +131,15 @@ public:
         }
     }
 
-    /// Decorator for RetryStrategy needed for this client to work correctly
+    /// Returns the initial endpoint.
+    const String & getInitialEndpoint() const { return initial_endpoint; }
+
+    /// Decorator for RetryStrategy needed for this client to work correctly.
+    /// We want to manually handle permanent moves (status code 301) because:
+    /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
+    ///   requests so we need to manually find the correct location
+    /// - we want to cache the new location to decrease number of roundtrips for future requests
+    /// This decorator doesn't retry if 301 is detected and fallbacks to the inner retry strategy otherwise.
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
@@ -131,6 +164,13 @@ public:
         std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy;
     };
 
+    /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
+    /// (before sending the request with one of the methods below).
+    /// Per the docs (https://docs.aws.amazon.com/AmazonS3/latest/userguide/specifying-kms-encryption.html),
+    /// the headers should only be set for PutObject, CopyObject, POST Object, and CreateMultipartUpload.
+    template <typename RequestType>
+    void setKMSHeaders(RequestType & request) const;
+
     Model::HeadObjectOutcome HeadObject(const HeadObjectRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(const ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(const ListObjectsRequest & request) const;
@@ -147,35 +187,22 @@ public:
     Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
 
+    using Aws::S3::S3Client::EnableRequestProcessing;
+    using Aws::S3::S3Client::DisableRequestProcessing;
+
+    ProviderType getProviderType() const;
 private:
-    template <typename... Args>
-    explicit Client(size_t max_redirects_, Args &&... args)
-        : Aws::S3::S3Client(std::forward<Args>(args)...)
-        , max_redirects(max_redirects_)
-        , log(&Poco::Logger::get("S3Client"))
-    {
-        auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
-        endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
-        std::string endpoint;
-        endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
-        detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
+    Client(size_t max_redirects_,
+           ServerSideEncryptionKMSConfig sse_kms_config_,
+           const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
+           const Aws::Client::ClientConfiguration& client_configuration,
+           Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+           bool use_virtual_addressing);
 
-        cache = std::make_shared<ClientCache>();
-        ClientCacheRegistry::instance().registerClient(cache);
-    }
+    Client(const Client & other);
 
-    Client(const Client & other)
-        : Aws::S3::S3Client(other)
-        , explicit_region(other.explicit_region)
-        , detect_region(other.detect_region)
-        , max_redirects(other.max_redirects)
-        , log(&Poco::Logger::get("S3Client"))
-    {
-        cache = std::make_shared<ClientCache>(*other.cache);
-        ClientCacheRegistry::instance().registerClient(cache);
-    }
-
-    /// Make regular functions private
+    /// Leave regular functions private so we don't accidentally use them
+    /// otherwise region and endpoint redirection won't work
     using Aws::S3::S3Client::HeadObject;
     using Aws::S3::S3Client::ListObjectsV2;
     using Aws::S3::S3Client::ListObjects;
@@ -194,80 +221,7 @@ private:
 
     template <typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
-    doRequest(const RequestType & request, RequestFn request_fn) const
-    {
-        const auto & bucket = request.GetBucket();
-
-        if (auto region = getRegionForBucket(bucket); !region.empty())
-        {
-            if (!detect_region)
-                LOG_INFO(log, "Using region override {} for bucket {}", region, bucket);
-
-            request.overrideRegion(std::move(region));
-        }
-
-        if (auto uri = getURIForBucket(bucket); uri.has_value())
-            request.overrideURI(std::move(*uri));
-
-
-        bool found_new_endpoint = false;
-        // if we found correct endpoint after 301 responses, update the cache for future requests
-        SCOPE_EXIT(
-            if (found_new_endpoint)
-            {
-                auto uri_override = request.getURIOverride();
-                assert(uri_override.has_value());
-                updateURIForBucket(bucket, std::move(*uri_override));
-            }
-        );
-
-        for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
-        {
-            auto result = request_fn(request);
-            if (result.IsSuccess())
-                return result;
-
-            const auto & error = result.GetError();
-
-            std::string new_region;
-            if (checkIfWrongRegionDefined(bucket, error, new_region))
-            {
-                request.overrideRegion(new_region);
-                continue;
-            }
-
-            if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
-                return result;
-
-            // maybe we detect a correct region
-            if (!detect_region)
-            {
-                if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
-                {
-                    request.overrideRegion(region);
-                    insertRegionOverride(bucket, region);
-                }
-            }
-
-            // we possibly got new location, need to try with that one
-            auto new_uri = getURIFromError(error);
-            if (!new_uri)
-                return result;
-
-            const auto & current_uri_override = request.getURIOverride();
-            /// we already tried with this URI
-            if (current_uri_override && current_uri_override->uri == new_uri->uri)
-            {
-                LOG_INFO(log, "Getting redirected to the same invalid location {}", new_uri->uri.toString());
-                return result;
-            }
-
-            found_new_endpoint = true;
-            request.overrideURI(*new_uri);
-        }
-
-        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
-    }
+    doRequest(const RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
@@ -279,30 +233,54 @@ private:
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
-    template <typename T>
-    static void verifyArgument(const T & /*arg*/)
-    {}
-
-    template <std::derived_from<Aws::Client::ClientConfiguration> T>
-    static void verifyArgument(const T & client_config)
-    {
-        if (!client_config.retryStrategy)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The S3 client can only be used with Client::RetryStrategy, define it in the client configuration");
-
-        assert_cast<const RetryStrategy &>(*client_config.retryStrategy);
-    }
+    String initial_endpoint;
 
     std::string explicit_region;
     mutable bool detect_region = true;
+
+    ProviderType provider_type{ProviderType::UNKNOWN};
 
     mutable std::shared_ptr<ClientCache> cache;
 
     const size_t max_redirects;
 
+    const ServerSideEncryptionKMSConfig sse_kms_config;
+
     Poco::Logger * log;
 };
 
-}
+class ClientFactory
+{
+public:
+    ~ClientFactory();
+
+    static ClientFactory & instance();
+
+    std::unique_ptr<S3::Client> create(
+        const PocoHTTPClientConfiguration & cfg,
+        bool is_virtual_hosted_style,
+        const String & access_key_id,
+        const String & secret_access_key,
+        const String & server_side_encryption_customer_key_base64,
+        ServerSideEncryptionKMSConfig sse_kms_config,
+        HTTPHeaderEntries headers,
+        CredentialsConfiguration credentials_configuration);
+
+    PocoHTTPClientConfiguration createClientConfiguration(
+        const String & force_region,
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects,
+        bool enable_s3_requests_logging,
+        bool for_disk_s3,
+        const ThrottlerPtr & get_request_throttler,
+        const ThrottlerPtr & put_request_throttler);
+
+private:
+    ClientFactory();
+
+    Aws::SDKOptions aws_options;
+    std::atomic<bool> s3_requests_logging_enabled;
+};
 
 }
 
