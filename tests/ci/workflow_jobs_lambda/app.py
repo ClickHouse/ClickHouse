@@ -257,6 +257,7 @@ def handler(event: dict, context: Any) -> dict:
     else:
         event_data = json.loads(event["body"])
 
+    logging.info("Got the next raw event from the github hook: %s", event_data)
     repo = event_data["repository"]
     try:
         wf_job = event_data["workflow_job"]
@@ -264,6 +265,9 @@ def handler(event: dict, context: Any) -> dict:
         logging.error("The event does not contain valid workflow_jobs data")
         logging.error("The event data: %s", event)
         logging.error("The context data: %s", context)
+
+    # We record only finished steps
+    steps = len([step for step in wf_job["steps"] if step["conclusion"] is not None])
 
     workflow_job = WorkflowJob(
         wf_job["id"],
@@ -281,7 +285,7 @@ def handler(event: dict, context: Any) -> dict:
         wf_job["started_at"],
         wf_job["completed_at"] or "1970-01-01T00:00:00",  # nullable date
         wf_job["name"],
-        len(wf_job["steps"]),
+        steps,
         wf_job["check_run_url"],
         wf_job["labels"],
         wf_job["runner_id"] or 0,  # nullable
