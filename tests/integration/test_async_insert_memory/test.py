@@ -54,6 +54,7 @@ def test_memory_usage():
     node.query("DROP TABLE async_table")
     node.query("DROP USER IF EXISTS A")
 
+
 def test_synchronous_memory_usage():
     node.query("CREATE USER IF NOT EXISTS A")
     node.query("GRANT ALL ON *.* TO A")
