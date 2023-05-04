@@ -8,65 +8,51 @@
 
 #if USE_AWS_S3
 
-#    include <Common/isValidUTF8.h>
+#include <Common/isValidUTF8.h>
 
-#    include <Functions/FunctionsConversion.h>
+#include <Functions/FunctionsConversion.h>
 
-#    include <IO/S3/Requests.h>
-#    include <IO/S3Common.h>
+#include <IO/S3/Requests.h>
+#include <IO/S3Common.h>
 
-#    include <Interpreters/TreeRewriter.h>
-#    include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/TreeRewriter.h>
 
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTInsertQuery.h>
 
-#    include <Storages/NamedCollectionsHelpers.h>
-#    include <Storages/PartitionedSink.h>
-#    include <Storages/ReadFromStorageProgress.h>
-#    include <Storages/S3Queue/S3QueueSource.h>
-#    include <Storages/StorageFactory.h>
-#    include <Storages/StorageS3.h>
-#    include <Storages/StorageS3Settings.h>
-#    include <Storages/StorageSnapshot.h>
-#    include <Storages/StorageURL.h>
-#    include <Storages/VirtualColumnUtils.h>
-#    include <Storages/checkAndGetLiteralArgument.h>
-#    include <Storages/getVirtualsForStorage.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/PartitionedSink.h>
+#include <Storages/ReadFromStorageProgress.h>
+#include <Storages/S3Queue/S3QueueSource.h>
+#include <Storages/StorageS3.h>
+#include <Storages/StorageS3Settings.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Storages/getVirtualsForStorage.h>
 
-#    include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
-#    include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#    include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 
-#    include <IO/ReadBufferFromS3.h>
-#    include <IO/WriteBufferFromS3.h>
+#include <IO/ReadBufferFromS3.h>
 
-#    include <Formats/FormatFactory.h>
-#    include <Formats/ReadSchemaUtils.h>
+#include <Formats/FormatFactory.h>
 
-#    include <Processors/Formats/IInputFormat.h>
-#    include <Processors/Formats/IOutputFormat.h>
-#    include <Processors/Transforms/AddingDefaultsTransform.h>
-#    include <QueryPipeline/narrowPipe.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
-#    include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
-#    include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeString.h>
 
-#    include <aws/core/auth/AWSCredentials.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/parseGlobs.h>
 
-#    include <re2/re2.h>
-#    include <Common/CurrentMetrics.h>
-#    include <Common/NamedCollections/NamedCollections.h>
-#    include <Common/parseGlobs.h>
-#    include <Common/quoteString.h>
-
-#    include <filesystem>
-#    include <Processors/ISource.h>
-#    include <Processors/Sinks/SinkToStorage.h>
-#    include <QueryPipeline/Pipe.h>
-
-#    include <boost/algorithm/string.hpp>
+#include <filesystem>
+#include <Processors/ISource.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace fs = std::filesystem;
 
@@ -220,7 +206,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
-    const S3QueueMode & mode_,
+    std::shared_ptr<S3QueueHolder> queue_holder_,
     const S3QueueAction & action_,
     zkutil::ZooKeeperPtr current_zookeeper,
     const String & zookeeper_path_,
@@ -238,9 +224,9 @@ StorageS3QueueSource::StorageS3QueueSource(
     , client(client_)
     , sample_block(sample_block_)
     , format_settings(format_settings_)
+    , queue_holder(queue_holder_)
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
-    , mode(mode_)
     , action(action_)
     , download_thread_num(download_thread_num_)
     , zookeeper(current_zookeeper)
@@ -412,7 +398,7 @@ Chunk StorageS3QueueSource::generate()
                     }
                 }
                 LOG_WARNING(log, "Set processed: {}", file_path);
-                setFileProcessed(file_path);
+                queue_holder->setFileProcessed(file_path);
                 applyActionAfterProcessing(file_path);
                 return chunk;
             }
@@ -422,7 +408,7 @@ Chunk StorageS3QueueSource::generate()
             LOG_ERROR(log, "Exception: {} ", e.displayText());
             const auto & failed_file_path = reader.getPath();
             LOG_WARNING(log, "Set failed: {}", failed_file_path);
-            setFileFailed(failed_file_path);
+            queue_holder->setFileFailed(failed_file_path);
         }
 
 
@@ -441,41 +427,6 @@ Chunk StorageS3QueueSource::generate()
     return {};
 }
 
-void StorageS3QueueSource::setFileProcessed(const String & file_path)
-{
-    std::lock_guard lock(mutex);
-    if (mode == S3QueueMode::UNORDERED)
-    {
-        String processed_files = zookeeper->get(zookeeper_path + "/processed");
-        std::unordered_set<String> processed = parseCollection(processed_files);
-
-        processed.insert(file_path);
-        Strings set_processed;
-        set_processed.insert(set_processed.end(), processed.begin(), processed.end());
-
-        zookeeper->set(zookeeper_path + "/processed", toString(set_processed));
-    }
-    else
-    {
-        zookeeper->set(zookeeper_path + "/processed", file_path);
-    }
-}
-
-
-void StorageS3QueueSource::setFileFailed(const String & file_path)
-{
-    std::lock_guard lock(mutex);
-    String processed_files = zookeeper->get(zookeeper_path + "/failed");
-    std::unordered_set<String> processed = parseCollection(processed_files);
-
-    processed.insert(file_path);
-    Strings set_failed;
-    set_failed.insert(set_failed.end(), processed.begin(), processed.end());
-
-    zookeeper->set(zookeeper_path + "/failed", toString(set_failed));
-}
-
-
 void StorageS3QueueSource::applyActionAfterProcessing(const String & file_path)
 {
     LOG_WARNING(log, "Delete {} Bucke {}", file_path, bucket);
@@ -492,24 +443,6 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & file_path)
     {
         LOG_TRACE(log, "Object with path {} was removed from S3", file_path);
     }
-}
-
-std::unordered_set<String> StorageS3QueueSource::parseCollection(String & files)
-{
-    ReadBuffer rb(const_cast<char *>(reinterpret_cast<const char *>(files.data())), files.length(), 0);
-    Strings deserialized;
-    try
-    {
-        readQuoted(deserialized, rb);
-    }
-    catch (...)
-    {
-        deserialized = {};
-    }
-
-    std::unordered_set<String> processed(deserialized.begin(), deserialized.end());
-
-    return processed;
 }
 
 
