@@ -16,8 +16,6 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void updateEstimate(MutableColumns &) const override { }
-
 protected:
     Pipe pipe;
     ContextPtr context;

@@ -65,8 +65,6 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    void updateEstimate(MutableColumns &) const override { }
-
 private:
     const StorageDummy & storage;
     StorageSnapshotPtr storage_snapshot;

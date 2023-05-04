@@ -13,8 +13,6 @@ public:
     String getName() const override { return "ReadNothing"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    void updateEstimate(MutableColumns &) const override { }
 };
 
 }

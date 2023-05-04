@@ -16,7 +16,7 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
-    virtual void updateEstimate(MutableColumns & columns) const = 0;
+    virtual void updateEstimate(MutableColumns & /*columns*/) const { }
 };
 
 }
