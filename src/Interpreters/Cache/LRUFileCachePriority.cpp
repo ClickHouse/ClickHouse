@@ -53,7 +53,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key, offset);
+    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}, size: {}", key, offset, size);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }

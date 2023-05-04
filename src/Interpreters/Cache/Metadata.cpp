@@ -384,6 +384,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
+    chassert(file_segment->reserved_size >= downloaded_size);
     int64_t diff = file_segment->reserved_size - downloaded_size;
 
     metadata->file_segment = std::make_shared<FileSegment>(
