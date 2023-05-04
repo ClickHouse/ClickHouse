@@ -35,47 +35,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_TYPE;
     extern const int MONGODB_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
-
-namespace
-{
-    void prepareMongoDBArrayInfo(
-        std::unordered_map<size_t, MongoDBArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type);
-}
-
-std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
-{
-    auto cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
-
-    /// Looks like selecting _id column is implicit by default.
-    if (!sample_block_to_select.has("_id"))
-        cursor->query().returnFieldSelector().add("_id", 0);
-
-    for (const auto & column : sample_block_to_select)
-        cursor->query().returnFieldSelector().add(column.name, 1);
-    return cursor;
-}
-
-MongoDBSource::MongoDBSource(
-    std::shared_ptr<Poco::MongoDB::Connection> & connection_,
-    std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
-    const Block & sample_block,
-    UInt64 max_block_size_)
-    : ISource(sample_block.cloneEmpty())
-    , connection(connection_)
-    , cursor{std::move(cursor_)}
-    , max_block_size{max_block_size_}
-{
-    description.init(sample_block);
-
-    for (const auto idx : collections::range(0, description.sample_block.columns()))
-        if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
-            prepareMongoDBArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
-}
-
-
-MongoDBSource::~MongoDBSource() = default;
-
 
 namespace
 {
@@ -83,39 +44,6 @@ namespace
     using ObjectId = Poco::MongoDB::ObjectId;
     using MongoArray = Poco::MongoDB::Array;
 
-    template <typename T>
-    void insertNumber(IColumn & column, const Poco::MongoDB::Element & value, const std::string & name)
-    {
-        switch (value.type())
-        {
-            case Poco::MongoDB::ElementTraits<Int32>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
-                break;
-            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value()));
-                break;
-            case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<T>(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value()));
-                break;
-            case Poco::MongoDB::ElementTraits<bool>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
-                break;
-            case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().emplace_back();
-                break;
-            case Poco::MongoDB::ElementTraits<String>::TypeId:
-                assert_cast<ColumnVector<T> &>(column).getData().push_back(
-                    parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
-                break;
-            default:
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected a number, got type id = {} for column {}",
-                    toString(value.type()), name);
-        }
-    }
 
     template <typename T>
     Field getNumber(const Poco::MongoDB::Element & value, const std::string & name)
@@ -230,7 +158,40 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type conversion to {} is not supported", nested->getName());
 
         array_info[column_idx] = {count_dimensions, default_value, parser};
+    }
 
+    template <typename T>
+    void insertNumber(IColumn & column, const Poco::MongoDB::Element & value, const std::string & name)
+    {
+        switch (value.type())
+        {
+            case Poco::MongoDB::ElementTraits<Int32>::TypeId:
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
+                break;
+            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<T>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value()));
+                break;
+            case Poco::MongoDB::ElementTraits<Float64>::TypeId:
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<T>(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value()));
+                break;
+            case Poco::MongoDB::ElementTraits<bool>::TypeId:
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
+                break;
+            case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
+                assert_cast<ColumnVector<T> &>(column).getData().emplace_back();
+                break;
+            case Poco::MongoDB::ElementTraits<String>::TypeId:
+                assert_cast<ColumnVector<T> &>(column).getData().push_back(
+                    parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
+                break;
+            default:
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected a number, got type id = {} for column {}",
+                    toString(value.type()), name);
+        }
     }
 
     void insertValue(
@@ -334,7 +295,7 @@ namespace
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Array, got type id = {} for column {}",
                                     toString(value.type()), name);
 
-                size_t max_dimension = 0, expected_dimensions = array_info[idx].num_dimensions;
+                size_t expected_dimensions = array_info[idx].num_dimensions;
                 const auto parse_value = array_info[idx].parser;
                 std::vector<Row> dimensions(expected_dimensions + 1);
 
@@ -345,43 +306,51 @@ namespace
 
                 while (!arrays.empty())
                 {
-                    size_t dimension = arrays.size();
-                    max_dimension = std::max(max_dimension, dimension);
+                    size_t dimension_idx = arrays.size() - 1;
 
-                    auto [element, i] = arrays.back();
+                    if (dimension_idx + 1 > expected_dimensions)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
 
-                    auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(*element).value();
+                    auto [parent_ptr, child_idx] = arrays.back();
+                    auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(*parent_ptr).value();
 
-                    if (i >= parent->size())
+                    if (child_idx >= parent->size())
                     {
-                        dimensions[dimension].emplace_back(Array(dimensions[dimension + 1].begin(), dimensions[dimension + 1].end()));
-                        dimensions[dimension + 1].clear();
-
                         arrays.pop_back();
+
+                        if (dimension_idx == 0)
+                            break;
+
+                        dimensions[dimension_idx].emplace_back(Array(dimensions[dimension_idx + 1].begin(), dimensions[dimension_idx + 1].end()));
+                        dimensions[dimension_idx + 1].clear();
+
                         continue;
                     }
 
-                    Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(i));
+                    Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(child_idx));
+                    arrays.back().second += 1;
 
                     if (child->type() == Poco::MongoDB::ElementTraits<MongoArray::Ptr>::TypeId)
                     {
-                        if (dimension + 1 > expected_dimensions)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
-
-                        arrays.back().second += 1;
                         arrays.emplace_back(child.get(), 0);
+                    }
+                    else if (child->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
+                    {
+                        if (dimension_idx + 1 == expected_dimensions)
+                            dimensions[dimension_idx + 1].emplace_back(array_info[idx].default_value);
+                        else
+                            dimensions[dimension_idx + 1].emplace_back(Array());
+                    }
+                    else if (dimension_idx + 1 == expected_dimensions)
+                    {
+                        dimensions[dimension_idx + 1].emplace_back(parse_value(*child, name));
                     }
                     else
                     {
-                        dimensions[dimension].emplace_back(parse_value(*child, name));
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Got less dimensions than expected. ({} instead of {})", dimension_idx + 1, expected_dimensions);
                     }
                 }
-
-                if (max_dimension < expected_dimensions)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Got less dimensions than expected. ({} instead of {})", max_dimension, expected_dimensions);
-
-                // TODO: default value
 
                 assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
                 break;
@@ -395,6 +364,39 @@ namespace
     void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
 }
 
+
+std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
+{
+    auto cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
+
+    /// Looks like selecting _id column is implicit by default.
+    if (!sample_block_to_select.has("_id"))
+        cursor->query().returnFieldSelector().add("_id", 0);
+
+    for (const auto & column : sample_block_to_select)
+        cursor->query().returnFieldSelector().add(column.name, 1);
+    return cursor;
+}
+
+MongoDBSource::MongoDBSource(
+    std::shared_ptr<Poco::MongoDB::Connection> & connection_,
+    std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
+    const Block & sample_block,
+    UInt64 max_block_size_)
+    : ISource(sample_block.cloneEmpty())
+    , connection(connection_)
+    , cursor{std::move(cursor_)}
+    , max_block_size{max_block_size_}
+{
+    description.init(sample_block);
+
+    for (const auto idx : collections::range(0, description.sample_block.columns()))
+        if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
+            prepareMongoDBArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
+}
+
+
+MongoDBSource::~MongoDBSource() = default;
 
 Chunk MongoDBSource::generate()
 {
