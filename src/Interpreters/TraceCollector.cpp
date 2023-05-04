@@ -56,9 +56,17 @@ TraceCollector::~TraceCollector()
   */
 void TraceCollector::stop()
 {
-    WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
-    writeChar(true, out);
-    out.next();
+    try
+    {
+        WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
+        writeChar(true, out);
+        out.next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("TraceCollector");
+    }
+
     thread.join();
 }
 
