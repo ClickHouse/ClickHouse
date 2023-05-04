@@ -5,7 +5,7 @@
 #include <Disks/ObjectStorages/S3/copyS3FileToDisk.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
-#include <IO/BackupsIOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/HTTPHeaderEntries.h>
