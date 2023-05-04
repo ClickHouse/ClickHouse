@@ -648,9 +648,9 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 {
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        return std::make_shared<ReadBufferFromS3>(
+        return std::make_unique<ReadBufferFromS3>(
             client,
             bucket,
             path,
@@ -1252,6 +1252,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,
+        auth_settings.server_side_encryption_kms_config,
         std::move(headers),
         S3::CredentialsConfiguration{
         auth_settings.use_environment_credentials.value_or(context->getConfigRef().getBool("s3.use_environment_credentials", true)),

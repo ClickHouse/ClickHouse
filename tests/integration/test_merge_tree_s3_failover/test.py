@@ -85,7 +85,7 @@ def cluster():
 def drop_table(cluster):
     yield
     node = cluster.instances["node"]
-    node.query("DROP TABLE IF EXISTS s3_failover_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_failover_test SYNC")
 
 
 # S3 request will be failed for an appropriate part file write.
