@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Columns/ColumnArray.h>
 #include <IO/WriteSettings.h>
-
+#include <IO/AbstractHashingWriteBuffer.h>
 
 namespace DB
 {

@@ -126,7 +126,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             marks_compression_codec,
             settings.marks_compress_block_size,
             settings.query_write_settings,
-            settings.cryptographic_mode);
+            settings.cryptographic_mode,
+            settings.hash_function);
     };
 
     ISerialization::SubstreamPath path;

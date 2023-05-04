@@ -9,22 +9,29 @@
 
 namespace DB
 {
+
+inline std::pair<uint64_t, uint64_t> SipHashApplier(const char* begin, const size_t size) {
+    auto hashed = sipHash128(begin, size);
+    return {hashed & (~(0llu)), hashed >> 64};
+}
+
 template <typename Buffer>
 class ICryptoHashingBuffer : public BufferWithOwnMemory<Buffer> {
 public:
     using uint128 = std::pair<uint64_t, uint64_t>;
-
-    explicit ICryptoHashingBuffer(size_t block_size_= DBMS_DEFAULT_HASHING_BLOCK_SIZE)
+    using HashFnApplier = uint128 (*)(const char*, const size_t);
+    explicit ICryptoHashingBuffer(size_t block_size_= DBMS_DEFAULT_HASHING_BLOCK_SIZE, HashFnApplier hasher_ = &SipHashApplier)
         : BufferWithOwnMemory<Buffer>(block_size_)
         , block_pos(0)
         , block_size(block_size_)
+        , hasher(hasher_)
     {
     }
 
     uint128 getHash()
     {
         if (block_pos) {
-            return applyHashFn(BufferWithOwnMemory<Buffer>::memory.data(), block_pos);
+            return hasher(BufferWithOwnMemory<Buffer>::memory.data(), block_pos);
         } else {
            return state;
         }
@@ -32,20 +39,19 @@ public:
 
     void append(DB::BufferBase::Position data)
     {
-        state = applyHashFn(data, block_size);
+        state = hasher(data, block_size);
     }
 
     void calculateHash(DB::BufferBase::Position data, size_t len);
-private:
-    uint128 applyHashFn(const char* begin, const size_t size) {
-        auto hashed = sipHash128(begin, size);
-        return {hashed & (~(0llu)), hashed >> 64};
-    }
+
 protected:
     size_t block_pos;
     size_t block_size;
     uint128 state;
+
+    HashFnApplier hasher;
 };
+
 
 class CryptoHashingWriteBuffer : public ICryptoHashingBuffer<WriteBuffer> {
 private:

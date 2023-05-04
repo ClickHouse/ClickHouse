@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <IO/AbstractHashingWriteBuffer.h>
 
 
 namespace DB

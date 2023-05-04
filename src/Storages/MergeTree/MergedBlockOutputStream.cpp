@@ -208,20 +208,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
         {
             auto count_out = new_part->getDataPartStorage().writeFile("count.txt", 4096, write_settings);
-            if (storage.getSettings()->cryptographic_mode) {
-                CryptoHashingWriteBuffer count_out_hashing(*count_out);
-                writeIntText(rows_count, count_out_hashing);
-                count_out_hashing.next();
-                checksums.files["count.txt"].file_size = count_out_hashing.count();
-                checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            } else
-            {
-                HashingWriteBuffer count_out_hashing(*count_out);
-                writeIntText(rows_count, count_out_hashing);
-                count_out_hashing.next();
-                checksums.files["count.txt"].file_size = count_out_hashing.count();
-                checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            }
+            auto settings = storage.getSettings();
+            AbstractHashingWriteBuffer count_out_hashing(*count_out, settings->cryptographic_mode, settings->hash_function);
+
+            writeIntText(rows_count, count_out_hashing.getBuf());
+            count_out_hashing.next();
+            checksums.files["count.txt"].file_size = count_out_hashing.count();
+            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+
             count_out->preFinalize();
             written_files.emplace_back(std::move(count_out));
         }
@@ -231,17 +225,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         if (new_part->uuid != UUIDHelpers::Nil)
         {
             auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, write_settings);
-            if (storage.getSettings()->cryptographic_mode){
-                CryptoHashingWriteBuffer out_hashing(*out);
-                writeUUIDText(new_part->uuid, out_hashing);
-                checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-                checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-            }else {
-                HashingWriteBuffer out_hashing(*out);
-                writeUUIDText(new_part->uuid, out_hashing);
-                checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-                checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-            }
+            auto settings = storage.getSettings();
+            AbstractHashingWriteBuffer out_hashing(*out, settings->cryptographic_mode, settings->hash_function);
+
+            writeUUIDText(new_part->uuid, out_hashing.getBuf());
+            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+
             out->preFinalize();
             written_files.emplace_back(std::move(out));
         }
@@ -264,20 +254,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
         {
             auto count_out = new_part->getDataPartStorage().writeFile("count.txt", 4096, write_settings);
-            if (storage.getSettings()->cryptographic_mode) {
-                CryptoHashingWriteBuffer count_out_hashing(*count_out);
-                writeIntText(rows_count, count_out_hashing);
-                count_out_hashing.next();
-                checksums.files["count.txt"].file_size = count_out_hashing.count();
-                checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            } else
-            {
-                HashingWriteBuffer count_out_hashing(*count_out);
-                writeIntText(rows_count, count_out_hashing);
-                count_out_hashing.next();
-                checksums.files["count.txt"].file_size = count_out_hashing.count();
-                checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            }
+            auto settings = storage.getSettings();
+            AbstractHashingWriteBuffer count_out_hashing(*count_out, settings->cryptographic_mode, settings->hash_function);
+
+            writeIntText(rows_count, count_out_hashing.getBuf());
+            count_out_hashing.next();
+            checksums.files["count.txt"].file_size = count_out_hashing.count();
+            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+
             count_out->preFinalize();
             written_files.emplace_back(std::move(count_out));
         }
@@ -287,19 +271,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         /// Write a file with ttl infos in json format.
         auto out = new_part->getDataPartStorage().writeFile("ttl.txt", 4096, write_settings);
+        auto settings = storage.getSettings();
+        AbstractHashingWriteBuffer out_hashing(*out, settings->cryptographic_mode, settings->hash_function);
 
-        if (storage.getSettings()->cryptographic_mode) {
-            CryptoHashingWriteBuffer out_hashing(*out);
-            new_part->ttl_infos.write(out_hashing);
-            checksums.files["ttl.txt"].file_size = out_hashing.count();
-            checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-        } else
-        {
-            HashingWriteBuffer out_hashing(*out);
-            new_part->ttl_infos.write(out_hashing);
-            checksums.files["ttl.txt"].file_size = out_hashing.count();
-            checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-        }
+        new_part->ttl_infos.write(out_hashing.getBuf());
+        checksums.files["ttl.txt"].file_size = out_hashing.count();
+        checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }
@@ -307,18 +285,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     if (!new_part->getSerializationInfos().empty())
     {
         auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, write_settings);
-        if (storage.getSettings()->cryptographic_mode) {
-            CryptoHashingWriteBuffer out_hashing(*out);
-            new_part->getSerializationInfos().writeJSON(out_hashing);
-            checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
-            checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
-        } else
-        {
-            HashingWriteBuffer out_hashing(*out);
-            new_part->getSerializationInfos().writeJSON(out_hashing);
-            checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
-            checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
-        }
+        auto settings = storage.getSettings();
+        AbstractHashingWriteBuffer out_hashing(*out, settings->cryptographic_mode, settings->hash_function);
+
+        new_part->getSerializationInfos().writeJSON(out_hashing.getBuf());
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }

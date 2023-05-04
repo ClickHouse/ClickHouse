@@ -71,9 +71,9 @@ private:
         CompressedWriteBuffer compressed_buf;
         AbstractHashingWriteBuffer hashing_buf;
 
-        CompressedStream(WriteBuffer & buf, const CompressionCodecPtr & codec, bool cryptographic_mode)
+        CompressedStream(WriteBuffer & buf, const CompressionCodecPtr & codec, bool cryptographic_mode, HashFn hash_function)
             : compressed_buf(buf, codec)
-            , hashing_buf(compressed_buf, cryptographic_mode) {}
+            , hashing_buf(compressed_buf, cryptographic_mode, hash_function) {}
     };
 
     using CompressedStreamPtr = std::shared_ptr<CompressedStream>;

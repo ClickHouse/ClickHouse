@@ -60,7 +60,8 @@ public:
             const CompressionCodecPtr & marks_compression_codec_,
             size_t marks_compress_block_size_,
             const WriteSettings & query_write_settings,
-            bool cryptographic_mode);
+            bool cryptographic_mode,
+            HashFn hash_function);
 
         String escaped_column_name;
         std::string data_file_extension;

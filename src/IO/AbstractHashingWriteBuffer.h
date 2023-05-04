@@ -15,13 +15,18 @@ class AbstractHashingWriteBuffer
 public:
     using uint128 = std::pair<uint64_t, uint64_t>;
 
-    AbstractHashingWriteBuffer(WriteBuffer & out_, bool cryptographic_mode_)
+    AbstractHashingWriteBuffer(WriteBuffer & out_, bool cryptographic_mode_, HashFn hashFnType)
         : cryptographic_mode(cryptographic_mode_)
     {
         if (!cryptographic_mode) {
             underlying_buf.emplace<HashingWriteBuffer>(out_);
         } else {
-            underlying_buf.emplace<CryptoHashingWriteBuffer>(out_);
+            switch (hashFnType) {
+                case HashFn::SipHash:
+                    underlying_buf.emplace<CryptoHashingWriteBuffer>(out_);
+                    break;
+                default:
+            }
         }
     }
 private:

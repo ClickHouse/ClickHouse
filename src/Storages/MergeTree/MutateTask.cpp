@@ -669,24 +669,19 @@ void finalizeMutatedPart(
     const CompressionCodecPtr & codec,
     ContextPtr context,
     bool sync,
-    bool cryptographic_mode)
+    bool cryptographic_mode,
+    HashFn hashFnType)
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
         auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
-        if (cryptographic_mode)
-        {
-            CryptoHashingWriteBuffer out_hashing(*out);
-            writeUUIDText(new_data_part->uuid, out_hashing);
-            new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-            new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-        } else {
-            HashingWriteBuffer out_hashing(*out);
-            writeUUIDText(new_data_part->uuid, out_hashing);
-            new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
-            new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-        }
+        AbstractHashingWriteBuffer out_hashing(*out, cryptographic_mode, hashFnType);
+
+        writeUUIDText(new_data_part->uuid, out_hashing.getBuf());
+        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+
         written_files.push_back(std::move(out));
     }
 
@@ -694,37 +689,24 @@ void finalizeMutatedPart(
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
-        if (cryptographic_mode)
-        {
-            CryptoHashingWriteBuffer out_hashing(*out_ttl);
-            new_data_part->ttl_infos.write(out_hashing);
-            new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
-            new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-        } else
-        {
-            HashingWriteBuffer out_hashing(*out_ttl);
-            new_data_part->ttl_infos.write(out_hashing);
-            new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
-            new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-        }
+        AbstractHashingWriteBuffer out_hashing(*out_ttl, cryptographic_mode, hashFnType);
+
+        new_data_part->ttl_infos.write(out_hashing.getBuf());
+        new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+        new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+
         written_files.push_back(std::move(out_ttl));
     }
 
     if (!new_data_part->getSerializationInfos().empty())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
-        if (cryptographic_mode)
-        {
-            CryptoHashingWriteBuffer out_hashing(*out_serialization);
-            new_data_part->getSerializationInfos().writeJSON(out_hashing);
-            new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
-            new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
-        } else {
-            HashingWriteBuffer out_hashing(*out_serialization);
-            new_data_part->getSerializationInfos().writeJSON(out_hashing);
-            new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
-            new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
-        }
+        AbstractHashingWriteBuffer out_hashing(*out_serialization, cryptographic_mode, hashFnType);
+
+        new_data_part->getSerializationInfos().writeJSON(out_hashing.getBuf());
+        new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+
         written_files.push_back(std::move(out_serialization));
     }
 
@@ -1505,7 +1487,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->need_sync, ctx->data->getSettings()->cryptographic_mode);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->need_sync, ctx->data->getSettings()->cryptographic_mode, ctx->data->getSettings()->hash_function);
     }
 
 

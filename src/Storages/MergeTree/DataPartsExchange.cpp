@@ -322,7 +322,8 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         writeBinary(desc.file_size, out);
 
         auto file_in = desc.input_buffer_getter();
-        AbstractHashingWriteBuffer hashing_out(out, data.getSettings()->cryptographic_mode);
+        auto settings = data.getSettings();
+        AbstractHashingWriteBuffer hashing_out(out, settings->cryptographic_mode, settings->hash_function);
         copyDataWithThrottler(*file_in, hashing_out.getBuf(), blocker.getCounter(), data.getSendsThrottler());
 
         if (blocker.isCancelled())
@@ -763,7 +764,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         written_files.emplace_back(output_buffer_getter(*data_part_storage, file_name, file_size));
 
-        AbstractHashingWriteBuffer hashing_out(*written_files.back(), data.getSettings()->cryptographic_mode);
+        auto settings = data.getSettings();
+        AbstractHashingWriteBuffer hashing_out(*written_files.back(), settings->cryptographic_mode, settings->hash_function);
         copyDataWithThrottler(in, hashing_out.getBuf(), file_size, blocker.getCounter(), throttler);
         MergeTreeDataPartChecksum::uint128 hash = hashing_out.getHash();
 
