@@ -124,7 +124,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     if (database && table)
     {
         const auto & settings = getContext()->getSettingsRef();
-        if (query.if_empty && table->totalRows(settings) > 0) {
+        if (query.if_empty && table->totalRows(settings) > 0)
+        {
             throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
