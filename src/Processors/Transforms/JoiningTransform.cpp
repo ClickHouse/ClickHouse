@@ -350,6 +350,11 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
 
     if (!task)
     {
+        if (input.isFinished())
+        {
+            output.finish();
+            return Status::Finished;
+        }
         if (!input.hasData())
         {
             input.setNeeded();
@@ -362,10 +367,14 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
             output.pushException(data.exception);
             return Status::Finished;
         }
-
-        if (!data.chunk.hasChunkInfo())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
-        task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
+        if (data.chunk.hasChunkInfo())
+            task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
+        else
+        {
+            // Try to get one task from DelayedJoinedBlocksTransform again.
+            task = nullptr;
+            return Status::NeedData;
+        }
     }
     else
     {
@@ -386,7 +395,6 @@ void DelayedJoinedBlocksWorkerTransform::work()
 {
     if (!task)
         return;
-
     Block block = task->delayed_blocks->next();
 
     if (!block)
@@ -408,15 +416,19 @@ DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, J
 
 void DelayedJoinedBlocksTransform::work()
 {
-    if (finished)
+    if (all_buckets_finished)
         return;
-
     delayed_blocks = join->getDelayedBlocks();
-    finished = finished || delayed_blocks == nullptr;
+    if (!delayed_blocks)
+    {
+        all_buckets_finished = true;
+    }
 }
 
 IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 {
+
+    bool should_finished = false;
     for (auto & output : outputs)
     {
         if (output.isFinished())
@@ -424,41 +436,56 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
             /// If at least one output is finished, then we have read all data from buckets.
             /// Some workers can still be busy with joining the last chunk of data in memory,
             /// but after that they also will finish when they will try to get next chunk.
-            finished = true;
-            continue;
+            should_finished = true;
+            break;
         }
-        if (!output.canPush())
-            return Status::PortFull;
     }
-
-    if (finished)
+    if (should_finished)
     {
         for (auto & output : outputs)
         {
-            if (output.isFinished())
-                continue;
-            Chunk chunk;
-            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>());
-            output.push(std::move(chunk));
-            output.finish();
+            if (!output.isFinished())
+            {
+                output.finish();
+            }
         }
-
         return Status::Finished;
     }
 
-    if (delayed_blocks)
+    // No pending buckets.
+    if (all_buckets_finished && !delayed_blocks)
     {
         for (auto & output : outputs)
-        {
-            Chunk chunk;
-            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>(delayed_blocks));
-            output.push(std::move(chunk));
-        }
-        delayed_blocks = nullptr;
-        return Status::PortFull;
+            output.finish();
+        return Status::Finished;
     }
 
-    return Status::Ready;
+    // Try to read next bucket.
+    if (!delayed_blocks)
+        return Status::Ready;
+
+    // Put the ready task to the first available output port.
+    // Put empty tasks to other output ports. these ports will do nothing but require data again.
+    // Each bucket will handled in one thread, avoid lock contention in left file reader.
+    for (auto & output : outputs)
+    {
+        if (output.canPush())
+        {
+            if (delayed_blocks)
+            {
+                Chunk chunk;
+                chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>(delayed_blocks));
+                output.push(std::move(chunk));
+                delayed_blocks = nullptr;
+            }
+            else
+            {
+                Chunk chunk;
+                output.push(std::move(chunk));
+            }
+        }
+    }
+    return Status::PortFull;
 }
 
 }

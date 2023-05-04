@@ -302,10 +302,12 @@ void GraceHashJoin::initBuckets()
     current_bucket->startJoining();
 }
 
-bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
+bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join [[maybe_unused]])
 {
+
     bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
-    return !is_asof && isInnerOrLeft(table_join->kind()) && table_join->oneDisjunct();
+    auto kind = table_join->kind();
+    return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)) && table_join->oneDisjunct();
 }
 
 GraceHashJoin::~GraceHashJoin() = default;
@@ -325,7 +327,6 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
-
     bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
     if (has_overflow)
@@ -471,23 +472,33 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     return hash_join_is_empty;
 }
 
-IBlocksStreamPtr GraceHashJoin::getNonJoinedBlocks(const Block &, const Block &, UInt64) const
+IBlocksStreamPtr GraceHashJoin::getNonJoinedBlocks(
+    const Block & left_sample_block_ [[maybe_unused]], const Block & result_sample_block_ [[maybe_unused]], UInt64 max_block_size_ [[maybe_unused]]) const
 {
-    /// We do no support returning non joined blocks here.
-    /// TODO: They _should_ be reported by getDelayedBlocks instead
-    return nullptr;
+    return hash_join->getNonJoinedBlocks(left_sample_block_, result_sample_block_, max_block_size_);
 }
 
 class GraceHashJoin::DelayedBlocks : public IBlocksStream
 {
 public:
-    explicit DelayedBlocks(size_t current_bucket_, Buckets buckets_, InMemoryJoinPtr hash_join_, const Names & left_key_names_, const Names & right_key_names_)
+    explicit DelayedBlocks(
+        size_t current_bucket_,
+        Buckets buckets_,
+        InMemoryJoinPtr hash_join_,
+        const Names & left_key_names_,
+        const Names & right_key_names_,
+        const Block & left_sample_block_,
+        const Block & result_sample_block_,
+        size_t max_block_size_)
         : current_bucket(current_bucket_)
         , buckets(std::move(buckets_))
         , hash_join(std::move(hash_join_))
         , left_reader(buckets[current_bucket]->getLeftTableReader())
         , left_key_names(left_key_names_)
         , right_key_names(right_key_names_)
+        , left_sample_block(left_sample_block_)
+        , result_sample_block(result_sample_block_)
+        , max_block_size(max_block_size_)
     {
     }
 
@@ -499,10 +510,27 @@ public:
 
         do
         {
-            block = left_reader.read();
-            if (!block)
+            if (!is_left_reader_finished)
             {
-                return {};
+                block = left_reader.read();
+                if (!block)
+                {
+                    is_left_reader_finished = true;
+                    non_joined_blocks = hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+                }
+            }
+            if (is_left_reader_finished)
+            {
+                if (non_joined_blocks)
+                {
+                    block = non_joined_blocks->next();
+                    return block;
+                }
+                else
+                {
+                    // left/inner join.
+                    return {};
+                }
             }
 
             Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
@@ -544,6 +572,11 @@ public:
 
     Names left_key_names;
     Names right_key_names;
+    Block left_sample_block;
+    Block result_sample_block;
+    bool is_left_reader_finished = false;
+    IBlocksStreamPtr non_joined_blocks;
+    size_t max_block_size;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
@@ -554,16 +587,6 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         return nullptr;
 
     size_t bucket_idx = current_bucket->idx;
-
-    if (hash_join)
-    {
-        auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
-        for (auto & block : right_blocks)
-        {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets, bucket_idx);
-        }
-    }
 
     hash_join = makeInMemoryJoin();
 
@@ -589,8 +612,18 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
             bucket_idx, hash_join->getTotalRowCount(), num_rows);
-
-        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
+        auto result_sample_block = left_sample_block;
+        ExtraBlockPtr tmp;
+        hash_join->joinBlock(result_sample_block, tmp);
+        return std::make_unique<DelayedBlocks>(
+            current_bucket->idx,
+            buckets,
+            hash_join,
+            left_key_names,
+            right_key_names,
+            left_sample_block,
+            result_sample_block,
+            max_block_size);
     }
 
     LOG_TRACE(log, "Finished loading all {} buckets", buckets.size());
