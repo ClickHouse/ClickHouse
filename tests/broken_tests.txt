@@ -127,7 +127,6 @@
 02324_map_combinator_bug
 02241_join_rocksdb_bs
 02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
-01626_cnf_fuzz_long
 01115_join_with_dictionary
 01009_global_array_join_names
 00917_multiple_joins_denny_crane
