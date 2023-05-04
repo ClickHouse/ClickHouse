@@ -49,16 +49,16 @@ chown ubuntu: /home/ubuntu/.ssh -R
 # Create a pre-run script that will provide diagnostics info
 mkdir -p /tmp/actions-hooks
 cat > /tmp/actions-hooks/common.sh << 'EOF'
+#!/bin/bash
 terminate-and-exit() {
   echo "Going to terminate the runner"
   INSTANCE_ID=$(ec2metadata --instance-id)
   # To avoid the next job assigned, we kill the runner process with SIGTERM
   # It should support SIGINT, but it does not work
   # See https://github.com/actions/runner/issues/2582
-  pkill -SIGTERM Runner.Listener || :
   # We execute it with `at` to not have it as an orphan process
   # GH Runners kill all remain processes
-  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
+  echo "sleep 3; pkill -SIGTERM Runner.Listener; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
     aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space
   exit 0
 }
