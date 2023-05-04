@@ -394,27 +394,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            using std::calloc;
-            char * input = reinterpret_cast<char *>(calloc(1, end - begin + 1));
+            char input[end - begin + 1];
             char * tmp1 = input;
-            const char * tmp2 = begin;
-            while (tmp2 != end) {
-                *tmp1 = *tmp2;
-                ++tmp1;
-                ++tmp2;
-            }
-            *tmp1 = 0;
-            char * new_begin = nullptr;
+            memcpy(tmp1, begin, end - begin + 1);
+            char new_begin[5000];
             int res = to_sql(input, new_begin);
             if (res == -1) {
                 throw;
             }
-            char * new_end = new_begin;
-            while (*new_end != 0) {
-                ++new_end;
-            }
-            ParserQuery parser(new_end, settings.allow_settings_after_format_in_insert);
-            ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings.max_parser_depth);
+            begin = new_begin;
+            end = new_begin + 4999;
+            
+            ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
             // TODO: prql to sql
         }
         else
