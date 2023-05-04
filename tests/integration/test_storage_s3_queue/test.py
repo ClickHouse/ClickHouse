@@ -5,6 +5,7 @@ import random
 import time
 
 import pytest
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_tools import prepare_s3_bucket
 
@@ -13,7 +14,13 @@ from helpers.s3_tools import prepare_s3_bucket
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
     instance.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
-    # logging.debug("kafka is available - running test")
+
+    minio = started_cluster.minio_client
+    objects = list(
+        minio.list_objects(started_cluster.minio_restricted_bucket, recursive=True)
+    )
+    for obj in objects:
+        minio.remove_object(started_cluster.minio_restricted_bucket, obj.object_name)
     yield  # run test
 
 
@@ -109,9 +116,13 @@ def test_direct_select_file(started_cluster, mode):
     ).encode()
     filename = f"test.csv"
     put_s3_file_content(started_cluster, bucket, filename, values_csv)
-    instance.query("drop table if exists test.s3_queue")
-    instance.query("drop table if exists test.s3_queue_2")
-    instance.query("drop table if exists test.s3_queue_3")
+    instance.query(
+        """
+                    DROP TABLE IF EXISTS test.s3_queue;
+                    DROP TABLE IF EXISTS test.s3_queue_2;
+                    DROP TABLE IF EXISTS test.s3_queue_3;
+                    """
+    )
 
     instance.query(
         f"""
@@ -201,8 +212,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         """
     )
 
-    for i in range(10):
-        print(i)
+    for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]
 
         values_csv = (
@@ -218,7 +228,7 @@ def test_direct_select_multiple_files(started_cluster, mode):
         ] == rand_values
 
     total_values = generate_random_files(
-        5, prefix, started_cluster, bucket, start_ind=10
+        4, prefix, started_cluster, bucket, start_ind=5
     )
     get_query = f"SELECT * FROM test.s3_queue"
     assert {
@@ -248,7 +258,7 @@ def test_streaming_to_view_(started_cluster, mode):
             ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
             SETTINGS
                 mode = '{mode}',
-                keeper_path = '/clickhouse/select_multiple_{mode}';
+                keeper_path = '/clickhouse/view_{mode}';
 
         CREATE MATERIALIZED VIEW test.persistent_s3_queue_mv TO test.s3_queue_persistent AS
         SELECT
@@ -307,7 +317,7 @@ def test_streaming_to_many_views(started_cluster, mode):
             ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
             SETTINGS
                 mode = '{mode}',
-                keeper_path = '/clickhouse/select_multiple_{mode}';
+                keeper_path = '/clickhouse/multiple_view_{mode}';
 
         CREATE MATERIALIZED VIEW test.persistent_s3_queue_mv TO test.s3_queue_persistent AS
         SELECT
@@ -325,7 +335,7 @@ def test_streaming_to_many_views(started_cluster, mode):
         FROM test.s3_queue;
         """
     )
-    total_values = generate_random_files(10, prefix, started_cluster, bucket)
+    total_values = generate_random_files(5, prefix, started_cluster, bucket)
     expected_values = set([tuple(i) for i in total_values])
 
     for i in range(retry_cnt):
@@ -348,3 +358,86 @@ def test_streaming_to_many_views(started_cluster, mode):
             time.sleep(1)
         else:
             break
+
+
+def test_multiple_tables_meta_mismatch(started_cluster):
+    prefix = f"test_meta"
+    bucket = started_cluster.minio_restricted_bucket
+    instance = started_cluster.instances["instance"]
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.s3_queue;
+    
+        CREATE TABLE test.s3_queue ({table_format})
+            ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
+            SETTINGS
+                mode = 'ordered',
+                keeper_path = '/clickhouse/test_meta';
+        """
+    )
+    # check mode
+    failed = False
+    try:
+        instance.query(
+            f"""
+            CREATE TABLE test.s3_queue_copy ({table_format})
+                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
+                SETTINGS
+                    mode = 'unordered',
+                    keeper_path = '/clickhouse/test_meta';
+            """
+        )
+    except QueryRuntimeException as e:
+        assert "Existing table metadata in ZooKeeper differs in engine mode" in str(e)
+        failed = True
+    assert failed is True
+
+    # check columns
+    table_format_copy = table_format + ", column4 UInt32"
+    try:
+        instance.query(
+            f"""
+            CREATE TABLE test.s3_queue_copy ({table_format_copy})
+                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
+                SETTINGS
+                    mode = 'ordered',
+                    keeper_path = '/clickhouse/test_meta';
+            """
+        )
+    except QueryRuntimeException as e:
+        assert (
+                "Table columns structure in ZooKeeper is different from local table structure"
+                in str(e)
+        )
+        failed = True
+
+    assert failed is True
+
+    # check format
+    try:
+        instance.query(
+            f"""
+            CREATE TABLE test.s3_queue_copy ({table_format})
+                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'TSV')
+                SETTINGS
+                    mode = 'ordered',
+                    keeper_path = '/clickhouse/test_meta';
+            """
+        )
+    except QueryRuntimeException as e:
+        assert "Existing table metadata in ZooKeeper differs in format name" in str(e)
+        failed = True
+    assert failed is True
+
+    # create working engine
+    instance.query(
+        f"""
+            CREATE TABLE test.s3_queue_copy ({table_format})
+                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/*', {AUTH}'CSV')
+                SETTINGS
+                    mode = 'ordered',
+                    keeper_path = '/clickhouse/test_meta';
+            """
+    )

@@ -13,6 +13,7 @@
 #    include <Storages/IStorage.h>
 #    include <Storages/S3Queue/S3QueueSettings.h>
 #    include <Storages/S3Queue/S3QueueSource.h>
+#    include <Storages/S3Queue/S3QueueHolder.h>
 #    include <Storages/StorageS3Settings.h>
 
 #    include <IO/CompressionMethod.h>
@@ -79,6 +80,7 @@ public:
 
 private:
     std::unique_ptr<S3QueueSettings> s3queue_settings;
+    std::shared_ptr<S3QueueHolder> queue_holder;
     Configuration s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
@@ -127,6 +129,7 @@ private:
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeper() const;
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
+    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
     // Return default or custom zookeeper name for table
     const String & getZooKeeperPath() const { return zookeeper_path; }
 
@@ -135,16 +138,7 @@ private:
     std::shared_ptr<StorageS3QueueSource::IIterator>
     createFileIterator(ContextPtr local_context, ASTPtr query, KeysWithInfo * read_keys = nullptr);
 
-    static std::unordered_set<String> parseCollection(String & files);
-
-    std::unordered_set<String> getFailedFiles();
-    std::unordered_set<String> getProcessedFiles();
-    String getMaxProcessedFile();
-    std::unordered_set<String> getProcessingFiles();
-    std::unordered_set<String> getExcludedFiles();
-
     void streamToViews();
-
     Configuration updateConfigurationAndGetCopy(ContextPtr local_context);
 };
 
