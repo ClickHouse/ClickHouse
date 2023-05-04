@@ -38,16 +38,16 @@ CreatingSetStep::CreatingSetStep(
     SizeLimits network_transfer_limits_,
     ContextPtr context_)
     : ITransformingStep(input_stream_, Block{}, getTraits())
-    , WithContext(context_)
     , description(std::move(description_))
     , subquery_for_set(std::move(subquery_for_set_))
     , network_transfer_limits(std::move(network_transfer_limits_))
+    , context(std::move(context_))
 {
 }
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
+    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context);
 }
 
 void CreatingSetStep::updateOutputStream()
@@ -60,7 +60,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         settings.out << "Set: ";
 
     settings.out << description << '\n';
@@ -68,7 +68,7 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (subquery_for_set.set_in_progress)
+    if (subquery_for_set.set)
         map.add("Set", description);
 }
 
@@ -130,22 +130,14 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, subquery_for_set] : subqueries_for_sets)
+    for (auto & [description, future_set] : subqueries_for_sets)
     {
-        if (!subquery_for_set.hasSource())
+        if (future_set->isReady())
             continue;
 
-        auto plan = subquery_for_set.detachSource();
-
-        const Settings & settings = context->getSettingsRef();
-        auto creating_set = std::make_unique<CreatingSetStep>(
-                plan->getCurrentDataStream(),
-                description,
-                std::move(subquery_for_set),
-                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
-                context);
-        creating_set->setStepDescription("Create set for subquery");
-        plan->addStep(std::move(creating_set));
+        auto plan = future_set->build(context);
+        if (!plan)
+            continue;
 
         input_streams.emplace_back(plan->getCurrentDataStream());
         plans.emplace_back(std::move(plan));
@@ -162,12 +154,56 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
 }
 
+//void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context)
+
+std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSets(DelayedCreatingSetsStep && step)
+{
+    // DataStreams input_streams;
+    // input_streams.emplace_back(query_plan.getCurrentDataStream());
+
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    // plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
+    // query_plan = QueryPlan();
+
+    for (auto & [description, future_set] : step.subqueries_for_sets)
+    {
+        if (future_set->isReady())
+            continue;
+
+        auto plan = future_set->build(step.context);
+        if (!plan)
+            continue;
+
+        plan->optimize(QueryPlanOptimizationSettings::fromContext(step.context));
+
+        //input_streams.emplace_back(plan->getCurrentDataStream());
+        plans.emplace_back(std::move(plan));
+    }
+
+    return plans;
+}
+
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
     if (!prepared_sets || prepared_sets->empty())
         return;
 
-    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(), context);
+    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(context), context);
+}
+
+DelayedCreatingSetsStep::DelayedCreatingSetsStep(
+    DataStream input_stream, PreparedSets::SubqueriesForSets subqueries_for_sets_, ContextPtr context_)
+    : subqueries_for_sets(std::move(subqueries_for_sets_)), context(std::move(context_))
+{
+    input_streams = {input_stream};
+    output_stream = std::move(input_stream);
+}
+
+QueryPipelineBuilderPtr DelayedCreatingSetsStep::updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &)
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Cannot build pipeline in DelayedCreatingSets. This step should be optimized out.");
 }
 
 }

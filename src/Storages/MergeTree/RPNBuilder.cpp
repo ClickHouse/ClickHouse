@@ -275,7 +275,7 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
 namespace
 {
 
-ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
+FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
 {
     if (!dag_node->column)
         return {};
@@ -285,28 +285,20 @@ ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
         column = &column_const->getDataColumn();
 
     if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
-    {
-        auto set = column_set->getData();
-
-        if (set && set->isCreated())
-            return set;
-    }
+        return column_set->getData();
 
     return {};
 }
 
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
     if (ast_node && prepared_sets)
     {
-        auto prepared_sets_with_same_hash = prepared_sets->getByTreeHash(ast_node->getTreeHash());
-        for (auto & set : prepared_sets_with_same_hash)
-            if (set.isCreated())
-                return set.get();
+        return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
     }
     else if (dag_node)
     {
@@ -317,16 +309,16 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
     return {};
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) const
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) const
 {
     const auto & prepared_sets = getTreeContext().getPreparedSets();
 
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->get(PreparedSetKey::forSubquery(*ast_node));
+            return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
 
-        return prepared_sets->get(PreparedSetKey::forLiteral(*ast_node, data_types));
+        return prepared_sets->getFuture(PreparedSetKey::forLiteral(ast_node->getTreeHash(), data_types));
     }
     else if (dag_node)
     {
@@ -337,7 +329,7 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types) 
     return nullptr;
 }
 
-ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
+FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
     const DataTypes & data_types) const
 {
@@ -346,19 +338,25 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->get(PreparedSetKey::forSubquery(*ast_node));
+            return prepared_sets->getFuture(PreparedSetKey::forSubquery(ast_node->getTreeHash()));
 
         /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
         /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
         /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
         /// that the types it was prepared with are compatible with the types of the primary key.
-        auto types_match = [&indexes_mapping, &data_types](const SetPtr & candidate_set)
+        auto types_match = [&indexes_mapping, &data_types](const DataTypes & set_types)
         {
             assert(indexes_mapping.size() == data_types.size());
 
             for (size_t i = 0; i < indexes_mapping.size(); ++i)
             {
-                if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
+                if (indexes_mapping[i].tuple_index >= set_types.size())
+                    return false;
+
+                auto lhs = recursiveRemoveLowCardinality(data_types[i]);
+                auto rhs = recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]);
+
+                if (!lhs->equals(*rhs))
                     return false;
             }
 
@@ -366,10 +364,10 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
         };
 
         auto tree_hash = ast_node->getTreeHash();
-        for (const auto & set : prepared_sets->getByTreeHash(tree_hash))
+        for (const auto & [key, future_set] : prepared_sets->getSets())
         {
-            if (set.isCreated() && types_match(set.get()))
-                return set.get();
+            if (key.ast_hash == tree_hash && types_match(key.types))
+                return future_set;
         }
     }
     else

@@ -29,7 +29,7 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Set; }
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
-    ConstSetPtr getData() const { if (!data.isReady()) return nullptr; return data.get(); }
+    FutureSetPtr getData() const { return data; }
 
     // Used only for debugging, making it DUMPABLE
     Field operator[](size_t) const override { return {}; }

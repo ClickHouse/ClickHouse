@@ -1204,13 +1204,31 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const auto right_arg = func.getArgumentAt(1);
 
-    auto prepared_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    LOG_TRACE(&Poco::Logger::get("KK"), "Trying to get set for {}", right_arg.getColumnName());
+
+    auto future_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    if (!future_set)
+        return false;
+
+    LOG_TRACE(&Poco::Logger::get("KK"), "Found set for {}", right_arg.getColumnName());
+
+    if (!future_set->isReady())
+    {
+        LOG_TRACE(&Poco::Logger::get("KK"), "Building set inplace for {}", right_arg.getColumnName());
+        future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    }
+
+    auto prepared_set = future_set->get();
     if (!prepared_set)
         return false;
+
+    LOG_TRACE(&Poco::Logger::get("KK"), "Set if ready for {}", right_arg.getColumnName());
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
         return false;
+
+    LOG_TRACE(&Poco::Logger::get("KK"), "Has explicit elements for {}", right_arg.getColumnName());
 
     prepared_set->checkColumnsNumber(left_args_count);
     for (size_t i = 0; i < indexes_mapping.size(); ++i)

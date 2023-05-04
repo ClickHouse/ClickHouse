@@ -11,7 +11,7 @@
 namespace DB
 {
 
-PreparedSetKey PreparedSetKey::forLiteral(const IAST & ast, DataTypes types_)
+PreparedSetKey PreparedSetKey::forLiteral(Hash hash, DataTypes types_)
 {
     /// Remove LowCardinality types from type list because Set doesn't support LowCardinality keys now,
     ///   just converts LowCardinality to ordinary types.
@@ -19,15 +19,15 @@ PreparedSetKey PreparedSetKey::forLiteral(const IAST & ast, DataTypes types_)
         type = recursiveRemoveLowCardinality(type);
 
     PreparedSetKey key;
-    key.ast_hash = ast.getTreeHash();
+    key.ast_hash = hash;
     key.types = std::move(types_);
     return key;
 }
 
-PreparedSetKey PreparedSetKey::forSubquery(const IAST & ast)
+PreparedSetKey PreparedSetKey::forSubquery(Hash hash)
 {
     PreparedSetKey key;
-    key.ast_hash = ast.getTreeHash();
+    key.ast_hash = hash;
     return key;
 }
 
@@ -155,9 +155,9 @@ FutureSetPtr PreparedSets::getFuture(const PreparedSetKey & key) const
 //     return it->second.get();
 // }
 
-// std::vector<FutureSet> PreparedSets::getByTreeHash(IAST::Hash ast_hash) const
+// std::vector<FutureSetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash) const
 // {
-//     std::vector<FutureSet> res;
+//     std::vector<FutureSetPtr> res;
 //     for (const auto & it : this->sets)
 //     {
 //         if (it.first.ast_hash == ast_hash)
@@ -166,7 +166,7 @@ FutureSetPtr PreparedSets::getFuture(const PreparedSetKey & key) const
 //     return res;
 // }
 
-PreparedSets::SubqueriesForSets PreparedSets::detachSubqueries()
+PreparedSets::SubqueriesForSets PreparedSets::detachSubqueries(const ContextPtr &)
 {
     auto res = std::move(subqueries);
     subqueries = SubqueriesForSets();
@@ -220,6 +220,8 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
 {
     if (set)
         return nullptr;
+
+    std::cerr << StackTrace().toString() << std::endl;
 
     auto set_cache = context->getPreparedSetsCache();
     if (set_cache)
@@ -276,5 +278,11 @@ SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordere
 {
     return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
 }
+
+FutureSetFromTuple::FutureSetFromTuple(Block block_) : block(std::move(block_)) {}
+
+FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_) : subquery(std::move(subquery_)) {}
+
+FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
 
 };

@@ -55,9 +55,13 @@ public:
     /// It is needed to perform type analysis without creation of set.
     static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    static FunctionPtr create(ContextPtr)
+    FunctionIn(SizeLimits size_limits_, bool transform_null_in_)
+        : size_limits(std::move(size_limits_)), transform_null_in(transform_null_in_) {}
+
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIn>();
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionIn>(FutureSet::getSizeLimitsForSet(settings, false), settings.transform_null_in);
     }
 
     String getName() const override
@@ -122,10 +126,15 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        auto set = column_set->getData();
-        if (!set)
+        auto future_set = column_set->getData();
+        if (!future_set || !future_set->isFilled())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set passed as the second argument for function '{}'", getName());
 
+        if (auto * for_tuple = typeid_cast<FutureSetFromTuple *>(future_set.get()))
+            if (!for_tuple->isReady())
+                for_tuple->buildForTuple(size_limits, transform_null_in);
+
+        auto set = future_set->get();
         auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
@@ -173,6 +182,10 @@ public:
 
         return res;
     }
+
+private:
+    SizeLimits size_limits;
+    bool transform_null_in;
 };
 
 template<bool ignore_set>

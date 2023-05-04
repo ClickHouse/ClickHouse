@@ -310,7 +310,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (functionIsInOrGlobalInOperator(function_name))
         {
-            ConstSetPtr prepared_set = rhs_argument.tryGetPreparedSet();
+            auto future_set = rhs_argument.tryGetPreparedSet();
+            if (future_set && !future_set->isReady())
+                future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext());
+
+            ConstSetPtr prepared_set;
+            if (future_set)
+                prepared_set = future_set->get();
 
             if (prepared_set && prepared_set->hasExplicitSetElements())
             {

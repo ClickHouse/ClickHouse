@@ -11,6 +11,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Planner/Planner.h>
 
 namespace DB
 {
@@ -26,8 +28,9 @@ namespace
 class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
 {
 public:
-    explicit CollectSetsVisitor(PlannerContext & planner_context_)
+    explicit CollectSetsVisitor(PlannerContext & planner_context_, const SelectQueryOptions & select_query_options_)
         : planner_context(planner_context_)
+        , select_query_options(select_query_options_)
     {}
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -42,10 +45,12 @@ public:
 
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
 
-        String set_key = planner_context.createSetKey(in_second_argument);
+        // String set_key = planner_context.createSetKey(in_second_argument);
 
-        if (planner_context.hasSet(set_key))
-            return;
+        // if (planner_context.hasSet(set_key))
+        //     return;
+
+        auto & sets = planner_context.getPreparedSets();
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
@@ -54,7 +59,9 @@ public:
         if (storage_set)
         {
             /// Handle storage_set as ready set.
-            planner_context.registerSet(set_key, PlannerSet(FutureSet(storage_set->getSet())));
+            auto set_key = PreparedSetKey::forSubquery(in_second_argument->getTreeHash());
+            sets.addFromStorage(set_key, storage_set->getSet());
+            //planner_context.registerSet(set_key, PlannerSet(FutureSet(storage_set->getSet())));
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
@@ -62,14 +69,47 @@ public:
                 in_first_argument->getResultType(),
                 constant_node->getValue(),
                 constant_node->getResultType(),
-                settings);
+                settings.transform_null_in);
 
-            planner_context.registerSet(set_key, PlannerSet(FutureSet(std::move(set))));
+            DataTypes set_element_types = {in_first_argument->getResultType()};
+            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
+            if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+                set_element_types = left_tuple_type->getElements();
+
+            for (auto & element_type : set_element_types)
+                if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+                    element_type = low_cardinality_type->getDictionaryType();
+
+            auto set_key = PreparedSetKey::forLiteral(in_second_argument->getTreeHash(), set_element_types);
+
+            sets.addFromTuple(set_key, std::move(set));
+
+            //planner_context.registerSet(set_key, PlannerSet(FutureSet(std::move(set))));
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION)
         {
-            planner_context.registerSet(set_key, PlannerSet(in_second_argument));
+            auto set_key = PreparedSetKey::forSubquery(in_second_argument->getTreeHash());
+
+            auto subquery_options = select_query_options.subquery();
+            Planner subquery_planner(
+                in_second_argument,
+                subquery_options,
+                planner_context.getGlobalPlannerContext());
+            subquery_planner.buildQueryPlanIfNeeded();
+
+            // const auto & settings = planner_context.getQueryContext()->getSettingsRef();
+            // SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
+            // bool tranform_null_in = settings.transform_null_in;
+            // auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
+
+            SubqueryForSet subquery_for_set;
+            subquery_for_set.key = planner_context.createSetKey(in_second_argument);
+            subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
+
+            sets.addFromSubquery(set_key, std::move(subquery_for_set));
+
+            //planner_context.registerSet(set_key, PlannerSet(in_second_argument));
         }
         else
         {
@@ -87,13 +127,14 @@ public:
 
 private:
     PlannerContext & planner_context;
+    const SelectQueryOptions & select_query_options;
 };
 
 }
 
-void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context)
+void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context, const SelectQueryOptions & select_query_options)
 {
-    CollectSetsVisitor visitor(planner_context);
+    CollectSetsVisitor visitor(planner_context, select_query_options);
     visitor.visit(node);
 }
 

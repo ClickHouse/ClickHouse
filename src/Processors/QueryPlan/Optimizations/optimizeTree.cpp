@@ -163,6 +163,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         optimizePrewhere(stack, nodes);
         optimizePrimaryKeyCondition(stack);
         enableMemoryBoundMerging(*frame.node, nodes);
+        addPlansForSets(*frame.node, nodes);
 
         stack.pop_back();
     }
