@@ -54,13 +54,16 @@ protected:
     /** Creates a new object to put in the pool. */
     RemoteFSConnectionPtr allocObject() override
     {
-        return std::make_shared<RemoteFSConnection>(host, port, disk_name);
+        return std::make_shared<RemoteFSConnection>(host, port, disk_name, conn_id.fetch_add(1));
     }
 
 private:
     String host;
     UInt16 port;
     String disk_name;
+
+    // TODO remove
+    std::atomic<size_t> conn_id = 0;
 };
 
 }

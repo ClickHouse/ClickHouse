@@ -23,8 +23,9 @@ namespace ErrorCodes
 }
 
 RemoteFSConnection::RemoteFSConnection(const String & host_, UInt16 port_,
-    const String & disk_name_)
+    const String & disk_name_, size_t conn_id_)
     : host(host_), port(port_), disk_name(disk_name_)
+    , conn_id(conn_id_)
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -174,7 +175,7 @@ std::optional<Poco::Net::SocketAddress> RemoteFSConnection::getResolvedAddress()
 void RemoteFSConnection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
-    description = host + ":" + toString(port);
+    description = host + ":" + toString(port) + "/" + disk_name + "?id=" + toString(conn_id);
 
     if (resolved_address)
     {

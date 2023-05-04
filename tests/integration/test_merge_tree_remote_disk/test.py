@@ -2,8 +2,10 @@ import time
 import os
 import pathlib
 import logging
+import shutil
 
 import pytest
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
@@ -53,18 +55,41 @@ def drop_table(cluster):
     node.query("DROP TABLE IF EXISTS remote_disk_test NO DELAY")
 
     try:
-        # TODO wait for delete
-        pass
+        wait_for_delete_files(0)
     finally:
         # Remove extra objects to prevent tests cascade failing
-        # TODO
-        pass
+        for p in remote_disk_path.glob("*"):
+            if p.is_dir():
+                shutil.rmtree(p)
+            else:
+                p.unlink()
 
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
 FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
+
+
+def wait_for_delete_files(expected, num_tries=30):
+    while num_tries > 0:
+        if files_number_in_disk() == expected:
+            break
+        num_tries -= 1
+        time.sleep(1)
+    assert files_number_in_disk() == expected
+
+
+
+def wait_for_client(client):
+    for _ in range(5):
+        try:
+            assert (client.query("SELECT 1") == "1\n")
+        except QueryRuntimeException as e:
+            if e.returncode != 209 or e.returncode != 210: # Timeout or Connection reset by peer
+                raise
+        time.sleep(15)
+
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +106,7 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        time.sleep(30) # TODO fix cluster start
+        wait_for_client(cluster.instances["client"])
 
         yield cluster
     finally:
@@ -124,242 +149,223 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
     )
 
 
+def test_alter_table_columns(cluster):
+    create_table(cluster, "remote_disk_test")
 
-# def test_alter_table_columns(cluster):
-#     create_table(cluster, "hdfs_test")
+    node = cluster.instances["client"]
 
-#     node = cluster.instances["node"]
-#     fs = HdfsClient(hosts=cluster.hdfs_ip)
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-03", 4096, -1)
+        )
+    )
 
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(
-#             generate_values("2020-01-03", 4096, -1)
-#         )
-#     )
+    node.query("ALTER TABLE remote_disk_test ADD COLUMN col1 UInt64 DEFAULT 1")
+    # To ensure parts have merged
+    node.query("OPTIMIZE TABLE remote_disk_test")
 
-#     node.query("ALTER TABLE hdfs_test ADD COLUMN col1 UInt64 DEFAULT 1")
-#     # To ensure parts have merged
-#     node.query("OPTIMIZE TABLE hdfs_test")
+    assert node.query("SELECT sum(col1) FROM remote_disk_test FORMAT Values") == "(8192)"
+    assert (
+        node.query("SELECT sum(col1) FROM remote_disk_test WHERE id > 0 FORMAT Values")
+        == "(4096)"
+    )
+    wait_for_delete_files(
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN,
+    )
 
-#     assert node.query("SELECT sum(col1) FROM hdfs_test FORMAT Values") == "(8192)"
-#     assert (
-#         node.query("SELECT sum(col1) FROM hdfs_test WHERE id > 0 FORMAT Values")
-#         == "(4096)"
-#     )
-#     wait_for_delete_hdfs_objects(
-#         cluster,
-#         FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN,
-#     )
+    node.query(
+        "ALTER TABLE remote_disk_test MODIFY COLUMN col1 String",
+        settings={"mutations_sync": 2},
+    )
 
-#     node.query(
-#         "ALTER TABLE hdfs_test MODIFY COLUMN col1 String",
-#         settings={"mutations_sync": 2},
-#     )
+    assert node.query("SELECT distinct(col1) FROM remote_disk_test FORMAT Values") == "('1')"
+    # and file with mutation
+    wait_for_delete_files(
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1,
+    )
 
-#     assert node.query("SELECT distinct(col1) FROM hdfs_test FORMAT Values") == "('1')"
-#     # and file with mutation
-#     wait_for_delete_hdfs_objects(
-#         cluster,
-#         FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1,
-#     )
+    node.query("ALTER TABLE remote_disk_test DROP COLUMN col1", settings={"mutations_sync": 2})
 
-#     node.query("ALTER TABLE hdfs_test DROP COLUMN col1", settings={"mutations_sync": 2})
-
-#     # and 2 files with mutations
-#     wait_for_delete_hdfs_objects(
-#         cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
-#     )
+    # and 2 files with mutations
+    wait_for_delete_files(
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
+    )
 
 
-# def test_attach_detach_partition(cluster):
-#     create_table(cluster, "hdfs_test")
+def test_attach_detach_partition(cluster):
+    create_table(cluster, "remote_disk_test")
 
-#     node = cluster.instances["node"]
-#     fs = HdfsClient(hosts=cluster.hdfs_ip)
+    node = cluster.instances["client"]
 
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-04", 4096))
-#     )
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+    )
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
-#     node.query("ALTER TABLE hdfs_test DETACH PARTITION '2020-01-03'")
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
-#     wait_for_delete_empty_parts(node, "hdfs_test")
-#     wait_for_delete_inactive_parts(node, "hdfs_test")
-#     wait_for_delete_hdfs_objects(
-#         cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-#     )
+    node.query("ALTER TABLE remote_disk_test DETACH PARTITION '2020-01-03'")
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(4096)"
+    wait_for_delete_empty_parts(node, "remote_disk_test")
+    wait_for_delete_inactive_parts(node, "remote_disk_test")
+    wait_for_delete_files(
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    )
 
-#     node.query("ALTER TABLE hdfs_test ATTACH PARTITION '2020-01-03'")
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
+    node.query("ALTER TABLE remote_disk_test ATTACH PARTITION '2020-01-03'")
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
-#     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
-#     wait_for_delete_empty_parts(node, "hdfs_test")
-#     wait_for_delete_inactive_parts(node, "hdfs_test")
-#     wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
+    node.query("ALTER TABLE remote_disk_test DROP PARTITION '2020-01-03'")
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(4096)"
+    wait_for_delete_empty_parts(node, "remote_disk_test")
+    wait_for_delete_inactive_parts(node, "remote_disk_test")
+    wait_for_delete_files(FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
 
-#     node.query("ALTER TABLE hdfs_test DETACH PARTITION '2020-01-04'")
-#     node.query(
-#         "ALTER TABLE hdfs_test DROP DETACHED PARTITION '2020-01-04'",
-#         settings={"allow_drop_detached": 1},
-#     )
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
-#     wait_for_delete_empty_parts(node, "hdfs_test")
-#     wait_for_delete_inactive_parts(node, "hdfs_test")
-#     wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD)
+    node.query("ALTER TABLE remote_disk_test DETACH PARTITION '2020-01-04'")
+    node.query(
+        "ALTER TABLE remote_disk_test DROP DETACHED PARTITION '2020-01-04'",
+        settings={"allow_drop_detached": 1},
+    )
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(0)"
+    wait_for_delete_empty_parts(node, "remote_disk_test")
+    wait_for_delete_inactive_parts(node, "remote_disk_test")
+    wait_for_delete_files(FILES_OVERHEAD)
 
 
-# def test_move_partition_to_another_disk(cluster):
-#     create_table(cluster, "hdfs_test")
+def test_move_partition_to_another_disk(cluster):
+    create_table(cluster, "remote_disk_test")
 
-#     node = cluster.instances["node"]
-#     fs = HdfsClient(hosts=cluster.hdfs_ip)
+    node = cluster.instances["client"]
 
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-04", 4096))
-#     )
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+    )
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
-#     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
+    node.query("ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
 
-#     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdfs'")
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
+    node.query("ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-04' TO DISK 'remote_disk'")
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
 
-# def test_table_manipulations(cluster):
-#     create_table(cluster, "hdfs_test")
+def test_table_manipulations(cluster):
+    create_table(cluster, "remote_disk_test")
 
-#     node = cluster.instances["node"]
-#     fs = HdfsClient(hosts=cluster.hdfs_ip)
+    node = cluster.instances["client"]
 
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-04", 4096))
-#     )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+    )
 
-#     node.query("RENAME TABLE hdfs_test TO hdfs_renamed")
-#     assert node.query("SELECT count(*) FROM hdfs_renamed FORMAT Values") == "(8192)"
+    node.query("RENAME TABLE remote_disk_test TO remote_disk_renamed")
+    assert node.query("SELECT count(*) FROM remote_disk_renamed FORMAT Values") == "(8192)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
-#     node.query("RENAME TABLE hdfs_renamed TO hdfs_test")
-#     assert node.query("CHECK TABLE hdfs_test FORMAT Values") == "(1)"
+    node.query("RENAME TABLE remote_disk_renamed TO remote_disk_test")
+    assert node.query("CHECK TABLE remote_disk_test FORMAT Values") == "(1)"
 
-#     node.query("DETACH TABLE hdfs_test")
-#     node.query("ATTACH TABLE hdfs_test")
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
+    node.query("DETACH TABLE remote_disk_test")
+    node.query("ATTACH TABLE remote_disk_test")
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
-#     node.query("TRUNCATE TABLE hdfs_test")
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
-#     wait_for_delete_empty_parts(node, "hdfs_test")
-#     wait_for_delete_inactive_parts(node, "hdfs_test")
-#     wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD)
+    node.query("TRUNCATE TABLE remote_disk_test")
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(0)"
+    wait_for_delete_empty_parts(node, "remote_disk_test")
+    wait_for_delete_inactive_parts(node, "remote_disk_test")
+    wait_for_delete_files(FILES_OVERHEAD)
 
 
-# def test_move_replace_partition_to_another_table(cluster):
-#     create_table(cluster, "hdfs_test")
+def test_move_replace_partition_to_another_table(cluster):
+    create_table(cluster, "remote_disk_test")
 
-#     node = cluster.instances["node"]
-#     fs = HdfsClient(hosts=cluster.hdfs_ip)
+    node = cluster.instances["client"]
 
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-04", 4096))
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(
-#             generate_values("2020-01-05", 4096, -1)
-#         )
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(
-#             generate_values("2020-01-06", 4096, -1)
-#         )
-#     )
-#     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-03", 4096))
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-04", 4096))
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-05", 4096, -1)
+        )
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-06", 4096, -1)
+        )
+    )
+    assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
 
-#     create_table(cluster, "hdfs_clone")
+    create_table(cluster, "remote_disk_clone")
 
-#     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-03' TO TABLE hdfs_clone")
-#     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-05' TO TABLE hdfs_clone")
-#     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
-#     assert node.query("SELECT sum(id) FROM hdfs_clone FORMAT Values") == "(0)"
-#     assert node.query("SELECT count(*) FROM hdfs_clone FORMAT Values") == "(8192)"
+    node.query("ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-03' TO TABLE remote_disk_clone")
+    node.query("ALTER TABLE remote_disk_test MOVE PARTITION '2020-01-05' TO TABLE remote_disk_clone")
+    assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(8192)"
+    assert node.query("SELECT sum(id) FROM remote_disk_clone FORMAT Values") == "(0)"
+    assert node.query("SELECT count(*) FROM remote_disk_clone FORMAT Values") == "(8192)"
 
-#     # Number of objects in HDFS should be unchanged.
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
+    # Number of objects on remote disk should be unchanged.
+    assert files_number_in_disk() == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
 
-#     # Add new partitions to source table, but with different values and replace them from copied table.
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(
-#             generate_values("2020-01-03", 4096, -1)
-#         )
-#     )
-#     node.query(
-#         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-05", 4096))
-#     )
-#     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
+    # Add new partitions to source table, but with different values and replace them from copied table.
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(
+            generate_values("2020-01-03", 4096, -1)
+        )
+    )
+    node.query(
+        "INSERT INTO remote_disk_test VALUES {}".format(generate_values("2020-01-05", 4096))
+    )
+    assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
 
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6
+    assert files_number_in_disk() == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6
 
-#     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-03' FROM hdfs_clone")
-#     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-05' FROM hdfs_clone")
-#     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
-#     assert node.query("SELECT sum(id) FROM hdfs_clone FORMAT Values") == "(0)"
-#     assert node.query("SELECT count(*) FROM hdfs_clone FORMAT Values") == "(8192)"
+    node.query("ALTER TABLE remote_disk_test REPLACE PARTITION '2020-01-03' FROM remote_disk_clone")
+    node.query("ALTER TABLE remote_disk_test REPLACE PARTITION '2020-01-05' FROM remote_disk_clone")
+    assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
+    assert node.query("SELECT sum(id) FROM remote_disk_clone FORMAT Values") == "(0)"
+    assert node.query("SELECT count(*) FROM remote_disk_clone FORMAT Values") == "(8192)"
 
-#     # Wait for outdated partitions deletion.
-#     wait_for_delete_hdfs_objects(
-#         cluster, FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
-#     )
+    # Wait for outdated partitions deletion.
+    wait_for_delete_files(
+        FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 6 # TODO find out why in hdfs and s3 tests there is 4 instead of 6
+    )
 
-#     node.query("DROP TABLE hdfs_clone NO DELAY")
-#     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
-#     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
+    node.query("DROP TABLE remote_disk_clone NO DELAY")
+    assert node.query("SELECT sum(id) FROM remote_disk_test FORMAT Values") == "(0)"
+    assert node.query("SELECT count(*) FROM remote_disk_test FORMAT Values") == "(16384)"
 
-#     # Data should remain in hdfs
-#     hdfs_objects = fs.listdir("/clickhouse")
-#     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
+    # Data should remain on remote disk
+    assert files_number_in_disk() == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4

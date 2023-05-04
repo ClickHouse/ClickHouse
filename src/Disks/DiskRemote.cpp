@@ -105,6 +105,13 @@ public:
         next();
     }
 
+    ~DiskRemoteDirectoryIterator() override
+    {
+        // Should read all data from connection before returning it to pool
+        while (valid)
+            valid = conn->nextDirectoryIteratorEntry(entry);
+    }
+
     void next() override {
         if (!valid)
             return;

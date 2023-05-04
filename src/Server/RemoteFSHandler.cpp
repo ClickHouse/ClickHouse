@@ -221,7 +221,7 @@ void RemoteFSHandler::receiveRequest()
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
-    LOG_TRACE(log, "Received {}", packet_type);
+    LOG_TRACE(log, "Received {}", RemoteFSProtocol::PacketType(packet_type));
 
     std::string path;
     std::string path2;

@@ -19,7 +19,7 @@ class RemoteFSConnection
 {
 public:
     RemoteFSConnection(const String & host_, UInt16 port_,
-        const String & disk_name_);
+        const String & disk_name_, size_t conn_id_);
 
     ~RemoteFSConnection();
 
@@ -76,6 +76,8 @@ private:
     String host;
     UInt16 port;
     String disk_name;
+
+    size_t conn_id;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
