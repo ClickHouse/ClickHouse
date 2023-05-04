@@ -61,6 +61,7 @@ private:
     void processWithStrictParts();
     void processWithDynamicParts();
 
+    void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & req);
     void createMultipartUpload();
     void writePart();
     void completeMultipartUpload();

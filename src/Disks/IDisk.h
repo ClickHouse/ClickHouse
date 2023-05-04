@@ -367,7 +367,13 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual MetadataStoragePtr getMetadataStorage() = 0;
+    virtual MetadataStoragePtr getMetadataStorage()
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getMetadataStorage() is not implemented for disk type: {}",
+            toString(getDataSourceDescription().type));
+    }
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
