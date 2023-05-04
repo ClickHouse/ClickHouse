@@ -64,7 +64,12 @@ def test_drop_replica_in_auxiliary_zookeeper(started_cluster):
     max_retries = 5
     zk = cluster.get_kazoo_client("zoo1")
     while True:
-        if zk.exists("/clickhouse/tables/test/test_auxiliary_zookeeper/replicas/node2/is_active") is None:
+        if (
+            zk.exists(
+                "/clickhouse/tables/test/test_auxiliary_zookeeper/replicas/node2/is_active"
+            )
+            is None
+        ):
             break
         else:
             retries += 1
