@@ -103,7 +103,7 @@ public:
     const StatAtomic & getStat() const { return stat; }
 
 private:
-    FileSegmentsHolder createCacheFile(size_t max_file_size);
+    FileSegmentsHolderPtr createCacheFile(size_t max_file_size);
     TemporaryFileOnDiskHolder createRegularFile(size_t max_file_size);
 
     mutable std::mutex mutex;
@@ -130,7 +130,7 @@ public:
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
-    TemporaryFileStream(FileSegmentsHolder && segments_, const Block & header_, TemporaryDataOnDisk * parent_);
+    TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_);
 
     size_t write(const Block & block);
     void flush();
@@ -161,7 +161,7 @@ private:
 
     /// Data can be stored in file directly or in the cache
     TemporaryFileOnDiskHolder file;
-    FileSegmentsHolder segment_holder;
+    FileSegmentsHolderPtr segment_holder;
 
     Stat stat;
 
