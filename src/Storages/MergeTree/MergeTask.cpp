@@ -155,14 +155,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (global_ctx->deduplicate)
     {
         if (global_ctx->deduplicate_by_columns.empty())
-        {
             LOG_DEBUG(ctx->log, "DEDUPLICATE BY all columns");
-            for (const auto & col : global_ctx->merging_column_names)
-            {
-                if (col != BlockNumberColumn.name)
-                    global_ctx->deduplicate_by_columns.emplace_back(col);
-            }
-        }
         else
             LOG_DEBUG(ctx->log, "DEDUPLICATE BY ('{}')", fmt::join(global_ctx->deduplicate_by_columns, "', '"));
     }
@@ -260,7 +253,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
 
-    if (!ctx->need_remove_expired_values)
+    if (!ctx->need_remove_expired_values && global_ctx->metadata_snapshot->getProjections().empty())
         global_ctx->storage_columns.emplace_back(BlockNumberColumn);
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
@@ -997,6 +990,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
+        if (global_ctx->deduplicate_by_columns.empty())
+        {
+            for (const auto & col : global_ctx->merging_column_names)
+            {
+                if (col != BlockNumberColumn.name)
+                    global_ctx->deduplicate_by_columns.emplace_back(col);
+            }
+        }
+
         if (DistinctSortedTransform::isApplicable(header, sort_description, global_ctx->deduplicate_by_columns))
             res_pipe.addTransform(std::make_shared<DistinctSortedTransform>(
                 res_pipe.getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
