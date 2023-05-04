@@ -302,7 +302,7 @@ void GraceHashJoin::initBuckets()
     current_bucket->startJoining();
 }
 
-bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join [[maybe_unused]])
+bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
 
     bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
@@ -472,8 +472,10 @@ bool GraceHashJoin::alwaysReturnsEmptySet() const
     return hash_join_is_empty;
 }
 
-IBlocksStreamPtr GraceHashJoin::getNonJoinedBlocks(
-    const Block & left_sample_block_ [[maybe_unused]], const Block & result_sample_block_ [[maybe_unused]], UInt64 max_block_size_ [[maybe_unused]]) const
+// This is only be called for bucket[0] at present. other buckets non-joined blocks are generated in
+// DelayedBlocks.
+IBlocksStreamPtr
+GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {
     return hash_join->getNonJoinedBlocks(left_sample_block_, result_sample_block_, max_block_size_);
 }
@@ -510,6 +512,8 @@ public:
 
         do
         {
+            // When left reader finish, return non-joined blocks.
+            // empty block means the end of this stream.
             if (!is_left_reader_finished)
             {
                 block = left_reader.read();
@@ -521,6 +525,7 @@ public:
             }
             if (is_left_reader_finished)
             {
+                // full/right join, non_joined_blocks != nullptr
                 if (non_joined_blocks)
                 {
                     block = non_joined_blocks->next();
