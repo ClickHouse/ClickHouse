@@ -27,7 +27,7 @@ SELECT * FROM viewExplain('EXPLAIN AST', '', ''); -- { serverError BAD_ARGUMENTS
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 ( a UInt64 ) Engine = MergeTree ORDER BY tuple() AS SELECT number AS a FROM system.numbers LIMIT 100000;
 
-SELECT rows > 1000 FROM (EXPLAIN ESTIMATE SELECT sum(a) FROM t1);
+SELECT JSONExtractInt(toString(estimate), 'selected_rows') > 1000 FROM (EXPLAIN ESTIMATE SELECT sum(a) FROM t1);
 SELECT count() == 1 FROM (EXPLAIN ESTIMATE SELECT sum(a) FROM t1);
 
 DROP TABLE t1;
