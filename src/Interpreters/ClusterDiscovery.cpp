@@ -237,15 +237,20 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     }
 
     bool secure = cluster_info.current_node.secure;
-    auto cluster = std::make_shared<Cluster>(
-        context->getSettingsRef(),
-        shards,
+    ClusterConnectionParameters params{
         /* username= */ context->getUserName(),
         /* password= */ "",
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
-        /* secure= */ secure);
+        /* secure= */ secure,
+        /* priority= */ 1,
+        /* cluster_name= */ "",
+        /* password= */ ""};
+    auto cluster = std::make_shared<Cluster>(
+        context->getSettingsRef(),
+        shards,
+        params);
     return cluster;
 }
 
