@@ -71,19 +71,19 @@ namespace
     void prepareMongoDBArrayInfo(
         std::unordered_map<size_t, MongoDBArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type)
     {
-        const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
+        const auto * array_type = assert_cast<const DataTypeArray *>(data_type.get());
         auto nested = array_type->getNestedType();
 
         size_t count_dimensions = 1;
         while (isArray(nested))
         {
             ++count_dimensions;
-            nested = typeid_cast<const DataTypeArray *>(nested.get())->getNestedType();
+            nested = assert_cast<const DataTypeArray *>(nested.get())->getNestedType();
         }
 
         Field default_value = nested->getDefault();
         if (nested->isNullable())
-            nested = static_cast<const DataTypeNullable *>(nested.get())->getNestedType();
+            nested = assert_cast<const DataTypeNullable *>(nested.get())->getNestedType();
 
         WhichDataType which(nested);
         std::function<Field(const Poco::MongoDB::Element & value, const std::string & name)> parser;
