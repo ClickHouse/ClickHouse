@@ -15,15 +15,35 @@ USE test1;
 SELECT * FROM \"http://localhost:11111/test/a.tsv\"
 """
 ${CLICKHOUSE_CLIENT} -q "SHOW DATABASES;" | grep test1
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE test1;"
 
+# check credentials with absolute path
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test2;
-CREATE DATABASE test2 ENGINE = S3('test', 'testtest');
+CREATE DATABASE test2 ENGINE = S3('', 'test', 'testtest');
 USE test2;
 SELECT * FROM \"http://localhost:11111/test/b.tsv\"
 """
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE test2;"
+
+# check credentials with relative path
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
+DROP DATABASE IF EXISTS test4;
+CREATE DATABASE test4 ENGINE = S3('http://localhost:11111/test', 'test', 'testtest');
+USE test4;
+SELECT * FROM \"b.tsv\"
+"""
+
+# check that database url_prefix is ignored if pass full url as table name
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
+USE test4;
+SELECT * FROM \"http://localhost:11111/test/a.tsv\"
+"""
+
+# Check named collection loading
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
+DROP DATABASE IF EXISTS test5;
+CREATE DATABASE test5 ENGINE = S3(s3_conn_db);
+SELECT * FROM test5.\`b.tsv\`
+"""
 
 #################
 echo "Test 2: check exceptions"
@@ -44,4 +64,6 @@ ${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test1;
 DROP DATABASE IF EXISTS test2;
 DROP DATABASE IF EXISTS test3;
+DROP DATABASE IF EXISTS test4;
+DROP DATABASE IF EXISTS test5;
 """

@@ -466,20 +466,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        std::string key_id;
-        std::string secret_key;
+        DatabaseS3::Configuration config;
 
         if (engine->arguments && !engine->arguments->children.empty())
         {
-            if (engine->arguments->children.size() != 2)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 database requires 0 or 2 argument: [access_key_id, secret_access_key]");
-
-            const auto & arguments = engine->arguments->children;
-            key_id = safeGetLiteralValue<String>(arguments[0], engine_name);
-            secret_key = safeGetLiteralValue<String>(arguments[1], engine_name);
+            ASTs & engine_args = engine->arguments->children;
+            config = DatabaseS3::parseArguments(engine_args, context);
         }
 
-        return std::make_shared<DatabaseS3>(database_name, key_id, secret_key, context);
+        return std::make_shared<DatabaseS3>(database_name, config, context);
     }
 #endif
 

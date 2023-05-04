@@ -4,18 +4,35 @@
 
 #include <Databases/DatabaseS3.h>
 
-#include <IO/S3/URI.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <IO/S3/URI.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/TableFunctionFactory.h>
+
+#include <boost/algorithm/string.hpp>
+#include <filesystem>
+
+#include "DatabaseS3.h"
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
+
+static const std::unordered_set<std::string_view> optional_configuration_keys = {
+    "url",
+    "access_key_id",
+    "secret_access_key",
+    "no_sign_request"
+};
 
 namespace ErrorCodes
 {
@@ -25,13 +42,14 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int UNACCEPTABLE_URL;
     extern const int S3_ERROR;
+
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-DatabaseS3::DatabaseS3(const String & name_, const String & key_id, const String & secret_key, ContextPtr context_)
+DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, ContextPtr context_)
     : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
-    , access_key_id(key_id)
-    , secret_access_key(secret_key)
+    , config(config_)
     , log(&Poco::Logger::get("DatabaseS3(" + name_ + ")"))
 {
 }
@@ -47,6 +65,20 @@ void DatabaseS3::addTable(const std::string & table_name, StoragePtr table_stora
             table_name,
             getDatabaseName(),
             getEngineName());
+}
+
+std::string DatabaseS3::getFullUrl(const std::string & name) const
+{
+    try
+    {
+        S3::URI uri(name);
+    }
+    catch (...)
+    {
+        return (fs::path(config.url_prefix) / name).string();
+    }
+
+    return name;
 }
 
 bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool throw_on_error) const
@@ -71,36 +103,49 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
     if (loaded_tables.find(name) != loaded_tables.end())
         return true;
 
-    return checkUrl(name, context_, false);
+    return checkUrl(getFullUrl(name), context_, false);
 }
 
-StoragePtr DatabaseS3::getTableImpl(const String & url, ContextPtr context_) const
+StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
     // Check if the table exists in the loaded tables map
     {
         std::lock_guard lock(mutex);
-        auto it = loaded_tables.find(url);
+        auto it = loaded_tables.find(name);
         if (it != loaded_tables.end())
             return it->second;
     }
 
+    auto url = getFullUrl(name);
+
     checkUrl(url, context_, true);
 
     // call TableFunctionS3
-    auto args = makeASTFunction(
-        "s3",
-        std::make_shared<ASTLiteral>(url),
-        std::make_shared<ASTLiteral>(access_key_id),
-        std::make_shared<ASTLiteral>(secret_access_key));
+    auto function = std::make_shared<ASTFunction>();
 
-    auto table_function = TableFunctionFactory::instance().get(args, context_);
+    function->name = "s3";
+    function->arguments = std::make_shared<ASTExpressionList>();
+    function->children.push_back(function->arguments);
+
+    function->arguments->children.push_back(std::make_shared<ASTLiteral>(url));
+    if (config.no_sign_request)
+    {
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>("NOSIGN"));
+    }
+    else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
+    {
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.access_key_id.value()));
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.secret_access_key.value()));
+    }
+
+    auto table_function = TableFunctionFactory::instance().get(function, context_);
     if (!table_function)
         return nullptr;
 
     // TableFunctionS3 throws exceptions, if table cannot be created
-    auto table_storage = table_function->execute(args, context_, url);
+    auto table_storage = table_function->execute(function, context_, name);
     if (table_storage)
-        addTable(url, table_storage);
+        addTable(name, table_storage);
 
     return table_storage;
 }
@@ -143,10 +188,14 @@ ASTPtr DatabaseS3::getCreateDatabaseQuery() const
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3('{}', '{}')",
-                                     backQuoteIfNeed(getDatabaseName()),
-                                     access_key_id,
-                                     secret_access_key);
+    std::string creation_args;
+    creation_args += fmt::format("'{}'", config.url_prefix);
+    if (config.no_sign_request)
+        creation_args += ", 'NOSIGN'";
+    else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
+        creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
+
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
@@ -174,6 +223,76 @@ void DatabaseS3::shutdown()
 
     std::lock_guard lock(mutex);
     loaded_tables.clear();
+}
+
+DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)
+{
+    Configuration result;
+
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
+    {
+        auto & collection = *named_collection;
+
+        validateNamedCollection(collection, {}, optional_configuration_keys);
+
+        result.url_prefix = collection.getOrDefault<String>("url", "");
+        result.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
+
+        auto key_id = collection.getOrDefault<std::string>("access_key_id", "");
+        auto secret_key = collection.getOrDefault<std::string>("secret_access_key", "");
+
+        if (!key_id.empty())
+            result.access_key_id = key_id;
+
+        if (!secret_key.empty())
+            result.secret_access_key = secret_key;
+    }
+    else
+    {
+        auto supported_signature =
+            " - S3()\n"
+            " - S3('url')\n"
+            " - S3('url', 'NOSIGN')\n"
+            " - S3('url', 'access_key_id', 'secret_access_key')\n";
+        const auto error_message =
+            fmt::format("Engine DatabaseS3 must have the following arguments signature\n{}",  supported_signature);
+
+        for (auto & arg : engine_args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
+
+        if (engine_args.size() > 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message.c_str());
+
+        if (engine_args.empty())
+            return result;
+
+        result.url_prefix = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+
+        // url, NOSIGN
+        if (engine_args.size() == 2)
+        {
+            auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "NOSIGN");
+            if (boost::iequals(second_arg, "NOSIGN"))
+                result.no_sign_request = true;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
+        }
+
+        // url, access_key_id, secret_access_key
+        if (engine_args.size() == 3)
+        {
+            auto key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
+            auto secret_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
+
+            if (key_id.empty() || secret_key.empty() || boost::iequals(key_id, "NOSIGN"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
+
+            result.access_key_id = key_id;
+            result.secret_access_key = secret_key;
+        }
+    }
+
+    return result;
 }
 
 /**
