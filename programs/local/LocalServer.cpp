@@ -147,9 +147,9 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_outdated_parts_loading_thread_pool_size", 16));
 
     PartsCleaningThreadPool::initialize(
-        config().getUInt("max_parts_cleaning_thread_pool_size"),
+        config().getUInt("max_parts_cleaning_thread_pool_size", 16),
         0, // We don't need any threads one all the parts will be deleted
-        config().getUInt("max_parts_cleaning_thread_pool_size"));
+        config().getUInt("max_parts_cleaning_thread_pool_size", 16));
 }
 
 
