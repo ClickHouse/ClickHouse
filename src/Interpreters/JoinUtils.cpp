@@ -19,6 +19,7 @@
 
 #include <base/FnTraits.h>
 
+
 namespace DB
 {
 
@@ -864,7 +865,6 @@ Block NotJoinedBlocks::nextImpl()
         size_t rows_added = filler->fillColumns(columns_right);
         if (rows_added == 0)
             return {};
-
         addLeftColumns(result_block, rows_added);
         addRightColumns(result_block, columns_right);
     }
