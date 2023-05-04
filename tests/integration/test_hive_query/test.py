@@ -496,3 +496,31 @@ CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`id` Nullable(String), `score
     result = node.query("""DESC default.demo_parquet_1 FORMAT TSV""")
     expected_result = """id\tNullable(String)\t\t\tText comment\t\t\nscore\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"""
     assert result.strip() == expected_result
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        pytest.param(
+            "null_as_default_orc",
+            id="test_null_as_default_orc",
+        ),
+        pytest.param(
+            "null_as_default_parquet",
+            id="test_null_as_default_parquet",
+        ),
+    ],
+)
+def test_null_as_default(started_cluster, table):
+    node = started_cluster.instances["h0_0_0"]
+    node.query("set input_format_null_as_default = true")
+    result = node.query(
+        """
+DROP TABLE IF EXISTS default.${table};
+CREATE TABLE default.${table} (`x` String, `y` String DEFAULT 'world', `day` String) ENGINE = Hive('thrift://hivetest:9083', 'test', '${table}') PARTITION BY(day);
+select x, y from default.${table};
+""".format(
+            table=table
+        )
+    )
+    assert result.strip("\n") == "\tworld"
