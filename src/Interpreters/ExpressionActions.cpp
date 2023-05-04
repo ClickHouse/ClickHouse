@@ -941,7 +941,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
                 if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
                 {
                     auto set = column_set->getData();
-                    if (set && set->isCreated() && set->getTotalRowCount() == 0)
+                    if (set && set->isReady() && set->get()->getTotalRowCount() == 0)
                         return true;
                 }
             }

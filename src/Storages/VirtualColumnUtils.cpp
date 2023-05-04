@@ -80,24 +80,24 @@ ASTPtr buildWhereExpression(const ASTs & functions)
     return makeASTFunction("and", functions);
 }
 
-void buildSets(const ASTPtr & expression, ExpressionAnalyzer & analyzer)
-{
-    const auto * func = expression->as<ASTFunction>();
-    if (func && functionIsInOrGlobalInOperator(func->name))
-    {
-        const IAST & args = *func->arguments;
-        const ASTPtr & arg = args.children.at(1);
-        if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
-        {
-            analyzer.tryMakeSetForIndexFromSubquery(arg);
-        }
-    }
-    else
-    {
-        for (const auto & child : expression->children)
-            buildSets(child, analyzer);
-    }
-}
+// void buildSets(const ASTPtr & expression, ExpressionAnalyzer & analyzer)
+// {
+//     const auto * func = expression->as<ASTFunction>();
+//     if (func && functionIsInOrGlobalInOperator(func->name))
+//     {
+//         const IAST & args = *func->arguments;
+//         const ASTPtr & arg = args.children.at(1);
+//         if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
+//         {
+//             analyzer.tryMakeSetForIndexFromSubquery(arg);
+//         }
+//     }
+//     else
+//     {
+//         for (const auto & child : expression->children)
+//             buildSets(child, analyzer);
+//     }
+// }
 
 }
 
@@ -199,7 +199,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     /// Let's analyze and calculate the prepared expression.
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
-    buildSets(expression_ast, analyzer);
+    //buildSets(expression_ast, analyzer);
     ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
 
     Block block_with_filter = block;

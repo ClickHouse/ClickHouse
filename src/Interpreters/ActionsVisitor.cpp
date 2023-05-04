@@ -446,7 +446,7 @@ FutureSetPtr makeExplicitSet(
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
             element_type = low_cardinality_type->getDictionaryType();
 
-    auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
+    auto set_key = PreparedSetKey::forLiteral(right_arg->getTreeHash(), set_element_types);
     if (auto set = prepared_sets.getFuture(set_key))
         return set; /// Already prepared.
 
@@ -1384,7 +1384,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
     {
         if (no_subqueries)
             return {};
-        auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
+        auto set_key = PreparedSetKey::forSubquery(right_in_operand->getTreeHash());
 
         if (auto set = data.prepared_sets->getFuture(set_key))
             return set;

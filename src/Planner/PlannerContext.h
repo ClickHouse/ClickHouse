@@ -55,42 +55,46 @@ using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
   */
 class PlannerSet
 {
-public:
-    /// Construct planner set that is ready for execution
-    explicit PlannerSet(FutureSetPtr set_)
-        : set(std::move(set_))
-    {}
 
-    /// Construct planner set with set and subquery node
-    explicit PlannerSet(QueryTreeNodePtr subquery_node_)
-        //: set(promise_to_build_set.get_future())
-        : subquery_node(std::move(subquery_node_))
-    {}
-
-    /// Get a reference to a set that might be not built yet
-    const FutureSetPtr & getSet() const
-    {
-        return set;
-    }
-
-    /// Get subquery node
-    const QueryTreeNodePtr & getSubqueryNode() const
-    {
-        return subquery_node;
-    }
-
-    /// This promise will be fulfilled when set is built and all FutureSet objects will become ready
-    // std::promise<SetPtr> extractPromiseToBuildSet()
-    // {
-    //     return std::move(promise_to_build_set);
-    // }
-
-private:
-    //std::promise<SetPtr> promise_to_build_set;
-    FutureSetPtr set;
-
-    QueryTreeNodePtr subquery_node;
 };
+
+// {
+// public:
+//     /// Construct planner set that is ready for execution
+//     explicit PlannerSet(FutureSetPtr set_)
+//         : set(std::move(set_))
+//     {}
+
+//     /// Construct planner set with set and subquery node
+//     explicit PlannerSet(QueryTreeNodePtr subquery_node_)
+//         //: set(promise_to_build_set.get_future())
+//         : subquery_node(std::move(subquery_node_))
+//     {}
+
+//     /// Get a reference to a set that might be not built yet
+//     const FutureSetPtr & getSet() const
+//     {
+//         return set;
+//     }
+
+//     /// Get subquery node
+//     const QueryTreeNodePtr & getSubqueryNode() const
+//     {
+//         return subquery_node;
+//     }
+
+//     /// This promise will be fulfilled when set is built and all FutureSet objects will become ready
+//     // std::promise<SetPtr> extractPromiseToBuildSet()
+//     // {
+//     //     return std::move(promise_to_build_set);
+//     // }
+
+// private:
+//     //std::promise<SetPtr> promise_to_build_set;
+//     FutureSetPtr set;
+
+//     QueryTreeNodePtr subquery_node;
+// };
 
 class PlannerContext
 {
@@ -179,28 +183,30 @@ public:
 
     using SetKey = std::string;
 
-    using SetKeyToSet = std::unordered_map<String, PlannerSet>;
+    // using SetKeyToSet = std::unordered_map<String, PlannerSet>;
 
-    /// Create set key for set source node
+    // /// Create set key for set source node
     static SetKey createSetKey(const QueryTreeNodePtr & set_source_node);
 
-    /// Register set for set key
-    void registerSet(const SetKey & key, PlannerSet planner_set);
+    // /// Register set for set key
+    // void registerSet(const SetKey & key, PlannerSet planner_set);
 
-    /// Returns true if set is registered for key, false otherwise
-    bool hasSet(const SetKey & key) const;
+    // /// Returns true if set is registered for key, false otherwise
+    // bool hasSet(const SetKey & key) const;
 
-    /// Get set for key, if no set is registered logical exception is thrown
-    const PlannerSet & getSetOrThrow(const SetKey & key) const;
+    // /// Get set for key, if no set is registered logical exception is thrown
+    // const PlannerSet & getSetOrThrow(const SetKey & key) const;
 
-    /// Get set for key, if no set is registered null is returned
-    PlannerSet * getSetOrNull(const SetKey & key);
+    // /// Get set for key, if no set is registered null is returned
+    // PlannerSet * getSetOrNull(const SetKey & key);
 
-    /// Get registered sets
-    const SetKeyToSet & getRegisteredSets() const
-    {
-        return set_key_to_set;
-    }
+    // /// Get registered sets
+    // const SetKeyToSet & getRegisteredSets() const
+    // {
+    //     return set_key_to_set;
+    // }
+
+    PreparedSets & getPreparedSets() { return prepared_sets; }
 
 private:
     /// Query context
@@ -216,8 +222,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     /// Set key to set
-    SetKeyToSet set_key_to_set;
-
+    PreparedSets prepared_sets;
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

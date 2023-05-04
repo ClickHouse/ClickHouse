@@ -76,7 +76,7 @@ void CreatingSetsTransform::startSubquery()
                 }
 
                 subquery.promise_to_fill_set.set_value(ready_set);
-                subquery.set_in_progress.reset();
+                subquery.set.reset();
                 done_with_set = true;
                 set_from_cache = true;
             }
@@ -84,7 +84,7 @@ void CreatingSetsTransform::startSubquery()
         }
     }
 
-    if (subquery.set_in_progress)
+    if (subquery.set)
         LOG_TRACE(log, "Creating set, key: {}", subquery.key);
     if (subquery.table)
         LOG_TRACE(log, "Filling temporary table.");
@@ -93,7 +93,7 @@ void CreatingSetsTransform::startSubquery()
         /// TODO: make via port
         table_out = QueryPipeline(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
 
-    done_with_set = !subquery.set_in_progress;
+    done_with_set = !subquery.set;
     done_with_table = !subquery.table;
 
     if ((done_with_set && !set_from_cache) /*&& done_with_join*/ && done_with_table)
@@ -116,8 +116,8 @@ void CreatingSetsTransform::finishSubquery()
     }
     else if (read_rows != 0)
     {
-        if (subquery.set_in_progress)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set_in_progress->getTotalRowCount(), read_rows, seconds);
+        if (subquery.set)
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), read_rows, seconds);
         if (subquery.table)
             LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
     }
@@ -131,9 +131,9 @@ void CreatingSetsTransform::init()
 {
     is_initialized = true;
 
-    if (subquery.set_in_progress)
+    if (subquery.set)
     {
-        subquery.set_in_progress->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
+        subquery.set->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
     }
 
     watch.restart();
@@ -147,7 +147,7 @@ void CreatingSetsTransform::consume(Chunk chunk)
 
     if (!done_with_set)
     {
-        if (!subquery.set_in_progress->insertFromBlock(block.getColumnsWithTypeAndName()))
+        if (!subquery.set->insertFromBlock(block.getColumnsWithTypeAndName()))
             done_with_set = true;
     }
 
@@ -170,12 +170,12 @@ void CreatingSetsTransform::consume(Chunk chunk)
 
 Chunk CreatingSetsTransform::generate()
 {
-    if (subquery.set_in_progress)
+    if (subquery.set)
     {
-        subquery.set_in_progress->finishInsert();
-        subquery.promise_to_fill_set.set_value(subquery.set_in_progress);
+        subquery.set->finishInsert();
+        subquery.promise_to_fill_set.set_value(subquery.set);
         if (promise_to_build)
-            promise_to_build->set_value(subquery.set_in_progress);
+            promise_to_build->set_value(subquery.set);
     }
 
     if (table_out.initialized())

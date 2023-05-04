@@ -878,50 +878,50 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     query_plan.addStep(std::move(offsets_step));
 }
 
-void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
-    const SelectQueryOptions & select_query_options,
-    const PlannerContextPtr & planner_context,
-    const std::vector<ActionsDAGPtr> & result_actions_to_execute)
-{
-    PreparedSets::SubqueriesForSets subqueries_for_sets;
+// void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
+//     const SelectQueryOptions & select_query_options,
+//     const PlannerContextPtr & planner_context,
+//     const std::vector<ActionsDAGPtr> & result_actions_to_execute)
+// {
+//     PreparedSets::SubqueriesForSets subqueries_for_sets;
 
-    for (const auto & actions_to_execute : result_actions_to_execute)
-    {
-        for (const auto & node : actions_to_execute->getNodes())
-        {
-            const auto & set_key = node.result_name;
-            auto * planner_set = planner_context->getSetOrNull(set_key);
-            if (!planner_set)
-                continue;
+//     for (const auto & actions_to_execute : result_actions_to_execute)
+//     {
+//         for (const auto & node : actions_to_execute->getNodes())
+//         {
+//             const auto & set_key = node.result_name;
+//             auto * planner_set = planner_context->getSetOrNull(set_key);
+//             if (!planner_set)
+//                 continue;
 
-            if (planner_set->getSet().isCreated() || !planner_set->getSubqueryNode())
-                continue;
+//             if (planner_set->getSet().isCreated() || !planner_set->getSubqueryNode())
+//                 continue;
 
-            auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(
-                planner_set->getSubqueryNode(),
-                subquery_options,
-                planner_context->getGlobalPlannerContext());
-            subquery_planner.buildQueryPlanIfNeeded();
+//             auto subquery_options = select_query_options.subquery();
+//             Planner subquery_planner(
+//                 planner_set->getSubqueryNode(),
+//                 subquery_options,
+//                 planner_context->getGlobalPlannerContext());
+//             subquery_planner.buildQueryPlanIfNeeded();
 
-            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-            bool tranform_null_in = settings.transform_null_in;
-            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
+//             const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+//             SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
+//             bool tranform_null_in = settings.transform_null_in;
+//             auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
 
-            SubqueryForSet subquery_for_set;
-            subquery_for_set.key = set_key;
-            subquery_for_set.set_in_progress = set;
-            subquery_for_set.set = planner_set->getSet();
-            subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
-            subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
+//             SubqueryForSet subquery_for_set;
+//             subquery_for_set.key = set_key;
+//             subquery_for_set.set_in_progress = set;
+//             subquery_for_set.set = planner_set->getSet();
+//             subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
+//             subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
 
-            subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
-        }
-    }
+//             subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
+//         }
+//     }
 
-    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
-}
+//     addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
+// }
 
 /// Support for `additional_result_filter` setting
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
@@ -951,7 +951,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
 
-    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
+    auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, select_query_options, std::move(fake_name_set));
     if (!filter_info.actions || !query_plan.isInitialized())
         return;
 
@@ -1179,7 +1179,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     checkStoragesSupportTransactions(planner_context);
-    collectSets(query_tree, *planner_context);
+    collectSets(query_tree, *planner_context, select_query_options);
     collectTableExpressionData(query_tree, planner_context);
 
     const auto & settings = query_context->getSettingsRef();
@@ -1467,7 +1467,17 @@ void Planner::buildPlanForQueryNode()
     }
 
     if (!select_query_options.only_analyze)
-        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentDataStream(),
+            planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext()),
+            planner_context->getQueryContext());
+
+        query_plan.addStep(std::move(step));
+
+        //addCreatingSetsStep(query_plan, planner_context->getPreparedSets().detachSubqueries(planner_context->getQueryContext()), planner_context->getQueryContext());
+        //addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+    }
 }
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const

@@ -181,7 +181,19 @@ public:
                 // auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
                 // subquery_for_set.createSource(*interpreter, external_storage);
                 auto key = subquery_or_table_name->getColumnName();
-                prepared_sets->addStorageToSubquery(key, std::move(external_storage));
+                auto set_key = PreparedSetKey::forSubquery(subquery_or_table_name->getTreeHash());
+
+                if (!prepared_sets->getFuture(set_key))
+                {
+                    SubqueryForSet subquery_for_set;
+                    subquery_for_set.key = std::move(key);
+                    subquery_for_set.table = std::move(external_storage);
+                    subquery_for_set.createSource(*interpreter);
+
+                    prepared_sets->addFromSubquery(set_key, std::move(subquery_for_set));
+                }
+                else
+                    prepared_sets->addStorageToSubquery(key, std::move(external_storage));
             }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,

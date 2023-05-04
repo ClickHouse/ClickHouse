@@ -68,11 +68,18 @@ bool traverseASTFilter(
 
             PreparedSetKey set_key;
             if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))
-                set_key = PreparedSetKey::forSubquery(*value);
+                set_key = PreparedSetKey::forSubquery(value->getTreeHash());
             else
-                set_key = PreparedSetKey::forLiteral(*value, {primary_key_type});
+                set_key = PreparedSetKey::forLiteral(value->getTreeHash(), {primary_key_type});
 
-            SetPtr set = prepared_sets->get(set_key);
+            FutureSetPtr future_set = prepared_sets->getFuture(set_key);
+            if (!future_set)
+                return false;
+
+            if (!future_set->isReady())
+                future_set->buildOrderedSetInplace(context);
+
+            auto set = future_set->get();
             if (!set)
                 return false;
 

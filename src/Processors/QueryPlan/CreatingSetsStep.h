@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Creates sets for subqueries and JOIN. See CreatingSetsTransform.
-class CreatingSetStep : public ITransformingStep, WithContext
+class CreatingSetStep : public ITransformingStep
 {
 public:
     CreatingSetStep(
@@ -32,6 +32,7 @@ private:
     String description;
     SubqueryForSet subquery_for_set;
     SizeLimits network_transfer_limits;
+    ContextPtr context;
 };
 
 class CreatingSetsStep : public IQueryPlanStep
@@ -44,6 +45,22 @@ public:
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
+};
+
+class DelayedCreatingSetsStep final : public IQueryPlanStep
+{
+public:
+    DelayedCreatingSetsStep(DataStream input_stream, PreparedSets::SubqueriesForSets subqueries_for_sets_, ContextPtr context_);
+
+    String getName() const override { return "DelayedCreatingSets"; }
+
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
+
+    static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
+
+private:
+    PreparedSets::SubqueriesForSets subqueries_for_sets;
+    ContextPtr context;
 };
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context);

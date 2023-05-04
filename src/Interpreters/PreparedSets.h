@@ -65,6 +65,7 @@ public:
     virtual ~FutureSet() = default;
 
     virtual bool isReady() const = 0;
+    virtual bool isFilled() const = 0;
     virtual SetPtr get() const = 0;
 
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
@@ -81,18 +82,28 @@ public:
     FutureSetFromTuple(Block block_);
 
     bool isReady() const override { return set != nullptr; }
+    bool isFilled() const override { return true; }
     SetPtr get() const override { return set; }
 
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override
     {
-        fill(context, true);
+        const auto & settings = context->getSettingsRef();
+        auto size_limits = getSizeLimitsForSet(settings, true);
+        fill(size_limits, settings.transform_null_in, true);
         return set;
     }
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context) override
     {
-        fill(context, false);
+        const auto & settings = context->getSettingsRef();
+        auto size_limits = getSizeLimitsForSet(settings, false);
+        fill(size_limits, settings.transform_null_in, false);
         return nullptr;
+    }
+
+    void buildForTuple(SizeLimits size_limits, bool transform_null_in)
+    {
+        fill(size_limits, transform_null_in, false);
     }
 
 private:
@@ -100,15 +111,12 @@ private:
 
     SetPtr set;
 
-    void fill(const ContextPtr & context, bool create_ordered_set)
+    void fill(SizeLimits size_limits, bool transform_null_in, bool create_ordered_set)
     {
         if (set)
             return;
 
-        const auto & settings = context->getSettingsRef();
-        auto size_limits = getSizeLimitsForSet(settings, create_ordered_set);
-
-        set = std::make_shared<Set>(size_limits, create_ordered_set, settings.transform_null_in);
+        set = std::make_shared<Set>(size_limits, create_ordered_set, transform_null_in);
         set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
         set->insertFromBlock(block.getColumnsWithTypeAndName());
         set->finishInsert();
@@ -151,6 +159,7 @@ public:
     FutureSetFromSubquery(SubqueryForSet subquery_);
 
     bool isReady() const override { return set != nullptr; }
+    bool isFilled() const override { return isReady(); }
     SetPtr get() const override { return set; }
 
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override
@@ -190,6 +199,7 @@ public:
     FutureSetFromStorage(SetPtr set_); // : set(std::move(set_) {}
 
     bool isReady() const override { return set != nullptr; }
+    bool isFilled() const override { return isReady(); }
     SetPtr get() const override { return set; }
 
     SetPtr buildOrderedSetInplace(const ContextPtr &) override
@@ -229,23 +239,25 @@ private:
 
 struct PreparedSetKey
 {
+    using Hash = std::pair<UInt64, UInt64>;
+
     /// Prepared sets for tuple literals are indexed by the hash of the tree contents and by the desired
     /// data types of set elements (two different Sets can be required for two tuples with the same contents
     /// if left hand sides of the IN operators have different types).
-    static PreparedSetKey forLiteral(const IAST & ast, DataTypes types_);
+    static PreparedSetKey forLiteral(Hash hash, DataTypes types_);
 
     /// Prepared sets for subqueries are indexed only by the AST contents because the type of the resulting
     /// set is fully determined by the subquery.
-    static PreparedSetKey forSubquery(const IAST & ast);
+    static PreparedSetKey forSubquery(Hash hash);
 
-    IAST::Hash ast_hash;
+    Hash ast_hash;
     DataTypes types; /// Empty for subqueries.
 
     bool operator==(const PreparedSetKey & other) const;
 
     String toString() const;
 
-    struct Hash
+    struct Hashing
     {
         UInt64 operator()(const PreparedSetKey & key) const { return key.ast_hash.first; }
     };
@@ -272,16 +284,18 @@ public:
     /// Get subqueries and clear them.
     /// We need to build a plan for subqueries just once. That's why we can clear them after accessing them.
     /// SetPtr would still be available for consumers of PreparedSets.
-    SubqueriesForSets detachSubqueries();
+    SubqueriesForSets detachSubqueries(const ContextPtr &);
 
     /// Returns all sets that match the given ast hash not checking types
     /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey
-    std::vector<FutureSet> getByTreeHash(IAST::Hash ast_hash) const;
+    //std::vector<FutureSetPtr> getByTreeHash(IAST::Hash ast_hash) const;
+
+    const std::unordered_map<PreparedSetKey, FutureSetPtr, PreparedSetKey::Hashing> & getSets() const { return sets; }
 
     bool empty() const;
 
 private:
-    std::unordered_map<PreparedSetKey, FutureSetPtr, PreparedSetKey::Hash> sets;
+    std::unordered_map<PreparedSetKey, FutureSetPtr, PreparedSetKey::Hashing> sets;
 
     /// This is the information required for building sets
     SubqueriesForSets subqueries;
