@@ -738,7 +738,7 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        return ASTExplainQuery::ExplainKind::QueryEstimates;
+        return ASTExplainQuery::ExplainKind::QueryEstimate;
     }
     else if (fuzz_rand() % 11 == 0)
     {
@@ -761,7 +761,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
            {ASTExplainQuery::QueryTree, {"run_passes", "dump_passes", "dump_ast", "passes"}},
            {ASTExplainQuery::ExplainKind::QueryPlan, {"header, description", "actions", "indexes", "optimize", "json", "sorting"}},
            {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph=1", "compact"}},
-           {ASTExplainQuery::ExplainKind::QueryEstimates, {}},
+           {ASTExplainQuery::ExplainKind::QueryEstimate, {}},
            {ASTExplainQuery::ExplainKind::TableOverride, {}},
            {ASTExplainQuery::ExplainKind::CurrentTransaction, {}}};
 
