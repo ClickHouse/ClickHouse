@@ -20,16 +20,20 @@
 
 #    include <fstream>
 
-namespace DB::S3
-{
 
-namespace
+namespace DB
 {
 namespace ErrorCodes
 {
     extern const int AWS_ERROR;
 }
+}
 
+namespace DB::S3
+{
+
+namespace
+{
 bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials, uint64_t expiration_window_seconds)
 {
     if (credentials.IsEmpty())
@@ -106,11 +110,12 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
         return {};
     else if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
     {
-        LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, falling back to less secure way.");
+        LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, "
+                  "falling back to less secure way. HTTP response code: {}", response_code);
         return getDefaultCredentials();
     }
 
-    token = new_token;
+    token = std::move(new_token);
     String url = endpoint + EC2_SECURITY_CREDENTIALS_RESOURCE;
     std::shared_ptr<Aws::Http::HttpRequest> profile_request(Aws::Http::CreateHttpRequest(url,
             Aws::Http::HttpMethod::HTTP_GET,
@@ -148,19 +153,21 @@ Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
     auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
     if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
         throw DB::Exception(ErrorCodes::AWS_ERROR,
-            "Failed to token request. HTTP response code: {}", response_code);
+            "Failed to make token request. HTTP response code: {}", response_code);
 
-    token = new_token;
-    String url = endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
+    token = std::move(new_token);
+    const String url = endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
     std::shared_ptr<Aws::Http::HttpRequest> profile_request(
         Aws::Http::CreateHttpRequest(url, Aws::Http::HttpMethod::HTTP_GET, Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
 
     profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
     profile_request->SetUserAgent(user_agent_string);
+
     const auto result = GetResourceWithAWSWebServiceResult(profile_request);
     if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR,
             "Failed to get availability zone. HTTP response code: {}", result.GetResponseCode());
+
     return Aws::Utils::StringUtils::Trim(result.GetPayload().c_str());
 }
 
@@ -178,14 +185,9 @@ std::pair<Aws::String, Aws::Http::HttpResponseCode> AWSEC2MetadataClient::getEC2
     token_request->SetUserAgent(user_agent_string);
 
     LOG_TRACE(logger, "Calling EC2MetadataService to get token.");
-    auto result = GetResourceWithAWSWebServiceResult(token_request);
-
+    const auto result = GetResourceWithAWSWebServiceResult(token_request);
     const auto & token_string = result.GetPayload();
-    const auto new_token = Aws::Utils::StringUtils::Trim(token_string.c_str());
-    const auto response_code = result.GetResponseCode();
-    if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
-        LOG_WARNING(logger, "Failed to make token request with result code {}", result.GetResponseCode());
-    return { new_token, response_code };
+    return { Aws::Utils::StringUtils::Trim(token_string.c_str()), result.GetResponseCode() };
 }
 
 Aws::String AWSEC2MetadataClient::getCurrentRegion() const
