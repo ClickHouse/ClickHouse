@@ -53,7 +53,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 
     String pattern = params.front().safeGet<std::string>();
 
-    AggregateFunctionPtr res(createWithOptionSignedIntegerType<AggregateFunction, Data>(*argument_types[0], argument_types, params, pattern));
+    AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunction, Data>(*argument_types[0], argument_types, params, pattern));
     if (res)
         return res;
 
