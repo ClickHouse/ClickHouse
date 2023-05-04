@@ -14,7 +14,7 @@
 namespace DB
 {
 
-constexpr bool debug_logging_enabled = false;
+constexpr bool debug_logging_enabled = true;
 
 template <typename T>
 void logDebug(String key, const T & value, const char * separator = " : ")
@@ -192,8 +192,8 @@ FillingTransform::FillingTransform(
         , sort_description(sort_description_)
         , fill_description(fill_description_)
         , interpolate_description(interpolate_description_)
-        , filling_row(sort_description_)
-        , next_row(sort_description_)
+        , filling_row(fill_description_)
+        , next_row(fill_description_)
 {
     if (interpolate_description)
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
@@ -227,6 +227,7 @@ FillingTransform::FillingTransform(
                 "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
         }
     }
+    logDebug("fill description", dumpSortDescription(fill_description));
 
     std::set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
@@ -369,7 +370,7 @@ static void initColumnsByPositions(
     MutableColumnRawPtrs & output_columns_by_position,
     const std::vector<size_t> & positions)
 {
-    for (size_t pos : positions)
+    for (const size_t pos : positions)
     {
         input_columns_by_positions.push_back(input_columns[pos]);
         output_columns_by_position.push_back(output_columns[pos].get());
@@ -380,10 +381,12 @@ void FillingTransform::initColumns(
     const Columns & input_columns,
     Columns & input_fill_columns,
     Columns & input_interpolate_columns,
+    Columns & ,//input_sort_prefix_columns,
     Columns & input_other_columns,
     MutableColumns & output_columns,
     MutableColumnRawPtrs & output_fill_columns,
     MutableColumnRawPtrs & output_interpolate_columns,
+    MutableColumnRawPtrs & , //output_sort_prefix_columns,
     MutableColumnRawPtrs & output_other_columns)
 {
     Columns non_const_columns;
@@ -398,6 +401,7 @@ void FillingTransform::initColumns(
     initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
     initColumnsByPositions(
         non_const_columns, input_interpolate_columns, output_columns, output_interpolate_columns, interpolate_column_positions);
+    // initColumnsByPositions(non_const_columns, input_sort_prefix_columns, output_columns, output_sort_prefix_columns, sort_prefix_positions);
     initColumnsByPositions(non_const_columns, input_other_columns, output_columns, output_other_columns, other_column_positions);
 }
 
@@ -423,19 +427,23 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
 
     Columns input_fill_columns;
     Columns input_interpolate_columns;
+    Columns input_sort_prefix_columns;
     Columns input_other_columns;
     MutableColumnRawPtrs res_fill_columns;
     MutableColumnRawPtrs res_interpolate_columns;
+    MutableColumnRawPtrs res_sort_prefix_columns;
     MutableColumnRawPtrs res_other_columns;
 
     initColumns(
         input_columns,
         input_fill_columns,
         input_interpolate_columns,
+        input_sort_prefix_columns,
         input_other_columns,
         result_columns,
         res_fill_columns,
         res_interpolate_columns,
+        res_sort_prefix_columns,
         res_other_columns);
 
     if (first)
@@ -457,6 +465,43 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
     return true;
 }
 
+// void FillingTransform::transformRange(
+//     const Columns & input_fill_columns,
+//     const Columns & input_interpolate_columns,
+//     const Columns & input_sort_prefix_columns,
+//     const Columns & input_other_columns,
+//     const MutableColumns & result_columns,
+//     const MutableColumnRawPtrs & res_fill_columns,
+//     const MutableColumnRawPtrs & res_interpolate_columns,
+//     const MutableColumnRawPtrs & res_sort_prefix_columns,
+//     const MutableColumnRawPtrs & res_other_columns,
+//     std::pair<size_t, size_t> range)
+// {
+//     Block interpolate_block;
+//     if (first)
+//     {
+//         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+//         {
+//             auto current_value = (*input_fill_columns[i])[0];
+//             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
+
+//             if (!fill_from.isNull() && !equals(current_value, fill_from))
+//             {
+//                 filling_row.initFromDefaults(i);
+//                 if (less(fill_from, current_value, filling_row.getDirection(i)))
+//                 {
+//                     interpolate(result_columns, interpolate_block);
+//                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+//                 }
+//                 break;
+//             }
+//             filling_row[i] = current_value;
+//         }
+//         first = false;
+//     }
+
+// }
+
 void FillingTransform::transform(Chunk & chunk)
 {
     logDebug("new chunk rows", chunk.getNumRows());
@@ -469,9 +514,11 @@ void FillingTransform::transform(Chunk & chunk)
 
     Columns input_fill_columns;
     Columns input_interpolate_columns;
+    Columns input_sort_prefix_columns;
     Columns input_other_columns;
     MutableColumnRawPtrs res_fill_columns;
     MutableColumnRawPtrs res_interpolate_columns;
+    MutableColumnRawPtrs res_sort_prefix_columns;
     MutableColumnRawPtrs res_other_columns;
     MutableColumns result_columns;
 
@@ -501,10 +548,12 @@ void FillingTransform::transform(Chunk & chunk)
         input_columns,
         input_fill_columns,
         input_interpolate_columns,
+        input_sort_prefix_columns,
         input_other_columns,
         result_columns,
         res_fill_columns,
         res_interpolate_columns,
+        res_sort_prefix_columns,
         res_other_columns);
 
     if (first)
@@ -566,6 +615,7 @@ void FillingTransform::transform(Chunk & chunk)
 
         copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
         copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
+        // copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
     }
 
