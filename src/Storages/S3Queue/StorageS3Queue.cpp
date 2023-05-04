@@ -4,8 +4,6 @@
 #if USE_AWS_S3
 
 #include <Databases/DatabaseReplicated.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -13,17 +11,13 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isValidUTF8.h>
-#include "IO/IOThreadPool.h"
 #include "IO/ParallelReadBuffer.h"
-#include "Parsers/ASTCreateQuery.h"
 
 #include <Functions/FunctionsConversion.h>
 
-#include <IO/S3/Requests.h>
 #include <IO/S3Common.h>
 
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -37,39 +31,26 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageS3.h>
-#include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/StorageURL.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/getVirtualsForStorage.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/ObjectStorages/StoredObject.h>
-
-#include <IO/ReadBufferFromS3.h>
-#include <IO/WriteBufferFromS3.h>
 
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/narrowPipe.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <DataTypes/DataTypeString.h>
 
-#include <aws/core/auth/AWSCredentials.h>
-
-#include <re2/re2.h>
 #include <Common/parseGlobs.h>
-#include <Common/quoteString.h>
 
 #include <filesystem>
 #include <Processors/ISource.h>
