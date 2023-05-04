@@ -29,7 +29,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def _ping(self):
         self._ok()
 
-    def _redirect(self):
+    def _read_out(self):
         content_length = int(self.headers.get("Content-Length", 0))
         to_read = content_length
         while to_read > 0:
@@ -40,6 +40,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             str(self.rfile.read(size))
             to_read -= size
 
+    def _redirect(self):
+        self._read_out()
+
         self.send_response(307)
         url = f"http://{UPSTREAM_HOST}:{UPSTREAM_PORT}{self.path}"
         self.send_header("Location", url)
@@ -47,32 +50,34 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(b"Redirected")
 
     def _error(self, data):
+        self._read_out()
+
         self.send_response(500)
         self.send_header("Content-Type", "text/xml")
         self.end_headers()
         self.wfile.write(data)
 
-    def _broken_settings(self):
+    def _mock_settings(self):
         parts = urllib.parse.urlsplit(self.path)
         path = [x for x in parts.path.split("/") if x]
         assert path[0] == "mock_settings", path
         if path[1] == "error_at_put":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             runtime.error_at_put_when_length_bigger = int(
-                params.get("when_length_bigger", [1024*1024])[0]
+                params.get("when_length_bigger", [1024 * 1024])[0]
             )
             self._ok()
         elif path[1] == "reset":
             runtime.reset()
             self._ok()
         else:
-            self._error("mock_settings, wrong command")
+            self._error("_mock_settings: wrong command")
 
     def do_GET(self):
         if self.path == "/":
             self._ping()
         elif self.path.startswith("/mock_settings"):
-            self._broken_settings()
+            self._mock_settings()
         else:
             self._redirect()
 
