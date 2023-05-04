@@ -1,0 +1,9 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <remote_disk>
+                <path>/var/lib/clickhouse/remote_disk/</path>
+            </remote_disk>
+        </disks>
+    </storage_configuration>
+</clickhouse>

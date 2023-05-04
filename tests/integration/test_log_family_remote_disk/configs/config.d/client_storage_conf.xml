@@ -1,0 +1,12 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <remote_disk>
+                <type>remote</type>
+                <host>server</host>
+                <port>9012</port>
+                <remote_disk_name>remote_disk</remote_disk_name>
+            </remote_disk>
+        </disks>
+    </storage_configuration>
+</clickhouse>

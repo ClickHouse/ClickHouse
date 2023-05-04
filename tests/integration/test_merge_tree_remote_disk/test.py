@@ -86,7 +86,7 @@ def wait_for_client(client):
         try:
             assert (client.query("SELECT 1") == "1\n")
         except QueryRuntimeException as e:
-            if e.returncode != 209 or e.returncode != 210: # Timeout or Connection reset by peer
+            if e.returncode != 209 and e.returncode != 210: # Timeout or Connection reset by peer
                 raise
         time.sleep(15)
 
