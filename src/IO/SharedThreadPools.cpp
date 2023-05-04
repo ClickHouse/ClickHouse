@@ -161,7 +161,7 @@ void PartsCleaningThreadPool::initialize(size_t max_threads, size_t max_free_thr
 
     instance = std::make_unique<ThreadPool>(
         CurrentMetrics::MergeTreePartsCleanerThreads,
-        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
+        CurrentMetrics::MergeTreePartsCleanerThreadsActive,
         max_threads,
         max_free_threads,
         queue_size,
