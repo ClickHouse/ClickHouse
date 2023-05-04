@@ -541,7 +541,7 @@ SerializationPtr getObjectSerialization(const String & schema_format)
 {
     if (schema_format == "json")
     {
-#if USE_SIMDJSON && __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__
+#if USE_SIMDJSON
         return std::make_shared<SerializationObject<JSONDataParser<SimdJSONParser>>>();
 #elif USE_RAPIDJSON
         return std::make_shared<SerializationObject<JSONDataParser<RapidJSONParser>>>();
