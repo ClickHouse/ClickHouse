@@ -6,7 +6,7 @@ title: "Functions for Working with Polygons"
 
 ## readWKTMultiPolygon
 
-Calculates
+Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.
 
 ### Example
 
@@ -31,7 +31,7 @@ MultiPolygon
 
 ## readWKTPolygon
 
-Calculates
+Converts a WKT (Well Known Text) MultiPolygon into a Polygon type.
 
 ### Example
 
