@@ -19,7 +19,13 @@ enum class ProviderType : uint8_t
 
 std::string_view toString(ProviderType provider_type);
 
-bool supportsMultiPartCopy(ProviderType provider_type);
+enum class ApiMode : uint8_t
+{
+    AWS,
+    GCS
+};
+
+std::string_view toString(ApiMode api_mode);
 
 }
 
