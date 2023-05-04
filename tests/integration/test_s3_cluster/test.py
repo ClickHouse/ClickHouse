@@ -96,16 +96,16 @@ def test_select_all(started_cluster):
     ORDER BY (name, value, polygon)"""
     )
     # print(pure_s3)
-    s3_distibuted = node.query(
+    s3_distributed = node.query(
         """
     SELECT * from s3Cluster(
         'cluster_simple',
         'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)"""
     )
-    # print(s3_distibuted)
+    # print(s3_distributed)
 
-    assert TSV(pure_s3) == TSV(s3_distibuted)
+    assert TSV(pure_s3) == TSV(s3_distributed)
 
 
 def test_count(started_cluster):
@@ -118,16 +118,16 @@ def test_count(started_cluster):
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
     # print(pure_s3)
-    s3_distibuted = node.query(
+    s3_distributed = node.query(
         """
     SELECT count(*) from s3Cluster(
         'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*',
         'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
-    # print(s3_distibuted)
+    # print(s3_distributed)
 
-    assert TSV(pure_s3) == TSV(s3_distibuted)
+    assert TSV(pure_s3) == TSV(s3_distributed)
 
 
 def test_count_macro(started_cluster):
@@ -140,17 +140,17 @@ def test_count_macro(started_cluster):
         'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
-    # print(s3_distibuted)
-    s3_distibuted = node.query(
+    # print(s3_distributed)
+    s3_distributed = node.query(
         """
     SELECT count(*) from s3Cluster(
         'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*',
         'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
-    # print(s3_distibuted)
+    # print(s3_distributed)
 
-    assert TSV(s3_macro) == TSV(s3_distibuted)
+    assert TSV(s3_macro) == TSV(s3_distributed)
 
 
 def test_union_all(started_cluster):
@@ -173,7 +173,7 @@ def test_union_all(started_cluster):
     """
     )
     # print(pure_s3)
-    s3_distibuted = node.query(
+    s3_distributed = node.query(
         """
     SELECT * FROM
     (
@@ -190,9 +190,9 @@ def test_union_all(started_cluster):
     ORDER BY (name, value, polygon)
     """
     )
-    # print(s3_distibuted)
+    # print(s3_distributed)
 
-    assert TSV(pure_s3) == TSV(s3_distibuted)
+    assert TSV(pure_s3) == TSV(s3_distributed)
 
 
 def test_wrong_cluster(started_cluster):
