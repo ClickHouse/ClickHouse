@@ -48,6 +48,38 @@ chown ubuntu: /home/ubuntu/.ssh -R
 
 # Create a pre-run script that will provide diagnostics info
 mkdir -p /tmp/actions-hooks
+cat > /tmp/actions-hooks/common.sh << 'EOF'
+terminate-and-exit() {
+  echo "Going to terminate the runner"
+  INSTANCE_ID=$(ec2metadata --instance-id)
+  # To avoid the next job assigned, we kill the runner process with SIGTERM
+  # It should support SIGINT, but it does not work
+  # See https://github.com/actions/runner/issues/2582
+  pkill -SIGTERM Runner.Listener || :
+  # We execute it with `at` to not have it as an orphan process
+  # GH Runners kill all remain processes
+  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
+    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space
+  exit 0
+}
+
+check-terminating-metadata() {
+  # If there is a rebalance event, then the instance could die soon
+  # Let's don't wait for it and terminate proactively
+  if curl --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
+    echo 'The runner received rebalance recommendation, we are terminating'
+    terminate-and-exit
+  fi
+
+  # Here we check if the autoscaling group marked the instance for termination, and it's wait for the job to finish
+  ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
+  if [ "$ASG_STATUS" == "Terminated" ]; then
+    echo 'The runner is marked as "Terminated" by the autoscaling group, we are terminating'
+    terminate-and-exit
+  fi
+}
+EOF
+
 cat > /tmp/actions-hooks/pre-run.sh << EOF
 #!/bin/bash
 set -uo pipefail
@@ -61,34 +93,14 @@ cat > /tmp/actions-hooks/post-run.sh << 'EOF'
 #!/bin/bash
 set -xuo pipefail
 
-terminate-and-exit() {
-  echo "Going to terminate the runner"
-  INSTANCE_ID=$(ec2metadata --instance-id)
-  # We execute it with at to not have it as an orphan process
-  # GH Runners kill all remain processes
-  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
-    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space
-  exit 0
-}
+source /tmp/actions-hooks/common.sh
+
+check-terminating-metadata
 
 # Free KiB, free percents
 ROOT_STAT=($(df / | awk '/\// {print $4 " " int($4/$2 * 100)}'))
 if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
   echo "The runner has ${ROOT_STAT[0]}KiB and ${ROOT_STAT[1]}% of free space on /"
-  terminate-and-exit
-fi
-
-# If there is a rebalance event, then the instance could die soon
-# Let's don't wait for it and terminate proactively
-if curl --fail http://169.254.169.254/latest/meta-data/events/recommendations/rebalance; then
-  echo 'The runner received rebalance recommendation, we are terminating'
-  terminate-and-exit
-fi
-
-# Here we check if the autoscaling group marked the instance for termination, and it's wait for the job to finish
-ASG_STATUS=$(curl -s http://169.254.169.254/latest/meta-data/autoscaling/target-lifecycle-state)
-if [ "$ASG_STATUS" == "Terminated" ]; then
-  echo 'The runner is marked as "Terminated" by the autoscaling group, we are terminating'
   terminate-and-exit
 fi
 
@@ -116,12 +128,17 @@ if [ "$(docker ps --all --quiet)" ]; then
 fi
 EOF
 
+source /tmp/actions-hooks/common.sh
+
 while true; do
-    runner_pid=$(pgrep run.sh)
+    runner_pid=$(pgrep Runner.Listener)
     echo "Got runner pid $runner_pid"
 
     cd $RUNNER_HOME || exit 1
     if [ -z "$runner_pid" ]; then
+        # If runner is not active, check that it needs to terminate itself
+        check-terminating-metadata
+
         echo "Receiving token"
         RUNNER_TOKEN=$(/usr/local/bin/aws ssm  get-parameter --name github_runner_registration_token --with-decryption --output text --query Parameter.Value)
 
