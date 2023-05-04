@@ -43,7 +43,6 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
     return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
 }
 
-
 }
 
 AWSEC2MetadataClient::AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
