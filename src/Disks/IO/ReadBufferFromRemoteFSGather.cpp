@@ -48,7 +48,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     current_object = object;
     total_bytes_read_from_current_file = 0;
-    const auto & object_path = object.absolute_path;
+    const auto & object_path = object.remote_path;
 
     size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
     auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
@@ -74,14 +74,14 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
 void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
 {
-    if (current_object.absolute_path.empty())
+    if (current_object.remote_path.empty())
         return;
 
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
-        .source_file_path = current_object.absolute_path,
+        .source_file_path = current_object.remote_path,
         .file_segment_range = { 0, current_object.bytes_size },
         .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
         .file_segment_size = total_bytes_read_from_current_file,
@@ -124,6 +124,8 @@ void ReadBufferFromRemoteFSGather::initialize()
 
         if (object.bytes_size > current_buf_offset)
         {
+            LOG_TEST(log, "Reading from file: {} ({})", object.remote_path, object.local_path);
+
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || current_buf_idx != i)
             {
@@ -168,6 +170,7 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
     ++current_buf_idx;
 
     const auto & object = blobs_to_read[current_buf_idx];
+    LOG_TEST(log, "Reading from next file: {} ({})", object.remote_path, object.local_path);
     current_buf = createImplementationBuffer(object);
 
     return true;
@@ -240,7 +243,7 @@ void ReadBufferFromRemoteFSGather::reset()
 
 String ReadBufferFromRemoteFSGather::getFileName() const
 {
-    return current_object.absolute_path;
+    return current_object.remote_path;
 }
 
 size_t ReadBufferFromRemoteFSGather::getFileSize() const
