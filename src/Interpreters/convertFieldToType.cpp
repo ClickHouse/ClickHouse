@@ -575,25 +575,31 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
     return decimal_to_float == float_value;
 }
 
-bool convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type, Field & result_value)
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type)
 {
-    result_value = convertFieldToType(from_value, to_type);
+    Field result_value = convertFieldToType(from_value, to_type);
+
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
-        return applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
+    {
+        bool is_equal = applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
+        return is_equal ? result_value : std::optional<Field>{};
+    }
+
     if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
     {
         /// Convert back to Float64 and compare
         if (result_value.getType() == Field::Types::Decimal32)
-            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>());
+            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
         if (result_value.getType() == Field::Types::Decimal64)
-            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>());
+            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
         if (result_value.getType() == Field::Types::Decimal128)
-            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>());
+            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
         if (result_value.getType() == Field::Types::Decimal256)
-            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>());
+            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
     }
-    return true;
+
+    return result_value;
 }
 
 }
