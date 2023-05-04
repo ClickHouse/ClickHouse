@@ -24,8 +24,6 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return offset_of_buffer_end; }
 
-    Range getRemainingReadRange() const override { return Range{ .left = offset_of_buffer_end, .right = std::nullopt }; }
-
 private:
     Poco::Logger * log;
 
