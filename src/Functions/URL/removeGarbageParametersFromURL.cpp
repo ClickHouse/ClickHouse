@@ -2,7 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <cstring>
-#include <stdlib.h>
+#include <cstdlib>
 #include <boost/math/distributions/chi_squared.hpp>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringUIntToString.h>
