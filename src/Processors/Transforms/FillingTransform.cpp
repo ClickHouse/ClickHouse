@@ -465,42 +465,85 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
     return true;
 }
 
-// void FillingTransform::transformRange(
-//     const Columns & input_fill_columns,
-//     const Columns & input_interpolate_columns,
-//     const Columns & input_sort_prefix_columns,
-//     const Columns & input_other_columns,
-//     const MutableColumns & result_columns,
-//     const MutableColumnRawPtrs & res_fill_columns,
-//     const MutableColumnRawPtrs & res_interpolate_columns,
-//     const MutableColumnRawPtrs & res_sort_prefix_columns,
-//     const MutableColumnRawPtrs & res_other_columns,
-//     std::pair<size_t, size_t> range)
-// {
-//     Block interpolate_block;
-//     if (first)
-//     {
-//         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-//         {
-//             auto current_value = (*input_fill_columns[i])[0];
-//             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
+void FillingTransform::transformRange(
+    const Columns & input_fill_columns,
+    const Columns & input_interpolate_columns,
+    const Columns &, //input_sort_prefix_columns,
+    const Columns & input_other_columns,
+    const MutableColumns & result_columns,
+    const MutableColumnRawPtrs & res_fill_columns,
+    const MutableColumnRawPtrs & res_interpolate_columns,
+    const MutableColumnRawPtrs &, //res_sort_prefix_columns,
+    const MutableColumnRawPtrs & res_other_columns,
+    std::pair<size_t, size_t> range)
+{
+    const size_t range_begin = range.first;
+    const size_t range_end = range.second;
 
-//             if (!fill_from.isNull() && !equals(current_value, fill_from))
-//             {
-//                 filling_row.initFromDefaults(i);
-//                 if (less(fill_from, current_value, filling_row.getDirection(i)))
-//                 {
-//                     interpolate(result_columns, interpolate_block);
-//                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-//                 }
-//                 break;
-//             }
-//             filling_row[i] = current_value;
-//         }
-//         first = false;
-//     }
+    Block interpolate_block;
+    if (first)
+    {
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+        {
+            auto current_value = (*input_fill_columns[i])[0];
+            const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
-// }
+            if (!fill_from.isNull() && !equals(current_value, fill_from))
+            {
+                filling_row.initFromDefaults(i);
+                if (less(fill_from, current_value, filling_row.getDirection(i)))
+                {
+                    interpolate(result_columns, interpolate_block);
+                    insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+                }
+                break;
+            }
+            filling_row[i] = current_value;
+        }
+        first = false;
+    }
+
+    for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
+    {
+        logDebug("row", row_ind);
+        logDebug("filling_row", filling_row);
+        logDebug("next_row", next_row);
+
+        bool should_insert_first = next_row < filling_row;
+        logDebug("should_insert_first", should_insert_first);
+
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+        {
+            auto current_value = (*input_fill_columns[i])[row_ind];
+            const auto & fill_to = filling_row.getFillDescription(i).fill_to;
+
+            if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
+                next_row[i] = current_value;
+            else
+                next_row[i] = fill_to;
+        }
+        logDebug("next_row updated", next_row);
+
+        /// A case, when at previous step row was initialized from defaults 'fill_from' values
+        ///  and probably we need to insert it to block.
+        if (should_insert_first && filling_row < next_row)
+        {
+            interpolate(result_columns, interpolate_block);
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+        }
+
+        while (filling_row.next(next_row))
+        {
+            interpolate(result_columns, interpolate_block);
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+        }
+
+        copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
+        copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
+        // copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+        copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
+    }
+}
 
 void FillingTransform::transform(Chunk & chunk)
 {
@@ -556,68 +599,17 @@ void FillingTransform::transform(Chunk & chunk)
         res_sort_prefix_columns,
         res_other_columns);
 
-    if (first)
-    {
-        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        {
-            auto current_value = (*input_fill_columns[i])[0];
-            const auto & fill_from = filling_row.getFillDescription(i).fill_from;
-
-            if (!fill_from.isNull() && !equals(current_value, fill_from))
-            {
-                filling_row.initFromDefaults(i);
-                if (less(fill_from, current_value, filling_row.getDirection(i)))
-                {
-                    interpolate(result_columns, interpolate_block);
-                    insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-                }
-                break;
-            }
-            filling_row[i] = current_value;
-        }
-        first = false;
-    }
-
-    for (size_t row_ind = 0; row_ind < num_rows; ++row_ind)
-    {
-        logDebug("row", row_ind);
-        logDebug("filling_row", filling_row);
-        logDebug("next_row", next_row);
-
-        bool should_insert_first = next_row < filling_row;
-        logDebug("should_insert_first", should_insert_first);
-
-        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        {
-            auto current_value = (*input_fill_columns[i])[row_ind];
-            const auto & fill_to = filling_row.getFillDescription(i).fill_to;
-
-            if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
-                next_row[i] = current_value;
-            else
-                next_row[i] = fill_to;
-        }
-        logDebug("next_row updated", next_row);
-
-        /// A case, when at previous step row was initialized from defaults 'fill_from' values
-        ///  and probably we need to insert it to block.
-        if (should_insert_first && filling_row < next_row)
-        {
-            interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-        }
-
-        while (filling_row.next(next_row))
-        {
-            interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-        }
-
-        copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
-        copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
-        // copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
-        copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
-    }
+    transformRange(
+        input_fill_columns,
+        input_interpolate_columns,
+        input_sort_prefix_columns,
+        input_other_columns,
+        result_columns,
+        res_fill_columns,
+        res_interpolate_columns,
+        res_sort_prefix_columns,
+        res_other_columns,
+        {0, num_rows});
 
     saveLastRow(result_columns);
     size_t num_output_rows = result_columns[0]->size();
