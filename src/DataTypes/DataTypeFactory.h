@@ -25,7 +25,7 @@ class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAli
 private:
     using SimpleCreator = std::function<DataTypePtr()>;
     using DataTypesDictionary = std::unordered_map<String, Value>;
-    using CreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
+    using CreatorWithCustom = std::function<std::pair<DataTypePtr, DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
     using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
 
 public:
@@ -35,6 +35,11 @@ public:
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
     DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
+
+    /// Return nullptr in case of error.
+    DataTypePtr tryGet(const String & full_name) const;
+    DataTypePtr tryGet(const String & family_name, const ASTPtr & parameters) const;
+    DataTypePtr tryGet(const ASTPtr & ast) const;
 
     /// Register a type family by its name.
     void registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
@@ -49,7 +54,14 @@ public:
     void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 private:
-    const Value & findCreatorByName(const String & family_name) const;
+    template <bool nullptr_on_error>
+    DataTypePtr getImpl(const String & full_name) const;
+    template <bool nullptr_on_error>
+    DataTypePtr getImpl(const String & family_name, const ASTPtr & parameters) const;
+    template <bool nullptr_on_error>
+    DataTypePtr getImpl(const ASTPtr & ast) const;
+    template <bool nullptr_on_error>
+    const Value * findCreatorByName(const String & family_name) const;
 
     DataTypesDictionary data_types;
 
@@ -79,11 +91,11 @@ void registerDataTypeMap(DataTypeFactory & factory);
 void registerDataTypeNullable(DataTypeFactory & factory);
 void registerDataTypeNothing(DataTypeFactory & factory);
 void registerDataTypeUUID(DataTypeFactory & factory);
+void registerDataTypeIPv4andIPv6(DataTypeFactory & factory);
 void registerDataTypeAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
-void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);

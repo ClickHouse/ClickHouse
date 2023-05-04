@@ -1,14 +1,14 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionDateOrDateTimeToSomething.h>
+#include <Functions/FunctionDateOrDateTimeToDateTimeOrDateTime64.h>
 
 
 namespace DB
 {
 
-using FunctionToStartOfFifteenMinutes = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfFifteenMinutesImpl>;
+using FunctionToStartOfFifteenMinutes = FunctionDateOrDateTimeToDateTimeOrDateTime64<ToStartOfFifteenMinutesImpl>;
 
-void registerFunctionToStartOfFifteenMinutes(FunctionFactory & factory)
+REGISTER_FUNCTION(ToStartOfFifteenMinutes)
 {
     factory.registerFunction<FunctionToStartOfFifteenMinutes>();
 }

@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 import time
 
-cluster = ClickHouseCluster(__file__, name="test_keeper_4lw_allow_list")
+cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/keeper_config_with_allow_list.xml"], stay_alive=True
 )

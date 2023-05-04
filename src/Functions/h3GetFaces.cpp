@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -106,7 +106,7 @@ public:
 
 }
 
-void registerFunctionH3GetFaces(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetFaces)
 {
     factory.registerFunction<FunctionH3GetFaces>();
 }

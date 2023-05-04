@@ -1,33 +1,73 @@
 ---
-sidebar_label: Settings
-sidebar_position: 51
+sidebar_label: Settings Overview
+sidebar_position: 1
 slug: /en/operations/settings/
+pagination_next: en/operations/settings/settings
 ---
 
 # Settings Overview
 
-There are multiple ways to make all the settings described in this section of documentation.
+There are multiple ways to define ClickHouse settings. Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.
 
-Settings are configured in layers, so each subsequent layer redefines the previous settings.
+The order of priority for defining a setting is:
 
-Ways to configure settings, in order of priority:
+1. Settings in the `users.xml` server configuration file
 
--   Settings in the `users.xml` server configuration file.
+    - Set in the element `<profiles>`.
 
-    Set in the element `<profiles>`.
+2. Session settings
 
--   Session settings.
-
-    Send `SET setting=value` from the ClickHouse console client in interactive mode.
+    - Send `SET setting=value` from the ClickHouse console client in interactive mode.
     Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to specify the `session_id` HTTP parameter.
 
--   Query settings.
+3. Query settings
 
-    -   When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
-    -   When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
-    -   Make settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select) clause of the SELECT query. The setting value is applied only to that query and is reset to default or previous value after the query is executed.
+    - When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
+    - When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
+    - Define settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query) clause of the SELECT query. The setting value is applied only to that query and is reset to the default or previous value after the query is executed.
 
-Settings that can only be made in the server config file are not covered in this section.
+View the [Settings](./settings.md) page for a description of the ClickHouse settings.
+
+## Converting a Setting to its Default Value
+
+If you change a setting and would like to revert it back to its default value, set the value to `DEFAULT`. The syntax looks like:
+
+```sql
+SET setting_name = DEFAULT
+```
+
+For example, the default value of `max_insert_block_size` is 1048449. Suppose you change its value to 100000:
+
+```sql
+SET max_insert_block_size=100000;
+
+SELECT value FROM system.settings where name='max_insert_block_size';
+```
+
+The response is:
+
+```response
+┌─value──┐
+│ 100000 │
+└────────┘
+```
+
+The following command sets its value back to 1048449:
+
+```sql
+SET max_insert_block_size=DEFAULT;
+
+SELECT value FROM system.settings where name='max_insert_block_size';
+```
+
+The setting is now back to its default:
+
+```response
+┌─value───┐
+│ 1048449 │
+└─────────┘
+```
+
 
 ## Custom Settings {#custom_settings}
 
@@ -53,6 +93,4 @@ SELECT getSetting('custom_a');
 
 **See Also**
 
--   [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)
-
-[Original article](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->
+- [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)

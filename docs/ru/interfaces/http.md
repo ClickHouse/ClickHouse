@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/http
 sidebar_position: 19
 sidebar_label: "HTTP-интерфейс"
 ---
@@ -242,7 +243,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
 Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-Подробнее смотрите в разделе [Настройки](../operations/settings/).
+Подробнее смотрите в разделе [Настройки](../operations/settings/index.md).
 
 ``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-

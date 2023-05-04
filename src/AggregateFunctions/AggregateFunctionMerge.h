@@ -30,7 +30,7 @@ private:
 
 public:
     AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
         , nested_func(nested_)
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
@@ -45,9 +45,14 @@ public:
         return nested_func->getName() + "Merge";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
     {
-        return nested_func->getReturnType();
+        return nested_->getResultType();
+    }
+
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
     }
 
     bool isVersioned() const override
@@ -73,6 +78,11 @@ public:
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_func->destroy(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_func->destroyUpToState(place);
     }
 
     bool hasTrivialDestructor() const override
@@ -121,6 +131,11 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
 };
 
 }

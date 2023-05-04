@@ -1,18 +1,19 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <Processors/Transforms/PostgreSQLSource.h>
+#include <Processors/Sources/PostgreSQLSource.h>
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
 #include <Common/parseRemoteDescription.h>
-#include <Core/Settings.h>
 #include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollections.h>
+
+#include <Core/Settings.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -31,7 +32,6 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/getInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
@@ -40,6 +40,8 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -48,7 +50,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -83,14 +84,16 @@ Pipe StoragePostgreSQL::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
-    unsigned)
+    size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names_);
 
     /// Connection is already made to the needed database, so it should not be present in the query;
     /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
-        query_info_, storage_snapshot->metadata->getColumns().getOrdinary(),
+        query_info_,
+        column_names_,
+        storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
     LOG_TRACE(log, "Query: {}", query);
 
@@ -342,6 +345,7 @@ private:
         PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
                        const ColumnsWithTypeAndName & columns, const String & on_conflict_)
             : Inserter(connection_)
+            , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
             buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
@@ -354,12 +358,14 @@ private:
             }
             buf << ") ";
             buf << on_conflict_;
-            connection.prepare("insert", buf.str());
+            connection.prepare(statement_name, buf.str());
+            prepared = true;
         }
 
         void complete() override
         {
-            connection.unprepare("insert");
+            connection.unprepare(statement_name);
+            prepared = false;
             tx.commit();
         }
 
@@ -368,8 +374,24 @@ private:
             pqxx::params params;
             params.reserve(row.size());
             params.append_multi(row);
-            tx.exec_prepared("insert", params);
+            tx.exec_prepared(statement_name, params);
         }
+
+        ~PreparedInsert() override
+        {
+            try
+            {
+                if (prepared)
+                    connection.unprepare(statement_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        const String statement_name;
+        bool prepared = false;
     };
 
     StorageMetadataPtr metadata_snapshot;
@@ -386,56 +408,75 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
-
-StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, bool require_table)
 {
-    StoragePostgreSQLConfiguration configuration;
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
+    StoragePostgreSQL::Configuration configuration;
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
+    if (require_table)
+        required_arguments.insert("table");
+
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
+        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_tables_cache"});
+
+    configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
+    if (configuration.addresses_expr.empty())
     {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
-
-        configuration.set(common_configuration);
+        configuration.host = named_collection.getAny<String>({"host", "hostname"});
+        configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+    }
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "on_conflict")
-                configuration.on_conflict = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected one of:"
-                        "host, port, username, password, database, table, schema, on_conflict.", arg_name);
-        }
+    configuration.username = named_collection.getAny<String>({"username", "user"});
+    configuration.password = named_collection.get<String>("password");
+    configuration.database = named_collection.getAny<String>({"db", "database"});
+    if (require_table)
+        configuration.table = named_collection.get<String>("table");
+    configuration.schema = named_collection.getOrDefault<String>("schema", "");
+    configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
+
+    return configuration;
+}
+
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+{
+    StoragePostgreSQL::Configuration configuration;
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    {
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection);
     }
     else
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage PostgreSQL requires from 5 to 7 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema', 'ON CONFLICT ...']. Got: {}",
-                            engine_args.size());
+        {
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Storage PostgreSQL requires from 5 to 7 parameters: "
+                "PostgreSQL('host:port', 'database', 'table', 'username', 'password' "
+                "[, 'schema', 'ON CONFLICT ...']. Got: {}",
+                engine_args.size());
+        }
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        const auto & host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
         if (configuration.addresses.size() == 1)
         {
             configuration.host = configuration.addresses[0].first;
             configuration.port = configuration.addresses[0].second;
         }
-        configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
+        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "user");
+        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
 
         if (engine_args.size() >= 6)
-            configuration.schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.schema = checkAndGetLiteralArgument<String>(engine_args[5], "schema");
         if (engine_args.size() >= 7)
-            configuration.on_conflict = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.on_conflict = checkAndGetLiteralArgument<String>(engine_args[6], "on_conflict");
     }
     for (const auto & address : configuration.addresses)
         context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
@@ -449,9 +490,12 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
+        const auto & settings = args.getContext()->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            args.getContext()->getSettingsRef().postgresql_connection_pool_size,
-            args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
+            settings.postgresql_connection_pool_size,
+            settings.postgresql_connection_pool_wait_timeout,
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,

@@ -2,63 +2,82 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/StorageURL.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Storages/StorageExternalDistributed.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
+static const String bad_arguments_error_message = "Table function URL can have the following arguments: "
+    "url, name of used format (taken from file extension by default), "
+    "optional table structure, optional compression method, "
+    "optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    const auto & func_args = ast_function->as<ASTFunction &>();
-    if (!func_args.arguments)
-        throw Exception("Table function 'URL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    if (auto with_named_collection = getURLBasedDataSourceConfiguration(func_args.arguments->children, context))
+    std::vector<size_t> result;
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
-        auto [common_configuration, storage_specific_args] = with_named_collection.value();
-        configuration.set(common_configuration);
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "headers")
+            result.push_back(i);
+    }
 
-        if (!configuration.http_method.empty()
-            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_POST
-            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Method can be POST or PUT (current: {}). For insert default is POST, for select GET",
-                            configuration.http_method);
+    return result;
+}
 
-        if (!storage_specific_args.empty())
-        {
-            String illegal_args;
-            for (const auto & arg : storage_specific_args)
-            {
-                if (!illegal_args.empty())
-                    illegal_args += ", ";
-                illegal_args += arg.first;
-            }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument `{}` for table function URL", illegal_args);
-        }
+void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
+{
+    const auto & ast_function = assert_cast<const ASTFunction *>(ast.get());
+
+    const auto & args = ast_function->children;
+    if (args.empty())
+        throw Exception::createDeprecated(bad_arguments_error_message, ErrorCodes::BAD_ARGUMENTS);
+
+    auto & url_function_args = assert_cast<ASTExpressionList *>(args[0].get())->children;
+
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(url_function_args, context))
+    {
+        StorageURL::processNamedCollectionResult(configuration, *named_collection);
 
         filename = configuration.url;
-        format = configuration.format;
-        if (format == "auto")
-            format = FormatFactory::instance().getFormatFromFileName(filename, true);
         structure = configuration.structure;
         compression_method = configuration.compression_method;
+
+        format = configuration.format;
+        if (format == "auto")
+            format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
+
+        StorageURL::collectHeaders(url_function_args, configuration.headers, context);
     }
     else
     {
-        ITableFunctionFileLike::parseArguments(ast_function, context);
+        auto * headers_it = StorageURL::collectHeaders(url_function_args, configuration.headers, context);
+        /// ITableFunctionFileLike cannot parse headers argument, so remove it.
+        if (headers_it != url_function_args.end())
+            url_function_args.erase(headers_it);
+
+        ITableFunctionFileLike::parseArguments(ast, context);
     }
 }
 
@@ -76,29 +95,29 @@ StoragePtr TableFunctionURL::getStorage(
         String{},
         global_context,
         compression_method_,
-        getHeaders(),
+        configuration.headers,
         configuration.http_method);
-}
-
-ReadWriteBufferFromHTTP::HTTPHeaderEntries TableFunctionURL::getHeaders() const
-{
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
-    for (const auto & [header, value] : configuration.headers)
-    {
-        auto value_literal = value.safeGet<String>();
-        if (header == "Range")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-        headers.emplace_back(std::make_pair(header, value_literal));
-    }
-    return headers;
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
-        return StorageURL::getTableStructureFromData(format, filename, compression_method, getHeaders(), std::nullopt, context);
+    {
+        context->checkAccess(getSourceAccessType());
+        return StorageURL::getTableStructureFromData(format,
+            filename,
+            chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+            configuration.headers,
+            std::nullopt,
+            context);
+    }
 
     return parseColumnsListFromString(structure, context);
+}
+
+String TableFunctionURL::getFormatFromFirstArgument()
+{
+    return FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

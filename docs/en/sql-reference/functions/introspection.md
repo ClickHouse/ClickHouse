@@ -1,5 +1,6 @@
 ---
-sidebar_position: 65
+slug: /en/sql-reference/functions/introspection
+sidebar_position: 100
 sidebar_label: Introspection
 ---
 
@@ -7,15 +8,15 @@ sidebar_label: Introspection
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
-:::warning    
+:::note    
 These functions are slow and may impose security considerations.
 :::
 
 For proper operation of introspection functions:
 
--   Install the `clickhouse-common-static-dbg` package.
+- Install the `clickhouse-common-static-dbg` package.
 
--   Set the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
+- Set the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
 
         For security reasons introspection functions are disabled by default.
 
@@ -35,17 +36,17 @@ addressToLine(address_of_binary_instruction)
 
 **Arguments**
 
--   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
--   Source code filename and the line number in this file delimited by colon.
+- Source code filename and the line number in this file delimited by colon.
 
         For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
--   Name of a binary, if the function couldn’t find the debug information.
+- Name of a binary, if the function couldn’t find the debug information.
 
--   Empty string, if the address is not valid.
+- Empty string, if the address is not valid.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -128,15 +129,15 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 **Arguments**
 
--   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
--   Array which first element is source code filename and the line number in this file delimited by colon. And from second element, inline functions' source code filename and line number and function name are listed.
+- Array which first element is source code filename and the line number in this file delimited by colon. And from second element, inline functions' source code filename and line number and function name are listed.
 
--   Array with single element which is name of a binary, if the function couldn’t find the debug information.
+- Array with single element which is name of a binary, if the function couldn’t find the debug information.
 
--   Empty array, if the address is not valid.
+- Empty array, if the address is not valid.
 
 Type: [Array(String)](../../sql-reference/data-types/array.md).
 
@@ -231,12 +232,12 @@ addressToSymbol(address_of_binary_instruction)
 
 **Arguments**
 
--   `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
--   Symbol from ClickHouse object files.
--   Empty string, if the address is not valid.
+- Symbol from ClickHouse object files.
+- Empty string, if the address is not valid.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -328,12 +329,12 @@ demangle(symbol)
 
 **Arguments**
 
--   `symbol` ([String](../../sql-reference/data-types/string.md)) — Symbol from an object file.
+- `symbol` ([String](../../sql-reference/data-types/string.md)) — Symbol from an object file.
 
 **Returned value**
 
--   Name of the C++ function.
--   Empty string if a symbol is not valid.
+- Name of the C++ function.
+- Empty string if a symbol is not valid.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -424,7 +425,7 @@ tid()
 
 **Returned value**
 
--   Current thread id. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- Current thread id. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Example**
 
@@ -454,11 +455,11 @@ logTrace('message')
 
 **Arguments**
 
--   `message` — Message that is emitted to server log. [String](../../sql-reference/data-types/string.md#string).
+- `message` — Message that is emitted to server log. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
--   Always returns 0.
+- Always returns 0.
 
 **Example**
 
@@ -475,4 +476,3 @@ Result:
 │                            0 │
 └──────────────────────────────┘
 ```
-

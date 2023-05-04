@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/settings/settings-users
 machine_translated: false
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 63
@@ -9,8 +10,9 @@ sidebar_label: "\u7528\u6237\u8BBE\u7F6E"
 
 `user.xml` 中的 `users` 配置段包含了用户配置
 
-!!! note "提示"
-    ClickHouse还支持 [SQL驱动的工作流](../access-rights.md#access-control) 用于管理用户。 我们建议使用它。
+:::note
+ClickHouse还支持 [SQL驱动的工作流](/docs/en/operations/access-rights#access-control) 用于管理用户。 我们建议使用它。
+:::
 
 `users` 配置段的结构:
 
@@ -77,7 +79,7 @@ sidebar_label: "\u7528\u6237\u8BBE\u7F6E"
 
 ### access_management {#access_management-user-setting}
 
-此设置可为用户启用或禁用 SQL-driven [访问控制和帐户管理](../access-rights.md#access-control) 。
+此设置可为用户启用或禁用 SQL-driven [访问控制和帐户管理](/docs/en/operations/access-rights#access-control) 。
 
 可能的值:
 
@@ -159,5 +161,3 @@ DNS请求的所有结果都将被缓存，直到服务器重新启动。
 ```
 
 该 `filter` 可以是[UInt8](../../sql-reference/data-types/int-uint.md)编码的任何表达式。 它通常包含比较和逻辑运算符, 当filter返回0时, database_name.table1 的该行结果将不会返回给用户.过滤不兼容 `PREWHERE` 操作并禁用 `WHERE→PREWHERE` 优化。
-
-[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

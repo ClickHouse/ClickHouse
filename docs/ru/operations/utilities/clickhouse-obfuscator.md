@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/utilities/clickhouse-obfuscator
+---
 # Обфускатор ClickHouse
 
 Простой инструмент для обфускации табличных данных.

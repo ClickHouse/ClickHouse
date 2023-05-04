@@ -1,4 +1,4 @@
-name: ReleaseWorkflow
+name: PublishedReleaseCI
 # - Gets artifacts from S3
 # - Sends it to JFROG Artifactory
 # - Adds them to the release assets
@@ -7,59 +7,59 @@ on: # yamllint disable-line rule:truthy
   release:
     types:
     - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag'
+        required: true
+        type: string
 
 jobs:
   ReleasePublish:
     runs-on: [self-hosted, style-checker]
     steps:
-    - name: Set envs
+    - name: Set tag from input
+      if: github.event_name == 'workflow_dispatch'
       run: |
-        cat >> "$GITHUB_ENV" << 'EOF'
-        JFROG_API_KEY=${{ secrets.JFROG_KEY_API_PACKAGES }}
-        TEMP_PATH=${{runner.temp}}/release_packages
-        REPO_COPY=${{runner.temp}}/release_packages/ClickHouse
-        EOF
-    - name: Check out repository code
-      uses: actions/checkout@v2
-    - name: Download packages and push to Artifactory
+        echo "GITHUB_TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
+    - name: Set tag from REF
+      if: github.event_name == 'release'
       run: |
-        rm -rf "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
-        cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-        cd "$REPO_COPY"
-        python3 ./tests/ci/push_to_artifactory.py --release "${{ github.ref }}" \
-          --commit '${{ github.sha }}' --all
-    - name: Upload packages to release assets
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{runner.temp}}/push_to_artifactory/*
-        overwrite: true
-        tag: ${{ github.ref }}
-        file_glob: true
+        echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+    - name: Deploy packages and assets
+      run: |
+        curl --silent --data '' --no-buffer \
+          '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true'
   ############################################################################################
   ##################################### Docker images  #######################################
   ############################################################################################
   DockerServerImages:
     runs-on: [self-hosted, style-checker]
     steps:
-    - name: Clear repository
+    - name: Set tag from input
+      if: github.event_name == 'workflow_dispatch'
       run: |
-        sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+        echo "GITHUB_TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
+    - name: Set tag from REF
+      if: github.event_name == 'release'
+      run: |
+        echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
     - name: Check out repository code
-      uses: actions/checkout@v2
+      uses: ClickHouse/checkout@v1
       with:
+        clear-repository: true
         fetch-depth: 0  # otherwise we will have no version info
+        ref: ${{ env.GITHUB_TAG }}
     - name: Check docker clickhouse/clickhouse-server building
       run: |
         cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type auto --version "${{ github.ref }}"
-        python3 docker_server.py --release-type auto --version "${{ github.ref }}" --no-ubuntu \
+        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
+          --image-repo clickhouse/clickhouse-server --image-path docker/server
+        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
     - name: Cleanup
       if: always()
       run: |
-        # shellcheck disable=SC2046
-        docker kill $(docker ps -q) ||:
-        # shellcheck disable=SC2046
-        docker rm -f $(docker ps -a -q) ||:
+        docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+        docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
         sudo rm -fr "$TEMP_PATH"

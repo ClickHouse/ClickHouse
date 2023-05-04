@@ -13,7 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wold-style-cast"
 
 
 namespace DB
@@ -97,7 +97,7 @@ void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_si
     bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 
     if (!success)
-        throw Exception("Cannot decompress", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress");
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
@@ -113,7 +113,7 @@ UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_
     auto success = LZ4_compress_HC(source, dest, source_size, LZ4_COMPRESSBOUND(source_size), level);
 
     if (!success)
-        throw Exception("Cannot LZ4_compress_HC", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot LZ4_compress_HC");
 
     return success;
 }
@@ -127,14 +127,14 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
-                throw Exception("LZ4HC codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "LZ4HC codec must have 1 parameter, given {}", arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal)
-                throw Exception("LZ4HC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "LZ4HC codec argument must be integer");
 
-            level = literal->value.safeGet<UInt64>();
+            level = static_cast<int>(literal->value.safeGet<UInt64>());
         }
 
         return std::make_shared<CompressionCodecLZ4HC>(level);

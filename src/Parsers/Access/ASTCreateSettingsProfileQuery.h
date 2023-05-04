@@ -11,12 +11,12 @@ class ASTRolesOrUsersSet;
 
 
 /** CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
   *     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER SETTINGS PROFILE [IF EXISTS] name
   *     [RENAME TO new_name]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
   *     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
 class ASTCreateSettingsProfileQuery : public IAST, public ASTQueryWithOnCluster
@@ -41,5 +41,6 @@ public:
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateSettingsProfileQuery>(clone()); }
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

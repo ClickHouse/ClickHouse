@@ -3,6 +3,7 @@
 #include <Poco/DigestStream.h>
 #include <Poco/Exception.h>
 #include <Poco/SHA1Engine.h>
+#include <Common/filesystemHelpers.h>
 
 #include <filesystem>
 #include <fstream>
@@ -29,12 +30,12 @@ std::string determineDefaultTimeZone()
 {
     namespace fs = std::filesystem;
 
-    const char * tzdir_env_var = std::getenv("TZDIR");
+    const char * tzdir_env_var = std::getenv("TZDIR"); // NOLINT(concurrency-mt-unsafe) // ok, because it does not run concurrently with other getenv calls
     fs::path tz_database_path = tzdir_env_var ? tzdir_env_var : "/usr/share/zoneinfo/";
 
     fs::path tz_file_path;
     std::string error_prefix;
-    const char * tz_env_var = std::getenv("TZ");
+    const char * tz_env_var = std::getenv("TZ"); // NOLINT(concurrency-mt-unsafe) // ok, because it does not run concurrently with other getenv calls
 
     /// In recent tzdata packages some files now are symlinks and canonical path resolution
     /// may give wrong timezone names - store the name as it is, if possible.
@@ -64,9 +65,9 @@ std::string determineDefaultTimeZone()
         ///  /etc/localtime -> /usr/share/zoneinfo//UTC
         ///  /usr/share/zoneinfo//UTC -> UCT
         /// But the preferred time zone name is pointed by the first link (UTC), and the second link is just an internal detail.
-        if (fs::is_symlink(tz_file_path))
+        if (FS::isSymlink(tz_file_path))
         {
-            tz_file_path = fs::read_symlink(tz_file_path);
+            tz_file_path = FS::readSymlink(tz_file_path);
             /// If it's relative - make it absolute.
             if (tz_file_path.is_relative())
                 tz_file_path = (fs::path("/etc/") / tz_file_path).lexically_normal();
@@ -148,7 +149,7 @@ DateLUT::DateLUT()
 
 const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     auto it = impls.emplace(time_zone, nullptr).first;
     if (!it->second)

@@ -685,3 +685,4 @@ md5_block_asm_data_order:
 	ret
 .size	md5_block_asm_data_order,.-.L_md5_block_asm_data_order_begin
 #endif
+.section	.note.GNU-stack,"",@progbits

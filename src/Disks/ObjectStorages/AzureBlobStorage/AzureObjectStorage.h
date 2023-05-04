@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -9,8 +9,16 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/getRandomASCIIString.h>
+#include <Common/MultiVersion.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/storage/blobs.hpp>
+#endif
+
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -21,11 +29,13 @@ struct AzureObjectStorageSettings
         uint64_t max_single_part_upload_size_,
         uint64_t min_bytes_for_seek_,
         int max_single_read_retries_,
-        int max_single_download_retries_)
+        int max_single_download_retries_,
+        int list_object_keys_size_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
+        , list_object_keys_size(list_object_keys_size_)
     {
     }
 
@@ -33,6 +43,7 @@ struct AzureObjectStorageSettings
     uint64_t min_bytes_for_seek;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
+    int list_object_keys_size;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
@@ -45,67 +56,85 @@ public:
     using SettingsPtr = std::unique_ptr<AzureObjectStorageSettings>;
 
     AzureObjectStorage(
-        FileCachePtr && cache_,
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_);
 
-    bool exists(const std::string & uri) const override;
+    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
-        const std::string & path,
+    std::string getName() const override { return "AzureObjectStorage"; }
+
+    bool exists(const StoredObject & object) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+        const StoredObject & object,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const std::string & common_path_prefix,
-        const BlobsPathToSize & blobs_to_read,
+        const StoredObjects & objects,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
-        const std::string & path,
+        const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
         FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listPrefix(const std::string & path, BlobsPathToSize & children) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
+
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
-    void removeObject(const std::string & path) override;
+    void removeObject(const StoredObject & object) override;
 
-    void removeObjects(const std::vector<std::string> & paths) override;
+    void removeObjects(const StoredObjects & objects) override;
 
-    void removeObjectIfExists(const std::string & path) override;
+    void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const std::vector<std::string> & paths) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
-        const std::string & object_from,
-        const std::string & object_to,
+        const StoredObject & object_from,
+        const StoredObject & object_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override {}
 
     void startup() override {}
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
 
     String getObjectsNamespace() const override { return ""; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context) override;
+    std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
+    std::string generateBlobNameForPath(const std::string & path) override;
+
+    bool isRemote() const override { return true; }
 
 private:
     const String name;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
+
+    Poco::Logger * log;
+
+    DataSourceDescription data_source_description;
 };
 
 }

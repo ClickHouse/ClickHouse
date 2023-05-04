@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <bit>
 
 #include <fmt/format.h>
 
@@ -8,9 +9,6 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/Arena.h>
 #include <Common/Stopwatch.h>
-
-#pragma GCC diagnostic ignored "-Wframe-larger-than="
-
 
 /** This test program evaluates different solutions for a simple degenerate task:
   * Aggregate data by UInt8 key, calculate "avg" function on Float values.
@@ -424,7 +422,7 @@ Float NO_INLINE microsort(const PODArray<UInt8> & keys, const PODArray<Float> & 
     for (size_t i = 1; i < HISTOGRAM_SIZE; ++i)
         positions[i] = positions[i - 1] + count[i - 1];
 
-    for (size_t i = 0; i < size; ++i)
+    for (UInt32 i = 0; i < size; ++i)
         *positions[keys[i]]++ = i;
 
     /// Update states.
@@ -475,7 +473,8 @@ Float NO_INLINE buffered(const PODArray<UInt8> & keys, const PODArray<Float> & v
     return map[0].result();
 }
 
-
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wframe-larger-than"
 template <size_t UNROLL_COUNT>
 Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Float> & values)
 {
@@ -498,6 +497,7 @@ Float NO_INLINE really_unrolled(const PODArray<UInt8> & keys, const PODArray<Flo
 
     return map[0].result();
 }
+#pragma clang diagnostic pop
 
 
 struct State4
@@ -561,7 +561,7 @@ int main(int argc, char ** argv)
     /// Fill source data
     for (size_t i = 0; i < size; ++i)
     {
-        keys[i] = __builtin_ctz(i + 1); /// Make keys to have just slightly more realistic distribution.
+        keys[i] = std::countr_zero(i + 1); /// Make keys to have just slightly more realistic distribution.
         values[i] = 1234.5; /// The distribution of values does not affect execution speed.
     }
 

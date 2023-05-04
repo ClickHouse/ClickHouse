@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-s3-storage
+# no-s3 because read FileOpen metric
 
 set -e
 
@@ -7,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-settings="--log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1"
+settings="--log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1 --allow_deprecated_syntax_for_merge_tree=1"
 
 # Test insert logging on each block and checkPacket() method
 

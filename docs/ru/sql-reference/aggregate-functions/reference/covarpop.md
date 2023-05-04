@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/covarpop
 sidebar_position: 36
 ---
 

@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/database-engines/sqlite
 sidebar_position: 55
 sidebar_label: SQLite
 ---
@@ -16,7 +17,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 **Engine Parameters**
 
--   `db_path` — Path to a file with SQLite database.
+- `db_path` — Path to a file with SQLite database.
 
 ## Data Types Support {#data_types-support}
 

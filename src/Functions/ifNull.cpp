@@ -79,7 +79,7 @@ public:
                 arguments[1],
         };
 
-        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns); //-V557
+        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
         return func_if->execute(if_columns, result_type, input_rows_count);
     }
 
@@ -89,9 +89,9 @@ private:
 
 }
 
-void registerFunctionIfNull(FunctionFactory & factory)
+REGISTER_FUNCTION(IfNull)
 {
-    factory.registerFunction<FunctionIfNull>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIfNull>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

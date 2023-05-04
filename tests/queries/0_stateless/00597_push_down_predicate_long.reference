@@ -179,7 +179,7 @@ FROM
         name,
         value
     FROM test_00597
-    WHERE id = 1
+    PREWHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
@@ -203,7 +203,7 @@ FROM
             name,
             value
         FROM test_00597
-        WHERE id = 1
+        PREWHERE id = 1
     )
     WHERE id = 1
 )
@@ -229,7 +229,7 @@ FROM
             name,
             value
         FROM test_00597
-        WHERE id = 1
+        PREWHERE id = 1
     ) AS b
     WHERE id = 1
 )
@@ -248,7 +248,7 @@ FROM
         name,
         value
     FROM test_00597
-    WHERE id = 1
+    PREWHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
@@ -272,7 +272,7 @@ FROM
             name,
             value
         FROM test_00597
-        WHERE id = 1
+        PREWHERE id = 1
     )
     WHERE id = 1
 )
@@ -291,7 +291,7 @@ FROM
         name,
         value
     FROM test_00597
-    WHERE id = 1
+    PREWHERE id = 1
 ) AS b
 WHERE id = 1
 2000-01-01	1	test string 1	1
@@ -315,7 +315,7 @@ FROM
             name,
             value
         FROM test_00597
-        WHERE id = 1
+        PREWHERE id = 1
     ) AS a
     WHERE id = 1
 ) AS b
@@ -332,7 +332,7 @@ FROM
         date,
         min(value) AS value
     FROM test_00597
-    WHERE id = 1
+    PREWHERE id = 1
     GROUP BY
         id,
         date
@@ -352,7 +352,7 @@ FROM
         name,
         value
     FROM test_00597
-    WHERE id = 1
+    PREWHERE id = 1
     UNION ALL
     SELECT
         date,
@@ -360,7 +360,7 @@ FROM
         name,
         value
     FROM test_00597
-    WHERE id = 1
+    PREWHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
@@ -381,7 +381,7 @@ FROM
         name,
         value
     FROM test_00597
-    WHERE id = 1
+    PREWHERE id = 1
 )
 ANY LEFT JOIN
 (
@@ -441,7 +441,7 @@ FROM
             name,
             value
         FROM test_00597
-        WHERE id = 1
+        PREWHERE id = 1
     )
     ANY LEFT JOIN
     (
@@ -532,7 +532,7 @@ FROM
             name,
             value
         FROM test_00597
-        WHERE id = 1
+        PREWHERE id = 1
     ) AS a
     ANY LEFT JOIN
     (
@@ -579,7 +579,7 @@ SEMI LEFT JOIN
             name,
             value
         FROM test_00597
-        WHERE id = 1
+        PREWHERE id = 1
     )
     WHERE id = 1
 ) AS r USING (id)

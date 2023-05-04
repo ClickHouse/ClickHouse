@@ -47,6 +47,11 @@ namespace common
 
 constexpr inline int exp10_i32(int x)
 {
+    if (x < 0)
+        return 0;
+    if (x > 9)
+        return std::numeric_limits<int>::max();
+
     constexpr int values[] =
     {
         1,
@@ -65,6 +70,11 @@ constexpr inline int exp10_i32(int x)
 
 constexpr inline int64_t exp10_i64(int x)
 {
+    if (x < 0)
+        return 0;
+    if (x > 18)
+        return std::numeric_limits<int64_t>::max();
+
     constexpr int64_t values[] =
     {
         1LL,
@@ -92,6 +102,11 @@ constexpr inline int64_t exp10_i64(int x)
 
 constexpr inline Int128 exp10_i128(int x)
 {
+    if (x < 0)
+        return 0;
+    if (x > 38)
+        return std::numeric_limits<Int128>::max();
+
     constexpr Int128 values[] =
     {
         static_cast<Int128>(1LL),
@@ -140,6 +155,11 @@ constexpr inline Int128 exp10_i128(int x)
 
 inline Int256 exp10_i256(int x)
 {
+    if (x < 0)
+        return 0;
+    if (x > 76)
+        return std::numeric_limits<Int256>::max();
+
     using Int256 = Int256;
     static constexpr Int256 i10e18{1000000000000000000ll};
     static const Int256 values[] = {
@@ -231,8 +251,10 @@ inline Int256 exp10_i256(int x)
 template <typename T>
 constexpr inline T intExp10OfSize(int x)
 {
-    if constexpr (sizeof(T) <= 8)
-        return intExp10(x);
+    if constexpr (sizeof(T) <= 4)
+        return static_cast<T>(common::exp10_i32(x));
+    else if constexpr (sizeof(T) <= 8)
+        return common::exp10_i64(x);
     else if constexpr (sizeof(T) <= 16)
         return common::exp10_i128(x);
     else

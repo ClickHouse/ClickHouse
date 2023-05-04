@@ -12,14 +12,13 @@ import docker
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 
-cluster = ClickHouseCluster(__file__, name="copier_test_two_nodes")
+cluster = ClickHouseCluster(__file__)
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     global cluster
     try:
-
         for name in ["first_of_two", "second_of_two"]:
             instance = cluster.add_instance(
                 name,

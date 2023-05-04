@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Common/OptimizedRegularExpression.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
 namespace DB
@@ -45,6 +47,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    std::optional<NameSet> supportedPrewhereColumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
@@ -59,7 +62,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -105,7 +108,67 @@ private:
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
-protected:
+    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+
+    bool tableSupportsPrewhere() const;
+
+    friend class ReadFromMerge;
+};
+
+class ReadFromMerge final : public SourceStepWithFilter
+{
+public:
+    static constexpr auto name = "ReadFromMerge";
+    String getName() const override { return name; }
+
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    using StorageListWithLocks = std::list<StorageWithLockAndName>;
+    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
+
+    ReadFromMerge(
+        Block common_header_,
+        StorageListWithLocks selected_tables_,
+        Names column_names_,
+        bool has_database_virtual_column_,
+        bool has_table_virtual_column_,
+        size_t max_block_size,
+        size_t num_streams,
+        StoragePtr storage,
+        StorageSnapshotPtr storage_snapshot,
+        const SelectQueryInfo & query_info_,
+        ContextMutablePtr context_,
+        QueryProcessingStage::Enum processed_stage);
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
+
+    /// Returns `false` if requested reading cannot be performed.
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
+    static bool isFinal(const SelectQueryInfo & query_info);
+
+private:
+    const size_t required_max_block_size;
+    const size_t requested_num_streams;
+    const Block common_header;
+
+    StorageListWithLocks selected_tables;
+    Names column_names;
+    bool has_database_virtual_column;
+    bool has_table_virtual_column;
+    StoragePtr storage_merge;
+    StorageSnapshotPtr merge_storage_snapshot;
+
+    /// Store read plan for each child table.
+    /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
+    std::vector<QueryPlan> child_plans;
+
+    SelectQueryInfo query_info;
+    ContextMutablePtr context;
+    QueryProcessingStage::Enum common_processed_stage;
+
+    InputOrderInfoPtr order_info;
+
     struct AliasData
     {
         String name;
@@ -115,8 +178,12 @@ protected:
 
     using Aliases = std::vector<AliasData>;
 
-    Pipe createSources(
-        QueryPlanResourceHolder & resources,
+    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
+        const ContextPtr & modified_context,
+        const StorageWithLockAndName & storage_with_lock_and_name,
+        const StorageSnapshotPtr & storage_snapshot);
+
+    QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,
@@ -124,22 +191,18 @@ protected:
         const Block & header,
         const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
-        Names & real_column_names,
+        Names real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
-        bool has_database_virtual_column,
-        bool has_table_virtual_column,
         bool concat_streams = false);
 
-    void convertingSourceStream(
-        const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
-        ContextPtr context, ASTPtr & query,
-        Pipe & pipe, QueryProcessingStage::Enum processed_stage);
-
-    static SelectQueryInfo getModifiedQueryInfo(
-        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & current_storage_id, bool is_merge_engine);
-
-    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+    static void convertingSourceStream(
+        const Block & header,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Aliases & aliases,
+        ContextPtr context,
+        QueryPipelineBuilder & builder,
+        const QueryProcessingStage::Enum & processed_stage);
 };
 
 }

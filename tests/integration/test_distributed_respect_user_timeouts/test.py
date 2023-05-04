@@ -8,8 +8,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
-cluster = ClickHouseCluster(__file__)
-
 NODES = {"node" + str(i): None for i in (1, 2)}
 
 IS_DEBUG = False
@@ -39,7 +37,7 @@ SELECTS_SQL = {
 
 EXCEPTION_NETWORK = "DB::NetException: "
 EXCEPTION_TIMEOUT = "Timeout exceeded while reading from socket ("
-EXCEPTION_CONNECT = "Timeout: connect timed out: "
+EXCEPTION_CONNECT_TIMEOUT = "Timeout exceeded while connecting to socket ("
 
 TIMEOUT_MEASUREMENT_EPS = 0.01
 
@@ -81,7 +79,7 @@ def _check_exception(exception, expected_tries=3):
     for i, line in enumerate(lines[3 : 3 + expected_tries]):
         expected_lines = (
             "Code: 209. " + EXCEPTION_NETWORK + EXCEPTION_TIMEOUT,
-            "Code: 209. " + EXCEPTION_NETWORK + EXCEPTION_CONNECT,
+            EXCEPTION_CONNECT_TIMEOUT,
             EXCEPTION_TIMEOUT,
         )
 
@@ -131,15 +129,7 @@ def started_cluster(request):
 def _check_timeout_and_exception(node, user, query_base, query):
     repeats = EXPECTED_BEHAVIOR[user]["times"]
 
-    extra_repeats = 1
-    # Table function remote() are executed two times.
-    # It tries to get table structure from remote shards.
-    # On 'node2' it will firstly try to get structure from 'node1' (which is not available),
-    # so there are 1 extra connection attempts for 'node2' and 'remote'
-    if node.name == "node2" and query_base == "remote":
-        extra_repeats = 2
-
-    expected_timeout = EXPECTED_BEHAVIOR[user]["timeout"] * repeats * extra_repeats
+    expected_timeout = EXPECTED_BEHAVIOR[user]["timeout"] * repeats
 
     start = timeit.default_timer()
     exception = node.query_and_get_error(query, user=user)

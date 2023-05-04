@@ -1,32 +1,27 @@
 #include "PartMetadataManagerOrdinary.h"
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
 
-static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
+std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
 {
-    size_t file_size = disk->getFileSize(path);
-    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
-}
+    size_t file_size = part->getDataPartStorage().getFileSize(file_name);
+    auto res = part->getDataPartStorage().readFile(file_name, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
 
-PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPart * part_) : IPartMetadataManager(part_)
-{
-}
+    if (isCompressedFromFileName(file_name))
+        return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
 
-
-std::unique_ptr<SeekableReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
-{
-    String file_path = fs::path(part->getFullRelativePath()) / file_name;
-    return openForReading(disk, file_path);
+    return res;
 }
 
 bool PartMetadataManagerOrdinary::exists(const String & file_name) const
 {
-    return disk->exists(fs::path(part->getFullRelativePath()) / file_name);
+    return part->getDataPartStorage().exists(file_name);
 }
 
 

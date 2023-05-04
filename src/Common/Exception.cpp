@@ -15,10 +15,11 @@
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <filesystem>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 namespace fs = std::filesystem;
 
@@ -63,11 +64,32 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
     ErrorCodes::increment(code, remote, msg, trace);
 }
 
-Exception::Exception(const std::string & msg, int code, bool remote_)
-    : Poco::Exception(msg, code)
+Exception::MessageMasked::MessageMasked(const std::string & msg_)
+    : msg(msg_)
+{
+    if (auto * masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(msg);
+}
+
+Exception::MessageMasked::MessageMasked(std::string && msg_)
+    : msg(std::move(msg_))
+{
+    if (auto * masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(msg);
+}
+
+Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
+    : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
-    handle_error_code(msg, code, remote, getStackFramePointers());
+    handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
+}
+
+Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
+    : Poco::Exception(msg_masked.msg, code)
+    , remote(remote_)
+{
+    handle_error_code(message(), code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -152,22 +174,23 @@ Exception::FramePointers Exception::getStackFramePointers() const
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno);
+    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno);
 }
 
 void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
+    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno, path);
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
 {
     try
     {
-        if (start_of_message.empty())
-            LOG_ERROR(logger, "{}", getCurrentExceptionMessage(true));
-        else
-            LOG_ERROR(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+        if (!start_of_message.empty())
+            message.text = fmt::format("{}: {}", start_of_message, message.text);
+
+        LOG_ERROR(logger, message);
     }
     catch (...)
     {
@@ -176,10 +199,10 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
     ///
-    /// And in this case the exception will not be logged, so let's block the
+    /// In this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -189,8 +212,8 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
-    /// Under high memory pressure, any new allocation will definitelly lead
-    /// to MEMORY_LIMIT_EXCEEDED exception.
+    /// Under high memory pressure, new allocations throw a
+    /// MEMORY_LIMIT_EXCEEDED exception.
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
@@ -218,7 +241,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
         formatReadableQuantity(fs.f_favail),
         mount_point);
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     msg += "\nFilesystem: " + getFilesystemName(mount_point);
 #endif
 }
@@ -230,7 +253,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
   */
 static void getNotEnoughMemoryMessage(std::string & msg)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         static constexpr size_t buf_size = 1024;
@@ -261,7 +284,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
             }
         }
 
-        if (num_maps > max_map_count * 0.99)
+        if (num_maps > max_map_count * 0.90)
         {
             msg += fmt::format(
                 "\nIt looks like that the process is near the limit on number of virtual memory mappings."
@@ -316,7 +339,13 @@ std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
+    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info).text;
+}
+
+PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
+{
     WriteBufferFromOwnString stream;
+    std::string_view message_format_string;
 
     try
     {
@@ -327,6 +356,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace)
                << (with_extra_info ? getExtraExceptionInfo(e) : "")
                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        message_format_string = e.tryGetMessageFormatString();
     }
     catch (const Poco::Exception & e)
     {
@@ -372,7 +402,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         catch (...) {}
     }
 
-    return stream.str();
+    return PreformattedMessage{stream.str(), message_format_string};
 }
 
 
@@ -425,14 +455,6 @@ int getExceptionErrorCode(std::exception_ptr e)
 }
 
 
-void rethrowFirstException(const Exceptions & exceptions)
-{
-    for (const auto & exception : exceptions)
-        if (exception)
-            std::rethrow_exception(exception);
-}
-
-
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message)
 {
     try
@@ -458,6 +480,11 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
+}
+
+PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     WriteBufferFromOwnString stream;
 
@@ -489,7 +516,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
     }
     catch (...) {}
 
-    return stream.str();
+    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
 }
 
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
@@ -532,9 +559,9 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     return true;
 }
 
-ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
+ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message, bool with_stacktrace)
 {
-    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
+    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, true);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
@@ -548,10 +575,6 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
 ParsingException::ParsingException() = default;
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
-{
-}
-ParsingException::ParsingException(int code, const std::string & message)
-    : Exception(message, code)
 {
 }
 

@@ -1,6 +1,7 @@
 SET send_logs_level = 'fatal';
 
 drop table if exists t1_00729;
+set allow_deprecated_syntax_for_merge_tree=1;
 create table t1_00729 (id UInt64, val Array(String),nid UInt64, eDate Date)ENGINE = MergeTree(eDate, (id, eDate), 8192);
 
 insert into t1_00729 (id,val,nid,eDate) values (1,['background','foreground','heading','image'],1,'2018-09-27');

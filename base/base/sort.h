@@ -14,7 +14,7 @@ template <typename Comparator>
 class DebugLessComparator
 {
 public:
-    constexpr DebugLessComparator(Comparator & cmp_)
+    constexpr DebugLessComparator(Comparator & cmp_) // NOLINT(google-explicit-constructor)
         : cmp(cmp_)
     {}
 

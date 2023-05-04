@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <profiles>
         <!-- Profile that allows only read queries. -->

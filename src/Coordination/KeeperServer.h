@@ -8,6 +8,8 @@
 #include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Coordination/Keeper4LWInfo.h>
+#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -28,7 +30,7 @@ private:
     struct KeeperRaftServer;
     nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
-    nuraft::ptr<nuraft::rpc_listener> asio_listener;
+    std::vector<nuraft::ptr<nuraft::rpc_listener>> asio_listeners;
     // because some actions can be applied
     // when we are sure that there are no requests currently being
     // processed (e.g. recovery) we do all write actions
@@ -50,7 +52,7 @@ private:
 
     /// Almost copy-paste from nuraft::launcher, but with separated server init and start
     /// Allows to avoid race conditions.
-    void launchRaftServer(bool enable_ipv6);
+    void launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6);
 
     void shutdownRaftServer();
 
@@ -60,12 +62,18 @@ private:
 
     std::atomic_bool is_recovering = false;
 
+    std::shared_ptr<KeeperContext> keeper_context;
+
+    const bool create_snapshot_on_exit;
+
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_);
+        SnapshotsQueue & snapshots_queue_,
+        KeeperSnapshotManagerS3 & snapshot_manager_s3,
+        KeeperStateMachine::CommitCallback commit_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -95,6 +103,8 @@ public:
 
     bool isLeaderAlive() const;
 
+    Keeper4LWInfo getPartiallyFilled4LWInfo() const;
+
     /// @return follower count if node is not leader return 0
     uint64_t getFollowerCount() const;
 
@@ -122,6 +132,14 @@ public:
     /// Wait configuration update for action. Used by followers.
     /// Return true if update was successfully received.
     bool waitConfigurationUpdate(const ConfigUpdateAction & task);
+
+    uint64_t createSnapshot();
+
+    KeeperLogInfo getKeeperLogInfo();
+
+    bool requestLeader();
+
+    void recalculateStorageStats();
 };
 
 }

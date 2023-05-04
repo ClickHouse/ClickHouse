@@ -41,6 +41,7 @@ protected:
         /// Ref count modified in constructor/descructor of Entry
         /// but also read in pool code.
         std::atomic<int> ref_count = 0;
+        std::atomic<bool> removed_from_pool = false;
     };
 
 public:
@@ -169,10 +170,24 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
          bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT)
-    : logger(Poco::Logger::get("mysqlxx::Pool")), default_connections(default_connections_),
-    max_connections(max_connections_), db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
-    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_),
-    opt_reconnect(opt_reconnect_) {}
+    : logger(Poco::Logger::get("mysqlxx::Pool"))
+    , default_connections(default_connections_)
+    , max_connections(max_connections_)
+    , db(db_)
+    , server(server_)
+    , user(user_)
+    , password(password_)
+    , port(port_)
+    , socket(socket_)
+    , connect_timeout(connect_timeout_)
+    , rw_timeout(rw_timeout_)
+    , enable_local_infile(enable_local_infile_)
+    , opt_reconnect(opt_reconnect_)
+    {
+        logger.debug(
+            "Created MySQL Pool with settings: connect_timeout=%u, read_write_timeout=%u, default_connections_number=%u, max_connections_number=%u",
+            connect_timeout, rw_timeout, default_connections, max_connections);
+    }
 
     Pool(const Pool & other)
         : logger(other.logger), default_connections{other.default_connections},

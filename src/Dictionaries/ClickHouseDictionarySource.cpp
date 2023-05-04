@@ -7,10 +7,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include "DictionarySourceFactory.h"
@@ -27,10 +28,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "table",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "secure"};
 
 namespace
 {
@@ -54,6 +51,7 @@ namespace
             configuration.db,
             configuration.user,
             configuration.password,
+            configuration.quota_key,
             "", /* cluster */
             "", /* cluster_secret */
             "ClickHouseDictionarySource",
@@ -110,11 +108,6 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-QueryPipeline ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
-{
-    return createStreamForQuery(load_all_query, result_size_hint);
-}
-
 QueryPipeline ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
@@ -162,7 +155,7 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
+QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
     QueryPipeline pipeline;
 
@@ -182,15 +175,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     else
     {
         pipeline = QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false));
-    }
-
-    if (result_size_hint)
-    {
-        pipeline.setProgressCallback([result_size_hint](const Progress & progress)
-        {
-            *result_size_hint += progress.total_rows_to_read;
-        });
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
     }
 
     return pipeline;
@@ -213,7 +198,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
         /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
         Block invalidate_sample_block;
         QueryPipeline pipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false));
+            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
         return readInvalidateQuery(std::move(pipeline));
     }
 }
@@ -225,65 +210,83 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const std::string & config_prefix,
                                  Block & sample_block,
                                  ContextPtr global_context,
-                                 const std::string & default_database [[maybe_unused]],
+                                 const std::string & default_database,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        bool secure = config.getBool(config_prefix + ".secure", false);
-
-        UInt16 default_port = getPortFromContext(global_context, secure);
+        using Configuration = ClickHouseDictionarySource::Configuration;
+        std::optional<Configuration> configuration;
 
         std::string settings_config_prefix = config_prefix + ".clickhouse";
-
-        std::string host = config.getString(settings_config_prefix + ".host", "localhost");
-        std::string user = config.getString(settings_config_prefix + ".user", "default");
-        std::string password =  config.getString(settings_config_prefix + ".password", "");
-        std::string db = config.getString(settings_config_prefix + ".db", default_database);
-        std::string table = config.getString(settings_config_prefix + ".table", "");
-        UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
-        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
-
-        auto named_collection = created_from_ddl
-            ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key)
-            : std::nullopt;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
 
         if (named_collection)
         {
-            const auto & configuration = named_collection->configuration;
-            host = configuration.host;
-            user = configuration.username;
-            password = configuration.password;
-            db = configuration.database;
-            table = configuration.table;
-            port = configuration.port;
+            validateNamedCollection(
+                *named_collection, {}, ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
+                    "secure", "host", "hostnmae", "port", "user", "username", "password", "quota_key", "name",
+                    "db", "database", "table","query", "where", "invalidate_query", "update_field", "update_lag"});
+
+            const auto secure = named_collection->getOrDefault("secure", false);
+            const auto default_port = getPortFromContext(global_context, secure);
+            const auto host = named_collection->getAnyOrDefault<String>({"host", "hostname"}, "localhost");
+            const auto port = static_cast<UInt16>(named_collection->getOrDefault<UInt64>("port", default_port));
+
+            configuration.emplace(Configuration{
+                .host = host,
+                .user = named_collection->getAnyOrDefault<String>({"user", "username"}, "default"),
+                .password = named_collection->getOrDefault<String>("password", ""),
+                .quota_key = named_collection->getOrDefault<String>("quota_key", ""),
+                .db = named_collection->getAnyOrDefault<String>({"db", "database"}, default_database),
+                .table = named_collection->getOrDefault<String>("table", ""),
+                .query = named_collection->getOrDefault<String>("query", ""),
+                .where = named_collection->getOrDefault<String>("where", ""),
+                .invalidate_query = named_collection->getOrDefault<String>("invalidate_query", ""),
+                .update_field = named_collection->getOrDefault<String>("update_field", ""),
+                .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
+                .port = port,
+                .is_local = isLocalAddress({host, port}, default_port),
+                .secure = secure,
+            });
+        }
+        else
+        {
+            const auto secure = config.getBool(settings_config_prefix + ".secure", false);
+            const auto default_port = getPortFromContext(global_context, secure);
+            const auto host = config.getString(settings_config_prefix + ".host", "localhost");
+            const auto port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
+
+            configuration.emplace(Configuration{
+                .host = host,
+                .user = config.getString(settings_config_prefix + ".user", "default"),
+                .password = config.getString(settings_config_prefix + ".password", ""),
+                .quota_key = config.getString(settings_config_prefix + ".quota_key", ""),
+                .db = config.getString(settings_config_prefix + ".db", default_database),
+                .table = config.getString(settings_config_prefix + ".table", ""),
+                .query = config.getString(settings_config_prefix + ".query", ""),
+                .where = config.getString(settings_config_prefix + ".where", ""),
+                .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
+                .update_field = config.getString(settings_config_prefix + ".update_field", ""),
+                .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+                .port = port,
+                .is_local = isLocalAddress({host, port}, default_port),
+                .secure = secure,
+            });
         }
 
-        ClickHouseDictionarySource::Configuration configuration{
-            .host = host,
-            .user = user,
-            .password = password,
-            .db = db,
-            .table = table,
-            .query = config.getString(settings_config_prefix + ".query", ""),
-            .where = config.getString(settings_config_prefix + ".where", ""),
-            .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .port = port,
-            .is_local = isLocalAddress({host, port}, default_port),
-            .secure = config.getBool(settings_config_prefix + ".secure", false)};
-
-
         ContextMutablePtr context;
-        if (configuration.is_local)
+        if (configuration->is_local)
         {
             /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
             Session session(global_context, ClientInfo::Interface::LOCAL);
-            session.authenticate(configuration.user, configuration.password, Poco::Net::SocketAddress{});
+            session.authenticate(configuration->user, configuration->password, Poco::Net::SocketAddress{});
             context = session.makeQueryContext();
         }
         else
         {
             context = Context::createCopy(global_context);
+
+            if (created_from_ddl)
+                context->getRemoteHostFilter().checkHostAndPort(configuration->host, toString(configuration->port));
         }
 
         context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));
@@ -291,10 +294,10 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");
 
-        if (dictionary_name == configuration.table && dictionary_database == configuration.db)
+        if (dictionary_name == configuration->table && dictionary_database == configuration->db)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouseDictionarySource table cannot be dictionary table");
 
-        return std::make_unique<ClickHouseDictionarySource>(dict_struct, configuration, sample_block, context);
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
     };
 
     factory.registerSource("clickhouse", create_table_source);

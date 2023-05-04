@@ -18,29 +18,38 @@ public:
     {
         working_buffer = in.buffer();
         pos = in.position();
+        hashing_begin = pos;
+    }
 
-        /// calculate hash from the data already read
-        if (!working_buffer.empty())
+    uint128 getHash()
+    {
+        if (pos > hashing_begin)
         {
-            calculateHash(pos, working_buffer.end() - pos);
+            calculateHash(hashing_begin, pos - hashing_begin);
+            hashing_begin = pos;
         }
+        return IHashingBuffer<ReadBuffer>::getHash();
     }
 
 private:
     bool nextImpl() override
     {
+        if (pos > hashing_begin)
+            calculateHash(hashing_begin, pos - hashing_begin);
+
         in.position() = pos;
         bool res = in.next();
         working_buffer = in.buffer();
-        pos = in.position();
 
         // `pos` may be different from working_buffer.begin() when using sophisticated ReadBuffers.
-        calculateHash(pos, working_buffer.end() - pos);
+        pos = in.position();
+        hashing_begin = pos;
 
         return res;
     }
 
     ReadBuffer & in;
+    BufferBase::Position hashing_begin;
 };
 
 }

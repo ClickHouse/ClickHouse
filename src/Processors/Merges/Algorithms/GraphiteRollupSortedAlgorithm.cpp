@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header, const Graphite::Params & params)
 {
@@ -26,6 +32,9 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
         if (i != def.time_column_num && i != def.value_column_num && i != def.version_column_num)
             def.unmodified_column_numbers.push_back(i);
 
+    if (!WhichDataType(header.getByPosition(def.value_column_num).type).isFloat64())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only `Float64` data type is allowed for the value column of GraphiteMergeTree");
+
     return def;
 }
 
@@ -33,11 +42,12 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
     SortDescription description_,
-    size_t max_block_size,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_,
     Graphite::Params params_,
     time_t time_of_merge_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), false, max_block_size)
+    , merged_data(header_.cloneEmptyColumns(), false, max_block_size_rows_, max_block_size_bytes_)
     , params(std::move(params_))
     , time_of_merge(time_of_merge_)
 {
@@ -120,7 +130,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        StringRef next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
+        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow()).toView();
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;
@@ -190,7 +200,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             current_subgroup_newest_row.set(current, sources[current.impl->order].chunk);
 
             /// Small hack: group and subgroups have the same path, so we can set current_group_path here instead of startNextGroup
-            /// But since we keep in memory current_subgroup_newest_row's block, we could use StringRef for current_group_path and don't
+            /// But since we keep in memory current_subgroup_newest_row's block, we could use string_view for current_group_path and don't
             ///  make deep copy of the path.
             current_group_path = next_path;
         }

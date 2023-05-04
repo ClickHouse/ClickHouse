@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/aggregate-functions/reference/stochasticlogisticregression
 sidebar_position: 222
 ---
 

@@ -1,5 +1,6 @@
 ---
-sidebar_position: 52
+slug: /en/sql-reference/functions/encoding-functions
+sidebar_position: 65
 sidebar_label: Encoding
 ---
 
@@ -17,11 +18,11 @@ char(number_1, [number_2, ..., number_n]);
 
 **Arguments**
 
--   `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md).
+- `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
--   a string of given bytes.
+- a string of given bytes.
 
 Type: `String`.
 
@@ -97,11 +98,11 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Arguments**
 
--   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
--   A string with the hexadecimal representation of the argument.
+- A string with the hexadecimal representation of the argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -184,13 +185,13 @@ unhex(arg)
 
 **Arguments**
 
--   `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md).
+- `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 
 **Returned value**
 
--   A binary string (BLOB).
+- A binary string (BLOB).
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -246,11 +247,11 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Arguments**
 
--   `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
+- `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
--   A string with the binary representation of the argument.
+- A string with the binary representation of the argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -337,11 +338,11 @@ Supports binary digits `0` and `1`. The number of binary digits does not have to
 
 **Arguments**
 
--   `arg` — A string containing any number of binary digits. [String](../../sql-reference/data-types/string.md).
+- `arg` — A string containing any number of binary digits. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   A binary string (BLOB).
+- A binary string (BLOB).
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -375,14 +376,6 @@ Result:
 └─────┘
 ```
 
-## UUIDStringToNum(str)
-
-Accepts a string containing 36 characters in the format `123e4567-e89b-12d3-a456-426655440000`, and returns it as a set of bytes in a FixedString(16).
-
-## UUIDNumToString(str)
-
-Accepts a FixedString(16) value. Returns a string containing 36 characters in text format.
-
 ## bitmaskToList(num)
 
 Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
@@ -403,11 +396,11 @@ bitPositionsToArray(arg)
 
 **Arguments**
 
--   `arg` — Integer value. [Int/UInt](../../sql-reference/data-types/int-uint.md).
+- `arg` — Integer value. [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   An array containing a list of positions of bits that equal `1`, in ascending order.
+- An array containing a list of positions of bits that equal `1`, in ascending order.
 
 Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 

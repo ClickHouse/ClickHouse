@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <profiles>
         <default>
@@ -13,6 +12,9 @@
             </networks>
             <profile>default</profile>
             <quota>default</quota>
+            <allow_databases>
+                <database>mydb</database>
+            </allow_databases>
         </another>
     </users>
 </clickhouse>

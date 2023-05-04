@@ -56,6 +56,7 @@ private:
     Chunk generate() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
+    void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);
 
     bool tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     ALWAYS_INLINE inline bool tryReadValue(IColumn & column, size_t column_idx);
@@ -70,6 +71,8 @@ private:
     void readSuffix();
 
     std::unique_ptr<PeekableReadBuffer> buf;
+    std::optional<IParser::Pos> token_iterator{};
+    std::optional<Tokens> tokens{};
 
     const RowInputFormatParams params;
 
@@ -103,7 +106,6 @@ private:
     DataTypes readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
-    const FormatSettings format_settings;
     ParserExpression parser;
     bool first_row = true;
     bool end_of_data = false;

@@ -2,8 +2,9 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <re2/re2.h>
 
 namespace CurrentMetrics
@@ -23,54 +24,34 @@ class DiskObjectStorage : public IDisk
 {
 
 friend class DiskObjectStorageReservation;
-friend class DiskObjectStorageMetadataHelper;
+friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & remote_fs_root_path_,
+        const String & object_storage_root_path_,
         const String & log_name,
-        DiskPtr metadata_disk_,
-        ObjectStoragePtr && object_storage_,
-        DiskType disk_type_,
+        MetadataStoragePtr metadata_storage_,
+        ObjectStoragePtr object_storage_,
         bool send_metadata_,
-        uint64_t thread_pool_size);
+        uint64_t thread_pool_size_);
 
-    DiskType getType() const override { return disk_type; }
+    /// Create fake transaction
+    DiskTransactionPtr createTransaction() override;
+
+    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
 
     bool supportZeroCopyReplication() const override { return true; }
 
-    bool supportParallelWrite() const override { return true; }
+    bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    using Metadata = DiskObjectStorageMetadata;
-    using MetadataUpdater = std::function<bool(Metadata & metadata)>;
+    const String & getPath() const override { return metadata_storage->getPath(); }
 
-    const String & getName() const override { return name; }
+    StoredObjects getStorageObjects(const String & local_path) const override;
 
-    const String & getPath() const override { return metadata_disk->getPath(); }
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
-    std::vector<String> getRemotePaths(const String & local_path) const override;
-
-    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
-
-    std::string getCacheBasePath() const override
-    {
-        return object_storage->getCacheBasePath();
-    }
-
-    /// Methods for working with metadata. For some operations (like hardlink
-    /// creation) metadata can be updated concurrently from multiple threads
-    /// (file actually rewritten on disk). So additional RW lock is required for
-    /// metadata read and write, but not for create new metadata.
-    Metadata readMetadata(const String & path) const;
-    Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
-    Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
-    void readUpdateStoreMetadataAndRemove(const String & path, bool sync, MetadataUpdater updater);
-
-    Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
-
-    Metadata createAndStoreMetadata(const String & path, bool sync);
-    Metadata createUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
+    const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
@@ -106,9 +87,9 @@ public:
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void removeFromRemoteFS(const std::vector<String> & paths);
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
+    MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
 
@@ -119,13 +100,12 @@ public:
 
     String getUniqueId(const String & path) const override;
 
-    bool checkObjectExists(const String & path) const;
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
-    void listFiles(const String & path, std::vector<String> & file_names) override;
+    void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     void setReadOnly(const String & path) override;
 
@@ -141,17 +121,19 @@ public:
 
     void removeDirectory(const String & path) override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
-    Poco::Timestamp getLastModified(const String & path) override;
+    Poco::Timestamp getLastModified(const String & path) const override;
+
+    time_t getLastChanged(const String & path) const override;
 
     bool isRemote() const override { return true; }
 
     void shutdown() override;
 
-    void startup(ContextPtr context) override;
+    void startupImpl(ContextPtr context) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -167,6 +149,14 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    void writeFileUsingCustomWriteObject(
+        const String & path,
+        WriteMode mode,
+        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+            custom_write_object_function) override;
+
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
@@ -176,30 +166,72 @@ public:
     void syncRevision(UInt64 revision) override;
 
     UInt64 getRevision() const override;
-private:
-    const String name;
-    const String remote_fs_root_path;
-    Poco::Logger * log;
-    DiskPtr metadata_disk;
 
-    const DiskType disk_type;
+    ObjectStoragePtr getObjectStorage() override;
+
+    DiskObjectStoragePtr createDiskObjectStorage() override;
+
+    bool supportsCache() const override;
+
+    /// Is object storage read only?
+    /// For example: WebObjectStorage is read only as it allows to read from a web server
+    /// with static files, so only read-only operations are allowed for this storage.
+    bool isReadOnly() const override;
+
+    /// Is object write-once?
+    /// For example: S3PlainObjectStorage is write once, this means that it
+    /// does support BACKUP to this disk, but does not support INSERT into
+    /// MergeTree table on this disk.
+    bool isWriteOnce() const override;
+
+    /// Add a cache layer.
+    /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// There can be any number of cache layers:
+    /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
+    void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
+
+    /// Get structure of object storage this disk works with. Examples:
+    /// DiskObjectStorage(S3ObjectStorage)
+    /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
+    /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
+    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
+
+    /// Get names of all cache layers. Name is how cache is defined in configuration file.
+    NameSet getCacheLayersNames() const override;
+
+    static std::shared_ptr<Executor> getAsyncExecutor(const std::string & log_name, size_t size);
+
+    bool supportsStat() const override { return metadata_storage->supportsStat(); }
+    struct stat stat(const String & path) const override;
+
+    bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
+    void chmod(const String & path, mode_t mode) override;
+
+private:
+
+    /// Create actual disk object storage transaction for operations
+    /// execution.
+    DiskTransactionPtr createObjectStorageTransaction();
+
+    const String object_storage_root_path;
+    Poco::Logger * log;
+
+    MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    mutable std::shared_mutex metadata_mutex;
-    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
-
-    void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
-
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
-    bool send_metadata;
+    const bool send_metadata;
+    size_t threadpool_size;
 
-    std::unique_ptr<DiskObjectStorageMetadataHelper> metadata_helper;
+    std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
+
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 class DiskObjectStorageReservation final : public IReservation
 {
@@ -223,7 +255,7 @@ public:
     ~DiskObjectStorageReservation() override;
 
 private:
-    std::shared_ptr<DiskObjectStorage> disk;
+    DiskObjectStoragePtr disk;
     UInt64 size;
     UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;

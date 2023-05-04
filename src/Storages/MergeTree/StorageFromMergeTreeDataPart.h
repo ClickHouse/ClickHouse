@@ -9,10 +9,16 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Defines.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// A Storage that allows reading from a single MergeTree data part.
 class StorageFromMergeTreeDataPart final : public IStorage
@@ -41,10 +47,10 @@ public:
         const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
     {
         const auto & storage_columns = metadata_snapshot->getColumns();
-        if (!hasObjectColumns(storage_columns))
+        if (!hasDynamicSubcolumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
-        auto object_columns = getObjectColumns(
+        auto object_columns = getConcreteObjectColumns(
             parts.begin(), parts.end(),
             storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 
@@ -59,9 +65,9 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
-        unsigned num_streams) override
+        size_t num_streams) override
     {
-        query_plan = std::move(*MergeTreeDataSelectExecutor(storage)
+        query_plan.addStep(MergeTreeDataSelectExecutor(storage)
                                               .readFromParts(
                                                   parts,
                                                   column_names,
@@ -103,14 +109,26 @@ public:
 
     bool materializeTTLRecalculateOnly() const
     {
+        if (parts.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
         return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
     }
 
+    bool hasLightweightDeletedMask() const override
+    {
+        return !parts.empty() && parts.front()->hasLightweightDelete();
+    }
+
+    bool supportsLightweightDelete() const override
+    {
+        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
+    }
+
 private:
-    MergeTreeData::DataPartsVector parts;
+    const MergeTreeData::DataPartsVector parts;
     const MergeTreeData & storage;
-    String partition_id;
-    MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
+    const String partition_id;
+    const MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {

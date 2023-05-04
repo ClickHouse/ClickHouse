@@ -1,11 +1,13 @@
+#ifdef FUZZING_MODE
 #include <Functions/getFuzzerData.h>
 
 namespace DB
 {
 
-void registerFunctionGetFuzzerData(FunctionFactory & factory)
+REGISTER_FUNCTION(GetFuzzerData)
 {
     factory.registerFunction<FunctionGetFuzzerData>();
 }
 
 }
+#endif

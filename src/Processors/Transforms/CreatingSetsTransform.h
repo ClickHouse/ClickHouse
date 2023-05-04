@@ -2,10 +2,10 @@
 
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Interpreters/PreparedSets.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>
@@ -43,14 +43,15 @@ public:
 
 private:
     SubqueryForSet subquery;
+    std::optional<std::promise<SetPtr>> promise_to_build;
 
     QueryPipeline table_out;
     std::unique_ptr<PushingPipelineExecutor> executor;
     UInt64 read_rows = 0;
+    bool set_from_cache = false;
     Stopwatch watch;
 
     bool done_with_set = true;
-    //bool done_with_join = true;
     bool done_with_table = true;
 
     SizeLimits network_transfer_limits;

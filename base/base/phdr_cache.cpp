@@ -1,12 +1,10 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 /// This code was based on the code by Fedor Korotkiy https://www.linkedin.com/in/fedor-korotkiy-659a1838/
 
 #include <base/defines.h>
 
-#if defined(__linux__) && !defined(THREAD_SANITIZER) && !defined(USE_MUSL)
+#if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(USE_MUSL)
     #define USE_PHDR_CACHE 1
 #endif
 

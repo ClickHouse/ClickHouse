@@ -28,7 +28,9 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
+
+    bool parallelizeOutputAfterReading() const override { return false; }
 
     bool isSystemStorage() const override { return true; }
 

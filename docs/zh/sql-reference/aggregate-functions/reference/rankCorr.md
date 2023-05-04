@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/aggregate-functions/reference/rankCorr
+---
 ## rankCorr {#agg_function-rankcorr}
 
 计算等级相关系数。

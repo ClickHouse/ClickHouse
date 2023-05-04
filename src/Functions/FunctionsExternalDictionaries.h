@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -181,7 +182,7 @@ public:
 
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function, expected a string",
+                "Illegal type {} of first argument of function {}, expected a string",
                 arguments[0]->getName(),
                 getName());
 
@@ -415,7 +416,7 @@ public:
 
             if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of fourth argument of function must be convertible to Int64.",
+                    "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
                     range_col_type->getName(),
                     getName());
 
@@ -458,12 +459,21 @@ public:
             {
                 default_cols.emplace_back(result);
             }
+
+            ++current_arguments_index;
         }
         else
         {
             for (size_t i = 0; i < attribute_names.size(); ++i)
                 default_cols.emplace_back(nullptr);
         }
+
+        if (current_arguments_index < arguments.size())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {} should be {}",
+                    getName(),
+                    arguments.size(),
+                    current_arguments_index);
 
         auto key_col_with_type = arguments[2];
 
@@ -682,8 +692,10 @@ private:
         auto return_type = impl.getReturnTypeImpl(arguments);
 
         if (!return_type->equals(*result_type))
-            throw Exception{"Dictionary attribute has different type " + return_type->getName() + " expected " + result_type->getName(),
-                    ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Function {} dictionary attribute has different type {} expected {}",
+                    getName(),
+                    return_type->getName(),
+                    result_type->getName());
 
         return impl.executeImpl(arguments, return_type, input_rows_count);
     }
@@ -707,9 +719,8 @@ struct NameDictGetFloat64 { static constexpr auto name = "dictGetFloat64"; };
 struct NameDictGetDate { static constexpr auto name = "dictGetDate"; };
 struct NameDictGetDateTime { static constexpr auto name = "dictGetDateTime"; };
 struct NameDictGetUUID { static constexpr auto name = "dictGetUUID"; };
-struct NameDictGetDecimal32 { static constexpr auto name = "dictGetDecimal32"; };
-struct NameDictGetDecimal64 { static constexpr auto name = "dictGetDecimal64"; };
-struct NameDictGetDecimal128 { static constexpr auto name = "dictGetDecimal128"; };
+struct NameDictGetIPv4 { static constexpr auto name = "dictGetIPv4"; };
+struct NameDictGetIPv6 { static constexpr auto name = "dictGetIPv6"; };
 struct NameDictGetString { static constexpr auto name = "dictGetString"; };
 
 using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8>;
@@ -725,9 +736,8 @@ using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64, NameDictGetFloat
 using FunctionDictGetDate = FunctionDictGet<DataTypeDate, NameDictGetDate>;
 using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime, NameDictGetDateTime>;
 using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID, NameDictGetUUID>;
-using FunctionDictGetDecimal32 = FunctionDictGet<DataTypeDecimal<Decimal32>, NameDictGetDecimal32>;
-using FunctionDictGetDecimal64 = FunctionDictGet<DataTypeDecimal<Decimal64>, NameDictGetDecimal64>;
-using FunctionDictGetDecimal128 = FunctionDictGet<DataTypeDecimal<Decimal128>, NameDictGetDecimal128>;
+using FunctionDictGetIPv4 = FunctionDictGet<DataTypeIPv4, NameDictGetIPv4>;
+using FunctionDictGetIPv6 = FunctionDictGet<DataTypeIPv6, NameDictGetIPv6>;
 using FunctionDictGetString = FunctionDictGet<DataTypeString, NameDictGetString>;
 
 template<typename DataType, typename Name>
@@ -746,9 +756,8 @@ struct NameDictGetFloat64OrDefault { static constexpr auto name = "dictGetFloat6
 struct NameDictGetDateOrDefault { static constexpr auto name = "dictGetDateOrDefault"; };
 struct NameDictGetDateTimeOrDefault { static constexpr auto name = "dictGetDateTimeOrDefault"; };
 struct NameDictGetUUIDOrDefault { static constexpr auto name = "dictGetUUIDOrDefault"; };
-struct NameDictGetDecimal32OrDefault { static constexpr auto name = "dictGetDecimal32OrDefault"; };
-struct NameDictGetDecimal64OrDefault { static constexpr auto name = "dictGetDecimal64OrDefault"; };
-struct NameDictGetDecimal128OrDefault { static constexpr auto name = "dictGetDecimal128OrDefault"; };
+struct NameDictGetIPv4OrDefault { static constexpr auto name = "dictGetIPv4OrDefault"; };
+struct NameDictGetIPv6OrDefault { static constexpr auto name = "dictGetIPv6OrDefault"; };
 struct NameDictGetStringOrDefault { static constexpr auto name = "dictGetStringOrDefault"; };
 
 using FunctionDictGetUInt8OrDefault = FunctionDictGetOrDefault<DataTypeUInt8, NameDictGetUInt8OrDefault>;
@@ -764,9 +773,8 @@ using FunctionDictGetFloat64OrDefault = FunctionDictGetOrDefault<DataTypeFloat64
 using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate, NameDictGetDateOrDefault>;
 using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
 using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID, NameDictGetUUIDOrDefault>;
-using FunctionDictGetDecimal32OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal32>, NameDictGetDecimal32OrDefault>;
-using FunctionDictGetDecimal64OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal64>, NameDictGetDecimal64OrDefault>;
-using FunctionDictGetDecimal128OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal128>, NameDictGetDecimal128OrDefault>;
+using FunctionDictGetIPv4OrDefault = FunctionDictGetOrDefault<DataTypeIPv4, NameDictGetIPv4OrDefault>;
+using FunctionDictGetIPv6OrDefault = FunctionDictGetOrDefault<DataTypeIPv6, NameDictGetIPv6OrDefault>;
 using FunctionDictGetStringOrDefault = FunctionDictGetOrDefault<DataTypeString, NameDictGetStringOrDefault>;
 
 class FunctionDictGetOrNull final : public IFunction
@@ -973,7 +981,7 @@ private:
         auto dictionary = helper.getDictionary(arguments[0].column);
         const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
-        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+        return std::make_shared<DataTypeArray>(removeNullable(hierarchical_attribute.type));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -985,7 +993,7 @@ private:
         const auto & hierarchical_attribute = helper.getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
         ColumnPtr result = dictionary->getHierarchy(key_column_casted, hierarchical_attribute.type);
 
@@ -1042,8 +1050,9 @@ private:
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[2].name};
         auto in_key_column = ColumnWithTypeAndName{arguments[2].column->convertToFullColumnIfConst(), arguments[2].type, arguments[2].name};
 
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
-        auto in_key_column_casted = castColumnAccurate(in_key_column, hierarchical_attribute.type);
+        auto hierarchical_attribute_non_nullable = removeNullable(hierarchical_attribute.type);
+        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute_non_nullable);
+        auto in_key_column_casted = castColumnAccurate(in_key_column, hierarchical_attribute_non_nullable);
 
         ColumnPtr result = dictionary->isInHierarchy(key_column_casted, in_key_column_casted, hierarchical_attribute.type);
 
@@ -1059,11 +1068,11 @@ public:
     FunctionDictGetDescendantsExecutable(
         String name_,
         size_t level_,
-        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index_,
         std::shared_ptr<FunctionDictHelper> dictionary_helper_)
         : name(std::move(name_))
         , level(level_)
-        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index_))
         , dictionary_helper(std::move(dictionary_helper_))
     {}
 
@@ -1082,10 +1091,9 @@ public:
         const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
 
         auto key_column = ColumnWithTypeAndName{arguments[1].column->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
-        auto key_column_casted = castColumnAccurate(key_column, hierarchical_attribute.type);
+        auto key_column_casted = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
-        ColumnPtr result = dictionary->getDescendants(key_column_casted, hierarchical_attribute.type, level, hierarchical_parent_to_child_index);
-        return result;
+        return dictionary->getDescendants(key_column_casted, removeNullable(hierarchical_attribute.type), level, hierarchical_parent_to_child_index);
     }
 
     String name;
@@ -1102,13 +1110,13 @@ public:
         const DataTypes & argument_types_,
         const DataTypePtr & result_type_,
         size_t level_,
-        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index_,
         std::shared_ptr<FunctionDictHelper> helper_)
         : name(std::move(name_))
         , argument_types(argument_types_)
         , result_type(result_type_)
         , level(level_)
-        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index_))
         , helper(std::move(helper_))
     {}
 
@@ -1234,7 +1242,7 @@ public:
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
         const auto & hierarchical_attribute = dictionary_helper->getDictionaryHierarchicalAttribute(dictionary);
 
-        return std::make_shared<DataTypeArray>(hierarchical_attribute.type);
+        return std::make_shared<DataTypeArray>(removeNullable(hierarchical_attribute.type));
     }
 
     std::shared_ptr<FunctionDictHelper> dictionary_helper;

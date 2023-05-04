@@ -31,7 +31,7 @@ public:
     /// Same as above
     bool is_view{false};
 
-    bool no_delay{false};
+    bool sync{false};
 
     // We detach the object permanently, so it will not be reattached back during server restart.
     bool permanently{false};
@@ -45,7 +45,7 @@ public:
         return removeOnCluster<ASTDropQuery>(clone(), params.default_database);
     }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Drop; }
+    QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

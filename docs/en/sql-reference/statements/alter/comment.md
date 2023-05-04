@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/alter/comment
 sidebar_position: 51
 sidebar_label: COMMENT
 ---
@@ -15,7 +16,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
 **Examples**
 
-Creating a table with comment (for more information, see the [COMMENT] clause(../../../sql-reference/statements/create/table.md#comment-table)):
+Creating a table with comment (for more information, see the [COMMENT](../../../sql-reference/statements/create/table.md#comment-table) clause):
 
 ``` sql
 CREATE TABLE table_with_comment

@@ -3,7 +3,6 @@
 #include <Poco/MongoDB/Connection.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {
@@ -37,9 +36,25 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr context) override;
+
+    struct Configuration
+    {
+        std::string host;
+        UInt16 port;
+        std::string username;
+        std::string password;
+        std::string database;
+        std::string table;
+        std::string options;
+    };
+
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     void connectIfNotConnected();

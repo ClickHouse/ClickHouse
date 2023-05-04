@@ -17,10 +17,6 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     virtual void updateEstimate(MutableColumns & columns) const = 0;
-
-protected:
-    /// We collect processors got after pipeline transformation.
-    Processors processors;
 };
 
 }

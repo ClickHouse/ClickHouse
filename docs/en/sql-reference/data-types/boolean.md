@@ -1,11 +1,12 @@
 ---
+slug: /en/sql-reference/data-types/boolean
 sidebar_position: 43
 sidebar_label: Boolean
 ---
 
-# Boolean Values bool (boolean)
+# Bool
 
-Type `bool` is stored as UInt8. Possible values `true` (1), `false` (0).
+Type `bool` is internally stored as UInt8. Possible values are `true` (1), `false` (0).
 
 
 ```sql
@@ -36,5 +37,3 @@ SELECT * FROM test_bool;
 │ 2 │ false │
 └───┴───────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/data_types/boolean/) <!--hide-->

@@ -1,0 +1,11 @@
+<!-- https://github.com/ClickHouse/ClickHouse/issues/37900 -->
+<test>
+    <create_query>create table views_max_insert_threads_null (a UInt64) Engine = Null</create_query>
+    <create_query>create materialized view views_max_insert_threads_mv Engine = Null AS select now() as ts, max(a) from views_max_insert_threads_null group by ts</create_query>
+
+    <query>insert into views_max_insert_threads_null select * from numbers_mt(3000000000) settings max_threads = 16, max_insert_threads=16</query>
+
+    <drop_query>drop table if exists views_max_insert_threads_null</drop_query>
+    <drop_query>drop table if exists views_max_insert_threads_mv</drop_query>
+</test>
+

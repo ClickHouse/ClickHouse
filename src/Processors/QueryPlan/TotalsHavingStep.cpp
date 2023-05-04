@@ -14,7 +14,6 @@ static ITransformingStep::Traits getTraits(bool has_filter)
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = true,
@@ -27,7 +26,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 
 TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
-    const ColumnsMask & aggregates_mask_,
+    const AggregateDescriptions & aggregates_,
     bool overflow_row_,
     const ActionsDAGPtr & actions_dag_,
     const std::string & filter_column_,
@@ -36,16 +35,16 @@ TotalsHavingStep::TotalsHavingStep(
     double auto_include_threshold_,
     bool final_)
     : ITransformingStep(
-            input_stream_,
-            TotalsHavingTransform::transformHeader(
-                    input_stream_.header,
-                    actions_dag_.get(),
-                    filter_column_,
-                    remove_filter_,
-                    final_,
-                    aggregates_mask_),
-            getTraits(!filter_column_.empty()))
-    , aggregates_mask(aggregates_mask_)
+        input_stream_,
+        TotalsHavingTransform::transformHeader(
+            input_stream_.header,
+            actions_dag_.get(),
+            filter_column_,
+            remove_filter_,
+            final_,
+            getAggregatesMask(input_stream_.header, aggregates_)),
+        getTraits(!filter_column_.empty()))
+    , aggregates(aggregates_)
     , overflow_row(overflow_row_)
     , actions_dag(actions_dag_)
     , filter_column_name(filter_column_)
@@ -62,7 +61,7 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
-        aggregates_mask,
+        getAggregatesMask(pipeline.getHeader(), aggregates),
         overflow_row,
         expression_actions,
         filter_column_name,
@@ -88,7 +87,7 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
             return "after_having_auto threshold " + std::to_string(auto_include_threshold);
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
@@ -124,5 +123,20 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Expression", expression->toTree());
     }
 }
+
+void TotalsHavingStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(),
+        TotalsHavingTransform::transformHeader(
+            input_streams.front().header,
+            actions_dag.get(),
+            filter_column_name,
+            remove_filter,
+            final,
+            getAggregatesMask(input_streams.front().header, aggregates)),
+        getDataStreamTraits());
+}
+
 
 }

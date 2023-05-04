@@ -28,6 +28,7 @@ namespace
         DICTIONARY,
         VIEW,
         COLUMN,
+        NAMED_COLLECTION,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -39,6 +40,7 @@ namespace
         enum_values.emplace_back("DICTIONARY", static_cast<Int8>(DICTIONARY));
         enum_values.emplace_back("VIEW", static_cast<Int8>(VIEW));
         enum_values.emplace_back("COLUMN", static_cast<Int8>(COLUMN));
+        enum_values.emplace_back("NAMED_COLLECTION", static_cast<Int8>(NAMED_COLLECTION));
         return enum_values;
     }
 }
@@ -85,7 +87,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
     auto & column_parent_group = assert_cast<ColumnInt16 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
     auto & column_parent_group_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
 
-    auto add_row = [&](AccessType access_type, const std::string_view & aliases, Level max_level, AccessType parent_group)
+    auto add_row = [&](AccessType access_type, std::string_view aliases, Level max_level, AccessType parent_group)
     {
         column_access_type.push_back(static_cast<Int16>(access_type));
 

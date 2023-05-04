@@ -5,10 +5,9 @@
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -50,8 +49,7 @@ struct ExpressionAnalyzerData
 {
     ~ExpressionAnalyzerData();
 
-    SubqueriesForSets subqueries_for_sets;
-    PreparedSets prepared_sets;
+    PreparedSetsPtr prepared_sets;
 
     std::unique_ptr<QueryPlan> joined_plan;
 
@@ -97,6 +95,7 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
+        const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
 
         explicit ExtractedSettings(const Settings & settings_);
@@ -106,7 +105,7 @@ public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
     ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_)
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {}, {})
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {})
     {
     }
 
@@ -121,8 +120,9 @@ public:
     ActionsDAGPtr getActionsDAG(bool add_aliases, bool project_result = true);
     ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true, CompileExpressions compile_expressions = CompileExpressions::no);
 
-    /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
+    /// Get actions to evaluate a constant expression. The function adds constants and applies functions that depend only on constants.
     /// Does not execute subqueries.
+    ActionsDAGPtr getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs = {});
     ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
@@ -130,9 +130,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets & getSubqueriesForSets() { return subqueries_for_sets; }
-
-    PreparedSets & getPreparedSets() { return prepared_sets; }
+    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -140,16 +138,15 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
+    void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
-    /**
-      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
+    /** Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options = {});
 
-    /**
-      * Checks if subquery is not a plain StorageSet.
+    /** Checks if subquery is not a plain StorageSet.
       * Because while making set we will read data from StorageSet which is not allowed.
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
       */
@@ -163,14 +160,15 @@ protected:
         size_t subquery_depth_,
         bool do_global_,
         bool is_explain_,
-        SubqueriesForSets subqueries_for_sets_,
-        PreparedSets prepared_sets_);
+        PreparedSetsPtr prepared_sets_,
+        bool is_create_parameterized_view_ = false);
 
     ASTPtr query;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
     TreeRewriterResultPtr syntax;
+    bool is_create_parameterized_view;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
@@ -190,6 +188,8 @@ protected:
     void getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGPtr & actions, bool only_consts = false);
 
     void getRootActionsForHaving(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions, bool only_consts = false);
+
+    void getRootActionsForWindowFunctions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAGPtr & actions);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
@@ -278,6 +278,7 @@ struct ExpressionAnalysisResult
         bool second_stage,
         bool only_types,
         const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
@@ -310,11 +311,10 @@ public:
         const TreeRewriterResultPtr & syntax_analyzer_result_,
         ContextPtr context_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const NameSet & required_result_columns_ = {},
+        const Names & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {},
-        SubqueriesForSets subqueries_for_sets_ = {},
-        PreparedSets prepared_sets_ = {})
+        PreparedSetsPtr prepared_sets_ = nullptr)
         : ExpressionAnalyzer(
             query_,
             syntax_analyzer_result_,
@@ -322,8 +322,8 @@ public:
             options_.subquery_depth,
             do_global_,
             options_.is_explain,
-            std::move(subqueries_for_sets_),
-            std::move(prepared_sets_))
+            prepared_sets_,
+            options_.is_create_parameterized_view)
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)
@@ -369,10 +369,10 @@ public:
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
-    NameSet required_result_columns;
+    Names required_result_columns;
     SelectQueryOptions query_options;
 
-    JoinPtr makeTableJoin(
+    JoinPtr makeJoin(
         const ASTTablesInSelectQueryElement & join_element,
         const ColumnsWithTypeAndName & left_columns,
         ActionsDAGPtr & left_convert_actions);
@@ -400,11 +400,16 @@ private:
 
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
+    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
+
+    void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
+
+    void appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);

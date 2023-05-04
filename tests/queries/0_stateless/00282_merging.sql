@@ -1,4 +1,6 @@
 DROP TABLE IF EXISTS merge;
+
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE IF NOT EXISTS merge (d Date DEFAULT '2000-01-01', x UInt64) ENGINE = MergeTree(d, x, 5);
 
 INSERT INTO merge (x) VALUES (1), (2), (3);
@@ -73,6 +75,7 @@ SELECT * FROM merge ORDER BY _part_index, x;
 DROP TABLE merge;
 
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE IF NOT EXISTS merge (d Date DEFAULT '2000-01-01', x UInt64) ENGINE = MergeTree(d, x, 8192);
 
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;

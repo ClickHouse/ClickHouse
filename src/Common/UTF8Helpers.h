@@ -9,6 +9,11 @@
 #include <emmintrin.h>
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 
 namespace DB
 {
@@ -66,6 +71,18 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     for (; data < src_end_sse; data += bytes_sse)
         res += __builtin_popcount(_mm_movemask_epi8(
             _mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)), threshold)));
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    /// Returns a 64 bit mask of nibbles (4 bits for each byte).
+    auto get_nibble_mask
+        = [](uint8x16_t input) -> uint64_t { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
+    constexpr auto bytes_sse = 16;
+    const auto * src_end_sse = data + size / bytes_sse * bytes_sse;
+
+    const auto threshold = vdupq_n_s8(0xBF);
+
+    for (; data < src_end_sse; data += bytes_sse)
+        res += std::popcount(get_nibble_mask(vcgtq_s8(vld1q_s8(reinterpret_cast<const int8_t *>(data)), threshold)));
+    res >>= 2;
 #endif
 
     for (; data < end; ++data) /// Skip UTF-8 continuation bytes.
@@ -80,7 +97,10 @@ requires (sizeof(CharT) == 1)
 size_t convertCodePointToUTF8(int code_point, CharT * out_bytes, size_t out_length)
 {
     static const Poco::UTF8Encoding utf8;
-    int res = utf8.convert(code_point, reinterpret_cast<uint8_t *>(out_bytes), out_length);
+    int res = utf8.convert(
+        code_point,
+        reinterpret_cast<uint8_t *>(out_bytes),
+        static_cast<int>(out_length));
     assert(res >= 0);
     return res;
 }
@@ -90,7 +110,9 @@ requires (sizeof(CharT) == 1)
 std::optional<uint32_t> convertUTF8ToCodePoint(const CharT * in_bytes, size_t in_length)
 {
     static const Poco::UTF8Encoding utf8;
-    int res = utf8.queryConvert(reinterpret_cast<const uint8_t *>(in_bytes), in_length);
+    int res = utf8.queryConvert(
+        reinterpret_cast<const uint8_t *>(in_bytes),
+        static_cast<int>(in_length));
 
     if (res >= 0)
         return res;

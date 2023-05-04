@@ -33,6 +33,9 @@ public:
 
     void start();
 
+    ClusterPtr getCluster(const String & cluster_name) const;
+    std::unordered_map<String, ClusterPtr> getClusters() const;
+
     ~ClusterDiscovery();
 
 private:
@@ -72,11 +75,19 @@ private:
         Stopwatch watch;
 
         NodeInfo current_node;
+        /// Current node may not belong to cluster, to be just an observer.
+        bool current_node_is_observer = false;
 
-        explicit ClusterInfo(const String & name_, const String & zk_root_, UInt16 port, bool secure, size_t shard_id)
+        explicit ClusterInfo(const String & name_,
+                             const String & zk_root_,
+                             UInt16 port,
+                             bool secure,
+                             size_t shard_id,
+                             bool observer_mode)
             : name(name_)
             , zk_root(zk_root_)
             , current_node(getFQDNOrHostName() + ":" + toString(port), secure, shard_id)
+            , current_node_is_observer(observer_mode)
         {
         }
     };
@@ -115,6 +126,9 @@ private:
     /// The `shared_ptr` is used because it's passed to watch callback.
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
     std::shared_ptr<UpdateFlags> clusters_to_update;
+
+    mutable std::mutex mutex;
+    std::unordered_map<String, ClusterPtr> cluster_impls;
 
     ThreadFromGlobalPool main_thread;
 

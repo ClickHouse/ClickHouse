@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/PrometheusTextOutputFormat.h>
 
 #include <optional>
+#include <algorithm>
 #include <type_traits>
 
 #include <base/defines.h>
@@ -81,9 +82,8 @@ static Float64 tryParseFloat(const String & s)
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const RowOutputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_)
+    : IRowOutputFormat(header_, out_)
     , string_serialization(DataTypeString().getDefaultSerialization())
     , format_settings(format_settings_)
 {
@@ -306,7 +306,10 @@ void PrometheusTextOutputFormat::write(const Columns & columns, size_t row_num)
     }
 
     if (pos.help.has_value() && !columns[*pos.help]->isNullAt(row_num) && current_metric.help.empty())
+    {
         current_metric.help = getString(columns, row_num, *pos.help);
+        std::replace(current_metric.help.begin(), current_metric.help.end(), '\n', ' ');
+    }
 
     if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num) && current_metric.type.empty())
         current_metric.type = getString(columns, row_num, *pos.type);
@@ -335,10 +338,9 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
     factory.registerOutputFormat(FORMAT_NAME, [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, settings);
     });
 }
 

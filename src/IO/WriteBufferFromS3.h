@@ -1,40 +1,32 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
 #include <memory>
 #include <vector>
 #include <list>
-#include <Common/logger_useful.h>
+
 #include <base/types.h>
-
-#include <Common/ThreadPool.h>
-#include <Common/FileCache_fwd.h>
-#include <Common/FileSegment.h>
-
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteSettings.h>
+#include <IO/S3/Requests.h>
 #include <Storages/StorageS3Settings.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
+
 namespace Aws::S3
 {
-class S3Client;
-}
-
-namespace Aws::S3::Model
-{
-    class UploadPartRequest;
-    class PutObjectRequest;
+class Client;
 }
 
 namespace DB
 {
 
-using ScheduleFunc = std::function<void(std::function<void()>)>;
 class WriteBufferFromFile;
 
 /**
@@ -48,14 +40,14 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ScheduleFunc schedule_ = {},
-        FileCachePtr cache_ = nullptr);
+        ThreadPoolCallbackRunner<void> schedule_ = {},
+        const WriteSettings & write_settings_ = {});
 
     ~WriteBufferFromS3() override;
 
@@ -65,6 +57,9 @@ public:
 
 private:
     void allocateBuffer();
+
+    void processWithStrictParts();
+    void processWithDynamicParts();
 
     void createMultipartUpload();
     void writePart();
@@ -76,53 +71,54 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number);
+    void fillUploadRequest(S3::UploadPartRequest & req);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
-    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
-    void processPutRequest(PutObjectTask & task);
+    void fillPutRequest(S3::PutObjectRequest & req);
+    void processPutRequest(const PutObjectTask & task);
 
     void waitForReadyBackGroundTasks();
     void waitForAllBackGroundTasks();
+    void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
-    bool cacheEnabled() const;
+    const String bucket;
+    const String key;
+    const S3Settings::RequestSettings request_settings;
+    const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
+    const std::shared_ptr<const S3::Client> client_ptr;
+    const std::optional<std::map<String, String>> object_metadata;
 
-    String bucket;
-    String key;
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
-    size_t upload_part_size = 0;
-    S3Settings::ReadWriteSettings s3_settings;
-    std::optional<std::map<String, String>> object_metadata;
-
-    /// Buffer to accumulate data.
-    std::shared_ptr<Aws::StringStream> temporary_buffer;
+    /// Strict/static Part size, no adjustments will be done on fly.
+    size_t strict_upload_part_size = 0;
+    /// Part size will be adjusted on fly (for bigger uploads)
+    size_t current_upload_part_size = 0;
+    std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
-    std::atomic<size_t> total_parts_uploaded = 0;
+    size_t part_number = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
-    std::vector<String> part_tags;
+    std::vector<String> TSA_GUARDED_BY(bg_tasks_mutex) part_tags;
 
     bool is_prefinalized = false;
 
     /// Following fields are for background uploads in thread pool (if specified).
     /// We use std::function to avoid dependency of Interpreters
-    ScheduleFunc schedule;
-    std::unique_ptr<PutObjectTask> put_object_task;
-    std::list<UploadPartTask> upload_object_tasks;
-    size_t num_added_bg_tasks = 0;
-    size_t num_finished_bg_tasks = 0;
+    const ThreadPoolCallbackRunner<void> schedule;
+
+    std::unique_ptr<PutObjectTask> put_object_task; /// Does not need protection by mutex because of the logic around is_finished field.
+    std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) upload_object_tasks;
+    int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 
-    FileCachePtr cache;
-    size_t current_download_offset = 0;
-    std::optional<FileSegmentsHolder> file_segments_holder;
-    static void finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> &);
+    WriteSettings write_settings;
 };
 
 }

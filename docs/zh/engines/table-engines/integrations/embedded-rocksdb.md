@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/table-engines/integrations/embedded-rocksdb
 sidebar_position: 9
 sidebar_label: EmbeddedRocksDB
 ---
@@ -79,5 +80,3 @@ FROM system.rocksdb
     </tables>
 </rocksdb>
 ```
-
-[原始文章](https://clickhouse.com/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->

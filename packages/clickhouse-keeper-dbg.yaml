@@ -14,6 +14,10 @@ description: |
   debugging symbols for clickhouse-keeper
     This package contains the debugging symbols for clickhouse-keeper.
 
+deb:
+  fields:
+    Source: clickhouse
+
 contents:
 - src: root/usr/lib/debug/usr/bin/clickhouse-keeper.debug
   dst: /usr/lib/debug/usr/bin/clickhouse-keeper.debug

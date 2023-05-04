@@ -18,7 +18,7 @@ using FunctionCountSubstringsCaseInsensitiveUTF8 = FunctionsStringSearch<
 
 }
 
-void registerFunctionCountSubstringsCaseInsensitiveUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(CountSubstringsCaseInsensitiveUTF8)
 {
     factory.registerFunction<FunctionCountSubstringsCaseInsensitiveUTF8>();
 }

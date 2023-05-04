@@ -27,8 +27,8 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
     assertNoParameters(name, params);
 
     if (arguments.size() != 1)
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for aggregate function {}", name);
 
     const DataTypePtr & data_type = arguments[0];
 
@@ -36,8 +36,8 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
         return AggregateFunctionPtr(createWithNumericType<AggregationFunctionDeltaSum>(
             *data_type, arguments, params));
     else
-        throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + name,
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+            arguments[0]->getName(), name);
 }
 }
 

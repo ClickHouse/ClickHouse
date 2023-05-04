@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 
-#include <Common/interpolate.h>
+#include <base/interpolate.h>
 
 #include <cmath>
 #include <cassert>
@@ -28,7 +28,7 @@ struct Estimator
         {
             double difference = std::abs(log2(static_cast<double>(sum_size) / size_prev_at_left));
             if (difference < settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two)
-                current_score *= interpolateLinear(settings.heuristic_to_align_parts_max_score_adjustment, 1,
+                current_score *= std::lerp(settings.heuristic_to_align_parts_max_score_adjustment, 1,
                     difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
         }
 
@@ -36,7 +36,7 @@ struct Estimator
             while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
                 --end;
 
-        if (!min_score || current_score < min_score)
+        if (min_score == 0.0 || current_score < min_score)
         {
             min_score = current_score;
             best_begin = begin;
@@ -69,7 +69,7 @@ struct Estimator
         return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
     }
 
-    double min_score = 0;
+    double min_score = 0.0;
     Iterator best_begin {};
     Iterator best_end {};
 };
@@ -102,6 +102,9 @@ bool allow(
     double max_size_to_lower_base_log,
     const SimpleMergeSelector::Settings & settings)
 {
+    if (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
+        return true;
+
 //    std::cerr << "sum_size: " << sum_size << "\n";
 
     /// Map size to 0..1 using logarithmic scale
@@ -112,8 +115,8 @@ bool allow(
 //    std::cerr << "size_normalized: " << size_normalized << "\n";
 
     /// Calculate boundaries for age
-    double min_age_to_lower_base = interpolateLinear(settings.min_age_to_lower_base_at_min_size, settings.min_age_to_lower_base_at_max_size, size_normalized);
-    double max_age_to_lower_base = interpolateLinear(settings.max_age_to_lower_base_at_min_size, settings.max_age_to_lower_base_at_max_size, size_normalized);
+    double min_age_to_lower_base = std::lerp(settings.min_age_to_lower_base_at_min_size, settings.min_age_to_lower_base_at_max_size, size_normalized);
+    double max_age_to_lower_base = std::lerp(settings.max_age_to_lower_base_at_min_size, settings.max_age_to_lower_base_at_max_size, size_normalized);
 
 //    std::cerr << "min_age_to_lower_base: " << min_age_to_lower_base << "\n";
 //    std::cerr << "max_age_to_lower_base: " << max_age_to_lower_base << "\n";
@@ -134,7 +137,7 @@ bool allow(
 
 //    std::cerr << "combined_ratio: " << combined_ratio << "\n";
 
-    double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
+    double lowered_base = std::lerp(settings.base, 2.0, combined_ratio);
 
 //    std::cerr << "------- lowered_base: " << lowered_base << "\n";
 
@@ -170,7 +173,7 @@ void selectWithinPartition(
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             assert(end > begin);
-            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once) //-V658
+            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
                 break;
 
             if (!parts[end - 1].shall_participate_in_merges)

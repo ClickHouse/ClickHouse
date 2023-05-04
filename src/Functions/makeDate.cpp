@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
 
@@ -49,8 +50,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 protected:
-    template <class AgrumentNames>
-    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const AgrumentNames & argument_names, const size_t optional_argument_count) const
+    template <class ArgumentNames>
+    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const ArgumentNames & argument_names, const size_t optional_argument_count) const
     {
         if (arguments.size() < argument_names.size() || arguments.size() > argument_names.size() + optional_argument_count)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -62,12 +63,12 @@ protected:
             DataTypePtr argument_type = arguments[i].type;
             if (!isNumber(argument_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument '{}' for function {} must be number", std::string(argument_names[i]), getName());
+                    "Argument '{}' for function {} must be a number", std::string(argument_names[i]), getName());
         }
     }
 
-    template <class AgrumentNames>
-    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, const AgrumentNames & argument_names, Columns & converted_arguments) const
+    template <class ArgumentNames>
+    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, const ArgumentNames & argument_names, Columns & converted_arguments) const
     {
         const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat32>();
         converted_arguments.clear();
@@ -86,7 +87,7 @@ template <typename Traits>
 class FunctionMakeDate : public FunctionWithNumericParamsBase
 {
 private:
-    static constexpr std::array<const char*, 3> argument_names = {"year", "month", "day"};
+    static constexpr std::array argument_names = {"year", "month", "day"};
 
 public:
     static constexpr auto name = Traits::name;
@@ -111,7 +112,7 @@ public:
         Columns converted_arguments;
         convertRequiredArguments(arguments, argument_names, converted_arguments);
 
-        auto res_column = Traits::ReturnColumnType::create(input_rows_count);
+        auto res_column = Traits::ReturnDataType::ColumnType::create(input_rows_count);
         auto & result_data = res_column->getData();
 
         const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
@@ -132,9 +133,9 @@ public:
                 year <= Traits::MAX_YEAR &&
                 month >= 1 && month <= 12 &&
                 day >= 1 && day <= 31 &&
-                YearMonthDayToSingleInt(year, month, day) <= Traits::MAX_DATE)
+                YearMonthDayToSingleInt(static_cast<Int64>(year), static_cast<Int64>(month), static_cast<Int64>(day)) <= Traits::MAX_DATE)
             {
-                day_num = date_lut.makeDayNum(year, month, day);
+                day_num = date_lut.makeDayNum(static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day));
             }
 
             result_data[i] = day_num;
@@ -149,7 +150,6 @@ struct MakeDateTraits
 {
     static constexpr auto name = "makeDate";
     using ReturnDataType = DataTypeDate;
-    using ReturnColumnType = ColumnUInt16;
 
     static constexpr auto MIN_YEAR = 1970;
     static constexpr auto MAX_YEAR = 2149;
@@ -162,18 +162,17 @@ struct MakeDate32Traits
 {
     static constexpr auto name = "makeDate32";
     using ReturnDataType = DataTypeDate32;
-    using ReturnColumnType = ColumnInt32;
 
-    static constexpr auto MIN_YEAR = 1925;
-    static constexpr auto MAX_YEAR = 2283;
-    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 11, 11);
+    static constexpr auto MIN_YEAR = 1900;
+    static constexpr auto MAX_YEAR = 2299;
+    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 12, 31);
 };
 
 /// Common implementation for makeDateTime, makeDateTime64
 class FunctionMakeDateTimeBase : public FunctionWithNumericParamsBase
 {
 protected:
-    static constexpr std::array<const char*, 6> argument_names = {"year", "month", "day", "hour", "minute", "second"};
+    static constexpr std::array argument_names = {"year", "month", "day", "hour", "minute", "second"};
 
 public:
     bool isVariadic() const override { return true; }
@@ -196,16 +195,18 @@ protected:
     {
         ///  Note that hour, minute and second are checked against 99 to behave consistently with parsing DateTime from String
         ///  E.g. "select cast('1984-01-01 99:99:99' as DateTime);" returns "1984-01-05 04:40:39"
-        if (unlikely(std::isnan(year) || std::isnan(month) || std::isnan(day_of_month) ||
+        if (std::isnan(year) || std::isnan(month) || std::isnan(day_of_month) ||
             std::isnan(hour) || std::isnan(minute) || std::isnan(second) ||
             year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31 ||
-            hour < 0 || hour > 99 || minute < 0 || minute > 99 || second < 0 || second > 99))
+            hour < 0 || hour > 99 || minute < 0 || minute > 99 || second < 0 || second > 99) [[unlikely]]
             return minDateTime(lut);
 
-        if (unlikely(year > DATE_LUT_MAX_YEAR))
+        if (year > DATE_LUT_MAX_YEAR) [[unlikely]]
             return maxDateTime(lut);
 
-        return lut.makeDateTime(year, month, day_of_month, hour, minute, second);
+        return lut.makeDateTime(
+            static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day_of_month),
+            static_cast<UInt8>(hour), static_cast<UInt8>(minute), static_cast<UInt8>(second));
     }
 
     static Int64 minDateTime(const DateLUTImpl & lut)
@@ -265,7 +266,7 @@ public:
         Columns converted_arguments;
         convertRequiredArguments(arguments, converted_arguments);
 
-        auto res_column = ColumnUInt32::create(input_rows_count);
+        auto res_column = ColumnDateTime::create(input_rows_count);
         auto & result_data = res_column->getData();
 
         const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
@@ -287,12 +288,12 @@ public:
             const auto second = second_data[i];
 
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
-            if (unlikely(date_time < 0))
+            if (date_time < 0) [[unlikely]]
                 date_time = 0;
-            else if (unlikely(date_time > 0x0ffffffffll))
+            else if (date_time > 0x0ffffffffll) [[unlikely]]
                 date_time = 0x0ffffffffll;
 
-            result_data[i] = date_time;
+            result_data[i] = static_cast<UInt32>(date_time);
         }
 
         return res_column;
@@ -322,7 +323,7 @@ public:
             const auto& fraction_argument = arguments[argument_names.size()];
             if (!isNumber(fraction_argument.type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument 'fraction' for function {} must be number", getName());
+                    "Argument 'fraction' for function {} must be a number", getName());
         }
 
         /// Optional precision argument
@@ -363,7 +364,7 @@ public:
             fraction_data = &typeid_cast<const ColumnFloat64 &>(*converted_arguments[6]).getData();
         }
 
-        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, precision);
+        auto res_column = ColumnDateTime64::create(input_rows_count, static_cast<UInt32>(precision));
         auto & result_data = res_column->getData();
 
         const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
@@ -391,25 +392,28 @@ public:
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
 
             double fraction = 0;
-            if (unlikely(date_time == min_date_time))
+            if (date_time == min_date_time) [[unlikely]]
                 fraction = 0;
-            else if (unlikely(date_time == max_date_time))
-                fraction = 999999999ll;
+            else if (date_time == max_date_time) [[unlikely]]
+                fraction = 999999999;
             else
             {
                 fraction = fraction_data ? (*fraction_data)[i] : 0;
-                if (unlikely(std::isnan(fraction)))
+                if (std::isnan(fraction)) [[unlikely]]
                 {
                     date_time = min_date_time;
                     fraction = 0;
                 }
-                else if (unlikely(fraction < 0))
+                else if (fraction < 0) [[unlikely]]
                     fraction = 0;
-                else if (unlikely(fraction > max_fraction))
+                else if (fraction > max_fraction) [[unlikely]]
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
+                date_time,
+                static_cast<Int64>(fraction),
+                static_cast<UInt32>(precision));
         }
 
         return res_column;
@@ -433,7 +437,7 @@ private:
 
 }
 
-void registerFunctionsMakeDate(FunctionFactory & factory)
+REGISTER_FUNCTION(MakeDate)
 {
     factory.registerFunction<FunctionMakeDate<MakeDateTraits>>();
     factory.registerFunction<FunctionMakeDate<MakeDate32Traits>>();

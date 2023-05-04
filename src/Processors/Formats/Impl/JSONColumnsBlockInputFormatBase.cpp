@@ -1,7 +1,12 @@
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -19,23 +24,14 @@ JSONColumnsReaderBase::JSONColumnsReaderBase(ReadBuffer & in_) : in(&in_)
 
 bool JSONColumnsReaderBase::checkColumnEnd()
 {
-    skipWhitespaceIfAny(*in);
-    if (!in->eof() && *in->position() == ']')
-    {
-        ++in->position();
-        skipWhitespaceIfAny(*in);
-        return true;
-    }
-    return false;
+    return JSONUtils::checkAndSkipArrayEnd(*in);
 }
 
 bool JSONColumnsReaderBase::checkColumnEndOrSkipFieldDelimiter()
 {
     if (checkColumnEnd())
         return true;
-    skipWhitespaceIfAny(*in);
-    assertChar(',', *in);
-    skipWhitespaceIfAny(*in);
+    JSONUtils::skipComma(*in);
     return false;
 }
 
@@ -43,9 +39,7 @@ bool JSONColumnsReaderBase::checkChunkEndOrSkipColumnDelimiter()
 {
     if (checkChunkEnd())
         return true;
-    skipWhitespaceIfAny(*in);
-    assertChar(',', *in);
-    skipWhitespaceIfAny(*in);
+    JSONUtils::skipComma(*in);
     return false;
 }
 
@@ -78,13 +72,13 @@ void JSONColumnsReaderBase::skipColumn()
 
 JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
-    : IInputFormat(header_, in_)
+    : IInputFormat(header_, &in_)
     , format_settings(format_settings_)
     , fields(header_.getNamesAndTypes())
-    , name_to_index(header_.getNamesToIndexesMap())
     , serializations(header_.getSerializations())
     , reader(std::move(reader_))
 {
+    name_to_index = getPort().getHeader().getNamesToIndexesMap();
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(
@@ -134,7 +128,7 @@ Chunk JSONColumnsBlockInputFormatBase::generate()
         {
             /// Check if this name appears in header. If no, skip this column or throw
             /// an exception according to setting input_format_skip_unknown_fields
-            if (!name_to_index.contains(*column_name))
+            if (!name_to_index.has(*column_name))
             {
                 if (!format_settings.skip_unknown_fields)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column found in input data: {}", *column_name);
@@ -177,17 +171,27 @@ Chunk JSONColumnsBlockInputFormatBase::generate()
 
 JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
     ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
-    : ISchemaReader(in_), format_settings(format_settings_), reader(std::move(reader_))
+    : ISchemaReader(in_)
+    , format_settings(format_settings_)
+    , hints_str(format_settings_.schema_inference_hints)
+    , reader(std::move(reader_))
+    , column_names_from_settings(splitColumnNames(format_settings_.column_names_for_schema_inference))
 {
 }
 
-void JSONColumnsSchemaReaderBase::chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const
+void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
 {
-    auto common_type_checker = [&](const DataTypePtr & first, const DataTypePtr & second)
+    ColumnsDescription columns;
+    if (tryParseColumnsListFromString(hints_str, columns, ctx, hints_parsing_error))
     {
-        return JSONUtils::getCommonTypeForJSONFormats(first, second, format_settings.json.read_bools_as_numbers);
-    };
-    chooseResultColumnType(type, new_type, common_type_checker, nullptr, column_name, row);
+        for (const auto & [name, type] : columns.getAll())
+            hints[name] = type;
+    }
+}
+
+void JSONColumnsSchemaReaderBase::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
@@ -212,15 +216,31 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
         do
         {
             auto column_name_opt = reader->readColumnStart();
-            /// If format doesn't have named for columns, use default names 'c1', 'c2', ...
-            String column_name = column_name_opt.has_value() ? *column_name_opt : "c" + std::to_string(iteration + 1);
+            /// If format doesn't have names for columns, use names from setting column_names_for_schema_inference or default names 'c1', 'c2', ...
+            String column_name;
+            if (column_name_opt.has_value())
+                column_name = *column_name_opt;
+            else if (iteration < column_names_from_settings.size())
+                column_name = column_names_from_settings[iteration];
+            else
+                column_name = "c" + std::to_string(iteration + 1);
+
             /// Keep order of column names as it is in input data.
             if (!names_to_types.contains(column_name))
                 names_order.push_back(column_name);
 
-            rows_in_block = 0;
-            auto column_type = readColumnAndGetDataType(column_name, rows_in_block, format_settings.max_rows_to_read_for_schema_inference - total_rows_read);
-            chooseResulType(names_to_types[column_name], column_type, column_name, total_rows_read + 1);
+            if (const auto it = hints.find(column_name); it != hints.end())
+            {
+                names_to_types[column_name] = it->second;
+            }
+            else
+            {
+                rows_in_block = 0;
+                auto column_type = readColumnAndGetDataType(
+                    column_name, rows_in_block, format_settings.max_rows_to_read_for_schema_inference - total_rows_read);
+                chooseResultColumnType(*this, names_to_types[column_name], column_type, nullptr, column_name, total_rows_read + 1, hints_parsing_error);
+            }
+
             ++iteration;
         }
         while (!reader->checkChunkEndOrSkipColumnDelimiter());
@@ -235,8 +255,14 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
     for (auto & name : names_order)
     {
         auto & type = names_to_types[name];
-        /// Check that we could determine the type of this column.
-        checkResultColumnTypeAndAppend(result, type, name, nullptr, format_settings.max_rows_to_read_for_schema_inference);
+        /// Don't check/change types from hints.
+        if (!hints.contains(name))
+        {
+            transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+            /// Check that we could determine the type of this column.
+            checkFinalInferredType(type, name, format_settings, nullptr, format_settings.max_rows_to_read_for_schema_inference, hints_parsing_error);
+        }
+        result.emplace_back(name, type);
     }
 
     return result;
@@ -260,8 +286,8 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
         }
 
         readJSONField(field, in);
-        DataTypePtr field_type = JSONUtils::getDataTypeFromField(field);
-        chooseResulType(column_type, field_type, column_name, rows_read);
+        DataTypePtr field_type = tryInferDataTypeForSingleJSONField(field, format_settings, &inference_info);
+        chooseResultColumnType(*this, column_type, field_type, nullptr, column_name, rows_read);
         ++rows_read;
     }
     while (!reader->checkColumnEndOrSkipFieldDelimiter());

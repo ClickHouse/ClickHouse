@@ -2,6 +2,7 @@
 #include <Common/StringUtils/StringUtils.h>
 
 #include <widechar_width.h>
+#include <bit>
 
 
 namespace DB
@@ -124,7 +125,7 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
             if (non_regular_width_mask)
             {
-                auto num_regular_chars = __builtin_ctz(non_regular_width_mask);
+                auto num_regular_chars = std::countr_zero(non_regular_width_mask);
                 width += num_regular_chars;
                 i += num_regular_chars;
                 break;

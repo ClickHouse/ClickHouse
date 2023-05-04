@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/delete
 sidebar_position: 39
 sidebar_label: DELETE
 ---
@@ -25,4 +26,3 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 -   [Мутации](../../../sql-reference/statements/alter/index.md#mutations)
 -   [Синхронность запросов ALTER](../../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting
-

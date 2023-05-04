@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 
 SELECT JSONExtract('{"string_value":null}', 'string_value', 'Nullable(String)') as x, toTypeName(x);
 SELECT JSONExtract('{"string_value":null}', 'string_value', 'String') as x, toTypeName(x);
@@ -23,3 +22,4 @@ SELECT JSONExtract('[1]', toNullable(1), 'Nullable(Bool)');
 SELECT JSONExtract('[1]', toNullable(1), 'Nullable(Float)');
 SELECT JSONExtract('["a"]', toNullable(1), 'Nullable(String)');
 SELECT JSONExtract('["a"]', toNullable(1), 'Nullable(Int)');
+SELECT JSONExtract('["-a"]', toNullable(1), 'Nullable(Int)');

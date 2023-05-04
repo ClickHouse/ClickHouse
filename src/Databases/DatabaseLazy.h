@@ -26,7 +26,7 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
 
     void createTable(
         ContextPtr context,
@@ -37,7 +37,7 @@ public:
     void dropTable(
         ContextPtr context,
         const String & table_name,
-        bool no_delay) override;
+        bool sync) override;
 
     void renameTable(
         ContextPtr context,
@@ -102,8 +102,8 @@ private:
     const time_t expiration_time;
 
     /// TODO use DatabaseWithOwnTablesBase::tables
-    mutable TablesCache tables_cache;
-    mutable CacheExpirationQueue cache_expiration_queue;
+    mutable TablesCache tables_cache TSA_GUARDED_BY(mutex);
+    mutable CacheExpirationQueue cache_expiration_queue TSA_GUARDED_BY(mutex);
 
     StoragePtr loadTable(const String & table_name) const;
 

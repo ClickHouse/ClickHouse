@@ -1,6 +1,6 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -23,9 +23,9 @@ namespace
 class FunctionDateTrunc : public IFunction
 {
 public:
-    static constexpr auto name = "date_trunc";
+    static constexpr auto name = "dateTrunc";
 
-    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
+    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) { }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
 
@@ -39,55 +39,58 @@ public:
     {
         /// The first argument is a constant string with the name of datepart.
 
-        auto result_type_is_date = false;
+        intermediate_type_is_date = false;
         String datepart_param;
-        auto check_first_argument = [&] {
+        auto check_first_argument = [&]
+        {
             const ColumnConst * datepart_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
             if (!datepart_column)
-                throw Exception("First argument for function " + getName() + " must be constant string: name of datepart",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be constant string: "
+                    "name of datepart",
+                    getName());
 
             datepart_param = datepart_column->getValue<String>();
             if (datepart_param.empty())
-                throw Exception("First argument (name of datepart) for function " + getName() + " cannot be empty",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "First argument (name of datepart) for function {} cannot be empty", getName());
 
             if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
-                throw Exception(datepart_param + " doesn't look like datepart name in " + getName(),
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-            result_type_is_date = (datepart_kind == IntervalKind::Year)
-                || (datepart_kind == IntervalKind::Quarter) || (datepart_kind == IntervalKind::Month)
-                || (datepart_kind == IntervalKind::Week);
+            intermediate_type_is_date = (datepart_kind == IntervalKind::Year) || (datepart_kind == IntervalKind::Quarter)
+                || (datepart_kind == IntervalKind::Month) || (datepart_kind == IntervalKind::Week);
         };
 
         bool second_argument_is_date = false;
-        auto check_second_argument = [&] {
+        auto check_second_argument = [&]
+        {
             if (!isDate(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
                 throw Exception(
-                    "Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName()
-                        + ". Should be a date or a date with time",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of 2nd argument of function {}. "
+                    "Should be a date or a date with time",
+                    arguments[1].type->getName(),
+                    getName());
 
             second_argument_is_date = isDate(arguments[1].type);
 
-            if (second_argument_is_date && ((datepart_kind == IntervalKind::Hour)
-                || (datepart_kind == IntervalKind::Minute) || (datepart_kind == IntervalKind::Second)))
-                throw Exception("Illegal type Date of argument for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (second_argument_is_date
+                && ((datepart_kind == IntervalKind::Hour) || (datepart_kind == IntervalKind::Minute)
+                    || (datepart_kind == IntervalKind::Second)))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", getName());
         };
 
-        auto check_timezone_argument = [&] {
+        auto check_timezone_argument = [&]
+        {
             if (!WhichDataType(arguments[2].type).isString())
                 throw Exception(
-                    "Illegal type " + arguments[2].type->getName() + " of argument of function " + getName()
-                        + ". This argument is optional and must be a constant string with timezone name",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            if (second_argument_is_date && result_type_is_date)
-                throw Exception(
-                    "The timezone argument of function " + getName() + " with datepart '" + datepart_param
-                        + "' is allowed only when the 2nd argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}. "
+                    "This argument is optional and must be a constant string with timezone name",
+                    arguments[2].type->getName(),
+                    getName());
         };
 
         if (arguments.size() == 2)
@@ -104,15 +107,13 @@ public:
         else
         {
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be 2 or 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                getName(),
+                arguments.size());
         }
 
-        if (result_type_is_date)
-            return std::make_shared<DataTypeDate>();
-        else
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1));
+        return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -129,36 +130,51 @@ public:
 
         auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
 
+        ColumnPtr truncated_column;
+        auto date_type = std::make_shared<DataTypeDate>();
+
         if (arguments.size() == 2)
-            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
+            truncated_column = to_start_of_interval->build(temp_columns)
+                                    ->execute(temp_columns, intermediate_type_is_date ? date_type : result_type, input_rows_count);
+        else
+        {
+            temp_columns[2] = arguments[2];
+            truncated_column = to_start_of_interval->build(temp_columns)
+                                    ->execute(temp_columns, intermediate_type_is_date ? date_type : result_type, input_rows_count);
+        }
 
-        temp_columns[2] = arguments[2];
-        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
+        if (!intermediate_type_is_date)
+            return truncated_column;
+
+        ColumnsWithTypeAndName temp_truncated_column(1);
+        temp_truncated_column[0] = {truncated_column, date_type, ""};
+
+        auto to_date_time_or_default = FunctionFactory::instance().get("toDateTime", context);
+        return to_date_time_or_default->build(temp_truncated_column)->execute(temp_truncated_column, result_type, input_rows_count);
     }
 
-    bool hasInformationAboutMonotonicity() const override
-    {
-        return true;
-    }
+    bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { .is_monotonic = true, .is_always_monotonic = true };
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 
 private:
     ContextPtr context;
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
+    mutable bool intermediate_type_is_date = false;
 };
 
 }
 
-void registerFunctionDateTrunc(FunctionFactory & factory)
+
+REGISTER_FUNCTION(DateTrunc)
 {
-    factory.registerFunction<FunctionDateTrunc>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateTrunc>();
 
     /// Compatibility alias.
-    factory.registerAlias("dateTrunc", FunctionDateTrunc::name);
+    factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::CaseInsensitive);
 }
 
 }

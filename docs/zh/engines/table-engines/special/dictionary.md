@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/special/dictionary
+---
 # 字典 {#dictionary}
 
 `Dictionary` 引擎将字典数据展示为一个ClickHouse的表。
@@ -97,5 +100,3 @@ LIMIT 1
     └───────────────┴─────────────────┘
 
     1 rows in set. Elapsed: 0.006 sec.
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/dictionary/) <!--hide-->

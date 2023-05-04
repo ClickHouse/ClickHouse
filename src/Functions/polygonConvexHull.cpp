@@ -70,7 +70,7 @@ public:
             using Converter = typename TypeConverter::Type;
 
             if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<Point>>)
-                throw Exception(fmt::format("The argument of function {} must not be a Point", getName()), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must not be a Point", getName());
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
@@ -99,7 +99,7 @@ template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
 
-void registerFunctionPolygonConvexHull(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonConvexHull)
 {
     factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
 }

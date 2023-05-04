@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/roles
+---
 # system.roles {#system_tables-roles}
 
 包含有关已配置的 [角色](../../operations/access-rights.md#role-management) 信息.
@@ -11,5 +14,3 @@
 ## 另请参阅 {#see-also}
 
 -   [查看角色信息](../../sql-reference/statements/show.md#show-roles-statement)
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/roles) <!--hide-->

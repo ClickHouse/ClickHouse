@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/settings/settings-profiles
 sidebar_position: 61
 sidebar_label: Settings Profiles
 ---
@@ -8,7 +9,7 @@ sidebar_label: Settings Profiles
 A settings profile is a collection of settings grouped under the same name.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing settings profiles. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing settings profiles. We recommend using it.
 :::
 
 The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is `readonly=1`, which ensures read-only access.
@@ -76,5 +77,3 @@ The example specifies two profiles: `default` and `web`.
 The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings.
 
 The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
-
-[Original article](https://clickhouse.com/docs/en/operations/settings/settings_profiles/) <!--hide-->

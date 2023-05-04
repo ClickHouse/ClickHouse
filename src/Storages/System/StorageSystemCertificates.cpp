@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -6,7 +6,8 @@
 #include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
-#include "Poco/File.h"
+#include <base/scope_guard.h>
+#include <Poco/File.h>
 #if USE_SSL
     #include <openssl/x509v3.h>
     #include "Poco/Net/SSLManager.h"
@@ -55,7 +56,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
 
     {
         char buf[1024] = {0};
-        const ASN1_INTEGER * sn = cert->cert_info->serialNumber;
+        const ASN1_INTEGER * sn = X509_get0_serialNumber(cert);
         BIGNUM * bnsn = ASN1_INTEGER_to_BN(sn, nullptr);
         SCOPE_EXIT(
         {
@@ -83,7 +84,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
     }
     ++col;
 
-    char * issuer = X509_NAME_oneline(cert->cert_info->issuer, nullptr, 0);
+    char * issuer = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
     if (issuer)
     {
         SCOPE_EXIT(
@@ -114,7 +115,7 @@ static void populateTable(const X509 * cert, MutableColumns & res_columns, const
     }
     ++col;
 
-    char * subject = X509_NAME_oneline(cert->cert_info->subject, nullptr, 0);
+    char * subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
     if (subject)
     {
         SCOPE_EXIT(

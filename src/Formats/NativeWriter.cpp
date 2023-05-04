@@ -11,9 +11,8 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
@@ -35,7 +34,7 @@ NativeWriter::NativeWriter(
     {
         ostr_concrete = typeid_cast<CompressedWriteBuffer *>(&ostr);
         if (!ostr_concrete)
-            throw Exception("When need to write index for NativeWriter, ostr must be CompressedWriteBuffer.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "When need to write index for NativeWriter, ostr must be CompressedWriteBuffer.");
     }
 }
 
@@ -56,17 +55,19 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0; //-V1048
+    settings.low_cardinality_max_dictionary_size = 0;
 
     ISerialization::SerializeBinaryBulkStatePtr state;
-    serialization.serializeBinaryBulkStatePrefix(settings, state);
+    serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
     serialization.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
 
-void NativeWriter::write(const Block & block)
+size_t NativeWriter::write(const Block & block)
 {
+    size_t written_before = ostr.count();
+
     /// Additional information about the block.
     if (client_revision > 0)
         block.info.write(ostr);
@@ -103,7 +104,7 @@ void NativeWriter::write(const Block & block)
             mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
         }
 
-        ColumnWithTypeAndName column = block.safeGetByPosition(i);
+        auto column = block.safeGetByPosition(i);
 
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
@@ -116,19 +117,7 @@ void NativeWriter::write(const Block & block)
         writeStringBinary(column.name, ostr);
 
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-        {
-            if (include_version)
-            {
-                auto version = aggregate_function_data_type->getVersionFromRevision(client_revision);
-                aggregate_function_data_type->setVersion(version, /* if_empty */true);
-            }
-            else
-            {
-                aggregate_function_data_type->setVersion(0, /* if_empty */false);
-            }
-        }
+        setVersionToAggregateFunctions(column.type, include_version, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 
         /// Type
         String type_name = column.type->getName();
@@ -145,7 +134,7 @@ void NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            auto info = column.column->getSerializationInfo();
+            auto info = column.type->getSerializationInfo(*column.column);
             serialization = column.type->getSerialization(*info);
 
             bool has_custom = info->hasCustomSerialization();
@@ -174,6 +163,10 @@ void NativeWriter::write(const Block & block)
 
     if (index)
         index->blocks.emplace_back(std::move(index_block));
+
+    size_t written_after = ostr.count();
+    size_t written_size = written_after - written_before;
+    return written_size;
 }
 
 }

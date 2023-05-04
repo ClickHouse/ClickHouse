@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import time
 import socket
 import struct
@@ -10,7 +11,15 @@ from kazoo.client import KazooClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/keeper_config.xml"], stay_alive=True
+    "node1", main_configs=["configs/keeper_config1.xml"], stay_alive=True
+)
+
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/keeper_config2.xml"], stay_alive=True
+)
+
+node3 = cluster.add_instance(
+    "node3", main_configs=["configs/keeper_config3.xml"], stay_alive=True
 )
 
 bool_struct = struct.Struct("B")
@@ -44,25 +53,8 @@ def destroy_zk_client(zk):
         pass
 
 
-def wait_node(node):
-    for _ in range(100):
-        zk = None
-        try:
-            zk = get_fake_zk(node.name, timeout=30.0)
-            print("node", node.name, "ready")
-            break
-        except Exception as ex:
-            time.sleep(0.2)
-            print("Waiting until", node.name, "will be ready, exception", ex)
-        finally:
-            destroy_zk_client(zk)
-    else:
-        raise Exception("Can't wait node", node.name, "to become ready")
-
-
 def wait_nodes():
-    for n in [node1]:
-        wait_node(n)
+    keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
 
 def get_fake_zk(nodename, timeout=30.0):
@@ -165,3 +157,22 @@ def test_session_timeout(started_cluster):
 
     negotiated_timeout, _ = handshake(node1.name, session_timeout=20000, session_id=0)
     assert negotiated_timeout == 10000
+
+
+def test_session_close_shutdown(started_cluster):
+    wait_nodes()
+
+    node1_zk = get_fake_zk(node1.name)
+    node2_zk = get_fake_zk(node2.name)
+
+    eph_node = "/test_node"
+    node2_zk.create(eph_node, ephemeral=True)
+    node1_zk.sync(eph_node)
+    assert node1_zk.exists(eph_node) != None
+
+    # shutdown while session is active
+    node2.stop_clickhouse()
+
+    assert node1_zk.exists(eph_node) == None
+
+    node2.start_clickhouse()

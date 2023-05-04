@@ -421,7 +421,7 @@ def test_default_codec_version_update(start_cluster):
     )
 
     old_version = node3.query("SELECT version()")
-    node3.restart_with_latest_version()
+    node3.restart_with_latest_version(fix_metadata=True)
     new_version = node3.query("SELECT version()")
     logging.debug(f"Updated from {old_version} to {new_version}")
     assert (

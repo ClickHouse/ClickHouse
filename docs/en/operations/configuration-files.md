@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/configuration-files
 sidebar_position: 50
 sidebar_label: Configuration Files
 ---
@@ -13,10 +14,10 @@ All XML files should have the same root element, usually `<clickhouse>`. As for 
 
 Some settings specified in the main configuration file can be overridden in other configuration files:
 
--   The `replace` or `remove` attributes can be specified for the elements of these configuration files.
--   If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
--   If `replace` is specified, it replaces the entire element with the specified one.
--   If `remove` is specified, it deletes the element.
+- The `replace` or `remove` attributes can be specified for the elements of these configuration files.
+- If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
+- If `replace` is specified, it replaces the entire element with the specified one.
+- If `remove` is specified, it deletes the element.
 
 You can also declare attributes as coming from environment variables by using `from_env="VARIABLE_NAME"`:
 
@@ -57,7 +58,7 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
-Users configuration can be splitted into separate files similar to `config.xml` and `config.d/`.
+Users configuration can be split into separate files similar to `config.xml` and `config.d/`.
 Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
 
@@ -155,5 +156,3 @@ So, we can get YAML config equal to this XML one:
 For each config file, the server also generates `file-preprocessed.xml` files when starting. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in the config files but ZooKeeper is not available on the server start, the server loads the configuration from the preprocessed file.
 
 The server tracks changes in config files, as well as files and ZooKeeper nodes that were used when performing substitutions and overrides, and reloads the settings for users and clusters on the fly. This means that you can modify the cluster, users, and their settings without restarting the server.
-
-[Original article](https://clickhouse.com/docs/en/operations/configuration-files/) <!--hide-->

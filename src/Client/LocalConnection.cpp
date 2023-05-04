@@ -5,9 +5,9 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -30,21 +31,11 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
     session.makeSessionContext();
-
-    if (!CurrentThread::isInitialized())
-        thread_status.emplace();
 }
 
 LocalConnection::~LocalConnection()
 {
-    try
-    {
-        state.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    state.reset();
 }
 
 bool LocalConnection::hasReadPendingData() const
@@ -62,14 +53,19 @@ void LocalConnection::updateProgress(const Progress & value)
     state->progress.incrementPiecewiseAtomically(value);
 }
 
-void LocalConnection::getProfileEvents(Block & block)
+void LocalConnection::sendProfileEvents()
 {
-    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, block, last_sent_snapshots);
+    Block profile_block;
+    state->after_send_profile_events.restart();
+    next_packet_type = Protocol::Server::ProfileEvents;
+    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
+    state->block.emplace(std::move(profile_block));
 }
 
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
+    const NameToNameMap & query_parameters,
     const String & query_id,
     UInt64 stage,
     const Settings *,
@@ -77,6 +73,9 @@ void LocalConnection::sendQuery(
     bool,
     std::function<void(const Progress &)> process_progress_callback)
 {
+    if (!query_parameters.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "clickhouse local does not support query parameters");
+
     /// Suggestion comes without client_info.
     if (client_info)
         query_context = session.makeQueryContext(*client_info);
@@ -182,7 +181,7 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
     }
 }
 
@@ -192,13 +191,14 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
         return;
 
     if (state->pushing_async_executor)
-    {
         state->pushing_async_executor->push(block);
-    }
     else if (state->pushing_executor)
-    {
         state->pushing_executor->push(block);
-    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown executor");
+
+    if (send_profile_events)
+        sendProfileEvents();
 }
 
 void LocalConnection::sendCancel()
@@ -264,11 +264,7 @@ bool LocalConnection::poll(size_t)
 
         if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
         {
-            Block block;
-            state->after_send_profile_events.restart();
-            next_packet_type = Protocol::Server::ProfileEvents;
-            getProfileEvents(block);
-            state->block.emplace(std::move(block));
+            sendProfileEvents();
             return true;
         }
 
@@ -289,7 +285,7 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
     }
 
@@ -349,11 +345,7 @@ bool LocalConnection::poll(size_t)
 
         if (send_profile_events && state->executor)
         {
-            Block block;
-            state->after_send_profile_events.restart();
-            next_packet_type = Protocol::Server::ProfileEvents;
-            getProfileEvents(block);
-            state->block.emplace(std::move(block));
+            sendProfileEvents();
             return true;
         }
     }
@@ -510,7 +502,7 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse &)
+void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

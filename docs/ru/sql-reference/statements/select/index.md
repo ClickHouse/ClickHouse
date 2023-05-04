@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/select/
 title: "Синтаксис запросов SELECT"
 sidebar_label: SELECT
 sidebar_position: 32
@@ -24,7 +25,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename [COMPRESSION type] ]
+[INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
 [FORMAT format]
 ```
 
@@ -269,7 +270,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 └─────────────────┴────────┘
 ```
 
-## SETTINGS в запросе SELECT {#settings-in-select}
+## SETTINGS в запросе SELECT {#settings-in-select-query}
 
 Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
 
@@ -280,4 +281,3 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 ``` sql
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
-

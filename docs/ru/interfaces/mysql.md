@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/mysql
 sidebar_position: 20
 sidebar_label: "MySQL-интерфейс"
 ---

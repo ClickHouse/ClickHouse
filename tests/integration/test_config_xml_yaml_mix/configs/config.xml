@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <logger>
         <level>trace</level>
@@ -272,4 +271,6 @@
         <anonymize>false</anonymize>
         <endpoint>https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277</endpoint>
     </send_crash_reports>
+
+    <mark_cache_size>123451234</mark_cache_size>
 </clickhouse>

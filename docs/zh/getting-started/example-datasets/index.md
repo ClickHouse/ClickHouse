@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/example-datasets/
 sidebar_label: 示例数据集
 sidebar_position: 12
 ---
@@ -16,5 +17,3 @@ sidebar_position: 12
 -   [AMPLab Big Data Benchmark](../../getting-started/example-datasets/amplab-benchmark.md)
 -   [New York Taxi Data](../../getting-started/example-datasets/nyc-taxi.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets) <!--hide-->

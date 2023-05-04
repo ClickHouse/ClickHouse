@@ -13,11 +13,10 @@ class WebUIRequestHandler : public HTTPRequestHandler
 {
 private:
     IServer & server;
-    std::string resource_name;
+
 public:
-    WebUIRequestHandler(IServer & server_, std::string resource_name_);
+    WebUIRequestHandler(IServer & server_);
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 };
 
 }
-

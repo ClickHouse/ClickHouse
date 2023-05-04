@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -33,8 +33,13 @@ using HiveSelectAnalysisResultPtr = std::shared_ptr<HiveSelectAnalysisResult>;
 class ReadFromHiveStep : public ReadFromStorageStep
 {
 public:
-    ReadFromHiveStep(Pipe pipe_, String storage_name, StorageID storage_id_, HiveSelectAnalysisResultPtr analysis_result_)
-        : ReadFromStorageStep(std::move(pipe_), std::move(storage_name))
+    ReadFromHiveStep(
+        Pipe pipe_,
+        String storage_name,
+        std::shared_ptr<const StorageLimitsList> storage_limits,
+        StorageID storage_id_,
+        HiveSelectAnalysisResultPtr analysis_result_)
+        : ReadFromStorageStep(std::move(pipe_), std::move(storage_name), std::move(storage_limits))
         , storage_id(std::move(storage_id_))
         , analysis_result(std::move(analysis_result_))
     {

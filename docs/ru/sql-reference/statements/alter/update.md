@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/update
 sidebar_position: 40
 sidebar_label: UPDATE
 ---
@@ -6,7 +7,7 @@ sidebar_label: UPDATE
 # ALTER TABLE … UPDATE {#alter-table-update-statements}
 
 ``` sql
-ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 Манипулирует данными, соответствующими заданному выражению фильтрации. Реализовано как [мутация](../../../sql-reference/statements/alter/index.md#mutations).
@@ -25,4 +26,3 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 -   [Мутации](../../../sql-reference/statements/alter/index.md#mutations)
 -   [Синхронность запросов ALTER](../../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting
-

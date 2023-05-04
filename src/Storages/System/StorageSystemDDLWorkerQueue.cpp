@@ -205,9 +205,9 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 
 void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
-    fs::path ddl_zookeeper_path = context->getConfigRef().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-
+    auto& ddl_worker = context->getDDLWorker();
+    fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
+    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
     GetResponseFutures ddl_task_futures;

@@ -4,22 +4,26 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Processors/QueryPlan/FilterStep.h>
+
 
 namespace DB
 {
 
-void IInterpreterUnionOrSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
-{
-    elem.query_kind = "Select";
-}
-
-
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
     QueryPlan query_plan;
+    return buildQueryPipeline(query_plan);
+}
 
+QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
+{
     buildQueryPlan(query_plan);
-
     return std::move(*query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }
@@ -79,6 +83,53 @@ void IInterpreterUnionOrSelectQuery::setQuota(QueryPipeline & pipeline) const
         quota = context->getQuota();
 
     pipeline.setQuota(quota);
+}
+
+static ASTPtr parseAdditionalPostFilter(const Context & context)
+{
+    const auto & settings = context.getSettingsRef();
+    const String & filter = settings.additional_result_filter;
+    if (filter.empty())
+        return nullptr;
+
+    ParserExpression parser;
+    return parseQuery(
+                parser, filter.data(), filter.data() + filter.size(),
+                "additional filter", settings.max_query_size, settings.max_parser_depth);
+}
+
+static ActionsDAGPtr makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)
+{
+    auto syntax_result = TreeRewriter(context).analyze(ast, header.getNamesAndTypesList());
+    String result_column_name = ast->getColumnName();
+    auto dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(false, false);
+    const ActionsDAG::Node * result_node = &dag->findInOutputs(result_column_name);
+    auto & outputs = dag->getOutputs();
+    outputs.clear();
+    outputs.reserve(dag->getInputs().size() + 1);
+    for (const auto * node : dag->getInputs())
+        outputs.push_back(node);
+
+    outputs.push_back(result_node);
+
+    return dag;
+}
+
+void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) const
+{
+    if (options.subquery_depth != 0)
+        return;
+
+    auto ast = parseAdditionalPostFilter(*context);
+    if (!ast)
+        return;
+
+    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
+    std::string filter_name = dag->getOutputs().back()->result_name;
+    auto filter_step = std::make_unique<FilterStep>(
+        plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
+    filter_step->setStepDescription("Additional result filter");
+    plan.addStep(std::move(filter_step));
 }
 
 void IInterpreterUnionOrSelectQuery::addStorageLimits(const StorageLimitsList & limits)

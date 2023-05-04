@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/Cache/SchemaCache.h>
 
-#include <Common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -13,8 +13,6 @@ namespace DB
 
 class StorageFile final : public IStorage
 {
-friend class partitionedstoragefilesink;
-
 public:
     struct CommonArguments : public WithContext
     {
@@ -47,7 +45,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(
         const ASTPtr & query,
@@ -86,12 +84,24 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
 
+    static SchemaCache & getSchemaCache(const ContextPtr & context);
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
 
 private:
     void setStorageMetadata(CommonArguments args);
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context);
+
+    static void addColumnsToCache(
+        const Strings & paths,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table

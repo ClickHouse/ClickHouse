@@ -16,11 +16,6 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
-#if defined(__GNUC__)
-    /// GCC mistakenly warns about the names in enum class.
-    #pragma GCC diagnostic ignored "-Wshadow"
-#endif
-
 namespace DB
 {
 using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
@@ -127,6 +122,7 @@ struct DictionaryStructure final
     DataTypes getKeyTypes() const;
     void validateKeyTypes(const DataTypes & key_types) const;
 
+    bool hasAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
 

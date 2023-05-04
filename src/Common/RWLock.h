@@ -56,7 +56,7 @@ public:
 
     /// Empty query_id means the lock is acquired from outside of query context (e.g. in a background thread).
     LockHolder getLock(Type type, const String & query_id,
-                       const std::chrono::milliseconds & lock_timeout_ms = std::chrono::milliseconds(0));
+                       const std::chrono::milliseconds & lock_timeout_ms = std::chrono::milliseconds(0), bool throw_in_fast_path = true);
 
     /// Use as query_id to acquire a lock outside the query context.
     inline static const String NO_QUERY = String();
@@ -90,6 +90,7 @@ private:
 
     RWLockImpl() = default;
     void unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept;
-    void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept;
+    /// @param next - notify next after begin, used on writer lock failures
+    void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it, bool next) noexcept;
 };
 }

@@ -7,9 +7,9 @@
 #include <array>
 #include <optional>
 #include <functional>
-#include <signal.h>
+#include <csignal>
 
-#ifdef __APPLE__
+#ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
 #   ifdef __clang__
 #       pragma clang diagnostic ignored "-Wreserved-id-macro"
@@ -46,26 +46,30 @@ public:
     using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
-    StackTrace();
+    inline StackTrace() { tryCapture(); }
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
     explicit StackTrace(const ucontext_t & signal_context);
 
     /// Creates empty object for deferred initialization
-    explicit StackTrace(NoCapture);
+    explicit inline StackTrace(NoCapture) {}
 
-    size_t getSize() const;
-    size_t getOffset() const;
-    const FramePointers & getFramePointers() const;
+    constexpr size_t getSize() const { return size; }
+    constexpr size_t getOffset() const { return offset; }
+    const FramePointers & getFramePointers() const { return frame_pointers; }
     std::string toString() const;
 
     static std::string toString(void ** frame_pointers, size_t offset, size_t size);
-    static std::string toStringStatic(const FramePointers & frame_pointers, size_t offset, size_t size);
     static void dropCache();
     static void symbolize(const FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames);
 
-    void toStringEveryLine(std::function<void(const std::string &)> callback) const;
+    void toStringEveryLine(std::function<void(std::string_view)> callback) const;
+
+    /// Displaying the addresses can be disabled for security reasons.
+    /// If you turn off addresses, it will be more secure, but we will be unable to help you with debugging.
+    /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
+    static void setShowAddresses(bool show);
 
 protected:
     void tryCapture();

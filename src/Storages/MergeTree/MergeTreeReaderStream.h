@@ -9,6 +9,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 
 namespace DB
@@ -19,14 +20,20 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        DiskPtr disk_,
-        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
+        MergeTreeDataPartInfoForReaderPtr data_part_reader_,
+        const String & path_prefix_,
+        const String & data_file_extension_,
+        size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
-        MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
-        size_t file_size_, const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-        bool is_low_cardinality_dictionary_);
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        size_t file_size_,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback,
+        clockid_t clock_type,
+        bool is_low_cardinality_dictionary_,
+        ThreadPool * load_marks_cache_threadpool_);
 
     void seekToMark(size_t index);
 
@@ -43,7 +50,7 @@ public:
 
 private:
     void init();
-    size_t getRightOffset(size_t right_mark_non_included);
+    size_t getRightOffset(size_t right_mark);
 
     const MergeTreeReaderSettings settings;
     const ReadBufferFromFileBase::ProfileCallback profile_callback;
@@ -52,7 +59,7 @@ private:
     size_t file_size;
     UncompressedCache * uncompressed_cache;
 
-    DiskPtr disk;
+    DataPartStoragePtr data_part_storage;
     std::string path_prefix;
     std::string data_file_extension;
 
@@ -76,4 +83,5 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 };
+
 }

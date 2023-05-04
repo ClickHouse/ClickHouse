@@ -4,16 +4,22 @@
 #include <Common/HashTable/HashMap.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
@@ -73,9 +79,17 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     PullingPipelineExecutor executor(pipeline);
 
+    Stopwatch watch;
     Block block;
+    size_t block_num = 0;
+    size_t rows_num = 0;
     while (executor.pull(block))
     {
+        if (!block)
+            continue;
+
+        ++block_num;
+        rows_num += block.rows();
         convertToFullIfSparse(block);
 
         /// Split into keys columns and attribute columns
@@ -103,6 +117,9 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
         block_key_columns.clear();
     }
+
+    LOG_DEBUG(&Poco::Logger::get("DirectDictionary"), "read {} blocks with {} rows from pipeline in {} ms",
+        block_num, rows_num, watch.elapsedMilliseconds());
 
     Field value_to_insert;
 
@@ -171,13 +188,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     auto requested_keys = requested_keys_extractor.extractAllKeys();
     size_t requested_keys_size = requested_keys.size();
 
-    HashMap<KeyType, size_t> requested_key_to_index;
+    HashMap<KeyType, PaddedPODArray<size_t>> requested_key_to_index;
     requested_key_to_index.reserve(requested_keys_size);
 
     for (size_t i = 0; i < requested_keys.size(); ++i)
     {
         auto requested_key = requested_keys[i];
-        requested_key_to_index[requested_key] = i;
+        requested_key_to_index[requested_key].push_back(i);
     }
 
     auto result = ColumnUInt8::create(requested_keys_size, false);
@@ -208,10 +225,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
             const auto * it = requested_key_to_index.find(block_key);
             assert(it);
 
-            size_t result_data_found_index = it->getMapped();
-            /// block_keys_size cannot be used, due to duplicates.
-            keys_found += !result_data[result_data_found_index];
-            result_data[result_data_found_index] = true;
+            auto & result_data_found_indexes = it->getMapped();
+            for (size_t result_data_found_index : result_data_found_indexes)
+            {
+                /// block_keys_size cannot be used, due to duplicates.
+                keys_found += !result_data[result_data_found_index];
+                result_data[result_data_found_index] = true;
+            }
 
             block_keys_extractor.rollbackCurrentKey();
         }
@@ -260,6 +280,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
         return nullptr;
 }
 
+template <typename TExecutor = PullingPipelineExecutor>
 class SourceFromQueryPipeline : public ISource
 {
 public:
@@ -269,7 +290,10 @@ public:
         , executor(pipeline)
     {}
 
-    std::string getName() const override { return "SourceFromQueryPipeline"; }
+    std::string getName() const override
+    {
+        return std::is_same_v<PullingAsyncPipelineExecutor, TExecutor> ? "SourceFromQueryPipelineAsync" : "SourceFromQueryPipeline";
+    }
 
     Chunk generate() override
     {
@@ -283,10 +307,9 @@ public:
         return {};
     }
 
-
 private:
     QueryPipeline pipeline;
-    PullingPipelineExecutor executor;
+    TExecutor executor;
 };
 
 template <DictionaryKeyType dictionary_key_type>
@@ -294,6 +317,8 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
+    Stopwatch watch;
+
     size_t requested_keys_size = requested_keys.size();
 
     Pipe pipe;
@@ -306,7 +331,12 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
         for (auto key : requested_keys)
             ids.emplace_back(key);
 
-        pipe = Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadIds(ids)));
+        auto pipeline = source_ptr->loadIds(ids);
+
+        if (use_async_executor)
+            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(std::move(pipeline)));
+        else
+            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(std::move(pipeline)));
     }
     else
     {
@@ -315,16 +345,31 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
         for (size_t i = 0; i < requested_keys_size; ++i)
             requested_rows.emplace_back(i);
 
-        pipe = Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadKeys(key_columns, requested_rows)));
+        auto pipeline = source_ptr->loadKeys(key_columns, requested_rows);
+        if (use_async_executor)
+            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(std::move(pipeline)));
+        else
+            pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingPipelineExecutor>>(std::move(pipeline)));
     }
 
+    LOG_DEBUG(&Poco::Logger::get("DirectDictionary"), "building pipeline for loading keys done in {} ms", watch.elapsedMilliseconds());
     return pipe;
 }
 
 template <DictionaryKeyType dictionary_key_type>
 Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
-    return Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadAll()));
+    return Pipe(std::make_shared<SourceFromQueryPipeline<>>(source_ptr->loadAll()));
+}
+
+template <DictionaryKeyType dictionary_key_type>
+void DirectDictionary<dictionary_key_type>::applySettings(const Settings & settings)
+{
+    if (dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get()))
+    {
+        /// Only applicable for CLICKHOUSE dictionary source.
+        use_async_executor = settings.dictionary_use_async_executor;
+    }
 }
 
 namespace
@@ -336,7 +381,7 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         DictionarySourcePtr source_ptr,
-        ContextPtr /* global_context */,
+        ContextPtr global_context,
         bool /* created_from_ddl */)
     {
         const auto * layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "direct" : "complex_key_direct";
@@ -369,7 +414,12 @@ namespace
                 "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
                 layout_name);
 
-        return std::make_unique<DirectDictionary<dictionary_key_type>>(dict_id, dict_struct, std::move(source_ptr));
+        auto dictionary = std::make_unique<DirectDictionary<dictionary_key_type>>(dict_id, dict_struct, std::move(source_ptr));
+
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        dictionary->applySettings(context->getSettingsRef());
+
+        return dictionary;
     }
 }
 

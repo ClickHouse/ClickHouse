@@ -4,7 +4,6 @@
 #include <base/sleep.h>
 #include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <thread>
@@ -27,7 +26,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : SeekableReadBuffer(nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -42,18 +41,15 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
 std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
-    ReadWriteBufferFromHTTP::Range range;
     if (read_until_position)
     {
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
-        range = { .begin = static_cast<size_t>(offset), .end = read_until_position - 1 };
         LOG_DEBUG(log, "Reading with range: {}-{}", offset, read_until_position);
     }
     else
     {
-        range = { .begin = static_cast<size_t>(offset), .end = std::nullopt };
         LOG_DEBUG(log, "Reading from offset: {}", offset);
     }
 
@@ -61,7 +57,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     const auto & config = context->getConfigRef();
     Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
 
-    return std::make_unique<ReadWriteBufferFromHTTP>(
+    auto res = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
@@ -74,11 +70,24 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
         0,
         buf_size,
         read_settings,
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
-        range,
+        HTTPHeaderEntries{},
         &context->getRemoteHostFilter(),
         /* delay_initialization */true,
         use_external_buffer);
+
+    if (read_until_position)
+        res->setReadUntilPosition(read_until_position);
+    if (offset)
+        res->seek(offset, SEEK_SET);
+
+    return res;
+}
+
+
+void ReadBufferFromWebServer::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+    impl.reset();
 }
 
 
@@ -145,7 +154,7 @@ off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed");
 
     if (offset_ < 0)
-        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", std::to_string(offset_));
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
     offset = offset_;
 

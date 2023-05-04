@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/metric_log
+---
 # system.metric_log {#system_tables-metric_log}
 
 Содержит историю значений метрик из таблиц `system.metrics` и `system.events`, периодически сбрасываемую на диск.
@@ -47,4 +50,3 @@ CurrentMetric_ReplicatedChecks:                             0
 -   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 -   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
 -   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
-

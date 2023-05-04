@@ -18,6 +18,7 @@ struct ConnectionParameters
     std::string default_database;
     std::string user;
     std::string password;
+    std::string quota_key;
     Protocol::Secure security = Protocol::Secure::Disable;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;

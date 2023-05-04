@@ -22,6 +22,8 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/Chunk.h>
+
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <base/range.h>
@@ -103,7 +105,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (!data.empty())
         return;
@@ -129,6 +131,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
+            set_elements_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
             key_columns.back() = materialized_columns.back().get();
         }
@@ -162,13 +165,21 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     data.init(data.chooseMethod(key_columns, key_sizes));
 }
 
-
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
-    std::lock_guard<std::shared_mutex> lock(rwlock);
+    Columns cols;
+    cols.reserve(columns.size());
+    for (const auto & column : columns)
+        cols.emplace_back(column.column);
+    return insertFromBlock(cols);
+}
+
+bool Set::insertFromBlock(const Columns & columns)
+{
+    std::lock_guard lock(rwlock);
 
     if (data.empty())
-        throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
@@ -179,11 +190,11 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
+        materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = columns.at(0).column->size();
+    size_t rows = columns.at(0)->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -225,13 +236,18 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
+void Set::checkIsCreated() const
+{
+    if (!is_created.load())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Trying to use set before it has been built.");
+}
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
-        throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
@@ -393,15 +409,21 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
 
 bool Set::areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
-    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
+    /// Out-of-bound access can happen when same set expression built with different columns.
+    /// Caller may call this method to make sure that the set is indeed the one they want
+    /// without awaring data_types.size().
+    if (set_type_idx >= data_types.size())
+        return false;
+    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))
+        ->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
 }
 
 void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
     if (!this->areTypesEqual(set_type_idx, other_type))
-        throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
-                        + other_type->getName() + " on the left, "
-                        + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Types of column {} in section IN don't match: "
+                        "{} on the left, {} on the right", toString(set_type_idx + 1),
+                        other_type->getName(), data_types[set_type_idx]->getName());
 }
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
@@ -430,8 +452,9 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     SortDescription sort_description;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        block_to_sort.insert({ordered_set[i], nullptr, ordered_set[i]->getName()});
-        sort_description.emplace_back(ordered_set[i]->getName(), 1, 1);
+        String column_name = "_" + toString(i);
+        block_to_sort.insert({ordered_set[i], nullptr, column_name});
+        sort_description.emplace_back(column_name, 1, 1);
     }
 
     sortBlock(block_to_sort, sort_description);

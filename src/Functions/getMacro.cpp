@@ -50,11 +50,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return true;
-    }
-
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
@@ -66,7 +61,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("The argument of function " + getName() + " must have String type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must have String type", getName());
         return std::make_shared<DataTypeString>();
     }
 
@@ -76,7 +71,7 @@ public:
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         if (!arg_string)
-            throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant String", getName());
 
         return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()));
     }
@@ -84,7 +79,7 @@ public:
 
 }
 
-void registerFunctionGetMacro(FunctionFactory & factory)
+REGISTER_FUNCTION(GetMacro)
 {
     factory.registerFunction<FunctionGetMacro>();
 }

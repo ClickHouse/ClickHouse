@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, name="detach")
+cluster = ClickHouseCluster(__file__)
 # Version 21.6.3.14 has incompatible partition id for tables with UUID in partition key.
 node_21_6 = cluster.add_instance(
     "node_21_6",
@@ -24,7 +24,6 @@ def start_cluster():
 
 
 def test_detach_part_wrong_partition_id(start_cluster):
-
     # Here we create table with partition by UUID.
     node_21_6.query(
         "create table tab (id UUID, value UInt32) engine = MergeTree PARTITION BY (id) order by tuple()"

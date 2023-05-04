@@ -21,6 +21,9 @@ class IQueryPlanStep;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
+class RowsBeforeLimitCounter;
+using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
@@ -234,11 +237,12 @@ public:
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
-    bool isCancelled() const { return is_cancelled; }
+    bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
     void cancel()
     {
-        is_cancelled = true;
-        onCancel();
+        bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
+        if (!already_cancelled)
+            onCancel();
     }
 
     /// Additional method which is called in case if ports were updated while work() method.
@@ -307,6 +311,33 @@ public:
     uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
     uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
 
+    struct ProcessorDataStats
+    {
+        size_t input_rows = 0;
+        size_t input_bytes = 0;
+        size_t output_rows = 0;
+        size_t output_bytes = 0;
+    };
+
+    ProcessorDataStats getProcessorDataStats() const
+    {
+        ProcessorDataStats stats;
+
+        for (const auto & input : inputs)
+        {
+            stats.input_rows += input.rows;
+            stats.input_bytes += input.bytes;
+        }
+
+        for (const auto & output : outputs)
+        {
+            stats.output_rows += output.rows;
+            stats.output_bytes += output.bytes;
+        }
+
+        return stats;
+    }
+
     struct ReadProgressCounters
     {
         uint64_t read_rows = 0;
@@ -329,6 +360,10 @@ public:
     /// Processor can return a new progress for the last read operation.
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
+
+    /// Set rows_before_limit counter for current processor.
+    /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
+    virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
 
 protected:
     virtual void onCancel() {}

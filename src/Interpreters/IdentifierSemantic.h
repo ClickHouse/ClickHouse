@@ -44,6 +44,8 @@ struct IdentifierSemantic
     /// @returns name for 'not a column' identifiers
     static std::optional<String> extractNestedName(const ASTIdentifier & identifier, const String & table_name);
 
+    static String extractNestedName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & table);
+
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const TableWithColumnNamesAndTypes & table_with_columns);
 
@@ -103,6 +105,7 @@ private:
 };
 
 /// Split expression `expr_1 AND expr_2 AND ... AND expr_n` into vector `[expr_1, expr_2, ..., expr_n]`
-std::vector<ASTPtr> collectConjunctions(const ASTPtr & node);
+ASTs splitConjunctionsAst(const ASTPtr & node);
+void splitConjunctionsAst(const ASTPtr & node, ASTs & result);
 
 }

@@ -25,7 +25,7 @@ struct KostikConsistentHashImpl
 
 using FunctionKostikConsistentHash = FunctionConsistentHashImpl<KostikConsistentHashImpl>;
 
-void registerFunctionKostikConsistentHash(FunctionFactory & factory)
+REGISTER_FUNCTION(KostikConsistentHash)
 {
     factory.registerFunction<FunctionKostikConsistentHash>();
     factory.registerAlias("yandexConsistentHash", "kostikConsistentHash");

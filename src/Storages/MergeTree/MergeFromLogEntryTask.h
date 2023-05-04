@@ -17,9 +17,10 @@ namespace DB
 class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
 public:
-    template <class Callback>
-    MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_, Callback && task_result_callback_)
-        : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MergeFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
+    MergeFromLogEntryTask(
+        ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
+        StorageReplicatedMergeTree & storage_,
+        IExecutableTask::TaskResultCallback & task_result_callback_);
 
     UInt64 getPriority() override { return priority; }
 

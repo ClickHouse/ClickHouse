@@ -55,7 +55,7 @@ private:
         explicit PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
         ~PoolEntryHelper()
         {
-            std::unique_lock lock(data.pool.mutex);
+            std::lock_guard lock(data.pool.mutex);
             data.in_use = false;
             data.pool.available.notify_one();
         }
@@ -101,7 +101,7 @@ public:
         PoolBase * getPool() const
         {
             if (!data)
-                throw DB::Exception("Attempt to get pool from uninitialized entry", DB::ErrorCodes::LOGICAL_ERROR);
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Attempt to get pool from uninitialized entry");
             return &data->data.pool;
         }
 
@@ -144,12 +144,17 @@ public:
                 return Entry(*items.back());
             }
 
-            LOG_INFO(log, "No free connections in pool. Waiting.");
-
             if (timeout < 0)
+            {
+                LOG_INFO(log, "No free connections in pool. Waiting undefinitelly.");
                 available.wait(lock);
+            }
             else
-                available.wait_for(lock, std::chrono::microseconds(timeout));
+            {
+                auto timeout_ms = std::chrono::microseconds(timeout);
+                LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
+                available.wait_for(lock, timeout_ms);
+            }
         }
     }
 
@@ -163,7 +168,7 @@ public:
 
     inline size_t size()
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         return items.size();
     }
 

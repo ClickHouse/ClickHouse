@@ -22,6 +22,8 @@
 
 .align	6
 _sha1_block_data_order:
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
+	AARCH64_VALID_CALL_TARGET
 #if __has_feature(hwaddress_sanitizer) && __clang_major__ >= 10
 	adrp	x16,:pg_hi21_nc:_OPENSSL_armcap_P
 #else
@@ -1089,6 +1091,8 @@ Loop:
 
 .align	6
 sha1_block_armv8:
+	// Armv8.3-A PAuth: even though x30 is pushed to stack it is not popped later.
+	AARCH64_VALID_CALL_TARGET
 Lv8_entry:
 	stp	x29,x30,[sp,#-16]!
 	add	x29,sp,#0

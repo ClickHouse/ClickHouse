@@ -7,7 +7,7 @@ namespace DB
 
 using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
 
-void registerFunctionGreater(FunctionFactory & factory)
+REGISTER_FUNCTION(Greater)
 {
     factory.registerFunction<FunctionGreater>();
 }

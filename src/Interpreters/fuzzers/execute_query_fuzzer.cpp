@@ -1,4 +1,3 @@
-#include <iostream>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include "Processors/Executors/PullingPipelineExecutor.h"
@@ -33,7 +32,7 @@ try
         registerTableFunctions();
         registerStorages();
         registerDictionaries();
-        registerDisks();
+        registerDisks(/* global_skip_access_check= */ true);
         registerFormats();
 
         return true;

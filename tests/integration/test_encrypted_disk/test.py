@@ -12,6 +12,7 @@ node = cluster.add_instance(
     main_configs=["configs/storage.xml"],
     tmpfs=["/disk:size=100M"],
     with_minio=True,
+    stay_alive=True,
 )
 
 
@@ -166,7 +167,6 @@ def test_add_key():
                 "bash",
                 "-c",
                 """cat > /etc/clickhouse-server/config.d/storage_policy_{policy_name}.xml << EOF
-<?xml version="1.0"?>
 <clickhouse>
     <storage_configuration>
         <disks>
@@ -252,3 +252,46 @@ EOF""".format(
     # Detach the part encrypted with the wrong key and check that another part containing "(2,'data'),(3,'data')" still can be read.
     node.query("ALTER TABLE encrypted_test DETACH PART '{}'".format(FIRST_PART_NAME))
     assert node.query(select_query) == "(2,'data'),(3,'data')"
+
+
+def test_read_in_order():
+    node.query(
+        "CREATE TABLE encrypted_test(`a` UInt64,  `b` String(150)) ENGINE = MergeTree() ORDER BY (a, b) SETTINGS storage_policy='encrypted_policy'"
+    )
+
+    node.query(
+        "INSERT INTO encrypted_test SELECT * FROM generateRandom('a UInt64, b FixedString(150)') LIMIT 100000"
+    )
+
+    node.query(
+        "SELECT * FROM encrypted_test ORDER BY a, b SETTINGS optimize_read_in_order=1 FORMAT Null"
+    )
+
+    node.query(
+        "SELECT * FROM encrypted_test ORDER BY a, b SETTINGS optimize_read_in_order=0 FORMAT Null"
+    )
+
+
+def test_restart():
+    for policy in ["disk_s3_encrypted_default_path", "encrypted_s3_cache"]:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS encrypted_test;
+            CREATE TABLE encrypted_test (
+                id Int64,
+                data String
+            ) ENGINE=MergeTree()
+            ORDER BY id
+            SETTINGS disk='{policy}'
+            """
+        )
+
+        node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
+        select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
+        assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+        node.restart_clickhouse()
+
+        assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+        node.query("DROP TABLE encrypted_test NO DELAY;")

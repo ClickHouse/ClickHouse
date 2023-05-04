@@ -1,3 +1,4 @@
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -119,16 +120,29 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
     }
 };
 
-struct TestKeeperListRequest final : ListRequest, TestKeeperRequest
+struct TestKeeperListRequest : ListRequest, TestKeeperRequest
 {
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
+struct TestKeeperFilteredListRequest final : TestKeeperListRequest
+{
+    ListRequestType list_request_type;
 };
 
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
     explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
+struct TestKeeperSyncRequest final : SyncRequest, TestKeeperRequest
+{
+    TestKeeperSyncRequest() = default;
+    explicit TestKeeperSyncRequest(const SyncRequest & base) : SyncRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -198,13 +212,14 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
         else
         {
             TestKeeper::Node created_node;
-            created_node.seq_num = 0; //-V1048
+            created_node.seq_num = 0;
             created_node.stat.czxid = zxid;
             created_node.stat.mzxid = zxid;
             created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
             created_node.stat.mtime = created_node.stat.ctime;
             created_node.stat.numChildren = 0;
-            created_node.stat.dataLength = data.length();
+            created_node.stat.dataLength = static_cast<int>(data.length());
+            created_node.stat.ephemeralOwner = is_ephemeral ? 1 : 0;
             created_node.data = data;
             created_node.is_ephemeral = is_ephemeral;
             created_node.is_sequental = is_sequential;
@@ -271,7 +286,7 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
         auto & parent = container.at(parentPath(path));
         --parent.stat.numChildren;
         ++parent.stat.cversion;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
 
         undo = [prev_node, &container, path = path]
         {
@@ -293,7 +308,7 @@ std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Contai
     if (it != container.end())
     {
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
     else
     {
@@ -316,7 +331,7 @@ std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container
     {
         response.stat = it->second.stat;
         response.data = it->second.data;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<GetResponse>(response), {} };
@@ -343,7 +358,7 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
         it->second.data = data;
         ++container.at(parentPath(path)).stat.cversion;
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
 
         undo = [prev_node, &container, path = path]
         {
@@ -382,12 +397,22 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
              child_it != container.end() && startsWith(child_it->first, path_prefix);
             ++child_it)
         {
+            using enum ListRequestType;
             if (parentPath(child_it->first) == path)
-                response.names.emplace_back(baseName(child_it->first));
+            {
+                ListRequestType list_request_type = ALL;
+                if (const auto * filtered_list = dynamic_cast<const TestKeeperFilteredListRequest *>(this))
+                    list_request_type = filtered_list->list_request_type;
+
+                const auto is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
+                if (list_request_type == ALL || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
+                    || (!is_ephemeral && list_request_type == PERSISTENT_ONLY))
+                    response.names.emplace_back(baseName(child_it->first));
+            }
         }
 
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<ListResponse>(response), {} };
@@ -407,10 +432,18 @@ std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Contain
     }
     else
     {
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<CheckResponse>(response), {} };
+}
+
+std::pair<ResponsePtr, Undo> TestKeeperSyncRequest::process(TestKeeper::Container & /*container*/, int64_t) const
+{
+    SyncResponse response;
+    response.path = path;
+
+    return { std::make_shared<SyncResponse>(std::move(response)), {} };
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
@@ -422,7 +455,7 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
     try
     {
         auto request_it = requests.begin();
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
         while (request_it != requests.end())
         {
             const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
@@ -471,18 +504,19 @@ ResponsePtr TestKeeperGetRequest::createResponse() const { return std::make_shar
 ResponsePtr TestKeeperSetRequest::createResponse() const { return std::make_shared<SetResponse>(); }
 ResponsePtr TestKeeperListRequest::createResponse() const { return std::make_shared<ListResponse>(); }
 ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_shared<CheckResponse>(); }
+ResponsePtr TestKeeperSyncRequest::createResponse() const { return std::make_shared<SyncResponse>(); }
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 
 
-TestKeeper::TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_)
-    : root_path(root_path_), operation_timeout(operation_timeout_)
+TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
+    : args(args_)
 {
     container.emplace("/", Node());
 
-    if (!root_path.empty())
+    if (!args.chroot.empty())
     {
-        if (root_path.back() == '/')
-            root_path.pop_back();
+        if (args.chroot.back() == '/')
+            args.chroot.pop_back();
     }
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
@@ -514,7 +548,7 @@ void TestKeeper::processingThread()
         {
             RequestInfo info;
 
-            UInt64 max_wait = static_cast<UInt64>(operation_timeout.totalMilliseconds());
+            UInt64 max_wait = static_cast<UInt64>(args.operation_timeout_ms);
             if (requests_queue.tryPop(info, max_wait))
             {
                 if (expired)
@@ -523,7 +557,7 @@ void TestKeeper::processingThread()
 
                 ++zxid;
 
-                info.request->addRootPath(root_path);
+                info.request->addRootPath(args.chroot);
                 auto [response, _] = info.request->process(container, zxid);
 
                 if (info.watch)
@@ -547,7 +581,7 @@ void TestKeeper::processingThread()
                 if (response->error == Error::ZOK)
                     info.request->processWatches(watches, list_watches);
 
-                response->removeRootPath(root_path);
+                response->removeRootPath(args.chroot);
                 if (info.callback)
                     info.callback(*response);
             }
@@ -656,7 +690,7 @@ void TestKeeper::pushRequest(RequestInfo && request)
         if (expired)
             throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
-        if (!requests_queue.tryPush(std::move(request), operation_timeout.totalMilliseconds()))
+        if (!requests_queue.tryPush(std::move(request), args.operation_timeout_ms))
             throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
     }
     catch (...)
@@ -751,11 +785,13 @@ void TestKeeper::set(
 
 void TestKeeper::list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch)
 {
-    TestKeeperListRequest request;
+    TestKeeperFilteredListRequest request;
     request.path = path;
+    request.list_request_type = list_request_type;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperListRequest>(std::move(request));
@@ -776,6 +812,19 @@ void TestKeeper::check(
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperCheckRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckResponse &>(response)); };
+    pushRequest(std::move(request_info));
+}
+
+void TestKeeper::sync(
+        const String & path,
+        SyncCallback callback)
+{
+    TestKeeperSyncRequest request;
+    request.path = path;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<TestKeeperSyncRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
     pushRequest(std::move(request_info));
 }
 

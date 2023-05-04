@@ -12,12 +12,12 @@ namespace DB
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
         : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
     {
     }
 
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
         : query_ptr(query_ptr_)
         , context(context_)
         , options(options_)
@@ -35,16 +35,15 @@ public:
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
     QueryPipelineBuilder buildQueryPipeline();
+    QueryPipelineBuilder buildQueryPipeline(QueryPlan & query_plan);
 
     virtual void ignoreWithTotals() = 0;
 
-    virtual ~IInterpreterUnionOrSelectQuery() override = default;
+    ~IInterpreterUnionOrSelectQuery() override = default;
 
     Block getSampleBlock() { return result_header; }
 
     size_t getMaxStreams() const { return max_streams; }
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
     /// Returns whether the query uses the view source from the Context
     /// The view source is a virtual storage that currently only materialized views use to replace the source table
@@ -57,6 +56,8 @@ public:
 
     /// Add limits from external query.
     void addStorageLimits(const StorageLimitsList & limits);
+
+    ContextPtr getContext() const { return context; }
 
 protected:
     ASTPtr query_ptr;
@@ -72,6 +73,8 @@ protected:
 
     /// Set quotas to query pipeline.
     void setQuota(QueryPipeline & pipeline) const;
+    /// Add filter from additional_post_filter setting.
+    void addAdditionalPostFilter(QueryPlan & plan) const;
 
     static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };

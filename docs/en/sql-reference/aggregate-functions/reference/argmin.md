@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/argmin
 sidebar_position: 105
 ---
 
@@ -14,12 +15,12 @@ argMin(arg, val)
 
 **Arguments**
 
--   `arg` — Argument.
--   `val` — Value.
+- `arg` — Argument.
+- `val` — Value.
 
 **Returned value**
 
--   `arg` value that corresponds to minimum `val` value.
+- `arg` value that corresponds to minimum `val` value.
 
 Type: matches `arg` type.
 

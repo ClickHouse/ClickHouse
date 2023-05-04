@@ -1,10 +1,10 @@
 ---
+slug: /en/development/build-osx
 sidebar_position: 65
-sidebar_label: Build on Mac OS X
-description: How to build ClickHouse on Mac OS X
+sidebar_label: Build on macOS
+title: How to Build ClickHouse on macOS
+description: How to build ClickHouse on macOS
 ---
-
-# How to Build ClickHouse on Mac OS X 
 
 :::info You don't have to build ClickHouse yourself!
 You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start). Follow **macOS (Intel)** or **macOS (Apple silicon)** installation instructions.
@@ -13,16 +13,16 @@ You can install pre-built ClickHouse as described in [Quick Start](https://click
 The build works on x86_64 (Intel) and arm64 (Apple Silicon) based on macOS 10.15 (Catalina) or higher with Homebrew's vanilla Clang.
 
 :::note
-It is also possible to compile with Apple's XCode `apple-clang` or Homebrew's `gcc`, but it's strongly discouraged.
+It is also possible to compile with Apple's XCode `apple-clang`, but it's strongly discouraged.
 :::
 
 ## Install Homebrew {#install-homebrew}
 
 First install [Homebrew](https://brew.sh/)
 
-## For Apple's Clang (discouraged): Install Xcode and Command Line Tools {#install-xcode-and-command-line-tools}
+## For Apple's Clang (discouraged): Install XCode and Command Line Tools {#install-xcode-and-command-line-tools}
 
-Install the latest [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
+Install the latest [XCode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
 
 Open it at least once to accept the end-user license agreement and automatically install the required components.
 
@@ -37,7 +37,7 @@ sudo xcode-select --install
 
 ``` bash
 brew update
-brew install cmake ninja libtool gettext llvm gcc binutils
+brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -62,7 +62,7 @@ cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
 
-To build using Xcode's native AppleClang compiler in Xcode IDE (this option is only for development builds and workflows, and is **not recommended** unless you know what you are doing):
+To build using XCode native AppleClang compiler in XCode IDE (this option is only for development builds and workflows, and is **not recommended** unless you know what you are doing):
 
 ``` bash
 cd ClickHouse
@@ -71,29 +71,15 @@ mkdir build
 cd build
 XCODE_IDE=1 ALLOW_APPLECLANG=1 cmake -G Xcode -DCMAKE_BUILD_TYPE=Debug -DENABLE_JEMALLOC=OFF ..
 cmake --open .
-# ...then, in Xcode IDE select ALL_BUILD scheme and start the building process.
+# ...then, in XCode IDE select ALL_BUILD scheme and start the building process.
 # The resulting binary will be created at: ./programs/Debug/clickhouse
-```
-
-To build using Homebrew's vanilla GCC compiler (this option is only for development experiments, and is **absolutely not recommended** unless you really know what you are doing):
-
-``` bash
-cd ClickHouse
-mkdir build
-export PATH=$(brew --prefix binutils)/bin:$PATH
-export PATH=$(brew --prefix gcc)/bin:$PATH
-export CC=$(brew --prefix gcc)/bin/gcc-11
-export CXX=$(brew --prefix gcc)/bin/g++-11
-cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B build
-cmake --build build
-# The resulting binary will be created at: build/programs/clickhouse
 ```
 
 ## Caveats {#caveats}
 
-If you intend to run `clickhouse-server`, make sure to increase the system’s maxfiles variable.
+If you intend to run `clickhouse-server`, make sure to increase the system’s `maxfiles` variable.
 
-:::note    
+:::note
 You’ll need to use sudo.
 :::
 
@@ -149,5 +135,3 @@ To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` co
 cd ClickHouse
 ./build/programs/clickhouse-server --config-file ./programs/server/config.xml
 ```
-
-[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

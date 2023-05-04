@@ -1,9 +1,9 @@
--- Tags: disabled, zookeeper, no-parallel
+-- Tags: disabled, zookeeper
 
 DROP TABLE IF EXISTS r1;
 DROP TABLE IF EXISTS r2;
 
-CREATE TABLE r1 (d Date DEFAULT '2016-01-01', x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/01/r/', 'r1', d, x, 111);
+CREATE TABLE r1 (d Date DEFAULT '2016-01-01', x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/01/r/', 'r1', d, x, 111);
 
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 1;
@@ -157,7 +157,7 @@ ALTER TABLE r1 DETACH PARTITION 201601;
 
 SELECT count() FROM r1;
 
-CREATE TABLE r2 (d Date DEFAULT '2016-01-01', x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/01/r/', 'r2', d, x, 111);
+CREATE TABLE r2 (d Date DEFAULT '2016-01-01', x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/01/r/', 'r2', d, x, 111);
 
 SELECT count() FROM r2;
 

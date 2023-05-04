@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/kurtpop
 sidebar_position: 153
 ---
 
@@ -23,4 +24,3 @@ kurtPop(expr)
 ``` sql
 SELECT kurtPop(value) FROM series_with_value_column;
 ```
-

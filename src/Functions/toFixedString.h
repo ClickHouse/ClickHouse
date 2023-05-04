@@ -43,16 +43,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isUnsignedInteger(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be unsigned integer", getName());
         if (!arguments[1].column)
-            throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant", getName());
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for types String and FixedString", getName());
 
         const size_t n = arguments[1].column->getUInt(0);
         return std::make_shared<DataTypeFixedString>(n);
@@ -98,8 +98,7 @@ public:
                 {
                     if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
                     {
-                        throw Exception("String too long for type FixedString(" + toString(n) + ")",
-                            ErrorCodes::TOO_LARGE_STRING_SIZE);
+                        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String too long for type FixedString({})", toString(n));
                     }
                     else
                     {
@@ -122,7 +121,7 @@ public:
             {
                 if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
                 {
-                    throw Exception{"String too long for type FixedString(" + toString(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE};
+                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String too long for type FixedString({})", toString(n));
                 }
                 else
                 {
@@ -147,7 +146,7 @@ public:
         else
         {
             if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
-                throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column: {}", column->getName());
             else
             {
                 auto column_fixed = ColumnFixedString::create(n);

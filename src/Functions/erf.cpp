@@ -11,7 +11,7 @@ using FunctionErf = FunctionMathUnary<UnaryFunctionVectorized<ErfName, std::erf>
 
 }
 
-void registerFunctionErf(FunctionFactory & factory)
+REGISTER_FUNCTION(Erf)
 {
     factory.registerFunction<FunctionErf>();
 }

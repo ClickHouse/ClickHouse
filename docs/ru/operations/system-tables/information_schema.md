@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/information_schema
+---
 # INFORMATION_SCHEMA {#information-schema}
 
 `INFORMATION_SCHEMA` (`information_schema`) — это системная база данных, содержащая представления. Используя эти представления, вы можете получить информацию о метаданных объектов базы данных. Эти представления считывают данные из столбцов системных таблиц [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) и [system.tables](../../operations/system-tables/tables.md).
@@ -175,7 +178,7 @@ table_type:    BASE TABLE
 -   `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` запрос для представления.
 -   `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, нет проверки.
 -   `is_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, представление не обновляется.
--   `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — показывает является ли представление [материализованным](../../sql-reference/statements/create/view/#materialized). Возможные значения:
+-   `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — показывает является ли представление [материализованным](../../sql-reference/statements/create/view.md#materialized). Возможные значения:
     -   `NO` — создано обычное представление.
     -   `YES` — создано материализованное представление.
 -   `is_trigger_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, триггер не обновляется.

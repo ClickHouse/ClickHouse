@@ -1,8 +1,14 @@
+import pytest
+
+# FIXME This test is too flaky
+# https://github.com/ClickHouse/ClickHouse/issues/42561
+
+pytestmark = pytest.mark.skip
+
 import logging
 from string import Template
 import time
 
-import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 

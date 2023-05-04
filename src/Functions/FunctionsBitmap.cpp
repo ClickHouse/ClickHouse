@@ -7,7 +7,7 @@
 namespace DB
 {
 
-void registerFunctionsBitmap(FunctionFactory & factory)
+REGISTER_FUNCTION(Bitmap)
 {
     factory.registerFunction<FunctionBitmapBuild>();
     factory.registerFunction<FunctionBitmapToArray>();

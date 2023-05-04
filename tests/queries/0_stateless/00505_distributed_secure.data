@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS secure1;
 DROP TABLE IF EXISTS secure2;
 DROP TABLE IF EXISTS secure3;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE secure1 ( date Date, a Int32, b Int32, c Int32, d Int32) ENGINE = MergeTree(date, (a, date), 8192);
 CREATE TABLE secure2 ( date Date, a Int32, b Int32, c Int32, d Int32) ENGINE = Distributed(test_shard_localhost_secure, currentDatabase(), 'secure1');
 CREATE TABLE secure3 ( date Date, a Int32, b Int32, c Int32, d Int32) ENGINE = Distributed(test_shard_localhost_secure, currentDatabase(), 'secure2');

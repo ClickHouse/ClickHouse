@@ -3,6 +3,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileName.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/time.h>
 
 #include <functional>
@@ -20,7 +21,8 @@
 
 namespace DB
 {
-class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName
+
+class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
     ReadBufferFromFileBase();
@@ -47,6 +49,10 @@ public:
         profile_callback = profile_callback_;
         clock_type = clock_type_;
     }
+
+    size_t getFileSize() override;
+
+    void setProgressCallback(ContextPtr context);
 
 protected:
     std::optional<size_t> file_size;

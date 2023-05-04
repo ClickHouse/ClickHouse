@@ -1,4 +1,5 @@
 ---
+slug: /ru/faq/integration/json-import
 title: Как импортировать JSON в ClickHouse?
 sidebar_position: 11
 ---

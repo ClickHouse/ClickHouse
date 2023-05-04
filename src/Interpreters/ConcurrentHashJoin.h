@@ -3,7 +3,6 @@
 #include <condition_variable>
 #include <memory>
 #include <optional>
-#include <Core/BackgroundSchedulePool.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -47,7 +46,7 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
-    std::shared_ptr<NotJoinedBlocks>
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
 private:
@@ -62,13 +61,10 @@ private:
     size_t slots;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
-    std::mutex finished_add_joined_blocks_tasks_mutex;
-    std::condition_variable finished_add_joined_blocks_tasks_cond;
-    std::atomic<UInt32> finished_add_joined_blocks_tasks = 0;
-
-    mutable std::mutex totals_mutex;
+    std::mutex totals_mutex;
     Block totals;
 
+    IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 
 };

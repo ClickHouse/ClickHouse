@@ -1,40 +1,53 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
-AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
+
+namespace ErrorCodes
 {
-    constexpr size_t pool_size = 50;
-    constexpr size_t queue_size = 1000000;
-    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
-    return reader;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+}
+
+void IObjectStorage::findAllFiles(const std::string &, RelativePathsWithSize &, int) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "findAllFiles() is not supported");
+}
+void IObjectStorage::getDirectoryContents(const std::string &,
+    RelativePathsWithSize &,
+    std::vector<std::string> &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getDirectoryContents() is not supported");
+}
+
+IAsynchronousReader & IObjectStorage::getThreadPoolReader()
+{
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+    return context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
 {
-    constexpr size_t pool_size = 100;
-    constexpr size_t queue_size = 1000000;
-    static ThreadPool writer(pool_size, pool_size, queue_size);
-    return writer;
+    auto context = Context::getGlobalContextInstance();
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
+
+    return context->getThreadPoolWriter();
 }
 
-std::string IObjectStorage::getCacheBasePath() const
-{
-    return cache ? cache->getBasePath() : "";
-}
-
-void IObjectStorage::removeFromCache(const std::string & path)
-{
-    if (cache)
-    {
-        auto key = cache->hash(path);
-        cache->remove(key);
-    }
-}
-
-void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
+void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    IObjectStorage & object_storage_to,
+    std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
         copyObject(object_from, object_to, object_to_attributes);
@@ -43,6 +56,36 @@ void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite);
     copyData(*in, *out);
     out->finalize();
+}
+
+const std::string & IObjectStorage::getCacheName() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
+}
+
+void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
+{
+    std::unique_lock lock{throttlers_mutex};
+    remote_read_throttler = context->getRemoteReadThrottler();
+    remote_write_throttler = context->getRemoteWriteThrottler();
+}
+
+ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
+{
+    std::unique_lock lock{throttlers_mutex};
+    ReadSettings settings{read_settings};
+    settings.remote_throttler = remote_read_throttler;
+    settings.for_object_storage = true;
+    return settings;
+}
+
+WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
+{
+    std::unique_lock lock{throttlers_mutex};
+    WriteSettings settings{write_settings};
+    settings.remote_throttler = remote_write_throttler;
+    settings.for_object_storage = true;
+    return settings;
 }
 
 }

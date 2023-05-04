@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <merge_tree>
         <index_granularity>100</index_granularity>

@@ -25,13 +25,17 @@ SELECT
         -- NullSource/LazyOutputFormatLazyOutputFormat are the outputs
         -- so they cannot starts to execute before sleep(1) will be executed.
         input_wait_elapsed_us>1e6)
-    elapsed
+    elapsed,
+    input_rows,
+    input_bytes,
+    output_rows,
+    output_bytes
 FROM system.processors_profile_log
 WHERE query_id = query_id_
 ORDER BY name;
-ExpressionTransform	1
-LazyOutputFormat	1
-LimitsCheckingTransform	1
-NullSource	1
-NullSource	1
-SourceFromSingleChunk	1
+ExpressionTransform	1	1	1	1	1
+LazyOutputFormat	1	1	1	0	0
+LimitsCheckingTransform	1	1	1	1	1
+NullSource	1	0	0	0	0
+NullSource	1	0	0	0	0
+SourceFromSingleChunk	1	0	0	1	1

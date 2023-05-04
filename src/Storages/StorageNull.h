@@ -35,12 +35,14 @@ public:
         SelectQueryInfo &,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
-        size_t,
-        unsigned) override
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/) override
     {
         return Pipe(
             std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
     }
+
+    bool parallelizeOutputAfterReading() const override { return false; }
 
     bool supportsParallelInsert() const override { return true; }
 

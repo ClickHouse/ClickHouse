@@ -18,6 +18,8 @@ struct User;
 class Credentials;
 class ExternalAuthenticators;
 enum class AuthenticationType;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
@@ -40,14 +42,25 @@ public:
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
 
-    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
-    virtual void reload() {}
-
-    /// Starts periodic reloading and update of entities in this storage.
+    /// Starts periodic reloading and updating of entities in this storage.
     virtual void startPeriodicReloading() {}
 
-    /// Stops periodic reloading and update of entities in this storage.
+    /// Stops periodic reloading and updating of entities in this storage.
     virtual void stopPeriodicReloading() {}
+
+    enum class ReloadMode
+    {
+        /// Try to reload all access storages (including users.xml, local(disk) access storage, replicated(in zk) access storage.
+        /// This mode is invoked by the SYSTEM RELOAD USERS command.
+        ALL,
+
+        /// Only reloads users.xml
+        /// This mode is invoked by the SYSTEM RELOAD CONFIG command.
+        USERS_CONFIG_ONLY,
+    };
+
+    /// Makes this storage to reload and update access entities right now.
+    virtual void reload(ReloadMode /* reload_mode */) {}
 
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
@@ -101,6 +114,16 @@ public:
     std::optional<String> tryReadName(const UUID & id) const;
     Strings tryReadNames(const std::vector<UUID> & ids) const;
 
+    std::pair<String, AccessEntityType> readNameWithType(const UUID & id) const;
+    std::optional<std::pair<String, AccessEntityType>> readNameWithType(const UUID & id, bool throw_if_not_exists) const;
+    std::optional<std::pair<String, AccessEntityType>> tryReadNameWithType(const UUID & id) const;
+
+    /// Reads all entities and returns them with their IDs.
+    template <typename EntityClassT>
+    std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> readAllWithIDs() const;
+
+    std::vector<std::pair<UUID, AccessEntityPtr>> readAllWithIDs(AccessEntityType type) const;
+
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
@@ -143,11 +166,19 @@ public:
     UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool allow_no_password, bool allow_plaintext_password) const;
     std::optional<UUID> authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
 
+    /// Returns true if this storage can be stored to or restored from a backup.
+    virtual bool isBackupAllowed() const { return false; }
+    virtual bool isRestoreAllowed() const { return isBackupAllowed() && !isReadOnly(); }
+
+    /// Makes a backup of this access storage.
+    virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
+    virtual void restoreFromBackup(RestorerFromBackup & restorer);
+
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
-    virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
+    virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
     virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
@@ -157,6 +188,7 @@ protected:
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
+    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_);
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
@@ -170,6 +202,8 @@ protected:
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
     [[noreturn]] static void throwInvalidCredentials();
     [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
+    [[noreturn]] void throwBackupNotAllowed() const;
+    [[noreturn]] void throwRestoreNotAllowed() const;
 
 private:
     const String storage_name;
@@ -218,4 +252,17 @@ std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const String & name)
 {
     return read<EntityClassT>(name, false);
 }
+
+template <typename EntityClassT>
+std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage::readAllWithIDs() const
+{
+    std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> entities;
+    for (const auto & id : findAll<EntityClassT>())
+    {
+        if (auto entity = tryRead<EntityClassT>(id))
+            entities.emplace_back(id, entity);
+    }
+    return entities;
+}
+
 }

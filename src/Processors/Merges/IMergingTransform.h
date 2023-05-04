@@ -17,7 +17,15 @@ public:
         const Block & input_header,
         const Block & output_header,
         bool have_all_inputs_,
-        UInt64 limit_hint_);
+        UInt64 limit_hint_,
+        bool always_read_till_end_);
+
+    IMergingTransformBase(
+        const Blocks & input_headers,
+        const Block & output_header,
+        bool have_all_inputs_,
+        UInt64 limit_hint_,
+        bool always_read_till_end_);
 
     OutputPort & getOutputPort() { return outputs.front(); }
 
@@ -28,16 +36,9 @@ public:
 
     Status prepare() override;
 
-    /// Set position which will be used in selector if input chunk has attached SelectorInfo (see SelectorInfo.h).
-    /// Columns will be filtered, keep only rows labeled with this position.
-    /// It is used in parallel final.
-    void setSelectorPosition(size_t position) { state.selector_position = position; }
-
 protected:
     virtual void onNewInput(); /// Is called when new input is added. Only if have_all_inputs = false.
     virtual void onFinish() {} /// Is called when all data is processed.
-
-    void filterChunks(); /// Filter chunks if selector position was set. For parallel final.
 
     /// Processor state.
     struct State
@@ -47,10 +48,10 @@ protected:
         bool has_input = false;
         bool is_finished = false;
         bool need_data = false;
+        bool no_data = false;
         size_t next_input_to_read = 0;
 
         IMergingAlgorithm::Inputs init_chunks;
-        ssize_t selector_position = -1;
     };
 
     State state;
@@ -68,6 +69,7 @@ private:
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;
+    bool always_read_till_end = false;
 
     IProcessor::Status prepareInitializeInputs();
 };
@@ -84,16 +86,30 @@ public:
         const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
+        bool always_read_till_end_,
         Args && ... args)
-        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, limit_hint_)
+        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, limit_hint_, always_read_till_end_)
+        , algorithm(std::forward<Args>(args) ...)
+    {
+    }
+
+    template <typename ... Args>
+    IMergingTransform(
+        const Blocks & input_headers,
+        const Block & output_header,
+        bool have_all_inputs_,
+        UInt64 limit_hint_,
+        bool always_read_till_end_,
+        bool empty_chunk_on_finish_,
+        Args && ... args)
+        : IMergingTransformBase(input_headers, output_header, have_all_inputs_, limit_hint_, always_read_till_end_)
+        , empty_chunk_on_finish(empty_chunk_on_finish_)
         , algorithm(std::forward<Args>(args) ...)
     {
     }
 
     void work() override
     {
-        filterChunks();
-
         if (!state.init_chunks.empty())
             algorithm.initialize(std::move(state.init_chunks));
 
@@ -103,6 +119,12 @@ public:
             //           << " for input " << state.next_input_to_read << std::endl;
             algorithm.consume(state.input_chunk, state.next_input_to_read);
             state.has_input = false;
+        }
+        else if (state.no_data && empty_chunk_on_finish)
+        {
+            IMergingAlgorithm::Input current_input;
+            algorithm.consume(current_input, state.next_input_to_read);
+            state.no_data = false;
         }
 
         IMergingAlgorithm::Status status = algorithm.merge();
@@ -128,6 +150,9 @@ public:
     }
 
 protected:
+    /// Call `consume` with empty chunk when there is no more data.
+    bool empty_chunk_on_finish = false;
+
     Algorithm algorithm;
 
     /// Profile info.

@@ -2,6 +2,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -32,7 +33,28 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
-    return QueryPipelineBuilder::joinPipelines(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, max_streams, keep_left_read_in_order, &processors);
+    if (join->pipelineType() == JoinPipelineType::YShaped)
+    {
+        auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
+            std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
+        joined_pipeline->resize(max_streams);
+        return joined_pipeline;
+    }
+
+    return QueryPipelineBuilder::joinPipelinesRightLeft(
+        std::move(pipelines[0]),
+        std::move(pipelines[1]),
+        join,
+        output_stream->header,
+        max_block_size,
+        max_streams,
+        keep_left_read_in_order,
+        &processors);
+}
+
+bool JoinStep::allowPushDownToRight() const
+{
+    return join->pipelineType() == JoinPipelineType::YShaped;
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -40,12 +62,27 @@ void JoinStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
+void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t idx)
+{
+    if (idx == 0)
+    {
+        input_streams = {new_input_stream_, input_streams.at(1)};
+        output_stream = DataStream
+        {
+            .header = JoiningTransform::transformHeader(new_input_stream_.header, join),
+        };
+    }
+    else
+    {
+        input_streams = {input_streams.at(0), new_input_stream_};
+    }
+}
+
 static ITransformingStep::Traits getStorageJoinTraits()
 {
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = false,
@@ -83,8 +120,14 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, join, max_block_size, on_totals, default_totals, counter);
+        return std::make_shared<JoiningTransform>(header, output_stream->header, join, max_block_size, on_totals, default_totals, counter);
     });
+}
+
+void FilledJoinStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
 }
 
 }

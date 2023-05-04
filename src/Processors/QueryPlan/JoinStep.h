@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
@@ -27,13 +28,15 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     const JoinPtr & getJoin() const { return join; }
+    bool allowPushDownToRight() const;
+
+    void updateInputStream(const DataStream & new_input_stream_, size_t idx);
 
 private:
     JoinPtr join;
     size_t max_block_size;
     size_t max_streams;
     bool keep_left_read_in_order;
-    Processors processors;
 };
 
 /// Special step for the case when Join is already filled.
@@ -46,7 +49,11 @@ public:
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    const JoinPtr & getJoin() const { return join; }
+
 private:
+    void updateOutputStream() override;
+
     JoinPtr join;
     size_t max_block_size;
 };

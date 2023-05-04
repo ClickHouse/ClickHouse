@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/conditional-functions
+---
 # 条件函数 {#tiao-jian-han-shu}
 
 ## if {#if}
@@ -203,5 +206,3 @@ FROM LEFT_RIGHT
 │    4 │  ᴺᵁᴸᴸ │ Both equal       │
 └──────┴───────┴──────────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/conditional_functions/) <!--hide-->
