@@ -18,24 +18,7 @@ public:
     String getName() const override { return "InnerShuffle"; }
     // The shuffle buckets size is equal to pipeline's num_streams
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
-
-private:
-    std::vector<String> hash_columns; // columns' name to build the hash key
-
-    void updateOutputStream() override;
-
-};
-
-class InnerShuffleStepV2 : public ITransformingStep
-{
-public:
-    explicit InnerShuffleStepV2(const DataStream & input_stream_, const std::vector<String> & hash_columns_);
-    ~InnerShuffleStepV2() override = default;
-
-    String getName() const override { return "InnerShuffle"; }
-    // The shuffle buckets size is equal to pipeline's num_streams
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
-
+    static UInt32 alignStreamsNum(UInt32 n);
 private:
     std::vector<String> hash_columns; // columns' name to build the hash key
 
