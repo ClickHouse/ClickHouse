@@ -19,7 +19,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -43,6 +42,9 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
@@ -107,14 +109,11 @@
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
 #include <filesystem>
 #include <re2/re2.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
 #include <base/find_symbols.h>
-
-#include <Interpreters/Cache/FileCache.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -535,6 +534,12 @@ struct ContextSharedPart : boost::noncopyable
         /// DDLWorker should be deleted without lock, cause its internal thread can
         /// take it as well, which will cause deadlock.
         delete_ddl_worker.reset();
+
+        /// Background operations in cache use background schedule pool.
+        /// Deactivate them before destructing it.
+        const auto & caches = FileCacheFactory::instance().getAll();
+        for (const auto & [_, cache] : caches)
+            cache->cache->deactivateBackgroundOperations();
 
         {
             auto lock = std::lock_guard(mutex);
@@ -1607,26 +1612,42 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+bool Context::displaySecretsInShowAndSelect() const
+{
+    return shared->server_settings.display_secrets_in_show_and_select;
+}
+
 Settings Context::getSettings() const
 {
     auto lock = getLock();
     return settings;
 }
 
-
 void Context::setSettings(const Settings & settings_)
 {
     auto lock = getLock();
-    auto old_readonly = settings.readonly;
-    auto old_allow_ddl = settings.allow_ddl;
-    auto old_allow_introspection_functions = settings.allow_introspection_functions;
+    const auto old_readonly = settings.readonly;
+    const auto old_allow_ddl = settings.allow_ddl;
+    const auto old_allow_introspection_functions = settings.allow_introspection_functions;
+    const auto old_display_secrets = settings.format_display_secrets_in_show_and_select;
 
     settings = settings_;
 
-    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
+    if ((settings.readonly != old_readonly)
+        || (settings.allow_ddl != old_allow_ddl)
+        || (settings.allow_introspection_functions != old_allow_introspection_functions)
+        || (settings.format_display_secrets_in_show_and_select != old_display_secrets))
         calculateAccessRights();
 }
 
+void Context::recalculateAccessRightsIfNeeded(std::string_view name)
+{
+    if (name == "readonly"
+        || name == "allow_ddl"
+        || name == "allow_introspection_functions"
+        || name == "format_display_secrets_in_show_and_select")
+        calculateAccessRights();
+}
 
 void Context::setSetting(std::string_view name, const String & value)
 {
@@ -1637,11 +1658,8 @@ void Context::setSetting(std::string_view name, const String & value)
         return;
     }
     settings.set(name, value);
-
-    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
-        calculateAccessRights();
+    recalculateAccessRightsIfNeeded(name);
 }
-
 
 void Context::setSetting(std::string_view name, const Field & value)
 {
@@ -1652,11 +1670,8 @@ void Context::setSetting(std::string_view name, const Field & value)
         return;
     }
     settings.set(name, value);
-
-    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
-        calculateAccessRights();
+    recalculateAccessRightsIfNeeded(name);
 }
-
 
 void Context::applySettingChange(const SettingChange & change)
 {
@@ -4283,8 +4298,10 @@ ReadSettings Context::getReadSettings() const
             "Invalid value '{}' for max_read_buffer_size", settings.max_read_buffer_size);
     }
 
-    res.local_fs_buffer_size = settings.max_read_buffer_size;
-    res.remote_fs_buffer_size = settings.max_read_buffer_size;
+    res.local_fs_buffer_size
+        = settings.max_read_buffer_size_local_fs ? settings.max_read_buffer_size_local_fs : settings.max_read_buffer_size;
+    res.remote_fs_buffer_size
+        = settings.max_read_buffer_size_remote_fs ? settings.max_read_buffer_size_remote_fs : settings.max_read_buffer_size;
     res.prefetch_buffer_size = settings.prefetch_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
