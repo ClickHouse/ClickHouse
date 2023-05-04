@@ -175,7 +175,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::appendToPrefetchLog(FilesystemP
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
-        .path = object.getMappedPath(),
+        .path = object.local_path,
         .offset = file_offset_of_buffer_end,
         .size = size,
         .prefetch_submit_time = last_prefetch_info.submit_time,
