@@ -595,7 +595,7 @@ namespace
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
-            , supports_multipart_copy(S3::supportsMultiPartCopy(client_ptr_->getProviderType()))
+            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
         {
         }
 
