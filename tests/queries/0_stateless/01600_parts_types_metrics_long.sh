@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-s3-storage
+# Tags: no-s3-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,7 +11,8 @@ set -o pipefail
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 verify_sql="SELECT
     (SELECT sumIf(value, metric = 'PartsInMemory'), sumIf(value, metric = 'PartsCompact'), sumIf(value, metric = 'PartsWide') FROM system.metrics) =
-    (SELECT countIf(part_type == 'InMemory'), countIf(part_type == 'Compact'), countIf(part_type == 'Wide') FROM system.parts)"
+    (SELECT countIf(part_type == 'InMemory'), countIf(part_type == 'Compact'), countIf(part_type == 'Wide')
+    FROM (SELECT part_type FROM system.parts UNION ALL SELECT part_type FROM system.projection_parts))"
 
 # The query is not atomic - it can compare states between system.parts and system.metrics from different points in time.
 # So, there is inherent race condition (especially in fasttest that runs tests in parallel).

@@ -505,6 +505,10 @@ if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
 endif()
 
+if (TARGET ch_contrib::bcrypt)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::bcrypt)
+endif()
+
 if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
