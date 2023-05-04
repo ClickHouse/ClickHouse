@@ -57,6 +57,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 
 #include <IO/CompressionMethod.h>
@@ -526,6 +527,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         context->initializeExternalTablesIfSet();
 
         auto * insert_query = ast->as<ASTInsertQuery>();
+        bool async_insert_enabled = settings.async_insert;
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
         if (insert_query)
@@ -534,6 +536,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
             else if (auto table = insert_query->getTable(); !table.empty())
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
+
+            if (insert_query->table_id)
+                if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
+                    async_insert_enabled |= table->areAsynchronousInsertsEnabled();
         }
 
         if (insert_query && insert_query->select)
@@ -568,7 +574,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto * queue = context->getAsynchronousInsertQueue();
         auto * logger = &Poco::Logger::get("executeQuery");
 
-        if (insert_query && settings.async_insert)
+        if (insert_query && async_insert_enabled)
         {
             String reason;
 
