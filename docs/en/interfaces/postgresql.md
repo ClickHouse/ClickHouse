@@ -54,7 +54,7 @@ default=>
 
 And that's it! You now have a PostgreSQL client connected to ClickHouse, and all commands and queries are executed on ClickHouse.
 
-:::caution
+:::note
 The PostgreSQL protocol currently only supports plain-text passwords.
 :::
 

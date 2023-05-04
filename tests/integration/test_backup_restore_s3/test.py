@@ -9,6 +9,9 @@ node = cluster.add_instance(
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
     ],
+    user_configs=[
+        "configs/zookeeper_retries.xml",
+    ],
     with_minio=True,
 )
 
@@ -34,7 +37,7 @@ def new_backup_name():
 def check_backup_and_restore(storage_policy, backup_destination, size=1000):
     node.query(
         f"""
-    DROP TABLE IF EXISTS data NO DELAY;
+    DROP TABLE IF EXISTS data SYNC;
     CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='{storage_policy}';
     INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT {size};
     BACKUP TABLE data TO {backup_destination};
@@ -44,8 +47,8 @@ def check_backup_and_restore(storage_policy, backup_destination, size=1000):
         (SELECT count(), sum(sipHash64(*)) FROM data_restored),
         'Data does not matched after BACKUP/RESTORE'
     );
-    DROP TABLE data NO DELAY;
-    DROP TABLE data_restored NO DELAY;
+    DROP TABLE data SYNC;
+    DROP TABLE data_restored SYNC;
     """
     )
 

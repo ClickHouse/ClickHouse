@@ -44,7 +44,7 @@ If you apply this combinator, the aggregate function returns the same value but 
 
 **Arguments**
 
--   `x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
@@ -72,11 +72,11 @@ If you apply this combinator, the aggregate function does not return the resulti
 
 To work with these states, use:
 
--   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
--   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
--   [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
--   [-Merge](#aggregate_functions_combinators-merge) combinator.
--   [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
+- [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
+- [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
+- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
+- [-Merge](#aggregate_functions_combinators-merge) combinator.
+- [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
 
 ## -Merge
 
@@ -111,7 +111,7 @@ If an aggregate function does not have input values, with this combinator it ret
 
 **Arguments**
 
--   `x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
@@ -171,12 +171,12 @@ This combinator converts a result of an aggregate function to the [Nullable](../
 
 **Arguments**
 
--   `x` — Aggregate function parameters.
+- `x` — Aggregate function parameters.
 
 **Returned values**
 
--   The result of the aggregate function, converted to the `Nullable` data type.
--   `NULL`, if there is nothing to aggregate.
+- The result of the aggregate function, converted to the `Nullable` data type.
+- `NULL`, if there is nothing to aggregate.
 
 Type: `Nullable(aggregate function return type)`.
 
@@ -228,15 +228,15 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 
 **Arguments**
 
--   `start` — Starting value of the whole required interval for `resampling_key` values.
--   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
--   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
--   `resampling_key` — Column whose values are used for separating data into intervals.
--   `aggFunction_params` — `aggFunction` parameters.
+- `start` — Starting value of the whole required interval for `resampling_key` values.
+- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
+- `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+- `resampling_key` — Column whose values are used for separating data into intervals.
+- `aggFunction_params` — `aggFunction` parameters.
 
 **Returned values**
 
--   Array of `aggFunction` results for each subinterval.
+- Array of `aggFunction` results for each subinterval.
 
 **Example**
 
@@ -285,3 +285,8 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
+
+
+## Related Content
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

@@ -99,7 +99,7 @@ Pipe StorageMeiliSearch::read(
         for (const auto & el : query_params->children)
         {
             auto str = el->getColumnName();
-            auto it = find(str.begin(), str.end(), '=');
+            auto it = std::find(str.begin(), str.end(), '=');
             if (it == str.end())
                 throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "meiliMatch function must have parameters of the form \'key=value\'");
 

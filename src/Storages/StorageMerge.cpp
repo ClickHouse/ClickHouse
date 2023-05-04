@@ -649,13 +649,14 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryProcessingStage::Complete,
         storage_snapshot,
         modified_query_info);
+
     if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
-        QueryPlan plan;
+        QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (!view || allow_experimental_analyzer)
@@ -707,12 +708,15 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
+        QueryPlan & plan = child_plans.emplace_back();
+
         if (allow_experimental_analyzer)
         {
             InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections());
             builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
+            plan = std::move(interpreter.getPlanner()).extractQueryPlan();
         }
         else
         {
@@ -721,7 +725,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections()};
-            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
+            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline(plan));
         }
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
@@ -919,7 +923,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(Context
 
 void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    auto name_deps = getDependentViewsByColumn(local_context);
+    std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -930,7 +934,9 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
 
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
-            const auto & deps_mv = name_deps[command.column_name];
+            if (!name_deps)
+                name_deps = getDependentViewsByColumn(local_context);
+            const auto & deps_mv = name_deps.value()[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,

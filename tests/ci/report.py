@@ -196,7 +196,7 @@ class TestResult:
             )
         for log_path in log_paths:
             file = Path(log_path)
-            assert file.exists()
+            assert file.exists(), file
             self.log_files.append(file)
 
 
@@ -262,17 +262,20 @@ class ReportColorTheme:
 ColorTheme = Tuple[str, str, str]
 
 
-def _format_header(header, branch_name, branch_url=None):
-    result = " ".join([w.capitalize() for w in header.split(" ")])
+def _format_header(
+    header: str, branch_name: str, branch_url: Optional[str] = None
+) -> str:
+    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
+    # capitalizes the first letter and doesn't touch the rest of the word
+    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
     result = result.replace("Clickhouse", "ClickHouse")
     result = result.replace("clickhouse", "ClickHouse")
     if "ClickHouse" not in result:
-        result = "ClickHouse " + result
-    result += " for "
+        result = f"ClickHouse {result}"
     if branch_url:
-        result += f'<a href="{branch_url}">{branch_name}</a>'
+        result = f'{result} for <a href="{branch_url}">{branch_name}</a>'
     else:
-        result += branch_name
+        result = f"{result} for {branch_name}"
     return result
 
 
@@ -367,6 +370,7 @@ def create_test_html_report(
                 colspan += 1
 
             if test_result.log_urls is not None:
+                has_log_urls = True
                 test_logs_html = "<br>".join(
                     [_get_html_url(url) for url in test_result.log_urls]
                 )
@@ -473,7 +477,7 @@ def create_build_html_report(
     commit_url: str,
 ) -> str:
     rows = ""
-    for (build_result, build_log_url, artifact_urls) in zip(
+    for build_result, build_log_url, artifact_urls in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"

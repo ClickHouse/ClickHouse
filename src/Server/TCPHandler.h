@@ -76,8 +76,17 @@ struct QueryState
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
+    enum class CancellationStatus: UInt8
+    {
+        FULLY_CANCELLED,
+        READ_CANCELLED,
+        NOT_CANCELLED
+    };
+
+    static std::string cancellationStatusToName(CancellationStatus status);
+
     /// Is request cancelled
-    bool is_cancelled = false;
+    CancellationStatus cancellation_status = CancellationStatus::NOT_CANCELLED;
     bool is_connection_closed = false;
     /// empty or not
     bool is_empty = true;
@@ -272,7 +281,10 @@ private:
     void initLogsBlockOutput(const Block & block);
     void initProfileEventsBlockOutput(const Block & block);
 
-    bool isQueryCancelled();
+    using CancellationStatus = QueryState::CancellationStatus;
+
+    void decreaseCancellationStatus(const std::string & log_message);
+    CancellationStatus getQueryCancellationStatus();
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);

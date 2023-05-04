@@ -34,6 +34,10 @@ Table array decimal avg
 3.5
 0
 2
+2023-04-05 00:25:24	2023-04-05 00:25:23	[0,1]
+2023-04-05 00:25:24.124	2023-04-05 00:25:23.123	[0,1.001]
+2023-04-06	2023-04-05	[0,1]
+2023-04-06	2023-04-05	[0,1]
 Types of aggregation result array min
 Int8	Int16	Int32	Int64
 UInt8	UInt16	UInt32	UInt64

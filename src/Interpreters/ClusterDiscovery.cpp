@@ -237,15 +237,20 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
     }
 
     bool secure = cluster_info.current_node.secure;
-    auto cluster = std::make_shared<Cluster>(
-        context->getSettingsRef(),
-        shards,
+    ClusterConnectionParameters params{
         /* username= */ context->getUserName(),
         /* password= */ "",
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
-        /* secure= */ secure);
+        /* secure= */ secure,
+        /* priority= */ 1,
+        /* cluster_name= */ "",
+        /* password= */ ""};
+    auto cluster = std::make_shared<Cluster>(
+        context->getSettingsRef(),
+        shards,
+        params);
     return cluster;
 }
 
@@ -308,7 +313,9 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     LOG_DEBUG(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
     auto cluster = makeCluster(cluster_info);
-    context->setCluster(cluster_info.name, cluster);
+
+    std::lock_guard lock(mutex);
+    cluster_impls[cluster_info.name] = cluster;
     return true;
 }
 
@@ -445,6 +452,21 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     return finished;
 }
 
+ClusterPtr ClusterDiscovery::getCluster(const String & cluster_name) const
+{
+    std::lock_guard lock(mutex);
+    auto it = cluster_impls.find(cluster_name);
+    if (it == cluster_impls.end())
+        return nullptr;
+    return it->second;
+}
+
+std::unordered_map<String, ClusterPtr> ClusterDiscovery::getClusters() const
+{
+    std::lock_guard lock(mutex);
+    return cluster_impls;
+}
+
 void ClusterDiscovery::shutdown()
 {
     LOG_DEBUG(log, "Shutting down");
@@ -456,7 +478,14 @@ void ClusterDiscovery::shutdown()
 
 ClusterDiscovery::~ClusterDiscovery()
 {
-    ClusterDiscovery::shutdown();
+    try
+    {
+        ClusterDiscovery::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error on ClusterDiscovery shutdown");
+    }
 }
 
 bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)

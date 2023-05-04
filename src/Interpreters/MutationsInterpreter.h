@@ -48,7 +48,7 @@ public:
         ContextPtr context_,
         bool can_execute_,
         bool return_all_columns_ = false,
-        bool return_deleted_rows_ = false);
+        bool return_mutated_rows_ = false);
 
     /// Special case for MergeTree
     MutationsInterpreter(
@@ -59,7 +59,7 @@ public:
         ContextPtr context_,
         bool can_execute_,
         bool return_all_columns_ = false,
-        bool return_deleted_rows_ = false);
+        bool return_mutated_rows_ = false);
 
     void validate();
     size_t evaluateCommandsSize();
@@ -136,7 +136,7 @@ private:
         ContextPtr context_,
         bool can_execute_,
         bool return_all_columns_,
-        bool return_deleted_rows_);
+        bool return_mutated_rows_);
 
     void prepare(bool dry_run);
 
@@ -210,8 +210,8 @@ private:
     // whether all columns should be returned, not just updated
     bool return_all_columns;
 
-    // whether we should return deleted or nondeleted rows on DELETE mutation
-    bool return_deleted_rows;
+    // whether we should return mutated or all existing rows
+    bool return_mutated_rows;
 };
 
 }

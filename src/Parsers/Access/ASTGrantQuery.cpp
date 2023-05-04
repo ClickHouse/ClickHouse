@@ -119,7 +119,6 @@ ASTPtr ASTGrantQuery::clone() const
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
-                  << (settings.hilite ? hilite_keyword : "") << ((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "") << (settings.hilite ? hilite_none : "")
                   << (settings.hilite ? hilite_keyword : "") << (is_revoke ? "REVOKE" : "GRANT")
                   << (settings.hilite ? IAST::hilite_none : "");
 
@@ -148,6 +147,8 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
                             "ASTGrantQuery can contain either roles or access rights elements "
                             "to grant or revoke, not both of them");
     }
+    else if (current_grants)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT GRANTS" << (settings.hilite ? hilite_none : "");
     else
         formatElementsWithoutOptions(access_rights_elements, settings);
 
@@ -161,6 +162,9 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
         else if (admin_option)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
+
+        if (replace_access || replace_granted_roles)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH REPLACE OPTION" << (settings.hilite ? hilite_none : "");
     }
 }
 

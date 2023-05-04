@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Common/getRandomASCIIString.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
@@ -58,9 +59,9 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     out->finalize();
 }
 
-const std::string & IObjectStorage::getCacheBasePath() const
+const std::string & IObjectStorage::getCacheName() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
 }
 
 void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
@@ -86,6 +87,23 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     settings.remote_throttler = remote_write_throttler;
     settings.for_object_storage = true;
     return settings;
+}
+
+std::string IObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+{
+    /// Path to store the new S3 object.
+
+    /// Total length is 32 a-z characters for enough randomness.
+    /// First 3 characters are used as a prefix for
+    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+
+    constexpr size_t key_name_total_size = 32;
+    constexpr size_t key_name_prefix_size = 3;
+
+    /// Path to store new S3 object.
+    return fmt::format("{}/{}",
+        getRandomASCIIString(key_name_prefix_size),
+        getRandomASCIIString(key_name_total_size - key_name_prefix_size));
 }
 
 }
