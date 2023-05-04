@@ -253,7 +253,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             " - S3('url', 'NOSIGN')\n"
             " - S3('url', 'access_key_id', 'secret_access_key')\n";
         const auto error_message =
-            fmt::format("Engine DatabaseS3 must have the following arguments signature\n{}",  supported_signature);
+            fmt::format("Engine DatabaseS3 must have the following arguments signature\n{}", supported_signature);
 
         for (auto & arg : engine_args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
