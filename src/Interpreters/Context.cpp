@@ -1612,26 +1612,42 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+bool Context::displaySecretsInShowAndSelect() const
+{
+    return shared->server_settings.display_secrets_in_show_and_select;
+}
+
 Settings Context::getSettings() const
 {
     auto lock = getLock();
     return settings;
 }
 
-
 void Context::setSettings(const Settings & settings_)
 {
     auto lock = getLock();
-    auto old_readonly = settings.readonly;
-    auto old_allow_ddl = settings.allow_ddl;
-    auto old_allow_introspection_functions = settings.allow_introspection_functions;
+    const auto old_readonly = settings.readonly;
+    const auto old_allow_ddl = settings.allow_ddl;
+    const auto old_allow_introspection_functions = settings.allow_introspection_functions;
+    const auto old_display_secrets = settings.format_display_secrets_in_show_and_select;
 
     settings = settings_;
 
-    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
+    if ((settings.readonly != old_readonly)
+        || (settings.allow_ddl != old_allow_ddl)
+        || (settings.allow_introspection_functions != old_allow_introspection_functions)
+        || (settings.format_display_secrets_in_show_and_select != old_display_secrets))
         calculateAccessRights();
 }
 
+void Context::recalculateAccessRightsIfNeeded(std::string_view name)
+{
+    if (name == "readonly"
+        || name == "allow_ddl"
+        || name == "allow_introspection_functions"
+        || name == "format_display_secrets_in_show_and_select")
+        calculateAccessRights();
+}
 
 void Context::setSetting(std::string_view name, const String & value)
 {
@@ -1642,11 +1658,8 @@ void Context::setSetting(std::string_view name, const String & value)
         return;
     }
     settings.set(name, value);
-
-    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
-        calculateAccessRights();
+    recalculateAccessRightsIfNeeded(name);
 }
-
 
 void Context::setSetting(std::string_view name, const Field & value)
 {
@@ -1657,11 +1670,8 @@ void Context::setSetting(std::string_view name, const Field & value)
         return;
     }
     settings.set(name, value);
-
-    if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
-        calculateAccessRights();
+    recalculateAccessRightsIfNeeded(name);
 }
-
 
 void Context::applySettingChange(const SettingChange & change)
 {
