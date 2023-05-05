@@ -74,80 +74,6 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-struct WriteBufferFromS3::BufferAllocationPolicy
-{
-    size_t first_size = 0;
-    size_t second_size = 0;
-
-    size_t multiply_factor = 0;
-    size_t multiply_threshold = 0;
-    size_t max_size = 0;
-
-    size_t current_size = 0;
-    size_t buffer_number = 0;
-
-    explicit BufferAllocationPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings_)
-        : first_size(std::max(settings_.max_single_part_upload_size, settings_.min_upload_part_size))
-        , second_size(settings_.min_upload_part_size)
-        , multiply_factor(settings_.upload_part_size_multiply_factor)
-        , multiply_threshold(settings_.upload_part_size_multiply_parts_count_threshold)
-        , max_size(settings_.max_upload_part_size)
-    {
-        if (settings_.strict_upload_part_size > 0)
-        {
-            first_size = settings_.strict_upload_part_size;
-            second_size = settings_.strict_upload_part_size;
-            multiply_factor = 1;
-            multiply_threshold = 10000;
-            max_size = settings_.max_upload_part_size;
-        }
-        else
-        {
-            first_size = std::max(settings_.max_single_part_upload_size, settings_.min_upload_part_size);
-            second_size = settings_.min_upload_part_size;
-            multiply_factor = settings_.upload_part_size_multiply_factor;
-            multiply_threshold = settings_.upload_part_size_multiply_parts_count_threshold;
-            max_size = settings_.max_upload_part_size;
-        }
-
-        chassert(first_size > 0);
-        chassert(second_size > 0);
-        chassert(multiply_factor >= 1);
-        chassert(multiply_threshold > 0);
-        chassert(max_size > 0);
-    }
-
-    size_t getNumber() const
-    {
-        return buffer_number;
-    }
-
-    size_t getSize() const
-    {
-        chassert(buffer_number > 0);
-        return current_size;
-    }
-
-    void next()
-    {
-        ++buffer_number;
-
-        if (1 == buffer_number)
-        {
-            current_size = first_size;
-            return;
-        }
-
-        if (2 == buffer_number)
-            current_size = second_size;
-
-        if (0 == ((buffer_number-1) % multiply_threshold))
-        {
-            current_size *= multiply_factor;
-            current_size = std::min(current_size, max_size);
-        }
-    }
-};
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
@@ -164,7 +90,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(std::make_unique<BufferAllocationPolicy>(request_settings_.getUploadSettings()))
+    , buffer_allocation_policy(ChooseBufferPolicy(request_settings_.getUploadSettings()))
     , task_tracker(std::make_unique<WriteBufferFromS3::TaskTracker>(std::move(schedule_)))
 {
     LOG_TRACE(log, "Create WriteBufferFromS3, {}", getLogDetails());
@@ -488,7 +414,7 @@ void WriteBufferFromS3::abortMultipartUpload()
 S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, PartData & data)
 {
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, data.data_size);
-    LOG_TRACE(log, "fillUploadRequest, size {}, key: {}", data.data_size, key);
+    LOG_TRACE(log, "getUploadRequest, size {}, key: {}", data.data_size, key);
 
     S3::UploadPartRequest req;
 
@@ -515,7 +441,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
 
     multipart_tags.push_back({});
     size_t part_number = multipart_tags.size();
-    LOG_TRACE(log, "WritePart. {}, part size: {}, part number: {}", getLogDetails(), data.data_size, part_number);
+    LOG_TRACE(log, "writePart {}, part size: {}, part number: {}", getLogDetails(), data.data_size, part_number);
 
     if (multipart_upload_id.empty())
         throw Exception(
