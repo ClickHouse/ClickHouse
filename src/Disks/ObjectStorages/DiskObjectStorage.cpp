@@ -297,7 +297,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
     String id;
     auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0].absolute_path;
+        id = blobs_paths[0].remote_path;
     return id;
 }
 
@@ -309,7 +309,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
         return false;
     }
 
-    auto object = StoredObject::create(*object_storage, id, {}, {}, true);
+    auto object = StoredObject(id);
     return object_storage->exists(object);
 }
 
