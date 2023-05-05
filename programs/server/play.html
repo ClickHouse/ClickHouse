@@ -517,7 +517,7 @@
     let previous_query = '';
 
     const current_url = new URL(window.location);
-    const opened_locally = document.location.href.startsWith("file://");
+    const opened_locally = location.protocol == 'file:';
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
