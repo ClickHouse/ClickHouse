@@ -297,7 +297,8 @@ namespace detail
                         }
                     }
 
-                    for (auto [key, value]: resp.data) {
+                    for (auto [key, value]: resp.data)
+                    {
                         if (key == "server_protocol_version")
                         {
                             response.set("Set-Cookie", key + '=' + value);
@@ -313,9 +314,9 @@ namespace detail
                     if constexpr (!for_object_info)
                         content_encoding = response.get("Content-Encoding", "");
 
-                    std::istringstream* result_istr;
-                    
-                    result_istr = new std::istringstream(data);
+                    std::istream* result_istr = new std::istream(nullptr);
+                    std::stringbuf* str_buf = new std::stringbuf(data);
+                    result_istr->rdbuf(str_buf);
 
                     response.setStatus(Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK);
                     enet_peer_disconnect(peer, 0);

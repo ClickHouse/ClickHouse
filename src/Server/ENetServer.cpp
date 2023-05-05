@@ -68,7 +68,7 @@ void ENetServer::run()
     while (!_stopped)
     {
         ENetEvent event;
-        while (enet_host_service(server, &event, 5000) > 0)
+        while (enet_host_service(server, &event, 3000) > 0)
         {
             switch (event.type)
             {
@@ -101,8 +101,6 @@ void ENetServer::run()
                         std::shared_lock lock(endpoint->rwlock);
                         if (endpoint->blocker.isCancelled())
                             throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
-
-                        LOG_INFO(logger, "ENET Processing query");
 
                         if (compress)
                         {
