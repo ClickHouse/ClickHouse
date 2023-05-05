@@ -56,7 +56,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1;
 SELECT '=============== QUERIES EXECUTED BY PARALLEL INNER QUERY ALONE ===============';
 
 SYSTEM FLUSH LOGS;
--- There should be 3 queries. The main query as receive by the initiator, and the 2 equal queries sent to each replica
+-- There should be 3 queries. The main query as received by the initiator and the 2 equal queries sent to each replica
 SELECT shardNum() as num, query
 FROM system.query_log
 WHERE
@@ -140,17 +140,17 @@ FROM
             value2,
             count() AS count
         FROM join_outer_table
-                 INNER JOIN
-             (
-                 SELECT
-                     key,
-                     value1,
-                     value2,
-                     toUInt64(min(time)) AS start_ts
-                 FROM join_inner_table
-                     PREWHERE (id = '833c9e22-c245-4eb5-8745-117a9a1f26b1') AND (number > toUInt64('1610517366120'))
-                 GROUP BY key, value1, value2
-                 ) USING (key)
+        INNER JOIN
+        (
+            SELECT
+                key,
+                value1,
+                value2,
+                toUInt64(min(time)) AS start_ts
+            FROM join_inner_table
+            PREWHERE (id = '833c9e22-c245-4eb5-8745-117a9a1f26b1') AND (number > toUInt64('1610517366120'))
+            GROUP BY key, value1, value2
+        ) USING (key)
         GROUP BY key, value1, value2
         )
 GROUP BY value1, value2
@@ -159,12 +159,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1;
 
 SYSTEM FLUSH LOGS;
 
--- There should be 5 queries. The main query as receive by the initiator, the 2 equal queries from the inner join and
--- the 2 queries with the join (and a temp table)
+-- There should be 5 queries. The main query as received by the initiator, the 2 equal queries to execute the subquery
+-- in the inner join and the 2 queries executing the whole query (but replacing the subquery with a temp table)
 SELECT shardNum() as num, query
 FROM system.query_log
 WHERE
-        event_date >= yesterday()
+      event_date >= yesterday()
   AND type = 'QueryFinish'
   AND initial_query_id =
       (
