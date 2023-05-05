@@ -26,6 +26,7 @@ private:
     ASTPtr query_ptr;
 
     String getRewrittenQuery();
+    String getMySQLQuery();
 };
 
 
