@@ -95,8 +95,6 @@ static void extractMergingAndGatheringColumns(
             gathering_column_names.emplace_back(column.name);
         }
     }
-    gathering_columns.emplace_back(BlockNumberColumn);
-    gathering_column_names.emplace_back(BlockNumberColumn.name);
 }
 
 static void addMissedColumnsToSerializationInfos(
@@ -254,7 +252,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         ctx->need_remove_expired_values = true;
 
     if (!ctx->need_remove_expired_values && global_ctx->metadata_snapshot->getProjections().empty())
+    {
         global_ctx->storage_columns.emplace_back(BlockNumberColumn);
+        global_ctx->gathering_columns.emplace_back(BlockNumberColumn);
+        global_ctx->gathering_column_names.emplace_back(BlockNumberColumn.name);
+    }
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
