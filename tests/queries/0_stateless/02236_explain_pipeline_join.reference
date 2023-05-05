@@ -3,22 +3,24 @@ ExpressionTransform
   (Join)
   Resize 16 → 1
     JoiningTransform × 16 2 → 1
-      InnerShuffleGatherTransform × 16 16 → 1
-        InnerShuffleScatterTransform × 16 1 → 16
-          Resize 1 → 16
-            (Expression)
-            ExpressionTransform
-              (Limit)
-              Limit
-                (ReadFromStorage)
-                Numbers 0 → 1
-            (Expression)
-            FillingRightJoinSide × 16
-              InnerShuffleGatherTransform × 16 16 → 1
-                InnerShuffleScatterTransform × 16 1 → 16
-                  Resize 1 → 16
-                    ExpressionTransform
-                      (Limit)
-                      Limit
-                        (ReadFromStorage)
-                        Numbers 0 → 1
+      InnerShuffleGatherTransform × 16 8 → 1
+        InnerShuffleDispatchTransform × 8 2 → 16
+          InnerShuffleScatterTransform × 16
+            Resize 1 → 16
+              (Expression)
+              ExpressionTransform
+                (Limit)
+                Limit
+                  (ReadFromStorage)
+                  Numbers 0 → 1
+              (Expression)
+              FillingRightJoinSide × 16
+                InnerShuffleGatherTransform × 16 8 → 1
+                  InnerShuffleDispatchTransform × 8 2 → 16
+                    InnerShuffleScatterTransform × 16
+                      Resize 1 → 16
+                        ExpressionTransform
+                          (Limit)
+                          Limit
+                            (ReadFromStorage)
+                            Numbers 0 → 1
