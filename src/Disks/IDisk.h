@@ -240,8 +240,8 @@ public:
 
     /// Returns the path to a blob representing a specified file.
     /// The meaning of the returned path depends on disk's type.
-    /// E.g. for DiskLocal it the absolute path to the file and for DiskObjectStorage it's the name of the objects' namespace
-    /// combined with StoredObject::absolute_path for each stored object representing a specified file.
+    /// E.g. for DiskLocal it's the absolute path to the file and for DiskObjectStorage it's
+    /// StoredObject::remote_path for each stored object combined with the name of the objects' namespace.
     virtual Strings getBlobPath(const String & path) const = 0;
 
     using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;

@@ -21,7 +21,7 @@ namespace
 
     String readFile(const DiskPtr & disk, const String & file_path, bool copy_encrypted)
     {
-        auto buf = copy_encrypted ? disk->readEncryptedFile(file_path) : disk->readFile(file_path);
+        auto buf = copy_encrypted ? disk->readEncryptedFile(file_path, {}) : disk->readFile(file_path);
         String s;
         readStringUntilEOF(s, *buf);
         return s;

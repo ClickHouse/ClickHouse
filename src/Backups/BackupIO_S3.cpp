@@ -157,8 +157,8 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 fs::path(s3_uri.key) / path_in_backup,
                 0,
                 file_size,
-                /* dest_bucket= */ blob_path[0],
-                /* dest_key= */ blob_path[1],
+                /* dest_bucket= */ blob_path[1],
+                /* dest_key= */ blob_path[0],
                 request_settings,
                 object_attributes,
                 threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3"),
@@ -196,7 +196,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
     auto source_data_source_description = src_disk->getDataSourceDescription();
     if (source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
     {
-        /// getBlobPath() can return more than 2 elements if the file is stored as multiple objects in S3 bucket.
+        /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in S3 bucket.
         /// In this case we can't use the native copy.
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
@@ -204,8 +204,8 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
             LOG_TRACE(log, "Copying file {} from disk {} to S3 using native copy", src_path, src_disk->getName());
             copyS3File(
                 client,
-                /* src_bucket */ blob_path[0],
-                /* src_key= */ blob_path[1],
+                /* src_bucket */ blob_path[1],
+                /* src_key= */ blob_path[0],
                 start_pos,
                 length,
                 s3_uri.bucket,

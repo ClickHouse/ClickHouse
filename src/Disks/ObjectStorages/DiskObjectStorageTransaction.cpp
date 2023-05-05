@@ -694,8 +694,10 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// See DiskObjectStorage::getBlobPath().
     Strings blob_path;
     blob_path.reserve(2);
-    blob_path.emplace_back(object_storage.getObjectsNamespace());
-    blob_path.emplace_back(object.absolute_path);
+    blob_path.emplace_back(object.remote_path);
+    String objects_namespace = object_storage.getObjectsNamespace();
+    if (!objects_namespace.empty())
+        blob_path.emplace_back(objects_namespace);
 
     /// We always use mode Rewrite because we simulate append using metadata and different files
     size_t object_size = std::move(write_blob_function)(blob_path, WriteMode::Rewrite, object_attributes);
