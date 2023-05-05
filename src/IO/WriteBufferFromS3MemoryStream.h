@@ -4,8 +4,6 @@
 
 #if USE_AWS_S3
 
-#include "WriteBufferFromS3.h"
-
 #include <iostream>
 
 namespace DB

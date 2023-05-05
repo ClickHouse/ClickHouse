@@ -8,6 +8,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
+#include <IO/WriteBufferFromS3BufferAllocationPolicy.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
@@ -22,7 +23,6 @@ class Client;
 
 namespace DB
 {
-
 /**
  * Buffer to write a data to a S3 object with specified bucket and key.
  * If data size written to the buffer is less than 'max_single_part_upload_size' write is performed using singlepart upload.
@@ -80,8 +80,7 @@ private:
     const std::optional<std::map<String, String>> object_metadata;
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 
-    struct BufferAllocationPolicy;
-    std::unique_ptr<BufferAllocationPolicy> buffer_allocation_policy;
+    IBufferAllocationPolicyPtr buffer_allocation_policy;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
