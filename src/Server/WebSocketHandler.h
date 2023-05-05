@@ -6,6 +6,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Common/setThreadName.h>
 #include <Server/WebSocket/WebSocket.h>
+#include <Server/WebSocket/ReadBufferFromWebSocket.h>
 #include "Poco/Util/ServerApplication.h"
 
 
@@ -43,6 +44,7 @@ private:
         HTTPServerRequest & request,
         HTMLForm & params,
         WriteBuffer & simple_output,
+        ReadBuffer & web_socket_input,
         std::optional<CurrentThread::QueryScope> & query_scope
 //        WebSocket & ws,
 //        Poco::Util::Application & app

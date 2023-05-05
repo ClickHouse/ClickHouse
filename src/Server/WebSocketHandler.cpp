@@ -29,7 +29,7 @@
 #include <Core/ExternalTable.h>
 #include <Compression/CompressedReadBuffer.h>
 
-    using Poco::Net::WebSocketException;
+using Poco::Net::WebSocketException;
 using Poco::Util::Application;
 
 
@@ -360,6 +360,7 @@ void WebSocketHandler::processQuery(
     HTTPServerRequest & request,
     HTMLForm & params,
     WriteBuffer & simple_output,
+    ReadBuffer & web_socket_input,
     std::optional<CurrentThread::QueryScope> & query_scope)
 //    WebSocket & ws,
 //    Application & app)
@@ -493,7 +494,7 @@ void WebSocketHandler::processQuery(
             context->setSetting("readonly", 2);
     }
 
-    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
+    bool has_external_data = false;//startsWith(request.getContentType(), "multipart/form-data");
 
     if (has_external_data)
     {
@@ -590,10 +591,11 @@ void WebSocketHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, web_socket_input);
 
     ///TODO: add some result details callback
-    executeQuery(*in, simple_output, /* allow_into_outfile = */ false, context,nullptr);
+    /// TODO change web_socket_input to in
+    executeQuery(web_socket_input, simple_output, /* allow_into_outfile = */ false, context,nullptr);
 }
 
 
@@ -639,7 +641,12 @@ void WebSocketHandler::handleRequest(HTTPServerRequest & request, HTTPServerResp
 
         WebSocket ws(request, response);
 
-        processQuery(request, params, simple_output, query_scope);
+        ///TODO this should be a unique ptr I guess
+        ReadBufferFromWebSocket ws_input(ws);
+
+
+
+        processQuery(request, params, simple_output, ws_input, query_scope);
 
         app.logger().information("WebSocket connection established.");
         char buffer[1024];
