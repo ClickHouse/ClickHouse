@@ -536,6 +536,7 @@
     const pass_from_url = current_url.searchParams.get('password');
     if (pass_from_url) {
         document.getElementById('password').value = pass_from_url;
+	/// Browsers don't allow manipulating history for the 'file:' protocol.
         if (!opened_locally) {
             let replaced_pass = current_url.searchParams;
             replaced_pass.delete('password');
