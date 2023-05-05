@@ -543,11 +543,11 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
 {
     LOG_INFO(log, "Waiting mutation: {}", mutation_id);
     {
-        auto check = [version, this]()
+        auto check = [version, wait_for_another_mutation, this]()
         {
             if (shutdown_called)
                 return true;
-            auto mutation_status = getIncompleteMutationsStatus(version);
+            auto mutation_status = getIncompleteMutationsStatus(version, nullptr, wait_for_another_mutation);
             return !mutation_status || mutation_status->is_done || !mutation_status->latest_fail_reason.empty();
         };
 
