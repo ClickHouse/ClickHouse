@@ -1,11 +1,12 @@
 #include <Interpreters/InterpreterShowIndexesQuery.h>
 
+#include <Common/quoteString.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -23,8 +24,15 @@ String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
 
-    String table = query.table;
-    String database = query.database.empty() ? getContext()->getCurrentDatabase() : query.database;
+    WriteBufferFromOwnString buf_table;
+    writeEscapedString(query.table, buf_table);
+    String table = buf_table.str();
+
+    WriteBufferFromOwnString buf_database;
+    String resolved_database = getContext()->resolveDatabase(query.database);
+    writeEscapedString(resolved_database, buf_database);
+    String database = buf_database.str();
+
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression) : "";
 
     String rewritten_query = fmt::format(R"(
