@@ -6,15 +6,11 @@
 namespace DB
 {
 
-namespace
-{
-
 template <typename A>
 struct BitCountImpl
 {
     using ResultType = UInt8;
-    static constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_string_or_fixed_string = true;
 
     static inline ResultType apply(A a)
     {
@@ -40,8 +36,6 @@ struct BitCountImpl
 
 struct NameBitCount { static constexpr auto name = "bitCount"; };
 using FunctionBitCount = FunctionUnaryArithmetic<BitCountImpl, NameBitCount, false /* is injective */>;
-
-}
 
 /// The function has no ranges of monotonicity.
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>

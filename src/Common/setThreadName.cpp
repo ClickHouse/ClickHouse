@@ -30,10 +30,8 @@ static thread_local char thread_name[THREAD_NAME_SIZE]{};
 
 void setThreadName(const char * name)
 {
-#ifndef NDEBUG
     if (strlen(name) > THREAD_NAME_SIZE - 1)
         throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Thread name cannot be longer than 15 bytes");
-#endif
 
 #if defined(OS_FREEBSD)
     pthread_set_name_np(pthread_self(), name);
@@ -47,7 +45,7 @@ void setThreadName(const char * name)
 #endif
         DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
 
-    memcpy(thread_name, name, 1 + strlen(name));
+    memcpy(thread_name, name, std::min<size_t>(1 + strlen(name), THREAD_NAME_SIZE - 1));
 }
 
 const char * getThreadName()

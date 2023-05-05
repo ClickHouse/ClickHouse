@@ -8,7 +8,7 @@ title: DELETE Statement
 ---
 
 ``` sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [WHERE expr]
+DELETE FROM [db.]table [ON CLUSTER cluster] WHERE expr
 ```
 
 `DELETE FROM` removes rows from the table `[db.]table` that match the expression `expr`. The deleted rows are marked as deleted immediately and will be automatically filtered out of all subsequent queries. Cleanup of data happens asynchronously in the background. This feature is only available for the MergeTree table engine family.
