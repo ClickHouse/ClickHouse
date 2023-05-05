@@ -254,12 +254,22 @@ private:
 
 void registerTableFunctionGCS(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGCS>();
+    factory.registerFunction<TableFunctionGCS>(
+        {.documentation
+         = {R"(The table function can be used to read the data stored on Google Cloud Storage.)",
+            Documentation::Examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)"}},
+            Documentation::Categories{"DataLake"}},
+         .allow_readonly = false});
 }
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3>();
+    factory.registerFunction<TableFunctionS3>(
+        {.documentation
+         = {R"(The table function can be used to read the data stored on AWS S3.)",
+            Documentation::Examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)"}},
+            Documentation::Categories{"DataLake"}},
+         .allow_readonly = false}));
 }
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)
