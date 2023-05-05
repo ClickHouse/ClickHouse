@@ -59,10 +59,15 @@ using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 /// All pooled sessions don't have this tag attached after being taken from a pool.
 /// If the request and the response were fully written/read, the client code should add this tag
 /// explicitly by calling `markSessionForReuse()`.
+/// Note that HTTP response may contain extra bytes after the last byte of the payload. Specifically,
+/// when chunked encoding is used, there's an empty chunk at the end. Those extra bytes must also be
+/// read before the session can be reused.  So we usually put an `istr->ignore(INT64_MAX)` call
+/// before `markSessionForReuse()`.
 struct HTTPSessionReuseTag
 {
 };
 
+void markSessionForReuse(Poco::Net::HTTPSession & session);
 void markSessionForReuse(HTTPSessionPtr session);
 void markSessionForReuse(PooledHTTPSessionPtr session);
 
