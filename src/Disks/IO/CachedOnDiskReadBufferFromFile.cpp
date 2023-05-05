@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
+#include <IO/BoundedReadBuffer.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <base/hex.h>
@@ -33,7 +34,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int CANNOT_USE_CACHE;
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -190,12 +190,11 @@ CachedOnDiskReadBufferFromFile::getRemoteReadBuffer(FileSegment & file_segment, 
 
             if (!remote_fs_segment_reader)
             {
-                remote_fs_segment_reader = implementation_buffer_creator();
-
-                if (!remote_fs_segment_reader->supportsRightBoundedReads())
-                    throw Exception(
-                        ErrorCodes::CANNOT_USE_CACHE,
-                        "Cache cannot be used with a ReadBuffer which does not support right bounded reads");
+                auto impl = implementation_buffer_creator();
+                if (impl->supportsRightBoundedReads())
+                    remote_fs_segment_reader = std::move(impl);
+                else
+                    remote_fs_segment_reader = std::make_unique<BoundedReadBuffer>(std::move(impl));
 
                 file_segment.setRemoteFileReader(remote_fs_segment_reader);
             }
