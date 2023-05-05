@@ -141,6 +141,7 @@ private:
         bool supports_parallel_formatting{false};
         bool supports_subcolumns{false};
         bool supports_subset_of_columns{false};
+        bool prefers_large_blocks{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
@@ -237,6 +238,7 @@ public:
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
+    void markOutputFormatPrefersLargeBlocks(const String & name);
     void markFormatSupportsSubcolumns(const String & name);
     void markFormatSupportsSubsetOfColumns(const String & name);
 
@@ -246,6 +248,7 @@ public:
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
+    bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);

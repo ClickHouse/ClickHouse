@@ -30,7 +30,7 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        node.query("DROP TABLE IF EXISTS encrypted_test NO DELAY")
+        node.query("DROP TABLE IF EXISTS encrypted_test SYNC")
 
 
 @pytest.mark.parametrize(
@@ -294,4 +294,4 @@ def test_restart():
 
         assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-        node.query("DROP TABLE encrypted_test NO DELAY;")
+        node.query("DROP TABLE encrypted_test SYNC;")

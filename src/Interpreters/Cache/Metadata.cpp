@@ -200,6 +200,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
         if (key_state == KeyMetadata::KeyState::REMOVING)
         {
             locked_metadata->removeFromCleanupQueue();
+            LOG_DEBUG(log, "Removal of key {} is cancelled", key);
             return locked_metadata;
         }
 
@@ -265,6 +266,7 @@ void CacheMetadata::doCleanup()
 
         locked_metadata->markAsRemoved();
         erase(it);
+        LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
 
         try
         {
@@ -287,7 +289,11 @@ void CacheMetadata::doCleanup()
 LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
     : key_metadata(key_metadata_)
     , lock(key_metadata->guard.lock())
+#ifdef ABORT_ON_LOGICAL_ERROR
+    , log(&Poco::Logger::get("LockedKey(" + key_metadata_->key.toString() + ")"))
+#else
     , log(&Poco::Logger::get("LockedKey"))
+#endif
 {
 }
 
@@ -297,6 +303,7 @@ LockedKey::~LockedKey()
         return;
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
+    LOG_DEBUG(log, "Submitting key {} for removal", getKey());
     key_metadata->cleanup_queue.add(getKey());
 }
 
@@ -377,6 +384,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
+    chassert(file_segment->reserved_size >= downloaded_size);
     int64_t diff = file_segment->reserved_size - downloaded_size;
 
     metadata->file_segment = std::make_shared<FileSegment>(
