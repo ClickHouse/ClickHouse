@@ -1,7 +1,5 @@
 #include "config.h"
 #include <Common/ProfileEvents.h>
-#include "IO/ParallelReadBuffer.h"
-#include "IO/IOThreadPool.h"
 #include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
@@ -12,6 +10,8 @@
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
+#include <IO/ParallelReadBuffer.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -44,7 +44,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/narrowPipe.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -649,9 +648,9 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 {
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        return std::make_shared<ReadBufferFromS3>(
+        return std::make_unique<ReadBufferFromS3>(
             client,
             bucket,
             path,
@@ -771,7 +770,7 @@ public:
                 configuration_.request_settings,
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
-                threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"),
+                threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
             compression_method,
             3);
@@ -1004,6 +1003,11 @@ bool StorageS3::supportsSubsetOfColumns() const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
 }
 
+bool StorageS3::prefersLargeBlocks() const
+{
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration.format);
+}
+
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1076,10 +1080,7 @@ Pipe StorageS3::read(
             max_download_threads));
     }
 
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-
-    narrowPipe(pipe, num_streams);
-    return pipe;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
@@ -1256,6 +1257,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,
+        auth_settings.server_side_encryption_kms_config,
         std::move(headers),
         S3::CredentialsConfiguration{
         auth_settings.use_environment_credentials.value_or(context->getConfigRef().getBool("s3.use_environment_credentials", true)),

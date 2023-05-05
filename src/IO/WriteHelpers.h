@@ -1172,32 +1172,44 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-template <typename T>
+
+template <std::endian endian, typename T>
 requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        if constexpr (sizeof(x) == 2)
-            x = __builtin_bswap16(x);
-        else if constexpr (sizeof(x) == 4)
-            x = __builtin_bswap32(x);
-        else if constexpr (sizeof(x) == 8)
-            x = __builtin_bswap64(x);
-    }
+    if constexpr (std::endian::native != endian)
+        x = std::byteswap(x);
     writePODBinary(x, buf);
 }
 
-template <typename T>
+template <std::endian endian, typename T>
 requires is_big_int_v<T>
-inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryEndian(const T & x, WriteBuffer & buf)
 {
-    for (size_t i = 0; i != std::size(x.items); ++i)
+    if constexpr (std::endian::native == endian)
     {
-        const auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
-        writeBinaryBigEndian(item, buf);
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[i], buf);
+    }
+    else
+    {
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
     }
 }
+
+template <typename T>
+inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
+{
+    writeBinaryEndian<std::endian::little>(x, buf);
+}
+
+template <typename T>
+inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
+{
+    writeBinaryEndian<std::endian::big>(x, buf);
+}
+
 
 struct PcgSerializer
 {

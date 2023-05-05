@@ -41,10 +41,9 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/ServerUUID.h>
-#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -463,7 +462,7 @@ int Server::run()
         Poco::Util::HelpFormatter help_formatter(Server::options());
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName() == "clickhouse-server" ? "clickhouse-server" : commandName() + " server");
+                                      commandName());
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -777,6 +776,11 @@ try
         server_settings.max_backups_io_thread_pool_size,
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
+
+    OutdatedPartsLoadingThreadPool::initialize(
+        server_settings.max_outdated_parts_loading_thread_pool_size,
+        0, // We don't need any threads one all the parts will be loaded
+        server_settings.outdated_part_loading_thread_pool_queue_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1852,7 +1856,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            if (server_settings.shutdown_wait_unfinished_queries)
+            if (!server_settings.shutdown_wait_unfinished_queries)
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)

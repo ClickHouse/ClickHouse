@@ -57,6 +57,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 
 #include <IO/CompressionMethod.h>
@@ -526,6 +527,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         context->initializeExternalTablesIfSet();
 
         auto * insert_query = ast->as<ASTInsertQuery>();
+        bool async_insert_enabled = settings.async_insert;
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
         if (insert_query)
@@ -534,6 +536,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
             else if (auto table = insert_query->getTable(); !table.empty())
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
+
+            if (insert_query->table_id)
+                if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
+                    async_insert_enabled |= table->areAsynchronousInsertsEnabled();
         }
 
         if (insert_query && insert_query->select)
@@ -568,7 +574,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto * queue = context->getAsynchronousInsertQueue();
         auto * logger = &Poco::Logger::get("executeQuery");
 
-        if (insert_query && settings.async_insert)
+        if (insert_query && async_insert_enabled)
         {
             String reason;
 
@@ -725,9 +731,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        std::make_optional<String>(context->getUserName()),
+                        context->getUserName(), /*dummy for is_shared*/ false,
                         /*dummy value for expires_at*/ std::chrono::system_clock::from_time_t(1),
-                        /*dummy value for is_compressed*/ true);
+                        /*dummy value for is_compressed*/ false);
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -748,7 +754,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     QueryCache::Key key(
                         ast, res.pipeline.getHeader(),
-                        settings.query_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
+                        context->getUserName(), settings.query_cache_share_between_users,
                         std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                         settings.query_cache_compress_entries);
 
@@ -760,7 +766,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                         res.pipeline.getHeader(), query_cache, key,
                                         std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()),
                                         context->getSettings().query_cache_squash_partial_results,
-                                        context->getSettings().max_block_size);
+                                        context->getSettings().max_block_size,
+                                        context->getSettings().query_cache_max_size_in_bytes,
+                                        context->getSettings().query_cache_max_entries);
                         res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
                     }
                 }
