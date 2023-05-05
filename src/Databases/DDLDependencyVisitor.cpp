@@ -1,5 +1,6 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -442,7 +443,8 @@ namespace
         {
             ParserSelectWithUnionQuery parser;
             String description = fmt::format("Query for ClickHouse dictionary {}", data.table_name);
-            ASTPtr select = parseQuery(parser, query, description,
+            String fixed_query = removeWhereConditionPlaceholder(query);
+            ASTPtr select = parseQuery(parser, fixed_query, description,
                                        data.context->getSettingsRef().max_query_size, data.context->getSettingsRef().max_parser_depth);
 
             DDLDependencyVisitor::Visitor visitor{data};
