@@ -1,6 +1,26 @@
 #pragma once
 
+#include <optional>
+#include <base/types.h>
+
 #include "config.h"
+
+namespace DB::S3
+{
+
+/// See https://docs.aws.amazon.com/AmazonS3/latest/userguide/specifying-kms-encryption.html
+/// Needed by S3Common.h even if USE_AWS_S3 is 0
+struct ServerSideEncryptionKMSConfig
+{
+    // If key_id is non-null, enable SSE-KMS. If key_id is "", use the AWS managed key
+    std::optional<String> key_id = std::nullopt;
+    std::optional<String> encryption_context = std::nullopt;
+    std::optional<bool> bucket_key_enabled = std::nullopt;
+
+    bool operator==(const ServerSideEncryptionKMSConfig & other) const = default;
+};
+
+}
 
 #if USE_AWS_S3
 
@@ -85,6 +105,7 @@ public:
     /// e.g. Client::RetryStrategy should be used
     static std::unique_ptr<Client> create(
             size_t max_redirects_,
+            ServerSideEncryptionKMSConfig sse_kms_config_,
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
             const Aws::Client::ClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
@@ -143,6 +164,13 @@ public:
         std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy;
     };
 
+    /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
+    /// (before sending the request with one of the methods below).
+    /// Per the docs (https://docs.aws.amazon.com/AmazonS3/latest/userguide/specifying-kms-encryption.html),
+    /// the headers should only be set for PutObject, CopyObject, POST Object, and CreateMultipartUpload.
+    template <typename RequestType>
+    void setKMSHeaders(RequestType & request) const;
+
     Model::HeadObjectOutcome HeadObject(const HeadObjectRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(const ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(const ListObjectsRequest & request) const;
@@ -165,6 +193,7 @@ public:
     ProviderType getProviderType() const;
 private:
     Client(size_t max_redirects_,
+           ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
            const Aws::Client::ClientConfiguration& client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
@@ -215,6 +244,8 @@ private:
 
     const size_t max_redirects;
 
+    const ServerSideEncryptionKMSConfig sse_kms_config;
+
     Poco::Logger * log;
 };
 
@@ -231,6 +262,7 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
+        ServerSideEncryptionKMSConfig sse_kms_config,
         HTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration);
 

@@ -410,7 +410,7 @@ def test_move_replace_partition_to_another_table(cluster):
         - FILES_OVERHEAD_METADATA_VERSION * 2,
     )
 
-    node.query("DROP TABLE hdfs_clone NO DELAY")
+    node.query("DROP TABLE hdfs_clone SYNC")
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
