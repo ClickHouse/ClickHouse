@@ -281,7 +281,7 @@ def _format_header(
 
 def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
     ok_statuses = ("OK", "success", "PASSED")
-    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout")
+    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout", "EXPECTED_TO_FAIL")
 
     if colortheme is None:
         colortheme = ReportColorTheme.default
