@@ -269,7 +269,7 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
          = {R"(The table function can be used to read the data stored on AWS S3.)",
             Documentation::Examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)"}},
             Documentation::Categories{"DataLake"}},
-         .allow_readonly = false}));
+         .allow_readonly = false});
 }
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)
