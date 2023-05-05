@@ -41,9 +41,9 @@ If the file is sitting on the same machine as `clickhouse-local`, use the `file`
 ```
 
 ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
-    ```bash
-    ./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
-    ```
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
 
 The `file` table function creates a table, and you can use `DESCRIBE` to see the inferred schema:
 

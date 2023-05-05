@@ -342,6 +342,31 @@ void ZooKeeper::createAncestors(const std::string & path)
     }
 }
 
+void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
+{
+    std::vector<std::string> paths_to_check;
+    size_t pos = 1;
+    while (true)
+    {
+        pos = path.find('/', pos);
+        if (pos == std::string::npos)
+            break;
+        paths_to_check.emplace_back(path.substr(0, pos));
+        ++pos;
+    }
+
+    MultiExistsResponse response = exists(paths_to_check);
+
+    for (size_t i = 0; i < paths_to_check.size(); ++i)
+    {
+        if (response[i].error != Coordination::Error::ZOK)
+        {
+            /// Ephemeral nodes cannot have children
+            requests.emplace_back(makeCreateRequest(paths_to_check[i], "", CreateMode::Persistent));
+        }
+    }
+}
+
 Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
     auto future_result = asyncTryRemoveNoThrow(path, version);
