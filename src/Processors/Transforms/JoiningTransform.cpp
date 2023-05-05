@@ -350,11 +350,6 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
 
     if (!task)
     {
-        if (input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
         if (!input.hasData())
         {
             input.setNeeded();
@@ -367,14 +362,10 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
             output.pushException(data.exception);
             return Status::Finished;
         }
-        if (data.chunk.hasChunkInfo())
-            task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
-        else
-        {
-            // Try to get one task from DelayedJoinedBlocksTransform again.
-            task = nullptr;
-            return Status::NeedData;
-        }
+
+        if (!data.chunk.hasChunkInfo())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
+        task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
     }
     else
     {
@@ -395,6 +386,7 @@ void DelayedJoinedBlocksWorkerTransform::work()
 {
     if (!task)
         return;
+
     Block block = task->delayed_blocks->next();
 
     if (!block)
@@ -416,19 +408,15 @@ DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, J
 
 void DelayedJoinedBlocksTransform::work()
 {
-    if (all_buckets_finished)
+    if (finished)
         return;
+
     delayed_blocks = join->getDelayedBlocks();
-    if (!delayed_blocks)
-    {
-        all_buckets_finished = true;
-    }
+    finished = finished || delayed_blocks == nullptr;
 }
 
 IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 {
-
-    bool should_finished = false;
     for (auto & output : outputs)
     {
         if (output.isFinished())
@@ -436,56 +424,44 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
             /// If at least one output is finished, then we have read all data from buckets.
             /// Some workers can still be busy with joining the last chunk of data in memory,
             /// but after that they also will finish when they will try to get next chunk.
-            should_finished = true;
-            break;
+            finished = true;
+            continue;
         }
-    }
-    if (should_finished)
-    {
-        for (auto & output : outputs)
-        {
-            if (!output.isFinished())
-            {
-                output.finish();
-            }
-        }
-        return Status::Finished;
+        if (!output.canPush())
+            return Status::PortFull;
     }
 
-    // No pending buckets.
-    if (all_buckets_finished && !delayed_blocks)
+    if (finished)
     {
+        // Since have memory limit, cannot handle all buckets parallelly by different
+        // DelayedJoinedBlocksWorkerTransform. So send the same task to all outputs.
+        // Wait for all DelayedJoinedBlocksWorkerTransform be idle before getting next bucket.
         for (auto & output : outputs)
+        {
+            if (output.isFinished())
+                continue;
+            Chunk chunk;
+            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>());
+            output.push(std::move(chunk));
             output.finish();
+        }
+
         return Status::Finished;
     }
 
-    // Try to read next bucket.
-    if (!delayed_blocks)
-        return Status::Ready;
-
-    // Put the ready task to the first available output port.
-    // Put empty tasks to other output ports. these ports will do nothing but require data again.
-    // Each bucket will handled in one thread, avoid lock contention in left file reader.
-    for (auto & output : outputs)
+    if (delayed_blocks)
     {
-        if (output.canPush())
+        for (auto & output : outputs)
         {
-            if (delayed_blocks)
-            {
-                Chunk chunk;
-                chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>(delayed_blocks));
-                output.push(std::move(chunk));
-                delayed_blocks = nullptr;
-            }
-            else
-            {
-                Chunk chunk;
-                output.push(std::move(chunk));
-            }
+            Chunk chunk;
+            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>(delayed_blocks));
+            output.push(std::move(chunk));
         }
+        delayed_blocks = nullptr;
+        return Status::PortFull;
     }
-    return Status::PortFull;
+
+    return Status::Ready;
 }
 
 }
