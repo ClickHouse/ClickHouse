@@ -96,6 +96,7 @@ public:
     String target_model;
     String target_function;
     String replica;
+    String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     String storage_policy;
