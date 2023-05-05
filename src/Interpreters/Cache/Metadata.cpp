@@ -255,11 +255,8 @@ void CacheMetadata::doCleanup()
         if (it == end())
             continue;
 
-        /// We cannot use LockedKey here, because it submits key for removal
-        /// in destructor (in case key is empty).
-        auto key_metadata = it->second;
-        auto key_lock = key_metadata->guard.lock();
-        const auto key_state = key_metadata->key_state;
+        auto locked_metadata = std::make_unique<LockedKey>(it->second);
+        const auto key_state = locked_metadata->getKeyState();
 
         if (key_state == KeyMetadata::KeyState::ACTIVE)
         {
@@ -267,7 +264,7 @@ void CacheMetadata::doCleanup()
             continue;
         }
 
-        key_metadata->key_state = KeyMetadata::KeyState::REMOVED;
+        locked_metadata->markAsRemoved();
         erase(it);
         LOG_DEBUG(log, "Key {} is removed from metadata", cleanup_key);
 
@@ -302,7 +299,7 @@ LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
 
 LockedKey::~LockedKey()
 {
-    if (!key_metadata->empty())
+    if (!key_metadata->empty() || getKeyState() != KeyMetadata::KeyState::ACTIVE)
         return;
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
@@ -317,6 +314,11 @@ void LockedKey::removeFromCleanupQueue()
 
     /// Just mark key_state as "not to be removed", the cleanup thread will check it and skip the key.
     key_metadata->key_state = KeyMetadata::KeyState::ACTIVE;
+}
+
+void LockedKey::markAsRemoved()
+{
+    key_metadata->key_state = KeyMetadata::KeyState::REMOVED;
 }
 
 bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
