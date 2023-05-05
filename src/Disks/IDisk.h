@@ -253,18 +253,11 @@ public:
     virtual void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) = 0;
 
     /// Reads a file from an encrypted disk without decrypting it (only for encrypted disks).
-    virtual std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile( /// NOLINT
-        const String & path,
-        const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const;
 
     /// Writes an already encrypted file to the disk (only for encrypted disks).
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile( /// NOLINT
-        const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {}) const;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+        const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) const;
 
     /// Returns the size of an encrypted file (only for encrypted disks).
     virtual size_t getEncryptedFileSize(const String & path) const;
