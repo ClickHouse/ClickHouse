@@ -57,7 +57,7 @@ public:
     static Configuration parseArguments(ASTs engine_args, ContextPtr context);
 
 protected:
-    StoragePtr getTableImpl(const String & url, ContextPtr context) const;
+    StoragePtr getTableImpl(const String & name, ContextPtr context) const;
 
     void addTable(const std::string & table_name, StoragePtr table_storage) const;
 
