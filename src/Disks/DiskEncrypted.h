@@ -198,13 +198,10 @@ public:
         delegate->writeFileUsingBlobWritingFunction(wrapped_path, mode, std::move(write_blob_function));
     }
 
-    std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(
-        const String & path, const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override
+    std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const override
     {
         auto wrapped_path = wrappedPath(path);
-        return delegate->readFile(wrapped_path, settings, read_hint, file_size);
+        return delegate->readFile(wrapped_path, settings);
     }
 
     std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
