@@ -58,3 +58,4 @@
 #cmakedefine01 USE_OPENSSL_INTREE
 #cmakedefine01 USE_ULID
 #cmakedefine01 USE_ENET
+#cmakedefine01 USE_BCRYPT
