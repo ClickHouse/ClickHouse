@@ -1,5 +1,6 @@
 import io
 import logging
+import time
 
 import avro.schema
 import pytest
@@ -46,14 +47,21 @@ def run_query(instance, query, data=None, settings=None):
 def test_select(started_cluster):
     # type: (ClickHouseCluster) -> None
 
-    schema_registry_client = CachedSchemaRegistryClient(
-        "http://localhost:{}".format(started_cluster.schema_registry_port)
-    )
+    time.sleep(3)
+
+    # schema_registry_client = CachedSchemaRegistryClient(
+    #     "http://localhost:{}".format(started_cluster.schema_registry_port)
+    # )
+    reg_url="http://localhost:{}".format(
+            started_cluster.schema_registry_port)
+    arg={'url':reg_url}
+
+    schema_registry_client = CachedSchemaRegistryClient(arg)
     serializer = MessageSerializer(schema_registry_client)
 
     schema = avro.schema.make_avsc_object(
         {
-            "name": "test_record",
+            "name": "test_record1",
             "type": "record",
             "fields": [{"name": "value", "type": "long"}],
         }
@@ -62,14 +70,14 @@ def test_select(started_cluster):
     buf = io.BytesIO()
     for x in range(0, 3):
         message = serializer.encode_record_with_schema(
-            "test_subject", schema, {"value": x}
+            "test_subject1", schema, {"value": x}
         )
         buf.write(message)
     data = buf.getvalue()
 
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     schema_registry_url = "http://{}:{}".format(
-        started_cluster.schema_registry_host, 8081
+        started_cluster.schema_registry_host, started_cluster.schema_registry_port
     )
 
     run_query(instance, "create table avro_data(value Int64) engine = Memory()")
@@ -85,6 +93,7 @@ def test_select(started_cluster):
 
 # def test_select_auth(started_cluster):
 #     # type: (ClickHouseCluster) -> None
+#     time.sleep(5)
 
 #     reg_url="http://localhost:{}".format(
 #             started_cluster.schema_registry_auth_port)
@@ -95,7 +104,7 @@ def test_select(started_cluster):
 
 #     schema = avro.schema.make_avsc_object(
 #         {
-#             "name": "test_record",
+#             "name": "test_record_auth",
 #             "type": "record",
 #             "fields": [{"name": "value", "type": "long"}],
 #         }
@@ -104,7 +113,7 @@ def test_select(started_cluster):
 #     buf = io.BytesIO()
 #     for x in range(0, 3):
 #         message = serializer.encode_record_with_schema(
-#             "test_subject", schema, {"value": x}
+#             "test_subject_auth", schema, {"value": x}
 #         )
 #         buf.write(message)
 #     data = buf.getvalue()
@@ -112,7 +121,7 @@ def test_select(started_cluster):
 #     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 #     schema_registry_url = "http://{}:{}@{}:{}".format(
 #         'schemauser', 'letmein',
-#         started_cluster.schema_registry_auth_host, 8081
+#         started_cluster.schema_registry_auth_host, started_cluster.schema_registry_auth_port
 #     )
 
 #     run_query(instance, "create table avro_data_auth(value Int64) engine = Memory()")
