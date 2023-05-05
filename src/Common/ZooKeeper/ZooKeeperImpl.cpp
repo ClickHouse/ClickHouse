@@ -434,8 +434,7 @@ void ZooKeeper::connect(
                 }
 
                 connected = true;
-                args.connected_zk = node.address.toString();
-                args.connected_zk_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                connected_zk_address = node.address.toString();
                 break;
             }
             catch (...)
@@ -451,7 +450,7 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        args.connected_zk = "";
+        connected_zk_address = "";
         message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
         for (const auto & node : nodes)

@@ -112,17 +112,21 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
 
-        args.connected_zk = impl->getConnectedHost();
-        args.connected_zk_time = impl->getConnectedDateTime();
-        args.connected_zk_index = 0;
+        String address = impl->getConnectedAddress();
+
+        size_t colon_pos = address.find(':');
+        connected_zk_host = address.substr(0, colon_pos);
+        connected_zk_port = address.substr(colon_pos + 1);
+
+        connected_zk_index = 0;
 
         if (args.hosts.size() > 1)
         {
             for (size_t i = 0; i < args.hosts.size(); i++)
             {
-                if (args.hosts[i] == args.connected_zk)
+                if (args.hosts[i] == address)
                 {
-                    args.connected_zk_index = i;
+                    connected_zk_index = i;
                     break;
                 }
             }

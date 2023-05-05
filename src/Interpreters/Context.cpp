@@ -1958,25 +1958,6 @@ ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedEx
 }
 
 
-void Context::fillZkConnectionInfo(MutableColumns & res_columns) const
-{
-    res_columns[0]->insert("default_zookeeper");
-    res_columns[1]->insert(shared->zookeeper->getZooKeeperArgs().connected_zk);
-    res_columns[2]->insert(shared->zookeeper->getZooKeeperArgs().connected_zk_index);
-    res_columns[3]->insert(shared->zookeeper->getZooKeeperArgs().connected_zk_time);
-
-    std::map<String, zkutil::ZooKeeperPtr>::iterator iter;
-    iter = shared->auxiliary_zookeepers.begin();
-
-    for (iter = shared->auxiliary_zookeepers.begin(); iter != shared->auxiliary_zookeepers.end(); iter ++)
-    {
-        res_columns[0]->insert(iter->first);
-        res_columns[1]->insert(iter->second->getZooKeeperArgs().connected_zk);
-        res_columns[2]->insert(iter->second->getZooKeeperArgs().connected_zk_index);
-        res_columns[3]->insert(iter->second->getZooKeeperArgs().connected_zk_time);
-    }
-}
-
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard lock(shared->embedded_dictionaries_mutex);
@@ -2705,6 +2686,7 @@ UInt32 Context::getZooKeeperSessionUptime() const
     return shared->zookeeper->getSessionUptime();
 }
 
+
 void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
 {
     /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
@@ -2821,6 +2803,16 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
         zookeeper->second = zookeeper->second->startNewSession();
 
     return zookeeper->second;
+}
+
+std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
+{
+    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+    if (!shared->auxiliary_zookeepers.empty())
+        return shared->auxiliary_zookeepers;
+    else
+        return std::map<String, zkutil::ZooKeeperPtr>();
 }
 
 #if USE_ROCKSDB

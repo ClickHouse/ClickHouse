@@ -39,8 +39,8 @@ public:
 
     bool isExpired() const override { return expired; }
     int64_t getSessionID() const override { return 0; }
-    String getConnectedHost() const override { return args.connected_zk; }
-    UInt64 getConnectedDateTime() const override { return args.connected_zk_time; }
+    String getConnectedAddress() const override { return connected_zk_address; }
+
 
 
     void create(
@@ -127,6 +127,8 @@ private:
     Container container;
 
     zkutil::ZooKeeperArgs args;
+
+    String connected_zk_address;
 
     std::mutex push_request_mutex;
     std::atomic<bool> expired{false};
