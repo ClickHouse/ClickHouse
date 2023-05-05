@@ -20,8 +20,11 @@ DETACH+ATTACH PARTITION
 3	4
 Temporary tables
 Initial
-4	8
+6	12
+6	12
 REPLACE simple
-4	6
+6	10
+6	10
 ATTACH FROM
-4	6
+6	10
+6	10
