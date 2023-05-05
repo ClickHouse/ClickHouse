@@ -476,6 +476,14 @@
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
 
+    <!-- When a user does not specify a password type in the CREATE USER query, the default password type is used.
+         Accepted values are: 'plaintext_password', 'sha256_password', 'double_sha1_password', 'bcrypt_password'.
+      -->
+    <default_password_type>sha256_password</default_password_type>
+
+    <!-- Work factor for bcrypt_password authentication type-->
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+
     <!-- Complexity requirements for user passwords. -->
     <!-- <password_complexity>
         <rule>
@@ -1293,7 +1301,7 @@
 
     <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
      If not specified they will be stored locally. -->
-    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined<user_defined_zookeeper_path> -->
+    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.

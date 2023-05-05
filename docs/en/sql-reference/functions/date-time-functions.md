@@ -24,6 +24,90 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
+## makeDate
+
+Creates a [Date](../../sql-reference/data-types/date.md) from a year, month and day argument.
+
+**Syntax**
+
+``` sql
+makeDate(year, month, day)
+```
+
+**Arguments**
+
+- `year` — Year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `month` — Month. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `day` — Day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+**Returned value**
+
+- A date created from the arguments.
+
+Type: [Date](../../sql-reference/data-types/date.md).
+
+**Example**
+
+``` sql
+SELECT makeDate(2023, 2, 28) AS Date;
+```
+
+Result:
+
+``` text
+┌───────date─┐
+│ 2023-02-28 │
+└────────────┘
+```
+
+## makeDate32
+
+Like [makeDate](#makeDate) but produces a [Date32](../../sql-reference/data-types/date32.md).
+
+## makeDateTime
+
+Creates a [DateTime](../../sql-reference/data-types/datetime.md) from a year, month, day, hour, minute and second argument.
+
+**Syntax**
+
+``` sql
+makeDateTime(year, month, day, hour, minute, second[, timezone])
+```
+
+**Arguments**
+
+- `year` — Year. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `month` — Month. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `day` — Day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `hour` — Hour. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `minute` — Minute. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `second` — Second. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `timezone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional).
+
+**Returned value**
+
+- A date with time created from the arguments.
+
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+``` sql
+SELECT makeDateTime(2023, 2, 28, 17, 12, 33) AS DateTime;
+```
+
+Result:
+
+``` text
+┌────────────DateTime─┐
+│ 2023-02-28 17:12:33 │
+└─────────────────────┘
+```
+
+## makeDateTime64
+
+Like [makeDateTime](#makedatetime) but produces a [DateTime64](../../sql-reference/data-types/datetime64.md).
+
 ## timeZone
 
 Returns the timezone of the server.
@@ -205,7 +289,7 @@ Aliases: `DAYOFMONTH`, `DAY`.
 
 Converts a date or date with time to the number of the day in the week as UInt8 value.
 
-The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is ommited, the default mode is 0. The time zone of the date can be specified as the third argument.
+The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is omitted, the default mode is 0. The time zone of the date can be specified as the third argument.
 
 | Mode | First day of week | Range                                          |
 |------|-------------------|------------------------------------------------|
