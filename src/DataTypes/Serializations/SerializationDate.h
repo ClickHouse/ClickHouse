@@ -1,13 +1,16 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/TimezoneMixin.h>
 
 namespace DB
 {
 
-class SerializationDate final : public SerializationNumber<UInt16>
+class SerializationDate final : public SerializationNumber<UInt16>, public TimezoneMixin
 {
 public:
+    explicit SerializationDate(const TimezoneMixin & time_zone_ = TimezoneMixin());
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
