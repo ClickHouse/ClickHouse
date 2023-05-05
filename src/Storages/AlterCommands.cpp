@@ -1117,6 +1117,20 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
 
+            /// The change of data type to/from Object is broken, so disable it for now
+            if (command.data_type)
+            {
+                GetColumnsOptions options(GetColumnsOptions::AllPhysical);
+                auto old_data_type = all_columns.getColumn(options, column_name).type;
+
+                if (WhichDataType(command.data_type).isObject()
+                    || WhichDataType(old_data_type).isObject())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The change of data type {} of column {} to {} is not allowed",
+                        old_data_type->getFamilyName(), backQuote(column_name), command.data_type->getFamilyName());
+            }
+
             if (command.isRemovingProperty())
             {
                 if (!column_default && command.to_remove == AlterCommand::RemoveProperty::DEFAULT)
