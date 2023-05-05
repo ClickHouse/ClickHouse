@@ -1291,6 +1291,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
+    std::optional<KeyCondition> key_condition;
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         prewhere_info,
@@ -1304,7 +1305,8 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         data,
         real_column_names,
         sample_factor_column_queried,
-        log);
+        log,
+        key_condition);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

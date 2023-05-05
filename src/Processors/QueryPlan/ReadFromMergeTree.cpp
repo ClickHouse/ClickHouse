@@ -247,7 +247,7 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     { /// build sort description for output stream
         SortDescription sort_description;
-        const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+        const Names & sorting_key_columns = metadata_for_reading->getSortingKeyColumns();
         const Block & header = output_stream->header;
         const int sort_direction = getSortDirection();
         for (const auto & column_name : sorting_key_columns)
@@ -1118,7 +1118,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
         prewhere_info,
         filter_nodes,
         storage_snapshot->metadata,
-        storage_snapshot->getMetadataForQuery(),
+        metadata_for_reading,
         query_info,
         context,
         requested_num_streams,
@@ -1126,7 +1126,90 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
         data,
         real_column_names,
         sample_factor_column_queried,
-        log);
+        log,
+        key_condition);
+}
+
+static ActionsDAGPtr buildFilterDAG(
+    const ContextPtr & context,
+    const PrewhereInfoPtr & prewhere_info,
+    const ActionDAGNodes & added_filter_nodes,
+    const SelectQueryInfo & query_info)
+{
+    const auto & settings = context->getSettingsRef();
+    ActionsDAG::NodeRawConstPtrs nodes;
+
+    if (prewhere_info)
+    {
+        {
+            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+            nodes.push_back(&node);
+        }
+
+        if (prewhere_info->row_level_filter)
+        {
+            const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
+            nodes.push_back(&node);
+        }
+    }
+
+    for (const auto & node : added_filter_nodes.nodes)
+        nodes.push_back(node);
+
+    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+
+    if (settings.allow_experimental_analyzer && query_info.planner_context)
+    {
+        const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
+        for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
+        {
+            const auto & column = table_expression_data.getColumnOrThrow(column_name);
+            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
+        }
+    }
+
+    return ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column, context);
+}
+
+static void buildKeyCondition(
+    std::optional<KeyCondition> & key_condition,
+    ActionsDAGPtr filter_actions_dag,
+    const ContextPtr & context,
+    const SelectQueryInfo & query_info,
+    const StorageMetadataPtr & metadata_snapshot)
+{
+    key_condition.reset();
+
+    // Build and check if primary key is used when necessary
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const Names & primary_key_column_names = primary_key.column_names;
+
+    const auto & settings = context->getSettingsRef();
+    if (settings.query_plan_optimize_primary_key)
+    {
+        NameSet array_join_name_set;
+        if (query_info.syntax_analyzer_result)
+            array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
+
+        key_condition.emplace(filter_actions_dag,
+            context,
+            primary_key_column_names,
+            primary_key.expression,
+            array_join_name_set);
+    }
+    else
+    {
+        key_condition.emplace(query_info, context, primary_key_column_names, primary_key.expression);
+    }
+}
+
+void ReadFromMergeTree::onAddFilterFinish()
+{
+    if (!filter_nodes.nodes.empty())
+    {
+        auto filter_actions_dag = buildFilterDAG(context, prewhere_info, filter_nodes, query_info);
+        buildKeyCondition(key_condition, filter_actions_dag, context, query_info, metadata_for_reading);
+    }
 }
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
@@ -1142,44 +1225,14 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const MergeTreeData & data,
     const Names & real_column_names,
     bool sample_factor_column_queried,
-    Poco::Logger * log)
+    Poco::Logger * log,
+    std::optional<KeyCondition> & key_condition)
 {
     const auto & settings = context->getSettingsRef();
     if (settings.allow_experimental_analyzer || settings.query_plan_optimize_primary_key)
     {
-        ActionsDAG::NodeRawConstPtrs nodes;
-
-        if (prewhere_info)
-        {
-            {
-                const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-                nodes.push_back(&node);
-            }
-
-            if (prewhere_info->row_level_filter)
-            {
-                const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
-                nodes.push_back(&node);
-            }
-        }
-
-        for (const auto & node : added_filter_nodes.nodes)
-            nodes.push_back(node);
-
-        std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-
-        if (settings.allow_experimental_analyzer && query_info.planner_context)
-        {
-            const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
-            for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
-            {
-                const auto & column = table_expression_data.getColumnOrThrow(column_name);
-                node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
-            }
-        }
-
         auto updated_query_info_with_filter_dag = query_info;
-        updated_query_info_with_filter_dag.filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_node_column, context);
+        updated_query_info_with_filter_dag.filter_actions_dag = buildFilterDAG(context, prewhere_info, added_filter_nodes, query_info);
 
         return selectRangesToReadImpl(
             parts,
@@ -1192,7 +1245,8 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             data,
             real_column_names,
             sample_factor_column_queried,
-            log);
+            log,
+            key_condition);
     }
 
     return selectRangesToReadImpl(
@@ -1206,7 +1260,8 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         data,
         real_column_names,
         sample_factor_column_queried,
-        log);
+        log,
+        key_condition);
 }
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
@@ -1220,7 +1275,8 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     const MergeTreeData & data,
     const Names & real_column_names,
     bool sample_factor_column_queried,
-    Poco::Logger * log)
+    Poco::Logger * log,
+    std::optional<KeyCondition> & key_condition)
 {
     AnalysisResult result;
     const auto & settings = context->getSettingsRef();
@@ -1246,24 +1302,29 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
-    std::optional<KeyCondition> key_condition;
 
-    if (settings.query_plan_optimize_primary_key)
-    {
-        NameSet array_join_name_set;
-        if (query_info.syntax_analyzer_result)
-            array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
+    // if (!key_condition)
+    // {
+    //     if (settings.query_plan_optimize_primary_key)
+    //     {
+    //         NameSet array_join_name_set;
+    //         if (query_info.syntax_analyzer_result)
+    //             array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
 
-        key_condition.emplace(query_info.filter_actions_dag,
-            context,
-            primary_key_column_names,
-            primary_key.expression,
-            array_join_name_set);
-    }
-    else
-    {
-        key_condition.emplace(query_info, context, primary_key_column_names, primary_key.expression);
-    }
+    //         key_condition.emplace(query_info.filter_actions_dag,
+    //             context,
+    //             primary_key_column_names,
+    //             primary_key.expression,
+    //             array_join_name_set);
+    //     }
+    //     else
+    //     {
+    //         key_condition.emplace(query_info, context, primary_key_column_names, primary_key.expression);
+    //     }
+    // }
+
+    if (!key_condition)
+        buildKeyCondition(key_condition, query_info.filter_actions_dag, context, query_info, metadata_snapshot);
 
     if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())
     {
@@ -1395,7 +1456,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// update sort info for output stream
     SortDescription sort_description;
-    const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+    const Names & sorting_key_columns = metadata_for_reading->getSortingKeyColumns();
     const Block & header = output_stream->header;
     const int sort_direction = getSortDirection();
     for (const auto & column_name : sorting_key_columns)
