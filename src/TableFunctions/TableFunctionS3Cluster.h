@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionS3.h>
 #include <Storages/StorageS3Cluster.h>
 
 
@@ -52,6 +53,7 @@ protected:
 
     mutable StorageS3Cluster::Configuration configuration;
     ColumnsDescription structure_hint;
+    TableFunctionS3::ArgumentParseResult argument_parse_result;
 };
 
 }

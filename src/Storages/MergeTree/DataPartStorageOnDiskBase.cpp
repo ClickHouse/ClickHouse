@@ -10,6 +10,7 @@
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -415,6 +416,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
 
     disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
     disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
+    disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
@@ -461,6 +463,7 @@ void DataPartStorageOnDiskBase::rename(
 
     if (volume->getDisk()->exists(to))
     {
+        /// FIXME it should be logical error
         if (remove_new_dir_if_exists)
         {
             Names files;
@@ -471,7 +474,8 @@ void DataPartStorageOnDiskBase::rename(
                     "Part directory {} already exists and contains {} files. Removing it.",
                     fullPath(volume->getDisk(), to), files.size());
 
-            executeWriteOperation([&](auto & disk) { disk.removeRecursive(to); });
+            /// Do not remove blobs if they exist
+            executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(to, true, {}); });
         }
         else
         {
@@ -574,6 +578,9 @@ void DataPartStorageOnDiskBase::remove(
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
             {
                 LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
                 return;
             }
             throw;
@@ -584,6 +591,10 @@ void DataPartStorageOnDiskBase::remove(
             {
                 LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. "
                           "Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+                /// We will never touch this part again, so unlocking it from zero-copy
+                if (!can_remove_description)
+                    can_remove_description.emplace(can_remove_callback());
+
                 return;
             }
             throw;
