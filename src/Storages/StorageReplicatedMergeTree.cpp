@@ -8270,7 +8270,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         /// The metadata files is about to delete now.
         /// However remote data might be shared and has to be unlocked in the keper before removing.
         /// Actually there is some cases when it is clear without keper:
-        /// When the part has been fetched then remote data has to be  preserved, part doesn't own it.
+        /// When the part has been fetched then remote data has to be preserved, part doesn't own it.
         /// When the part has been merged then remote data can to removed, part own it.
         /// In opposition, when the part has been mutated in generally it hardlinks the files.
         /// Therefore remote data is shared, it has to be unlocked in the keper.
