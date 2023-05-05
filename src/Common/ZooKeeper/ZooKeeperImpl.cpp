@@ -19,7 +19,6 @@
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
-#include <Common/Stopwatch.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
