@@ -61,14 +61,14 @@ def process_test_log(log_path, broken_tests):
                 if TIMEOUT_SIGN in line:
                     if test_name in broken_tests:
                         success += 1
-                        test_results.append((test_name, "OK", test_time, []))
+                        test_results.append((test_name, "KNOWN_BROKEN", test_time, []))
                     else:
                         failed += 1
                         test_results.append((test_name, "Timeout", test_time, []))
                 elif FAIL_SIGN in line:
                     if test_name in broken_tests:
                         success += 1
-                        test_results.append((test_name, "OK", test_time, []))
+                        test_results.append((test_name, "KNOWN_BROKEN", test_time, []))
                     else:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
