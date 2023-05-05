@@ -22,7 +22,7 @@
             </s3_cache>
             <s3_cache_small>
                 <type>cache</type>
-                <disk>s3_disk_6</disk>
+                <disk>s3_disk</disk>
                 <path>s3_cache_small/</path>
                 <max_size>1000</max_size>
                 <do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>
