@@ -3,6 +3,7 @@
 #include "Storages/MergeTree/IMergeTreeDataPart.h"
 
 #include <optional>
+#include <ranges>
 
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
@@ -305,7 +306,11 @@ void StorageMergeTree::alter(
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, local_context->getSettingsRef().materialize_ttl_after_modify, local_context);
+    if (!maybe_mutation_commands.empty())
+        delayMutationOrThrowIfNeeded(nullptr, local_context);
+
     Int64 mutation_version = -1;
     commands.apply(new_metadata, local_context);
 
@@ -313,7 +318,6 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
-
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else
@@ -579,11 +583,12 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
+    delayMutationOrThrowIfNeeded(nullptr, query_context);
+
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
     Int64 version = startMutation(commands, query_context);
-
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
 }
@@ -1325,6 +1330,24 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
 
     return scheduled;
+}
+
+size_t StorageMergeTree::getNumberOfUnfinishedMutations() const
+{
+    size_t count = 0;
+    for (const auto & [version, _] : current_mutations_by_version | std::views::reverse)
+    {
+        auto status = getIncompleteMutationsStatus(version);
+        if (!status)
+            continue;
+
+        if (status->is_done)
+            break;
+
+        ++count;
+    }
+
+    return count;
 }
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(

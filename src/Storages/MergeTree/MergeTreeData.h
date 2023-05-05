@@ -543,7 +543,6 @@ public:
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
 
-
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
 
@@ -554,10 +553,18 @@ public:
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
                                                 ContextPtr context, PartsTemporaryRename & renamed_parts);
 
-
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
+    /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
     void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
+
+    /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
+    /// If until is non-null, wake up from the sleep earlier if the event happened.
+    /// The decision to delay or throw is made according to settings 'number_of_mutations_to_delay' and 'number_of_mutations_to_throw'.
+    void delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const;
+
+    /// Returns number of unfinished mutations (is_done = 0).
+    virtual size_t getNumberOfUnfinishedMutations() const = 0;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
