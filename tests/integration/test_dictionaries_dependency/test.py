@@ -210,4 +210,8 @@ def test_no_lazy_load():
 
     assert "42\n" == node2.query("select dictGet('no_lazy.dict', 'mm', 42)")
 
+    assert "some tables depend on it" in node2.query_and_get_error(
+        "drop table no_lazy.src", settings={"check_referential_table_dependencies": 1}
+    )
+
     node2.query("drop database no_lazy")
