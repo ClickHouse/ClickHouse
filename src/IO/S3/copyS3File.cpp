@@ -100,9 +100,8 @@ namespace
         std::mutex bg_tasks_mutex;
         std::condition_variable bg_tasks_condvar;
 
-        void createMultipartUpload()
+        void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
         {
-            S3::CreateMultipartUploadRequest request;
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
 
@@ -115,6 +114,14 @@ namespace
             const auto & storage_class_name = upload_settings.storage_class_name;
             if (!storage_class_name.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+
+            client_ptr->setKMSHeaders(request);
+        }
+
+        void createMultipartUpload()
+        {
+            S3::CreateMultipartUploadRequest request;
+            fillCreateMultipartRequest(request);
 
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
             if (for_disk_s3)
@@ -465,6 +472,8 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+
+            client_ptr->setKMSHeaders(request);
         }
 
         void processPutRequest(const S3::PutObjectRequest & request)
@@ -660,6 +669,8 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+
+            client_ptr->setKMSHeaders(request);
         }
 
         void processCopyRequest(const S3::CopyObjectRequest & request)

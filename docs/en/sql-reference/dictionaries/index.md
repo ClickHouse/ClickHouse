@@ -949,7 +949,7 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronious updates are supported.
+For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronous updates are supported.
 
 It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
 
@@ -1658,6 +1658,7 @@ Example of settings:
         <password></password>
         <db>test</db>
         <collection>dictionary_source</collection>
+        <options>ssl=true</options>
     </mongodb>
 </source>
 ```
@@ -1672,6 +1673,7 @@ SOURCE(MONGODB(
     password ''
     db 'test'
     collection 'dictionary_source'
+    options 'ssl=true'
 ))
 ```
 
@@ -1683,6 +1685,8 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
+- `options` -  MongoDB connection string options (optional parameter).
+
 
 ### Redis
 

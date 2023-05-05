@@ -527,7 +527,6 @@ ActionsMatcher::Data::Data(
     bool no_subqueries_,
     bool no_makeset_,
     bool only_consts_,
-    bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
     bool build_expression_with_window_functions_,
     bool is_create_parameterized_view_)
@@ -539,7 +538,6 @@ ActionsMatcher::Data::Data(
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
-    , create_source_for_in(create_source_for_in_)
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
@@ -992,7 +990,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.no_subqueries,
             data.no_makeset,
             data.only_consts,
-            /*create_source_for_in*/ false,
             data.aggregation_keys_info);
 
         NamesWithAliases args;
@@ -1417,7 +1414,6 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (data.create_source_for_in)
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
             subquery_for_set.createSource(*interpreter);

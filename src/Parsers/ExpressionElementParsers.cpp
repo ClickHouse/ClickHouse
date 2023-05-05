@@ -1429,10 +1429,12 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
+    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
+
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word)
+    if (!has_as_word && !is_quoted)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,
