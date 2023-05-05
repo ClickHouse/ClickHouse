@@ -77,7 +77,6 @@
 02139_MV_with_scalar_subquery
 02174_cte_scalar_cache_mv
 02242_join_rocksdb
-02267_join_dup_columns_issue36199
 02302_s3_file_pruning
 02341_global_join_cte
 02345_implicit_transaction
