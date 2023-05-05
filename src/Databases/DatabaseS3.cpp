@@ -247,7 +247,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
     }
     else
     {
-        auto supported_signature =
+        const std::string supported_signature =
             " - S3()\n"
             " - S3('url')\n"
             " - S3('url', 'NOSIGN')\n"
