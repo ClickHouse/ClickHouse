@@ -943,10 +943,12 @@ private:
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
 
+                response_body->ignore(INT64_MAX);
                 /// Response was fully read.
                 markSessionForReuse(session);
 
                 auto schema = json_body->getValue<std::string>("schema");
+
                 LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
