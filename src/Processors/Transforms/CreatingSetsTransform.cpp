@@ -133,6 +133,7 @@ void CreatingSetsTransform::init()
 
     if (subquery.set)
     {
+        //std::cerr << "=========== " << getInputPort().getHeader().dumpStructure() << std::endl;
         subquery.set->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
     }
 

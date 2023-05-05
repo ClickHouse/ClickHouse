@@ -629,14 +629,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
 
     //auto set_key = planner_context->createSetKey(in_second_argument);
 
-    DataTypes set_element_types = {in_first_argument->getResultType()};
-    const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
-        set_element_types = left_tuple_type->getElements();
+    DataTypes set_element_types;
 
-    for (auto & element_type : set_element_types)
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-            element_type = low_cardinality_type->getDictionaryType();
+    auto in_second_argument_node_type = in_second_argument->getNodeType();
+    if (!(in_second_argument_node_type == QueryTreeNodeType::QUERY || in_second_argument_node_type == QueryTreeNodeType::UNION))
+    {
+        set_element_types = {in_first_argument->getResultType()};
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
+        if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+            set_element_types = left_tuple_type->getElements();
+
+        for (auto & element_type : set_element_types)
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+                element_type = low_cardinality_type->getDictionaryType();
+    }
 
     auto set_key = PreparedSetKey::forLiteral(in_second_argument->getTreeHash(), set_element_types);
 

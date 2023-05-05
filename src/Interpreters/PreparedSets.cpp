@@ -221,7 +221,7 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
     if (set)
         return nullptr;
 
-    std::cerr << StackTrace().toString() << std::endl;
+    // std::cerr << StackTrace().toString() << std::endl;
 
     auto set_cache = context->getPreparedSetsCache();
     if (set_cache)
@@ -247,6 +247,10 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::buildPlan(const ContextPtr & c
 
     auto plan = subquery.detachSource();
     auto description = subquery.key;
+
+    // WriteBufferFromOwnString buf;
+    // plan->explainPlan(buf, {.header=true});
+    // std::cerr << buf.str() << std::endl;
 
     auto creating_set = std::make_unique<CreatingSetStep>(
             plan->getCurrentDataStream(),
@@ -279,7 +283,7 @@ SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordere
     return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
 }
 
-FutureSetFromTuple::FutureSetFromTuple(Block block_) : block(std::move(block_)) {}
+FutureSetFromTuple::FutureSetFromTuple(Block block_) : block(std::move(block_)) { std::cerr << block.dumpStructure() << std::endl; }
 
 FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_) : subquery(std::move(subquery_)) {}
 

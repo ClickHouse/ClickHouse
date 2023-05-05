@@ -16,6 +16,7 @@
 #include "Processors/Executors/CompletedPipelineExecutor.h"
 #include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
 #include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
+#include "Processors/Sinks/EmptySink.h"
 #include "Processors/Sinks/NullSink.h"
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -171,7 +172,7 @@ public:
 
         auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-        pipeline.complete(std::make_shared<NullSink>(Block()));
+        pipeline.complete(std::make_shared<EmptySink>(Block()));
 
         CompletedPipelineExecutor executor(pipeline);
         executor.execute();

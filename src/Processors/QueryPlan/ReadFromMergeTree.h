@@ -145,7 +145,8 @@ public:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log);
+        Poco::Logger * log,
+        std::optional<KeyCondition> & key_condition);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
 
@@ -177,6 +178,8 @@ public:
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
+    void onAddFilterFinish() override;
+
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
@@ -189,7 +192,8 @@ private:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log);
+        Poco::Logger * log,
+        std::optional<KeyCondition> & key_condition);
 
     int getSortDirection() const
     {
@@ -227,6 +231,9 @@ private:
     bool output_each_partition_through_separate_port = false;
 
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
+
+    /// Pre-computed value, needed to trigger sets creatin for PK
+    mutable std::optional<KeyCondition> key_condition;
 
     Poco::Logger * log;
     UInt64 selected_parts = 0;
