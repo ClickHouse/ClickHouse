@@ -2765,7 +2765,7 @@ class ClickHouseCluster:
                 )
                 self.up_called = True
                 self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
-                self.wait_kafka_is_available(self.kafka2_docker_id, self.kafka2_port)
+                # self.wait_kafka_is_available(self.kafka2_docker_id, self.kafka2_port)
                 self.wait_schema_registry_to_start()
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
