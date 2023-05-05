@@ -6,16 +6,16 @@ namespace DB
 StreamInQueryCacheTransform::StreamInQueryCacheTransform(
     const Block & header_,
     std::shared_ptr<QueryCache::Writer> query_cache_writer_,
-    QueryCache::Writer::Type type_)
+    QueryCache::Writer::ChunkType chunk_type_)
     : ISimpleTransform(header_, header_, false)
     , query_cache_writer(query_cache_writer_)
-    , type(type_)
+    , chunk_type(chunk_type_)
 {
 }
 
 void StreamInQueryCacheTransform::transform(Chunk & chunk)
 {
-    query_cache_writer->buffer(chunk.clone(), type);
+    query_cache_writer->buffer(chunk.clone(), chunk_type);
 }
 
 void StreamInQueryCacheTransform::finalizeWriteInQueryCache()

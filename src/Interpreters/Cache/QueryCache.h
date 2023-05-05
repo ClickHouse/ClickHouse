@@ -3,6 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Processors/Chunk.h>
 #include <QueryPipeline/Pipe.h>
@@ -114,8 +115,8 @@ public:
 
         Writer(const Writer & other);
 
-        enum class Type {Result, Totals, Extremes};
-        void buffer(Chunk && chunk, Type type);
+        enum class ChunkType {Result, Totals, Extremes};
+        void buffer(Chunk && chunk, ChunkType chunk_type);
 
         void finalizeWrite();
     private:
@@ -146,11 +147,15 @@ public:
     {
     public:
         bool hasCacheEntryForKey() const;
-        Pipe && getPipe(); /// must be called only if hasCacheEntryForKey() returns true
+        std::unique_ptr<SourceFromChunks> getSource();
+        std::unique_ptr<SourceFromChunks> getSourceTotals();
+        std::unique_ptr<SourceFromChunks> getSourceExtremes();
     private:
         Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &);
-        void buildPipe(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
-        Pipe pipe;
+        void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+        std::unique_ptr<SourceFromChunks> source_from_chunks;
+        std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
+        std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
         friend class QueryCache; /// for createReader()
     };
 

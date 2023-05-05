@@ -12,7 +12,7 @@ public:
     StreamInQueryCacheTransform(
         const Block & header_,
         std::shared_ptr<QueryCache::Writer> query_cache_writer,
-        QueryCache::Writer::Type type);
+        QueryCache::Writer::ChunkType chunk_type);
 
 protected:
     void transform(Chunk & chunk) override;
@@ -23,7 +23,7 @@ public:
 
 private:
     const std::shared_ptr<QueryCache::Writer> query_cache_writer;
-    const QueryCache::Writer::Type type;
+    const QueryCache::Writer::ChunkType chunk_type;
 };
 
 }

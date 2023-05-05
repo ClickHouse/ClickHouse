@@ -105,8 +105,12 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void streamIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer);
+    void writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer);
     void finalizeWriteInQueryCache();
+    void readFromQueryCache(
+        std::unique_ptr<SourceFromChunks> source,
+        std::unique_ptr<SourceFromChunks> source_totals,
+        std::unique_ptr<SourceFromChunks> source_extremes);
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
