@@ -1,7 +1,7 @@
 import os
 from os import path as p
 
-from build_download_helper import get_with_retries
+from build_download_helper import get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
@@ -46,7 +46,7 @@ def GITHUB_JOB_ID() -> str:
     jobs = []
     page = 1
     while not _GITHUB_JOB_ID:
-        response = get_with_retries(
+        response = get_gh_api(
             f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
             f"actions/runs/{GITHUB_RUN_ID}/jobs?per_page=100&page={page}"
         )
