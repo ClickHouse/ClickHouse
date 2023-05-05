@@ -84,7 +84,7 @@ def process_test_log(log_path, broken_tests):
                         test_results.append(
                             (
                                 test_name,
-                                "EXPECTED_TO_FAIL",
+                                "NOT_FAILED",
                                 test_time,
                                 ["This test passed. Update broken_tests.txt.\n"],
                             )
