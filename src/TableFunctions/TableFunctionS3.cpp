@@ -31,9 +31,15 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(
-    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration, bool get_format_from_file)
+TableFunctionS3::ArgumentParseResult TableFunctionS3::parseArgumentsImpl(
+    const String & error_message,
+    ASTs & args,
+    ContextPtr context,
+    StorageS3::Configuration & s3_configuration,
+    bool get_format_from_file)
 {
+    ArgumentParseResult result;
+
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
@@ -133,10 +139,16 @@ void TableFunctionS3::parseArgumentsImpl(
         s3_configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
 
         if (args_to_idx.contains("format"))
+        {
             s3_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
+            result.has_format_argument = true;
+        }
 
         if (args_to_idx.contains("structure"))
+        {
             s3_configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
+            result.has_structure_argument = true;
+        }
 
         if (args_to_idx.contains("compression_method"))
             s3_configuration.compression_method = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
@@ -150,9 +162,13 @@ void TableFunctionS3::parseArgumentsImpl(
         s3_configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
+    s3_configuration.keys = {s3_configuration.url.key};
+
     /// For DataLake table functions, we should specify default format.
     if (s3_configuration.format == "auto" && get_format_from_file)
         s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
+
+    return result;
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -175,6 +191,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
+        configuration.update(context);
         return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
@@ -198,11 +215,11 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 
     StoragePtr storage = std::make_shared<StorageS3>(
         configuration,
+        context,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
         String{},
-        context,
         /// No format_settings for table function S3
         std::nullopt);
 

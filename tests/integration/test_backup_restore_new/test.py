@@ -1206,10 +1206,27 @@ def test_backup_all(exclude_system_log_tables):
 
     exclude_from_backup = []
     if exclude_system_log_tables:
-        system_log_tables = instance.query(
-            "SELECT concat('system.', table) FROM system.tables WHERE (database = 'system') AND (table LIKE '%_log')"
-        ).splitlines()
-        exclude_from_backup += system_log_tables
+        # See the list of log tables in src/Interpreters/SystemLog.cpp
+        log_tables = [
+            "query_log",
+            "query_thread_log",
+            "part_log",
+            "trace_log",
+            "crash_log",
+            "text_log",
+            "metric_log",
+            "filesystem_cache_log",
+            "filesystem_read_prefetches_log",
+            "asynchronous_metric_log",
+            "opentelemetry_span_log",
+            "query_views_log",
+            "zookeeper_log",
+            "session_log",
+            "transactions_info_log",
+            "processors_profile_log",
+            "asynchronous_insert_log",
+        ]
+        exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
     backup_command = f"BACKUP ALL {'EXCEPT TABLES ' + ','.join(exclude_from_backup) if exclude_from_backup else ''} TO {backup_name}"
 
@@ -1465,23 +1482,23 @@ def test_tables_dependency():
 
     # Drop everything in reversive order.
     def drop():
-        instance.query(f"DROP TABLE {t15} NO DELAY")
-        instance.query(f"DROP TABLE {t14} NO DELAY")
-        instance.query(f"DROP TABLE {t13} NO DELAY")
-        instance.query(f"DROP TABLE {t12} NO DELAY")
-        instance.query(f"DROP TABLE {t11} NO DELAY")
-        instance.query(f"DROP TABLE {t10} NO DELAY")
-        instance.query(f"DROP TABLE {t9} NO DELAY")
+        instance.query(f"DROP TABLE {t15} SYNC")
+        instance.query(f"DROP TABLE {t14} SYNC")
+        instance.query(f"DROP TABLE {t13} SYNC")
+        instance.query(f"DROP TABLE {t12} SYNC")
+        instance.query(f"DROP TABLE {t11} SYNC")
+        instance.query(f"DROP TABLE {t10} SYNC")
+        instance.query(f"DROP TABLE {t9} SYNC")
         instance.query(f"DROP DICTIONARY {t8}")
-        instance.query(f"DROP TABLE {t7} NO DELAY")
-        instance.query(f"DROP TABLE {t6} NO DELAY")
-        instance.query(f"DROP TABLE {t5} NO DELAY")
+        instance.query(f"DROP TABLE {t7} SYNC")
+        instance.query(f"DROP TABLE {t6} SYNC")
+        instance.query(f"DROP TABLE {t5} SYNC")
         instance.query(f"DROP DICTIONARY {t4}")
-        instance.query(f"DROP TABLE {t3} NO DELAY")
-        instance.query(f"DROP TABLE {t2} NO DELAY")
-        instance.query(f"DROP TABLE {t1} NO DELAY")
-        instance.query("DROP DATABASE test NO DELAY")
-        instance.query("DROP DATABASE test2 NO DELAY")
+        instance.query(f"DROP TABLE {t3} SYNC")
+        instance.query(f"DROP TABLE {t2} SYNC")
+        instance.query(f"DROP TABLE {t1} SYNC")
+        instance.query("DROP DATABASE test SYNC")
+        instance.query("DROP DATABASE test2 SYNC")
 
     drop()
 

@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 
 
 namespace DB
 {
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
