@@ -125,6 +125,7 @@ public:
 
 using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
 
+
 /// Reads delayed joined blocks from Join
 class DelayedJoinedBlocksTransform : public IProcessor
 {
@@ -138,8 +139,9 @@ public:
 
 private:
     JoinPtr join;
-    IBlocksStreamPtr delayed_blocks;
-    bool all_buckets_finished = false;
+
+    IBlocksStreamPtr delayed_blocks = nullptr;
+    bool finished = false;
 };
 
 class DelayedJoinedBlocksWorkerTransform : public IProcessor
