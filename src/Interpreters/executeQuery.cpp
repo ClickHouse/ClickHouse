@@ -737,7 +737,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
-                        res.pipeline = QueryPipeline(reader.getPipe());
+                        QueryPipeline pipeline;
+                        pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                        res.pipeline = std::move(pipeline);
                         read_result_from_query_cache = true;
                     }
                 }
@@ -768,7 +770,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                          settings.max_block_size,
                                          settings.query_cache_max_size_in_bytes,
                                          settings.query_cache_max_entries));
-                        res.pipeline.streamIntoQueryCache(query_cache_writer);
+                        res.pipeline.writeResultIntoQueryCache(query_cache_writer);
                     }
                 }
 

@@ -6,7 +6,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Sources/SourceFromChunks.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -204,27 +203,27 @@ QueryCache::Writer::Writer(const Writer & other)
 {
 }
 
-void QueryCache::Writer::buffer(Chunk && chunk, Type type)
+void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
 {
     if (skip_insert)
         return;
 
     std::lock_guard lock(mutex);
 
-    switch (type)
+    switch (chunk_type)
     {
-        case Type::Result:
+        case ChunkType::Result:
         {
             /// Normal query result chunks are simply buffered. They are squashed and compressed later in finalizeWrite().
             query_result->chunks.emplace_back(std::move(chunk));
             break;
         }
-        case Type::Totals:
-        case Type::Extremes:
+        case ChunkType::Totals:
+        case ChunkType::Extremes:
         {
             /// For simplicity, totals and extremes chunks are immediately squashed (totals/extremes are obscure and even if enabled, few
             /// such chunks are expected).
-            auto & buffered_chunk = (type == Type::Totals) ? query_result->totals : query_result->extremes;
+            auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
             convertToFullIfSparse(chunk);
 
@@ -349,19 +348,24 @@ void QueryCache::Writer::finalizeWrite()
     was_finalized = true;
 }
 
-/// Constructs a pipe with just one processor: SourceFromChunks which serves data from the query cache
-void QueryCache::Reader::buildPipe(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
+/// Creates a source processor which serves result chunks stored in the query cache, and separate sources for optional totals/extremes.
+void QueryCache::Reader::buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
 {
-    auto source_from_chunks = std::make_shared<SourceFromChunks>(
-            header, std::move(chunks),
-            totals.has_value() ? std::optional(totals->clone()) : std::nullopt,
-            extremes.has_value() ? std::optional(extremes->clone()) : std::nullopt);
+    source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
-    OutputPort * out = &source_from_chunks->getPort();
-    OutputPort * out_totals = source_from_chunks->getTotalsPort();
-    OutputPort * out_extremes = source_from_chunks->getExtremesPort();
+    if (totals.has_value())
+    {
+        Chunks chunks_totals;
+        chunks_totals.emplace_back(totals->clone());
+        source_from_chunks_totals = std::make_unique<SourceFromChunks>(header, std::move(chunks_totals));
+    }
 
-    pipe = Pipe(source_from_chunks, out, out_totals, out_extremes);
+    if (extremes.has_value())
+    {
+        Chunks chunks_extremes;
+        chunks_extremes.emplace_back(extremes->clone());
+        source_from_chunks_extremes = std::make_unique<SourceFromChunks>(header, std::move(chunks_extremes));
+    }
 }
 
 QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &)
@@ -398,7 +402,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         for (const auto & chunk : entry->mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
 
-        buildPipe(entry->key.header, std::move(cloned_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry->key.header, std::move(cloned_chunks), entry->mapped->totals, entry->mapped->extremes);
     }
     else
     {
@@ -417,7 +421,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
             decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        buildPipe(entry->key.header, std::move(decompressed_chunks), entry->mapped->totals, entry->mapped->extremes);
+        buildSourceFromChunks(entry->key.header, std::move(decompressed_chunks), entry->mapped->totals, entry->mapped->extremes);
     }
 
     LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
@@ -425,20 +429,29 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
 
 bool QueryCache::Reader::hasCacheEntryForKey() const
 {
-    bool res = !pipe.empty();
+    bool has_entry = (source_from_chunks != nullptr);
 
-    if (res)
+    if (has_entry)
         ProfileEvents::increment(ProfileEvents::QueryCacheHits);
     else
         ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
 
-    return res;
+    return has_entry;
 }
 
-Pipe && QueryCache::Reader::getPipe()
+std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSource()
 {
-    chassert(!pipe.empty()); // cf. hasCacheEntryForKey()
-    return std::move(pipe);
+    return std::move(source_from_chunks);
+}
+
+std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSourceTotals()
+{
+    return std::move(source_from_chunks_totals);
+}
+
+std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSourceExtremes()
+{
+    return std::move(source_from_chunks_extremes);
 }
 
 QueryCache::Reader QueryCache::createReader(const Key & key)
