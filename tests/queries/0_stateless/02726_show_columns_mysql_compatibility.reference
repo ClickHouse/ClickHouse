@@ -1,0 +1,213 @@
+Drop tables if they exist
+Create tab table 
+Create pseudo-random database name
+Create tab duplicate table
+Run MySQL test
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+boolean_value	tinyint	0		NULL	
+date32_value	date	0		NULL	
+date_value	date	0		NULL	
+datetime64_value	date	0		NULL	
+datetime_value	date	0		NULL	
+decimal_value	decimal	0		NULL	
+enum_value	enum	0		NULL	
+fixed_string_value	text	0		NULL	
+float32	float	0		NULL	
+float64	double	0		NULL	
+int32	int	0		NULL	
+ipv4_value	text	0		NULL	
+ipv6_value	text	0		NULL	
+json_value	text	0		NULL	
+low_cardinality	text	0		NULL	
+map_value	json	0		NULL	
+nested.nested_int	json	0		NULL	
+nested.nested_string	json	0		NULL	
+nullable_value	int	0		NULL	
+string_value	text	0		NULL	
+tuple_value	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+uuid_value	binary	0		NULL	
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+boolean_value	tinyint	0		NULL	
+date32_value	date	0		NULL	
+date_value	date	0		NULL	
+datetime64_value	date	0		NULL	
+datetime_value	date	0		NULL	
+decimal_value	decimal	0		NULL	
+enum_value	enum	0		NULL	
+fixed_string_value	text	0		NULL	
+float32	float	0		NULL	
+float64	double	0		NULL	
+int32	int	0		NULL	
+ipv4_value	text	0		NULL	
+ipv6_value	text	0		NULL	
+json_value	text	0		NULL	
+low_cardinality	text	0		NULL	
+map_value	json	0		NULL	
+nested.nested_int	json	0		NULL	
+nested.nested_string	json	0		NULL	
+nullable_value	int	0		NULL	
+string_value	text	0		NULL	
+tuple_value	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+uuid_value	binary	0		NULL	
+field	type	null	key	default	extra	collation	comment	privileges
+array_value	json	0		NULL		NULL		
+boolean_value	tinyint	0		NULL		NULL		
+date32_value	date	0		NULL		NULL		
+date_value	date	0		NULL		NULL		
+datetime64_value	date	0		NULL		NULL		
+datetime_value	date	0		NULL		NULL		
+decimal_value	decimal	0		NULL		NULL		
+enum_value	enum	0		NULL		NULL		
+fixed_string_value	text	0		NULL		NULL		
+float32	float	0		NULL		NULL		
+float64	double	0		NULL		NULL		
+int32	int	0		NULL		NULL		
+ipv4_value	text	0		NULL		NULL		
+ipv6_value	text	0		NULL		NULL		
+json_value	text	0		NULL		NULL		
+low_cardinality	text	0		NULL		NULL		
+map_value	json	0		NULL		NULL		
+nested.nested_int	json	0		NULL		NULL		
+nested.nested_string	json	0		NULL		NULL		
+nullable_value	int	0		NULL		NULL		
+string_value	text	0		NULL		NULL		
+tuple_value	json	0		NULL		NULL		
+uint64	bigint	0	PRI SOR	NULL		NULL		
+uuid_value	binary	0		NULL		NULL		
+field	type	null	key	default	extra
+int32	int	0		NULL	
+nested.nested_int	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+boolean_value	tinyint	0		NULL	
+date32_value	date	0		NULL	
+date_value	date	0		NULL	
+datetime64_value	date	0		NULL	
+datetime_value	date	0		NULL	
+decimal_value	decimal	0		NULL	
+enum_value	enum	0		NULL	
+fixed_string_value	text	0		NULL	
+float32	float	0		NULL	
+float64	double	0		NULL	
+ipv4_value	text	0		NULL	
+ipv6_value	text	0		NULL	
+json_value	text	0		NULL	
+low_cardinality	text	0		NULL	
+map_value	json	0		NULL	
+nested.nested_string	json	0		NULL	
+nullable_value	int	0		NULL	
+string_value	text	0		NULL	
+tuple_value	json	0		NULL	
+uuid_value	binary	0		NULL	
+field	type	null	key	default	extra
+int32	int	0		NULL	
+nested.nested_int	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+boolean_value	tinyint	0		NULL	
+date32_value	date	0		NULL	
+date_value	date	0		NULL	
+datetime64_value	date	0		NULL	
+datetime_value	date	0		NULL	
+decimal_value	decimal	0		NULL	
+enum_value	enum	0		NULL	
+fixed_string_value	text	0		NULL	
+float32	float	0		NULL	
+float64	double	0		NULL	
+ipv4_value	text	0		NULL	
+ipv6_value	text	0		NULL	
+json_value	text	0		NULL	
+low_cardinality	text	0		NULL	
+map_value	json	0		NULL	
+nested.nested_string	json	0		NULL	
+nullable_value	int	0		NULL	
+string_value	text	0		NULL	
+tuple_value	json	0		NULL	
+uuid_value	binary	0		NULL	
+field	type	null	key	default	extra
+int32	int	0		NULL	
+nested.nested_int	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+boolean_value	tinyint	0		NULL	
+date32_value	date	0		NULL	
+date_value	date	0		NULL	
+datetime64_value	date	0		NULL	
+datetime_value	date	0		NULL	
+decimal_value	decimal	0		NULL	
+enum_value	enum	0		NULL	
+fixed_string_value	text	0		NULL	
+float32	float	0		NULL	
+float64	double	0		NULL	
+int32	int	0		NULL	
+ipv4_value	text	0		NULL	
+ipv6_value	text	0		NULL	
+json_value	text	0		NULL	
+low_cardinality	text	0		NULL	
+map_value	json	0		NULL	
+nested.nested_int	json	0		NULL	
+nested.nested_string	json	0		NULL	
+nullable_value	int	0		NULL	
+string_value	text	0		NULL	
+tuple_value	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+uuid_value	binary	0		NULL	
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+boolean_value	tinyint	0		NULL	
+date32_value	date	0		NULL	
+date_value	date	0		NULL	
+datetime64_value	date	0		NULL	
+datetime_value	date	0		NULL	
+decimal_value	decimal	0		NULL	
+enum_value	enum	0		NULL	
+fixed_string_value	text	0		NULL	
+float32	float	0		NULL	
+float64	double	0		NULL	
+int32	int	0		NULL	
+ipv4_value	text	0		NULL	
+ipv6_value	text	0		NULL	
+json_value	text	0		NULL	
+low_cardinality	text	0		NULL	
+map_value	json	0		NULL	
+nested.nested_int	json	0		NULL	
+nested.nested_string	json	0		NULL	
+nullable_value	int	0		NULL	
+string_value	text	0		NULL	
+tuple_value	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+uuid_value	binary	0		NULL	
+field	type	null	key	default	extra
+array_value	json	0		NULL	
+boolean_value	tinyint	0		NULL	
+date32_value	date	0		NULL	
+date_value	date	0		NULL	
+datetime64_value	date	0		NULL	
+datetime_value	date	0		NULL	
+decimal_value	decimal	0		NULL	
+enum_value	enum	0		NULL	
+fixed_string_value	text	0		NULL	
+float32	float	0		NULL	
+float64	double	0		NULL	
+int32	int	0		NULL	
+ipv4_value	text	0		NULL	
+ipv6_value	text	0		NULL	
+json_value	text	0		NULL	
+low_cardinality	text	0		NULL	
+map_value	json	0		NULL	
+nested.nested_int	json	0		NULL	
+nested.nested_string	json	0		NULL	
+nullable_value	int	0		NULL	
+string_value	text	0		NULL	
+tuple_value	json	0		NULL	
+uint64	bigint	0	PRI SOR	NULL	
+uuid_value	binary	0		NULL	
