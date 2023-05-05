@@ -686,6 +686,7 @@ public:
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
 
+    bool displaySecretsInShowAndSelect() const;
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
@@ -1150,6 +1151,7 @@ private:
 
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();
+    void recalculateAccessRightsIfNeeded(std::string_view setting_name);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;

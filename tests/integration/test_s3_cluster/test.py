@@ -8,6 +8,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.mock_servers import start_mock_servers
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -49,6 +50,17 @@ def create_buckets_s3(cluster):
         print(obj.object_name)
 
 
+def run_s3_mocks(started_cluster):
+    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+    start_mock_servers(
+        started_cluster,
+        script_dir,
+        [
+            ("s3_mock.py", "resolver", "8080"),
+        ],
+    )
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -78,6 +90,8 @@ def started_cluster():
         logging.info("Cluster started")
 
         create_buckets_s3(cluster)
+
+        run_s3_mocks(cluster)
 
         yield cluster
     finally:
@@ -364,3 +378,31 @@ def test_parallel_distributed_insert_select_with_schema_inference(started_cluste
 
     count = int(node.query("SELECT count() FROM parallel_insert_select"))
     assert count == actual_count
+
+
+def test_cluster_with_header(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    assert (
+        node.query(
+            "SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'))"
+        )
+        == "SomeValue\n"
+    )
+    assert (
+        node.query(
+            "SELECT * from s3('http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'), 'CSV')"
+        )
+        == "SomeValue\n"
+    )
+    assert (
+        node.query(
+            "SELECT * from s3Cluster('cluster_simple', 'http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'))"
+        )
+        == "SomeValue\n"
+    )
+    assert (
+        node.query(
+            "SELECT * from s3Cluster('cluster_simple', 'http://resolver:8080/bucket/key.csv', headers(MyCustomHeader = 'SomeValue'), 'CSV')"
+        )
+        == "SomeValue\n"
+    )
