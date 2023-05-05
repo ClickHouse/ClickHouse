@@ -142,11 +142,13 @@ public:
         friend class QueryCache; /// for createWriter()
     };
 
-    /// Looks up a query result for a key in the cache and (if found) constructs a pipe with the query result chunks as source.
+    /// Reader's constructor looks up a query result for a key in the cache. If found, it constructs source processors (that generate the
+    /// cached result) for use in a pipe or query pipeline.
     class Reader
     {
     public:
         bool hasCacheEntryForKey() const;
+        /// getSource*() moves source processors out of the Reader. Call each of these method just once.
         std::unique_ptr<SourceFromChunks> getSource();
         std::unique_ptr<SourceFromChunks> getSourceTotals();
         std::unique_ptr<SourceFromChunks> getSourceExtremes();
