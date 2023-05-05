@@ -5239,7 +5239,10 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->create_time = time(nullptr);
 
         auto maybe_mutation_commands = commands.getMutationCommands(
-            *current_metadata, query_context->getSettingsRef().materialize_ttl_after_modify, query_context);
+            *current_metadata,
+            query_context->getSettingsRef().materialize_ttl_after_modify,
+            query_context);
+
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
 
@@ -5250,6 +5253,7 @@ void StorageReplicatedMergeTree::alter(
         PartitionBlockNumbersHolder partition_block_numbers_holder;
         if (have_mutation)
         {
+            delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
             const String mutations_path(fs::path(zookeeper_path) / "mutations");
 
             ReplicatedMergeTreeMutationEntry mutation_entry;
@@ -6430,6 +6434,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     ///
     /// After all needed parts are mutated (i.e. all active parts have the mutation version greater than
     /// the version of this mutation), the mutation is considered done and can be deleted.
+
+    delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
 
     ReplicatedMergeTreeMutationEntry mutation_entry;
     mutation_entry.source_replica = replica_name;
@@ -8061,6 +8067,10 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     return toString(table_shared_id);
 }
 
+size_t StorageReplicatedMergeTree::getNumberOfUnfinishedMutations() const
+{
+    return queue.countUnfinishedMutations();
+}
 
 void StorageReplicatedMergeTree::createTableSharedID() const
 {
