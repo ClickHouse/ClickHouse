@@ -12,6 +12,69 @@ class CleanupQueue;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 
 
+struct FileSegmentMetadata : private boost::noncopyable
+{
+    using Priority = IFileCachePriority;
+
+    explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
+
+    bool releasable() const { return file_segment.unique(); }
+
+    size_t size() const;
+
+    bool valid() const { return !removal_candidate.load(); }
+
+    Priority::Iterator getQueueIterator() { return file_segment->getQueueIterator(); }
+
+    FileSegmentPtr file_segment;
+    std::atomic<bool> removal_candidate{false};
+};
+
+using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
+
+
+struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
+                     private boost::noncopyable,
+                     public std::enable_shared_from_this<KeyMetadata>
+{
+    friend struct LockedKey;
+    using Key = FileCacheKey;
+
+    KeyMetadata(
+        const Key & key_,
+        const std::string & key_path_,
+        CleanupQueue & cleanup_queue_,
+        bool created_base_directory_ = false);
+
+    enum class KeyState
+    {
+        ACTIVE,
+        REMOVING,
+        REMOVED,
+    };
+
+    const Key key;
+    const std::string key_path;
+
+    LockedKeyPtr lock();
+
+    /// Return nullptr if key has non-ACTIVE state.
+    LockedKeyPtr tryLock();
+
+    bool createBaseDirectory();
+
+    std::string getFileSegmentPath(const FileSegment & file_segment);
+
+private:
+    KeyState key_state = KeyState::ACTIVE;
+    KeyGuard guard;
+    CleanupQueue & cleanup_queue;
+    std::atomic<bool> created_base_directory = false;
+};
+
+using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
+
+
 struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
 {
 public:
@@ -52,70 +115,6 @@ private:
     const CleanupQueuePtr cleanup_queue;
     Poco::Logger * log;
 };
-
-
-struct FileSegmentMetadata : private boost::noncopyable
-{
-    using Priority = IFileCachePriority;
-
-    explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
-
-    bool releasable() const { return file_segment.unique(); }
-
-    size_t size() const;
-
-    bool valid() const { return !removal_candidate.load(); }
-
-    Priority::Iterator getQueueIterator() const { return file_segment->getQueueIterator(); }
-
-    FileSegmentPtr file_segment;
-    std::atomic<bool> removal_candidate{false};
-};
-
-using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
-
-
-struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
-                     private boost::noncopyable,
-                     public std::enable_shared_from_this<KeyMetadata>
-{
-    friend struct LockedKey;
-    friend void CacheMetadata::doCleanup();
-    using Key = FileCacheKey;
-
-    KeyMetadata(
-        const Key & key_,
-        const std::string & key_path_,
-        CleanupQueue & cleanup_queue_,
-        bool created_base_directory_ = false);
-
-    enum class KeyState
-    {
-        ACTIVE,
-        REMOVING,
-        REMOVED,
-    };
-
-    const Key key;
-    const std::string key_path;
-
-    LockedKeyPtr lock();
-
-    /// Return nullptr if key has non-ACTIVE state.
-    LockedKeyPtr tryLock();
-
-    bool createBaseDirectory();
-
-    std::string getFileSegmentPath(const FileSegment & file_segment);
-
-private:
-    KeyState key_state = KeyState::ACTIVE;
-    KeyGuard guard;
-    CleanupQueue & cleanup_queue;
-    std::atomic<bool> created_base_directory = false;
-};
-
-using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 
 /**
@@ -163,6 +162,8 @@ struct LockedKey : private boost::noncopyable
     bool isLastOwnerOfFileSegment(size_t offset) const;
 
     void removeFromCleanupQueue();
+
+    void markAsRemoved();
 
     std::string toString() const;
 
