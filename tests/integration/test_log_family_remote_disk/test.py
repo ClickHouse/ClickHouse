@@ -12,22 +12,22 @@ remote_disk_path = (
 )
 
 
-def files_number_in_disk():
-    return len(
-        [
-            p.relative_to(remote_disk_path)
-            for p in remote_disk_path.rglob("*")
-            if p.is_file()
-        ]
-    )
+def files_number_in_disk(node):
+    files = node.exec_in_container(
+        ["find", "/var/lib/clickhouse/remote_disk", "-type", "f"]
+    ).strip()
+    if files == "":
+        return 0
+    return len(files.split("\n"))
 
 
-def wait_for_client(client):
-    for i in range(11):
+def wait_for_node(node):
+    for i in range(5):
         try:
-            assert client.query("SELECT 1") == "1\n"
+            assert node.query("SELECT 1") == "1\n"
+            return
         except QueryRuntimeException as e:
-            if i == 10:
+            if i == 4:
                 raise
             if (
                 e.returncode != 209 and e.returncode != 210
@@ -44,13 +44,19 @@ def cluster():
             "server", main_configs=["configs/config.d/server_storage_conf.xml"]
         )
         cluster.add_instance(
-            "client", main_configs=["configs/config.d/client_storage_conf.xml"]
+            "client",
+            main_configs=["configs/config.d/client_storage_conf.xml"],
+            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
 
-        wait_for_client(cluster.instances["client"])
+        wait_for_node(cluster.instances["server"])
+
+        # Should restart client because sometimes server starting later than client and client stops because can't connect to disk
+        cluster.instances["client"].restart_clickhouse()
+        wait_for_node(cluster.instances["client"])
 
         yield cluster
     finally:
@@ -73,34 +79,35 @@ def cluster():
     [("TinyLog", 2), ("Log", 3), ("StripeLog", 3)],
 )
 def test_log_family_remote_disk(cluster, log_engine, files_overhead):
-    node = cluster.instances["client"]
+    client = cluster.instances["client"]
+    server = cluster.instances["server"]
 
-    node.query(
+    client.query(
         "CREATE TABLE remote_disk_test (id UInt64) ENGINE={} SETTINGS disk = 'remote_disk'".format(
             log_engine
         )
     )
 
     try:
-        node.query("INSERT INTO remote_disk_test SELECT number FROM numbers(5)")
-        assert node.query("SELECT * FROM remote_disk_test") == "0\n1\n2\n3\n4\n"
-        assert files_number_in_disk() == files_overhead
+        client.query("INSERT INTO remote_disk_test SELECT number FROM numbers(5)")
+        assert client.query("SELECT * FROM remote_disk_test") == "0\n1\n2\n3\n4\n"
+        assert files_number_in_disk(server) == files_overhead
 
-        node.query("INSERT INTO remote_disk_test SELECT number + 5 FROM numbers(3)")
+        client.query("INSERT INTO remote_disk_test SELECT number + 5 FROM numbers(3)")
         assert (
-            node.query("SELECT * FROM remote_disk_test order by id")
+            client.query("SELECT * FROM remote_disk_test order by id")
             == "0\n1\n2\n3\n4\n5\n6\n7\n"
         )
-        assert files_number_in_disk() == files_overhead
+        assert files_number_in_disk(server) == files_overhead
 
-        node.query("INSERT INTO remote_disk_test SELECT number + 8 FROM numbers(1)")
+        client.query("INSERT INTO remote_disk_test SELECT number + 8 FROM numbers(1)")
         assert (
-            node.query("SELECT * FROM remote_disk_test order by id")
+            client.query("SELECT * FROM remote_disk_test order by id")
             == "0\n1\n2\n3\n4\n5\n6\n7\n8\n"
         )
-        assert files_number_in_disk() == files_overhead
+        assert files_number_in_disk(server) == files_overhead
 
-        node.query("TRUNCATE TABLE remote_disk_test")
-        assert files_number_in_disk() == 0
+        client.query("TRUNCATE TABLE remote_disk_test")
+        assert files_number_in_disk(server) == 0
     finally:
-        node.query("DROP TABLE remote_disk_test NO DELAY")
+        client.query("DROP TABLE remote_disk_test NO DELAY")
