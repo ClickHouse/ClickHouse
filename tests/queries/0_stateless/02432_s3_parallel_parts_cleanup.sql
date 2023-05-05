@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET send_logs_level = 'fatal';
+
 drop table if exists rmt;
 drop table if exists rmt2;
 

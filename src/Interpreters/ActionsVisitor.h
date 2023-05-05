@@ -128,7 +128,6 @@ public:
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;
-        bool create_source_for_in;
         size_t visit_depth;
         ScopeStack actions_stack;
         AggregationKeysInfo aggregation_keys_info;
@@ -152,7 +151,6 @@ public:
             bool no_subqueries_,
             bool no_makeset_,
             bool only_consts_,
-            bool create_source_for_in_,
             AggregationKeysInfo aggregation_keys_info_,
             bool build_expression_with_window_functions_ = false,
             bool is_create_parameterized_view_ = false);
