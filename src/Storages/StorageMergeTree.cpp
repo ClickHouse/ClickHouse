@@ -1562,6 +1562,23 @@ bool StorageMergeTree::optimize(
                 return false;
             }
         }
+        {
+            auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
+            auto timeout = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+            std::unique_lock lock(currently_processing_in_background_mutex);
+            while (!currently_merging_mutating_parts.empty())
+            {
+                LOG_DEBUG(
+                    log,
+                    "Waiting for OPTIMIZE FINAL to complete ({} parts are merging right now)",
+                    currently_merging_mutating_parts.size());
+
+                if (std::cv_status::timeout == currently_processing_in_background_condition.wait_until(lock, timeout))
+                {
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for OPTIMIZE FINAL to complete");
+                }
+            }
+        }
     }
     else
     {
