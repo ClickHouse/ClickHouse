@@ -303,8 +303,8 @@ public:
 
         void checkSizeOfType();
 
-        ColumnPtr detachPositions() { return std::move(positions); }
-        void attachPositions(ColumnPtr positions_);
+        MutableColumnPtr detachPositions() { return IColumn::mutate(std::move(positions)); }
+        void attachPositions(MutableColumnPtr positions_);
 
         void countKeys(ColumnUInt64::Container & counts) const;
 
@@ -352,7 +352,9 @@ private:
         bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in positions.
-        void compact(ColumnPtr & positions);
+        void compact(MutableColumnPtr & positions);
+
+        static MutableColumnPtr compact(const IColumnUnique & column_unique, MutableColumnPtr & positions);
 
     private:
         WrappedPtr column_unique;
