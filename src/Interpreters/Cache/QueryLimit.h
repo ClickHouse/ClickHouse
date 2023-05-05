@@ -42,7 +42,9 @@ public:
             const CacheGuard::Lock &);
 
         void add(
-            const FileSegment & file_segment,
+            KeyMetadataPtr key_metadata,
+            size_t offset,
+            size_t size,
             const CacheGuard::Lock &);
 
         void remove(

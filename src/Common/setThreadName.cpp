@@ -30,10 +30,8 @@ static thread_local char thread_name[THREAD_NAME_SIZE]{};
 
 void setThreadName(const char * name)
 {
-#ifndef NDEBUG
     if (strlen(name) > THREAD_NAME_SIZE - 1)
         throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Thread name cannot be longer than 15 bytes");
-#endif
 
 #if defined(OS_FREEBSD)
     pthread_set_name_np(pthread_self(), name);
