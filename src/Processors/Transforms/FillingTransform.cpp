@@ -255,9 +255,10 @@ FillingTransform::FillingTransform(
         if (interpolate_description)
             if (const auto & p = interpolate_description->required_columns_map.find(column.name);
                 p != interpolate_description->required_columns_map.end())
-                    input_positions.emplace_back(idx, p->second);
+                input_positions.emplace_back(idx, p->second);
 
-        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name)))
+        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name))
+            && sort_prefix_positions.end() == std::find(sort_prefix_positions.begin(), sort_prefix_positions.end(), idx))
             other_column_positions.push_back(idx);
 
         ++idx;
@@ -359,6 +360,8 @@ static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, c
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
 {
+    chassert(dest.size() == source.size());
+
     for (size_t i = 0, size = source.size(); i < size; ++i)
         dest[i]->insertFrom(*source[i], row_num);
 }
@@ -381,12 +384,12 @@ void FillingTransform::initColumns(
     const Columns & input_columns,
     Columns & input_fill_columns,
     Columns & input_interpolate_columns,
-    Columns & ,//input_sort_prefix_columns,
+    Columns & input_sort_prefix_columns,
     Columns & input_other_columns,
     MutableColumns & output_columns,
     MutableColumnRawPtrs & output_fill_columns,
     MutableColumnRawPtrs & output_interpolate_columns,
-    MutableColumnRawPtrs & , //output_sort_prefix_columns,
+    MutableColumnRawPtrs & output_sort_prefix_columns,
     MutableColumnRawPtrs & output_other_columns)
 {
     Columns non_const_columns;
@@ -401,7 +404,7 @@ void FillingTransform::initColumns(
     initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
     initColumnsByPositions(
         non_const_columns, input_interpolate_columns, output_columns, output_interpolate_columns, interpolate_column_positions);
-    // initColumnsByPositions(non_const_columns, input_sort_prefix_columns, output_columns, output_sort_prefix_columns, sort_prefix_positions);
+    initColumnsByPositions(non_const_columns, input_sort_prefix_columns, output_columns, output_sort_prefix_columns, sort_prefix_positions);
     initColumnsByPositions(non_const_columns, input_other_columns, output_columns, output_other_columns, other_column_positions);
 }
 
@@ -449,31 +452,84 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
     if (first)
         filling_row.initFromDefaults();
 
+    /// if any rows was processed and there is sort prefix, get last row sort prefix
+    Columns last_row_sort_prefix;
+    if (!last_row.empty())
+    {
+        last_row_sort_prefix.reserve(sort_prefix_positions.size());
+        for (const size_t pos : sort_prefix_positions)
+            last_row_sort_prefix.push_back(last_row[pos]);
+    }
+
     Block interpolate_block;
     if (should_insert_first && filling_row < next_row)
     {
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+        /// fullfill sort prefix columns with last row values or defaults
+        if (!last_row_sort_prefix.empty())
+            copyRowFromColumns(res_sort_prefix_columns, last_row_sort_prefix, 0);
+        else
+            for (auto * sort_prefix_column : res_sort_prefix_columns)
+                sort_prefix_column->insertDefault();
     }
 
     while (filling_row.next(next_row))
     {
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+        /// fullfill sort prefix columns with last row values or defaults
+        if (!last_row_sort_prefix.empty())
+            copyRowFromColumns(res_sort_prefix_columns, last_row_sort_prefix, 0);
+        else
+            for (auto * sort_prefix_column : res_sort_prefix_columns)
+                sort_prefix_column->insertDefault();
     }
 
     return true;
 }
 
+template <typename Predicate>
+size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
+{
+    chassert(begin < end);
+
+    const size_t linear_probe_threadhold = 16;
+    size_t linear_probe_end = begin + linear_probe_threadhold;
+    if (linear_probe_end > end)
+        linear_probe_end = end;
+
+    for (size_t pos = begin; pos < linear_probe_end; ++pos)
+    {
+        if (!pred(begin, pos))
+            return pos;
+    }
+
+    size_t low = linear_probe_end;
+    size_t high = end - 1;
+    while (low <= high)
+    {
+        size_t mid = low + (high - low) / 2;
+        if (pred(begin, mid))
+            low = mid + 1;
+        else
+        {
+            high = mid - 1;
+            end = mid;
+        }
+    }
+    return end;
+}
+
 void FillingTransform::transformRange(
     const Columns & input_fill_columns,
     const Columns & input_interpolate_columns,
-    const Columns &, //input_sort_prefix_columns,
+    const Columns & input_sort_prefix_columns,
     const Columns & input_other_columns,
     const MutableColumns & result_columns,
     const MutableColumnRawPtrs & res_fill_columns,
     const MutableColumnRawPtrs & res_interpolate_columns,
-    const MutableColumnRawPtrs &, //res_sort_prefix_columns,
+    const MutableColumnRawPtrs & res_sort_prefix_columns,
     const MutableColumnRawPtrs & res_other_columns,
     std::pair<size_t, size_t> range)
 {
@@ -485,7 +541,7 @@ void FillingTransform::transformRange(
     {
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
-            auto current_value = (*input_fill_columns[i])[0];
+            auto current_value = (*input_fill_columns[i])[range_begin];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
 
             if (!fill_from.isNull() && !equals(current_value, fill_from))
@@ -495,6 +551,7 @@ void FillingTransform::transformRange(
                 {
                     interpolate(result_columns, interpolate_block);
                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+                    copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, range_begin);
                 }
                 break;
             }
@@ -530,17 +587,19 @@ void FillingTransform::transformRange(
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         }
 
         while (filling_row.next(next_row))
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         }
 
         copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
         copyRowFromColumns(res_interpolate_columns, input_interpolate_columns, row_ind);
-        // copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+        copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
     }
 }
@@ -599,17 +658,81 @@ void FillingTransform::transform(Chunk & chunk)
         res_sort_prefix_columns,
         res_other_columns);
 
-    transformRange(
-        input_fill_columns,
-        input_interpolate_columns,
-        input_sort_prefix_columns,
-        input_other_columns,
-        result_columns,
-        res_fill_columns,
-        res_interpolate_columns,
-        res_sort_prefix_columns,
-        res_other_columns,
-        {0, num_rows});
+    if (sort_prefix.empty())
+    {
+        transformRange(
+            input_fill_columns,
+            input_interpolate_columns,
+            input_sort_prefix_columns,
+            input_other_columns,
+            result_columns,
+            res_fill_columns,
+            res_interpolate_columns,
+            res_sort_prefix_columns,
+            res_other_columns,
+            {0, num_rows});
+
+        saveLastRow(result_columns);
+        size_t num_output_rows = result_columns[0]->size();
+        chunk.setColumns(std::move(result_columns), num_output_rows);
+        return;
+    }
+
+    /// check if last row in prev chunk had the same sorting prefix as the first in new one
+    /// if not, we need to reinitialize filling row
+    if (!last_row.empty())
+    {
+        ColumnRawPtrs last_sort_prefix_columns;
+        last_sort_prefix_columns.reserve(sort_prefix.size());
+        for (size_t pos : sort_prefix_positions)
+            last_sort_prefix_columns.push_back(last_row[pos].get());
+
+        first = false;
+        for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
+        {
+            const int res = input_sort_prefix_columns[i]->compareAt(0, 0, *last_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
+            if (res != 0)
+            {
+                first = true;
+                break;
+            }
+        }
+    }
+
+    for (size_t row_ind = 0; row_ind < num_rows;)
+    {
+        /// find next range
+        auto current_sort_prefix_end_pos = getRangeEnd(
+            row_ind,
+            num_rows,
+            [&](size_t pos_with_current_sort_prefix, size_t row_pos)
+            {
+                for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
+                {
+                    const int res = input_sort_prefix_columns[i]->compareAt(
+                        pos_with_current_sort_prefix, row_pos, *input_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
+                    if (res != 0)
+                        return false;
+                }
+                return true;
+            });
+
+        transformRange(
+            input_fill_columns,
+            input_interpolate_columns,
+            input_sort_prefix_columns,
+            input_other_columns,
+            result_columns,
+            res_fill_columns,
+            res_interpolate_columns,
+            res_sort_prefix_columns,
+            res_other_columns,
+            {row_ind, current_sort_prefix_end_pos});
+
+        logDebug("range end", current_sort_prefix_end_pos);
+        row_ind = current_sort_prefix_end_pos;
+        first = true;
+    }
 
     saveLastRow(result_columns);
     size_t num_output_rows = result_columns[0]->size();
