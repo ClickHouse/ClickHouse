@@ -1,11 +1,12 @@
 #include <Interpreters/InterpreterShowColumnsQuery.h>
 
+#include <Common/quoteString.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -23,16 +24,22 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
 
-    String database = query.database.empty() ? getContext()->getCurrentDatabase() : query.database;
-    String table = query.table;
+    WriteBufferFromOwnString buf_database;
+    String resolved_database = getContext()->resolveDatabase(query.database);
+    writeEscapedString(resolved_database, buf_database);
+    String database = buf_database.str();
+
+    WriteBufferFromOwnString buf_table;
+    writeEscapedString(query.table, buf_table);
+    String table = buf_table.str();
 
     String rewritten_query = R"(
 SELECT
     name AS field,
     type AS type,
     startsWith(type, 'Nullable') AS null,
-    trim(concatWithSeparator(' ', if(is_in_primary_key, 'PRI', ''), if (is_in_sorting_key, 'SOR', ''))) AS key,
-    if(default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED'), default_expression, NULL) AS default,
+    trim(concatWithSeparator(' ', if (is_in_primary_key, 'PRI', ''), if (is_in_sorting_key, 'SOR', ''))) AS key,
+    if (default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED'), default_expression, NULL) AS default,
     '' AS extra )";
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
@@ -51,10 +58,10 @@ SELECT
     }
 
     rewritten_query += fmt::format(R"(
-    FROM system.columns
-    WHERE
-        database = '{}'
-        AND table = '{}' )", database, table);
+FROM system.columns
+WHERE
+    database = '{}'
+    AND table = '{}' )", database, table);
 
     if (!query.like.empty())
     {
