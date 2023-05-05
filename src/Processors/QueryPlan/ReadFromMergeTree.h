@@ -232,7 +232,7 @@ private:
 
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
-    /// Pre-computed value, needed to trigger sets creatin for PK
+    /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<KeyCondition> key_condition;
 
     Poco::Logger * log;

@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 PreparedSetKey PreparedSetKey::forLiteral(Hash hash, DataTypes types_)
 {
     /// Remove LowCardinality types from type list because Set doesn't support LowCardinality keys now,
@@ -283,7 +288,7 @@ SizeLimits FutureSet::getSizeLimitsForSet(const Settings & settings, bool ordere
     return ordered_set ? getSizeLimitsForOrderedSet(settings) : getSizeLimitsForUnorderedSet(settings);
 }
 
-FutureSetFromTuple::FutureSetFromTuple(Block block_) : block(std::move(block_)) { std::cerr << block.dumpStructure() << std::endl; }
+FutureSetFromTuple::FutureSetFromTuple(Block block_) : block(std::move(block_)) {}
 
 FutureSetFromSubquery::FutureSetFromSubquery(SubqueryForSet subquery_) : subquery(std::move(subquery_)) {}
 
