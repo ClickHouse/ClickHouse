@@ -9,7 +9,7 @@ ${CLICKHOUSE_CLIENT} -n --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (id Int32, empty Array(Int32))
     ENGINE=MergeTree ORDER BY id
-    SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, storage_policy='s3_disk';
+    SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, disk='s3_disk';
 
 INSERT INTO test (id) VALUES (1);
 SELECT * FROM test;
