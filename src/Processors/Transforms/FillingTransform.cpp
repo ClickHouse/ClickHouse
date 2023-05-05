@@ -188,7 +188,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 
 FillingTransform::FillingTransform(
         const Block & header_, const SortDescription & sort_description_, const SortDescription& fill_description_, InterpolateDescriptionPtr interpolate_description_)
-        : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
+        : ISimpleTransform(header_, transformHeader(header_, fill_description_), true)
         , sort_description(sort_description_)
         , fill_description(fill_description_)
         , interpolate_description(interpolate_description_)
