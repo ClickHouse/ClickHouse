@@ -331,7 +331,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         all_replicas_count = cluster->getShardsInfo().size();
     }
 
-    /// Find local shard
+    /// Find local shard. It might happen that there is no local shard, but that's fine
     for (const auto & shard: cluster->getShardsInfo())
     {
         if (shard.isLocal())
@@ -345,9 +345,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             addPipeForSingeReplica(pipes, shard.pool, replica_info);
         }
     }
-
-    if (pipes.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No local shard");
 
     auto current_shard = cluster->getShardsInfo().begin();
     while (pipes.size() != all_replicas_count)

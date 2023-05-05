@@ -43,7 +43,14 @@ public:
     {
         return {"_path", "_file"};
     }
-    static void parseArgumentsImpl(
+
+    struct ArgumentParseResult
+    {
+        bool has_format_argument = false;
+        bool has_structure_argument = false;
+    };
+
+    static ArgumentParseResult parseArgumentsImpl(
         const String & error_message,
         ASTs & args,
         ContextPtr context,
