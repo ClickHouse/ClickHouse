@@ -718,9 +718,9 @@ template <>
 struct FormatImpl<DataTypeDate>
 {
     template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
+    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl * time_zone)
     {
-        writeDateText(DayNum(x), wb);
+        writeDateText(DayNum(x), wb, *time_zone);
         return ReturnType(true);
     }
 };
@@ -729,9 +729,9 @@ template <>
 struct FormatImpl<DataTypeDate32>
 {
     template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl *)
+    static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl * time_zone)
     {
-        writeDateText(ExtendedDayNum(x), wb);
+        writeDateText(ExtendedDayNum(x), wb, *time_zone);
         return ReturnType(true);
     }
 };
@@ -830,8 +830,8 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
-        /// For argument of DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
+        /// For argument of Date or DateTime type, second argument with time zone could be specified.
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64> || std::is_same_v<FromDataType, DataTypeDate>)
         {
             auto non_null_args = createBlockWithNestedColumns(arguments);
             time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);

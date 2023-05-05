@@ -61,17 +61,17 @@ public:
         init(time);
     }
 
-    LocalDate(DayNum day_num) /// NOLINT
+    LocalDate(DayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance()) /// NOLINT
     {
-        const auto & values = DateLUT::instance().getValues(day_num);
+        const auto & values = time_zone.getValues(day_num);
         m_year  = values.year;
         m_month = values.month;
         m_day   = values.day_of_month;
     }
 
-    explicit LocalDate(ExtendedDayNum day_num)
+    explicit LocalDate(ExtendedDayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance())
     {
-        const auto & values = DateLUT::instance().getValues(day_num);
+        const auto & values = time_zone.getValues(day_num);
         m_year  = values.year;
         m_month = values.month;
         m_day   = values.day_of_month;
