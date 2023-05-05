@@ -16,7 +16,7 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Disks/WriteMode.h>
 
 
@@ -65,8 +65,36 @@ public:
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
 
-    /// List on prefix, return children (relative paths) with their sizes.
-    virtual void listPrefix(const std::string & path, RelativePathsWithSize & children) const = 0;
+    /// List all objects with specific prefix.
+    ///
+    /// For example if you do this over filesystem, you should skip folders and
+    /// return files only, so something like on local filesystem:
+    ///
+    ///     find . -type f
+    ///
+    /// @param children - out files (relative paths) with their sizes.
+    /// @param max_keys - return not more then max_keys children
+    /// NOTE: max_keys is not the same as list_object_keys_size (disk property)
+    /// - if max_keys is set not more then max_keys keys should be returned
+    /// - however list_object_keys_size determine the size of the batch and should return all keys
+    ///
+    /// NOTE: It makes sense only for real object storages (S3, Azure), since
+    /// it is used only for one of the following:
+    /// - send_metadata (to restore metadata)
+    ///   - see DiskObjectStorage::restoreMetadataIfNeeded()
+    /// - MetadataStorageFromPlainObjectStorage - only for s3_plain disk
+    virtual void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const;
+
+    /// Analog of directory content for object storage (object storage does not
+    /// have "directory" definition, but it can be emulated with usage of
+    /// "delimiter"), so this is analog of:
+    ///
+    ///     find . -maxdepth 1 $path
+    ///
+    /// Return files in @files and directories in @directories
+    virtual void getDirectoryContents(const std::string & path,
+        RelativePathsWithSize & files,
+        std::vector<std::string> & directories) const;
 
     /// Get object metadata if supported. It should be possible to receive
     /// at least size of object
@@ -127,8 +155,7 @@ public:
 
     virtual ~IObjectStorage() = default;
 
-    /// Path to directory with objects cache
-    virtual const std::string & getCacheBasePath() const;
+    virtual const std::string & getCacheName() const;
 
     static IAsynchronousReader & getThreadPoolReader();
 
@@ -157,20 +184,18 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual std::string generateBlobNameForPath(const std::string & path) = 0;
+    virtual std::string generateBlobNameForPath(const std::string & path);
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
-    virtual bool supportsAppend() const { return false; }
-
-    /// Remove filesystem cache. `path` is a result of object.getPathKeyForCache() method,
-    /// which is used to define a cache key for the source object path.
+    /// Remove filesystem cache.
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
     virtual bool supportsCache() const { return false; }
 
     virtual bool isReadOnly() const { return false; }
+    virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
 
@@ -178,13 +203,13 @@ public:
 
     virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
 
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
+    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
 protected:
     /// Should be called from implementation of applyNewSettings()
     void applyRemoteThrottlingSettings(ContextPtr context);
-
-    /// Should be used by implementation of read* and write* methods
-    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
-    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
 private:
     mutable std::mutex throttlers_mutex;

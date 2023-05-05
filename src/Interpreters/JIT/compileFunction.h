@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 
@@ -26,7 +26,7 @@ struct ColumnData
 /** Returns ColumnData for column.
   * If constant column is passed, LOGICAL_ERROR will be thrown.
   */
-ColumnData getColumnData(const IColumn * column);
+ColumnData getColumnData(const IColumn * column, size_t skip_rows = 0);
 
 using ColumnDataRowsOffset = size_t;
 using ColumnDataRowsSize = size_t;

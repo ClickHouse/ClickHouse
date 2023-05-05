@@ -2,11 +2,12 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
+#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperStorage.h>
+
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/logger_useful.h>
-#include <Coordination/KeeperContext.h>
 
 
 namespace DB
@@ -20,12 +21,16 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
+    using CommitCallback = std::function<void(const KeeperStorage::RequestForSession &)>;
+
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
         const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
+        KeeperSnapshotManagerS3 * snapshot_manager_s3_,
+        CommitCallback commit_callback_ = {},
         const std::string & superdigest_ = "");
 
     /// Read state from the latest snapshot
@@ -100,7 +105,9 @@ public:
     uint64_t getKeyArenaSize() const;
     uint64_t getLatestSnapshotBufSize() const;
 
+    void recalculateStorageStats();
 private:
+    CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
@@ -146,6 +153,8 @@ private:
     const std::string superdigest;
 
     KeeperContextPtr keeper_context;
+
+    KeeperSnapshotManagerS3 * snapshot_manager_s3;
 };
 
 }

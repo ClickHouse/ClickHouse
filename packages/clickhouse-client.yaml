@@ -37,7 +37,7 @@ deb:
 contents:
 - src: root/etc/clickhouse-client/config.xml
   dst: /etc/clickhouse-client/config.xml
-  type: config
+  type: config|noreplace
 - src: root/usr/bin/clickhouse-benchmark
   dst: /usr/bin/clickhouse-benchmark
 - src: root/usr/bin/clickhouse-compressor

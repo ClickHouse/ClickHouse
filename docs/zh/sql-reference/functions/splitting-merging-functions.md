@@ -28,5 +28,3 @@ slug: /zh/sql-reference/functions/splitting-merging-functions
     ┌─alphaTokens('abca1abc')─┐
     │ ['abca','abc']          │
     └─────────────────────────┘
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->

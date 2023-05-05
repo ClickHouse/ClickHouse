@@ -34,8 +34,7 @@ namespace DB
 class Arena : private boost::noncopyable
 {
 private:
-    /// Padding allows to use 'memcpySmallAllowReadWriteOverflow15' instead of 'memcpy'.
-    static constexpr size_t pad_right = 15;
+    static constexpr size_t pad_right = PADDING_FOR_SIMD - 1;
 
     /// Contiguous MemoryChunk of memory and pointer to free space inside it. Member of single-linked list.
     struct alignas(16) MemoryChunk : private Allocator<false>    /// empty base optimization
@@ -81,7 +80,8 @@ private:
 
     /// Last contiguous MemoryChunk of memory.
     MemoryChunk * head;
-    size_t size_in_bytes;
+    size_t allocated_bytes;
+    size_t used_bytes;
     size_t page_size;
 
     static size_t roundUpToPageSize(size_t s, size_t page_size)
@@ -120,7 +120,7 @@ private:
     void NO_INLINE addMemoryChunk(size_t min_size)
     {
         head = new MemoryChunk(nextSize(min_size + pad_right), head);
-        size_in_bytes += head->size();
+        allocated_bytes += head->size();
     }
 
     friend class ArenaAllocator;
@@ -128,9 +128,12 @@ private:
 
 public:
     explicit Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
-        : growth_factor(growth_factor_), linear_growth_threshold(linear_growth_threshold_),
-        head(new MemoryChunk(initial_size_, nullptr)), size_in_bytes(head->size()),
-        page_size(static_cast<size_t>(::getPageSize()))
+        : growth_factor(growth_factor_)
+        , linear_growth_threshold(linear_growth_threshold_)
+        , head(new MemoryChunk(initial_size_, nullptr))
+        , allocated_bytes(head->size())
+        , used_bytes(0)
+        , page_size(static_cast<size_t>(::getPageSize()))
     {
     }
 
@@ -142,7 +145,8 @@ public:
     /// Get piece of memory, without alignment.
     char * alloc(size_t size)
     {
-        if (unlikely(head->pos + size > head->end))
+        used_bytes += size;
+        if (unlikely(static_cast<std::ptrdiff_t>(size) > head->end - head->pos))
             addMemoryChunk(size);
 
         char * res = head->pos;
@@ -154,6 +158,7 @@ public:
     /// Get piece of memory with alignment
     char * alignedAlloc(size_t size, size_t alignment)
     {
+        used_bytes += size;
         do
         {
             void * head_pos = head->pos;
@@ -185,6 +190,7 @@ public:
       */
     void * rollback(size_t size)
     {
+        used_bytes -= size;
         head->pos -= size;
         ASAN_POISON_MEMORY_REGION(head->pos, size + pad_right);
         return head->pos;
@@ -300,11 +306,11 @@ public:
         return res;
     }
 
-    /// Size of MemoryChunks in bytes.
-    size_t size() const
-    {
-        return size_in_bytes;
-    }
+    /// Size of all MemoryChunks in bytes.
+    size_t allocatedBytes() const { return allocated_bytes; }
+
+    /// Total space actually used (not counting padding or space unused by caller allocations) in all MemoryChunks in bytes.
+    size_t usedBytes() const { return used_bytes; }
 
     /// Bad method, don't use it -- the MemoryChunks are not your business, the entire
     /// purpose of the arena code is to manage them for you, so if you find

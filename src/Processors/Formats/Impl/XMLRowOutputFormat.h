@@ -16,7 +16,7 @@ namespace DB
 class XMLRowOutputFormat final : public RowOutputFormatWithUTF8ValidationAdaptor
 {
 public:
-    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
+    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "XMLRowOutputFormat"; }
 
@@ -27,6 +27,7 @@ private:
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void writeMinExtreme(const Columns & columns, size_t row_num) override;
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
@@ -61,7 +62,6 @@ private:
     NamesAndTypes fields;
     Names field_tag_names;
 
-    Statistics statistics;
     const FormatSettings format_settings;
 };
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -9,11 +9,10 @@
 #include <list>
 
 #include <base/types.h>
-#include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
+#include <IO/S3/Requests.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
@@ -22,13 +21,7 @@
 
 namespace Aws::S3
 {
-class S3Client;
-}
-
-namespace Aws::S3::Model
-{
-    class UploadPartRequest;
-    class PutObjectRequest;
+class Client;
 }
 
 namespace DB
@@ -47,10 +40,10 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        const S3Settings::RequestSettings & request_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -65,6 +58,10 @@ public:
 private:
     void allocateBuffer();
 
+    void processWithStrictParts();
+    void processWithDynamicParts();
+
+    void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & req);
     void createMultipartUpload();
     void writePart();
     void completeMultipartUpload();
@@ -75,11 +72,11 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number);
+    void fillUploadRequest(S3::UploadPartRequest & req);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
-    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
+    void fillPutRequest(S3::PutObjectRequest & req);
     void processPutRequest(const PutObjectTask & task);
 
     void waitForReadyBackGroundTasks();
@@ -88,14 +85,18 @@ private:
 
     const String bucket;
     const String key;
-    const S3Settings::ReadWriteSettings s3_settings;
-    const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    const S3Settings::RequestSettings request_settings;
+    const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
+    const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
-    size_t upload_part_size = 0;
+    /// Strict/static Part size, no adjustments will be done on fly.
+    size_t strict_upload_part_size = 0;
+    /// Part size will be adjusted on fly (for bigger uploads)
+    size_t current_upload_part_size = 0;
     std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
-    std::atomic<size_t> total_parts_uploaded = 0;
+    size_t part_number = 0;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
@@ -110,8 +111,8 @@ private:
 
     std::unique_ptr<PutObjectTask> put_object_task; /// Does not need protection by mutex because of the logic around is_finished field.
     std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) upload_object_tasks;
-    size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-    size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+    int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
 
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;

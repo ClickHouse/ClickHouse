@@ -51,7 +51,7 @@ select * from enums order by e;
 select * from enums order by e desc;
 
 -- GROUP BY
-select count(), e from enums group by e;
+select count(), e from enums group by e order by e;
 select any(e) from enums;
 
 -- IN

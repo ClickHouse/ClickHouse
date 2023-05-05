@@ -10,7 +10,7 @@ function check_refcnt_for_table()
     local table=$1 && shift
 
     $CLICKHOUSE_CLIENT -q "system stop merges $table"
-    $CLICKHOUSE_CLIENT -q "insert into $table select number, number%4 from numbers(200)"
+    $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into $table select number, number%4 from numbers(200)"
 
     local query_id
     query_id="$table-$(random_str 10)"
@@ -52,7 +52,7 @@ $CLICKHOUSE_CLIENT -nmq "
 check_refcnt_for_table data_02340
 
 $CLICKHOUSE_CLIENT -nmq "
-    drop table if exists data_02340_rep;
+    drop table if exists data_02340_rep sync;
     create table data_02340_rep (key Int, part Int) engine=ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') partition by part order by key settings index_granularity=1;
 " || exit 1
 check_refcnt_for_table data_02340_rep

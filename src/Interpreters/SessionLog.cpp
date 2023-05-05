@@ -30,21 +30,11 @@ namespace
 {
 using namespace DB;
 
-inline DateTime64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-inline time_t time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
-}
-
 auto eventTime()
 {
     const auto finish_time = std::chrono::system_clock::now();
 
-    return std::make_pair(time_in_seconds(finish_time), time_in_microseconds(finish_time));
+    return std::make_pair(timeInSeconds(finish_time), timeInMicroseconds(finish_time));
 }
 
 using AuthType = AuthenticationType;
@@ -96,9 +86,11 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 8);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values

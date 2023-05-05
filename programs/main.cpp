@@ -219,7 +219,7 @@ auto instructionFailToString(InstructionFail fail)
         case InstructionFail::AVX512:
             ret("AVX512");
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -345,7 +345,7 @@ struct Checker
 ;
 
 
-#if !defined(DISABLE_HARMFUL_ENV_VAR_CHECK) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -433,7 +433,6 @@ extern "C"
 }
 #endif
 
-
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///
@@ -457,7 +456,7 @@ int main(int argc_, char ** argv_)
     /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
-#if !defined(DISABLE_HARMFUL_ENV_VAR_CHECK) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
 

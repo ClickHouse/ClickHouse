@@ -1,7 +1,7 @@
 import os
 from os import path as p
 
-from build_download_helper import get_with_retries
+from build_download_helper import get_gh_api
 
 module_dir = p.abspath(p.dirname(__file__))
 git_root = p.abspath(p.join(module_dir, "..", ".."))
@@ -39,14 +39,18 @@ _GITHUB_JOB_URL = ""
 def GITHUB_JOB_ID() -> str:
     global _GITHUB_JOB_ID
     global _GITHUB_JOB_URL
+    if GITHUB_RUN_ID == "0":
+        _GITHUB_JOB_ID = "0"
     if _GITHUB_JOB_ID:
         return _GITHUB_JOB_ID
     jobs = []
+    page = 1
     while not _GITHUB_JOB_ID:
-        response = get_with_retries(
+        response = get_gh_api(
             f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-            f"actions/runs/{GITHUB_RUN_ID}/jobs?per_page=100"
+            f"actions/runs/{GITHUB_RUN_ID}/jobs?per_page=100&page={page}"
         )
+        page += 1
         data = response.json()
         jobs.extend(data["jobs"])
         for job in data["jobs"]:
@@ -55,7 +59,10 @@ def GITHUB_JOB_ID() -> str:
             _GITHUB_JOB_ID = job["id"]
             _GITHUB_JOB_URL = job["html_url"]
             return _GITHUB_JOB_ID
-        if len(jobs) == data["total_count"]:
+        if (
+            len(jobs) >= data["total_count"]  # just in case of inconsistency
+            or len(data["jobs"]) == 0  # if we excided pages
+        ):
             _GITHUB_JOB_ID = "0"
 
     return _GITHUB_JOB_ID

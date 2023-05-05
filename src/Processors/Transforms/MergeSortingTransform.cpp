@@ -3,6 +3,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -22,10 +23,6 @@ namespace ProfileEvents
     extern const Event ExternalProcessingUncompressedBytesTotal;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric TemporaryFilesForSort;
-}
 
 namespace DB
 {
@@ -38,7 +35,7 @@ public:
         , tmp_stream(tmp_stream_)
         , log(log_)
     {
-        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.path());
+        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.getPath());
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
     }
 
@@ -62,7 +59,7 @@ public:
             ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-                tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
+                tmp_stream.getPath(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
         }
 
         Block block = tmp_stream.read();
@@ -171,7 +168,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     {
         /// If there's less free disk space than reserve_size, an exception will be thrown
         size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
-        auto & tmp_stream = tmp_data->createStream(header_without_constants, CurrentMetrics::TemporaryFilesForSort, reserve_size);
+        auto & tmp_stream = tmp_data->createStream(header_without_constants, reserve_size);
 
         merge_sorter = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
         auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, tmp_stream, log);
@@ -189,8 +186,10 @@ void MergeSortingTransform::consume(Chunk chunk)
                     0,
                     description,
                     max_merged_block_size,
+                    /*max_merged_block_size_bytes*/0,
                     SortingQueueStrategy::Batch,
                     limit,
+                    /*always_read_till_end_=*/ false,
                     nullptr,
                     quiet,
                     use_average_block_sizes,

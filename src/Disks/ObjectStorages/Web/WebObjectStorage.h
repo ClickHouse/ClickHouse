@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
@@ -55,8 +55,6 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
-
     void removeObject(const StoredObject & object) override;
 
     void removeObjects(const StoredObjects &  objects) override;
@@ -88,8 +86,6 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         ContextPtr context) override;
-
-    bool supportsAppend() const override { return false; }
 
     std::string generateBlobNameForPath(const std::string & path) override { return path; }
 

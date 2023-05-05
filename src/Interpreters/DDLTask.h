@@ -99,6 +99,9 @@ struct DDLTaskBase
     String host_id_str;
     ASTPtr query;
 
+    String query_str;
+    String query_for_logging;
+
     bool is_initial_query = false;
     bool is_circular_replicated = false;
     bool execute_on_leader = false;
@@ -114,6 +117,7 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
+    void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
 

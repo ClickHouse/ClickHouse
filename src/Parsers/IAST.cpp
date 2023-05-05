@@ -1,8 +1,10 @@
+#include <Parsers/IAST.h>
+
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
-#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -106,7 +108,7 @@ size_t IAST::checkSize(size_t max_size) const
         res += child->checkSize(max_size);
 
     if (res > max_size)
-        throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
+        throw Exception(ErrorCodes::TOO_BIG_AST, "AST is too big. Maximum: {}", max_size);
 
     return res;
 }
@@ -154,7 +156,7 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
         stack.pop_back();
 
         if (top.second >= max_depth)
-            throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
+            throw Exception(ErrorCodes::TOO_DEEP_AST, "AST is too deep. Maximum: {}", max_depth);
 
         res = std::max(res, top.second);
 
@@ -165,11 +167,21 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-std::string IAST::formatForErrorMessage() const
+String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const
 {
     WriteBufferFromOwnString buf;
-    format(FormatSettings(buf, true /* one line */));
-    return buf.str();
+    format({buf, one_line, show_secrets});
+    return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
+}
+
+bool IAST::childrenHaveSecretParts() const
+{
+    for (const auto & child : children)
+    {
+        if (child->hasSecretParts())
+            return true;
+    }
+    return false;
 }
 
 void IAST::cloneChildren()
@@ -202,8 +214,9 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         case IdentifierQuotingStyle::None:
         {
             if (always_quote_identifiers)
-                throw Exception("Incompatible arguments: always_quote_identifiers = true && identifier_quoting_style == IdentifierQuotingStyle::None",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Incompatible arguments: always_quote_identifiers = true && "
+                                "identifier_quoting_style == IdentifierQuotingStyle::None");
             writeString(name, ostr);
             break;
         }
@@ -242,7 +255,7 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     writeChar('\n', ostr);
     for (const auto & child : children)
     {
-        if (!child) throw Exception("Can't dump nullptr child", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+        if (!child) throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump nullptr child");
         child->dumpTree(ostr, indent + 1);
     }
 }

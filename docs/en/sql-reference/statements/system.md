@@ -8,7 +8,7 @@ sidebar_label: SYSTEM
 
 ## RELOAD EMBEDDED DICTIONARIES
 
-Reload all [Internal dictionaries](../../sql-reference/dictionaries/internal-dicts.md).
+Reload all [Internal dictionaries](../../sql-reference/dictionaries/index.md).
 By default, internal dictionaries are disabled.
 Always returns `Ok.` regardless of the result of the internal dictionary update.
 
@@ -72,11 +72,11 @@ For more convenient (automatic) cache management, see disable_internal_dns_cache
 
 ## DROP MARK CACHE
 
-Resets the mark cache. Used in development of ClickHouse and performance tests.
+Resets the mark cache.
 
 ## DROP REPLICA
 
-Dead replicas can be dropped using following syntax:
+Dead replicas of `ReplicatedMergeTree` tables can be dropped using following syntax:
 
 ``` sql
 SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
@@ -85,31 +85,52 @@ SYSTEM DROP REPLICA 'replica_name';
 SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 ```
 
-Queries will remove the replica path in ZooKeeper. It is useful when the replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it cannot drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
+Queries will remove the `ReplicatedMergeTree` replica path in ZooKeeper. It is useful when the replica is dead and its metadata cannot be removed from ZooKeeper by `DROP TABLE` because there is no such table anymore. It will only drop the inactive/stale replica, and it cannot drop local replica, please use `DROP TABLE` for that. `DROP REPLICA` does not drop any tables and does not remove any data or metadata from disk.
 
 The first one removes metadata of `'replica_name'` replica of `database.table` table.
 The second one does the same for all replicated tables in the database.
 The third one does the same for all replicated tables on the local server.
 The fourth one is useful to remove metadata of dead replica when all other replicas of a table were dropped. It requires the table path to be specified explicitly. It must be the same path as was passed to the first argument of `ReplicatedMergeTree` engine on table creation.
 
+## DROP DATABASE REPLICA
+
+Dead replicas of `Replicated` databases can be dropped using following syntax:
+
+``` sql
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM DATABASE database;
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'];
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPATH '/path/to/table/in/zk';
+```
+
+Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica path from ZooKeeper when there's no database to run `DROP DATABASE`. Please note that it does not remove `ReplicatedMergeTree` replicas (so you may need `SYSTEM DROP REPLICA` as well). Shard and replica names are the names that were specified in `Replicated` engine arguments when creating the database. Also, these names can be obtained from `database_shard_name` and `database_replica_name` columns in `system.clusters`. If the `FROM SHARD` clause is missing, then `replica_name` must be a full replica name in `shard_name|replica_name` format.
+
 ## DROP UNCOMPRESSED CACHE
 
-Reset the uncompressed data cache. Used in development of ClickHouse and performance tests.
-For manage uncompressed data cache parameters use following server level settings [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
+Reset the uncompressed data cache.
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
+Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
-Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
-Compiled expression cache used when query/user/profile enable option [compile-expressions](../../operations/settings/settings.md#compile-expressions)
+Reset the compiled expression cache.
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
+
+## DROP QUERY CACHE
+
+Resets the [query cache](../../operations/query-cache.md).
 
 ## FLUSH LOGS
 
-Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.
 This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper. Note that `SYSTEM RELOAD CONFIG` does not reload `USER` configuration stored in ZooKeeper, it only reloads `USER` configuration that is stored in `users.xml`.  To reload all `USER` config use `SYSTEM RELOAD USERS`
+
+## RELOAD USERS
+
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. 
 
 ## SHUTDOWN
 
@@ -215,6 +236,14 @@ Clears freezed backup with the specified name from all the disks. See more about
 SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
+### WAIT LOADING PARTS
+
+Wait until all asynchronously loading data parts of a table (outdated data parts) will became loaded.
+
+``` sql
+SYSTEM WAIT LOADING PARTS [db.]merge_tree_family_table_name
+```
+
 ## Managing ReplicatedMergeTree Tables
 
 ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
@@ -271,18 +300,22 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 ### SYNC REPLICA
 
-Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
+Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
 
 ``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT | PULL]
 ```
 
-After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
+
+ - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
+ - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
+ - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
 ### RESTART REPLICA
 
-Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed.
-Initialization replication queue based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
+Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
+Initialization of replication queue based on ZooKeeper data happens in the same way as for `ATTACH TABLE` statement. For a short time, the table will be unavailable for any operations.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
@@ -303,7 +336,7 @@ One may execute query after:
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-:::warning
+:::note
 Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 :::
 
@@ -352,4 +385,16 @@ Allows to drop filesystem cache.
 
 ```sql
 SYSTEM DROP FILESYSTEM CACHE
+```
+
+### SYNC FILE CACHE
+
+:::note
+It's too heavy and has potential for misuse.
+:::
+
+Will do sync syscall.
+
+```sql
+SYSTEM SYNC FILE CACHE
 ```

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/MultipleAccessStorage.h>
+#include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Common.h>
 #include <base/scope_guard.h>
@@ -147,6 +148,20 @@ public:
     void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;
 
+    /// Default password type when the user does not specify it.
+    void setDefaultPasswordTypeFromConfig(const String & type_);
+    AuthenticationType getDefaultPasswordType() const;
+
+    /// Check complexity requirements for passwords
+    void setPasswordComplexityRulesFromConfig(const Poco::Util::AbstractConfiguration & config_);
+    void setPasswordComplexityRules(const std::vector<std::pair<String, String>> & rules_);
+    void checkPasswordComplexityRules(const String & password_) const;
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const;
+
+    /// Workfactor for bcrypt encoded passwords
+    void setBcryptWorkfactor(int workfactor_);
+    int getBcryptWorkfactor() const;
+
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
     /// For example, if there two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
@@ -212,6 +227,7 @@ public:
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
+    class PasswordComplexityRules;
 
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
@@ -225,6 +241,7 @@ private:
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
     std::unique_ptr<AccessChangesNotifier> changes_notifier;
+    std::unique_ptr<PasswordComplexityRules> password_rules;
     std::atomic_bool allow_plaintext_password = true;
     std::atomic_bool allow_no_password = true;
     std::atomic_bool allow_implicit_no_password = true;
@@ -233,6 +250,8 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
+    std::atomic_int bcrypt_workfactor = 12;
+    std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
 };
 
 }

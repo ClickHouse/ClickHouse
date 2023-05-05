@@ -57,7 +57,7 @@ Pipe StorageSQLite::read(
     ContextPtr context_,
     QueryProcessingStage::Enum,
     size_t max_block_size,
-    unsigned int)
+    size_t /*num_streams*/)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
@@ -66,6 +66,7 @@ Pipe StorageSQLite::read(
 
     String query = transformQueryForExternalDatabase(
         query_info,
+        column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
         "",
@@ -161,8 +162,7 @@ void registerStorageSQLite(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
-            throw Exception("SQLite database requires 2 arguments: database path, table name",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name");
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());

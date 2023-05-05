@@ -36,7 +36,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings_,
         avg_value_size_hints_)
     , marks_loader(
-          data_part_info_for_read_->getDataPartStorage(),
+          data_part_info_for_read_,
           mark_cache,
           data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
           data_part_info_for_read_->getMarksCount(),
@@ -45,6 +45,12 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
           settings.read_settings,
           load_marks_threadpool_,
           data_part_info_for_read_->getColumns().size())
+    , profile_callback(profile_callback_)
+    , clock_type(clock_type_)
+{
+}
+
+void MergeTreeReaderCompact::initialize()
 {
     try
     {
@@ -59,13 +65,15 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
         const String path = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+        auto data_part_storage = data_part_info_for_read->getDataPartStorage();
+
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-                std::string(fs::path(data_part_info_for_read->getDataPartStorage()->getFullPath()) / path),
-                [this, path]()
+                std::string(fs::path(data_part_storage->getFullPath()) / path),
+                [this, path, data_part_storage]()
                 {
-                    return data_part_info_for_read->getDataPartStorage()->readFile(
+                    return data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt);
@@ -73,8 +81,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
 
-            if (profile_callback_)
-                buffer->setProfileCallback(profile_callback_, clock_type_);
+            if (profile_callback)
+                buffer->setProfileCallback(profile_callback, clock_type);
 
             if (!settings.checksum_on_read)
                 buffer->disableChecksumming();
@@ -87,14 +95,14 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         {
             auto buffer =
                 std::make_unique<CompressedReadBufferFromFile>(
-                    data_part_info_for_read->getDataPartStorage()->readFile(
+                    data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt),
                     /* allow_different_codecs = */ true);
 
-            if (profile_callback_)
-                buffer->setProfileCallback(profile_callback_, clock_type_);
+            if (profile_callback)
+                buffer->setProfileCallback(profile_callback, clock_type);
 
             if (!settings.checksum_on_read)
                 buffer->disableChecksumming();
@@ -139,19 +147,28 @@ void MergeTreeReaderCompact::fillColumnPositions()
         {
             /// If array of Nested column is missing in part,
             /// we have to read its offsets if they exist.
-            position = findColumnForOffsets(column_to_read);
-            read_only_offsets[i] = (position != std::nullopt);
+            auto position_level = findColumnForOffsets(column_to_read);
+            if (position_level.has_value())
+            {
+                column_positions[i].emplace(position_level->first);
+                read_only_offsets[i].emplace(position_level->second);
+                partially_read_columns.insert(column_to_read.name);
+            }
         }
-
-        column_positions[i] = std::move(position);
-        if (read_only_offsets[i])
-            partially_read_columns.insert(column_to_read.name);
+        else
+            column_positions[i] = std::move(position);
     }
 }
 
 size_t MergeTreeReaderCompact::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
+    if (!initialized)
+    {
+        initialize();
+        initialized = true;
+    }
+
     if (continue_reading)
         from_mark = next_mark;
 
@@ -215,7 +232,8 @@ size_t MergeTreeReaderCompact::readRows(
 
 void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
-    size_t from_mark, size_t current_task_last_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
+    size_t from_mark, size_t current_task_last_mark, size_t column_position, size_t rows_to_read,
+    std::optional<size_t> only_offsets_level)
 {
     const auto & [name, type] = name_and_type;
 
@@ -226,9 +244,34 @@ void MergeTreeReaderCompact::readData(
 
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
     {
+        /// Offset stream from another column could be read, in case of current
+        /// column does not exists (see findColumnForOffsets() in
+        /// MergeTreeReaderCompact::fillColumnPositions())
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-        if (only_offsets && !is_offsets)
-            return nullptr;
+        if (only_offsets_level.has_value())
+        {
+            if (!is_offsets)
+                return nullptr;
+
+            /// Offset stream can be read only from columns of current level or
+            /// below (since it is OK to read all parent streams from the
+            /// alternative).
+            ///
+            /// Consider the following columns in nested "root":
+            /// - root.array Array(UInt8) - exists
+            /// - root.nested_array Array(Array(UInt8)) - does not exists (only_offsets_level=1)
+            ///
+            /// For root.nested_array it will try to read multiple streams:
+            /// - offsets (substream_path = {ArraySizes})
+            ///   OK
+            /// - root.nested_array elements (substream_path = {ArrayElements, ArraySizes})
+            ///   NOT OK - cannot use root.array offsets stream for this
+            ///
+            /// Here only_offsets_level is the level of the alternative stream,
+            /// and substream_path.size() is the level of the current stream.
+            if (only_offsets_level.value() < ISerialization::getArrayLevel(substream_path))
+                return nullptr;
+        }
 
         return data_buffer;
     };
@@ -265,12 +308,24 @@ void MergeTreeReaderCompact::readData(
     }
 
     /// The buffer is left in inconsistent state after reading single offsets
-    if (only_offsets)
+    if (only_offsets_level.has_value())
         last_read_granule.reset();
     else
         last_read_granule.emplace(from_mark, column_position);
 }
 
+void MergeTreeReaderCompact::prefetchBeginOfRange(int64_t priority)
+{
+    if (!initialized)
+    {
+        initialize();
+        initialized = true;
+    }
+
+    adjustUpperBound(all_mark_ranges.back().end);
+    seekToMark(all_mark_ranges.front().begin, 0);
+    data_buffer->prefetch(priority);
+}
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {

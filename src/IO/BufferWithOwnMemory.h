@@ -34,8 +34,7 @@ namespace ErrorCodes
 template <typename Allocator = Allocator<false>>
 struct Memory : boost::noncopyable, Allocator
 {
-    /// Padding is needed to allow usage of 'memcpySmallAllowReadWriteOverflow15' function with this buffer.
-    static constexpr size_t pad_right = 15;
+    static constexpr size_t pad_right = PADDING_FOR_SIMD - 1;
 
     size_t m_capacity = 0;  /// With padding.
     size_t m_size = 0;
@@ -110,7 +109,7 @@ private:
         size_t res = 0;
 
         if (common::addOverflow<size_t>(value, pad_right, res))
-            throw Exception("value is too big to apply padding", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "value is too big to apply padding");
 
         return res;
     }

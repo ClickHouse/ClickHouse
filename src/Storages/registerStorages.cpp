@@ -1,9 +1,7 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
 
-#include <Common/config.h>
-#include "config_core.h"
-#include "config_formats.h"
+#include "config.h"
 
 namespace DB
 {
@@ -34,6 +32,14 @@ void registerStorageMeiliSearch(StorageFactory& factory);
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
+void registerStorageOSS(StorageFactory & factory);
+void registerStorageHudi(StorageFactory & factory);
+#if USE_PARQUET
+void registerStorageDeltaLake(StorageFactory & factory);
+#endif
+#if USE_AVRO
+void registerStorageIceberg(StorageFactory & factory);
+#endif
 #endif
 
 #if USE_HDFS
@@ -120,6 +126,17 @@ void registerStorages()
     #if USE_AWS_S3
     registerStorageS3(factory);
     registerStorageCOS(factory);
+    registerStorageOSS(factory);
+    registerStorageHudi(factory);
+
+    #if USE_PARQUET
+    registerStorageDeltaLake(factory);
+    #endif
+
+    #if USE_AVRO
+    registerStorageIceberg(factory);
+    #endif
+
     #endif
 
     #if USE_HDFS

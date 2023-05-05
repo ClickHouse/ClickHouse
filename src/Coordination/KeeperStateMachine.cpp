@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <base/errnoToString.h>
+#include <base/defines.h>
 #include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -7,9 +8,10 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <sys/mman.h>
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include "Coordination/KeeperStorage.h"
 
 
@@ -44,8 +46,11 @@ KeeperStateMachine::KeeperStateMachine(
     const std::string & snapshots_path_,
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
+    KeeperSnapshotManagerS3 * snapshot_manager_s3_,
+    CommitCallback commit_callback_,
     const std::string & superdigest_)
-    : coordination_settings(coordination_settings_)
+    : commit_callback(commit_callback_)
+    , coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
           coordination_settings->snapshots_to_keep,
@@ -59,6 +64,7 @@ KeeperStateMachine::KeeperStateMachine(
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
+    , snapshot_manager_s3(snapshot_manager_s3_)
 {
 }
 
@@ -130,7 +136,7 @@ void assertDigest(
             "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
             "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
-            request.getOpNum(),
+            Coordination::toString(request.getOpNum()),
             first.value,
             second.value,
             first.version,
@@ -249,7 +255,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", session_id);
             }
         }
     }
@@ -262,10 +268,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(
-                    ErrorCodes::SYSTEM_ERROR,
-                    "Could not push response with session id {} into responses queue",
-                    response_for_session.session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
             }
 
         if (keeper_context->digest_enabled && request_for_session.digest)
@@ -274,6 +277,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     ProfileEvents::increment(ProfileEvents::KeeperCommits);
     last_committed_idx = log_idx;
+
+    if (commit_callback)
+        commit_callback(request_for_session);
     return nullptr;
 }
 
@@ -283,15 +289,20 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     nuraft::ptr<nuraft::buffer> latest_snapshot_ptr;
     { /// save snapshot into memory
         std::lock_guard lock(snapshots_lock);
-        if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
+        if (s.get_last_log_idx() > latest_snapshot_meta->get_last_log_idx())
         {
             ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but our last log index is {}",
+                "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
                 s.get_last_log_idx(),
                 latest_snapshot_meta->get_last_log_idx());
         }
+        else if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+        {
+            LOG_INFO(log, "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot", latest_snapshot_meta->get_last_log_idx());
+        }
+
         latest_snapshot_ptr = latest_snapshot_buf;
     }
 
@@ -341,7 +352,7 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
-    std::lock_guard<std::mutex> lock(snapshots_lock);
+    std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
@@ -366,19 +377,32 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         {
             { /// Read storage data without locks and create snapshot
                 std::lock_guard lock(snapshots_lock);
-                auto [path, error_code] = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                if (error_code)
+
+                if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
                 {
-                    throw Exception(
-                        ErrorCodes::SYSTEM_ERROR,
-                        "Snapshot {} was created failed, error: {}",
+                    LOG_INFO(
+                        log,
+                        "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
+                        "created",
                         snapshot->snapshot_meta->get_last_log_idx(),
-                        error_code.message());
+                        latest_snapshot_meta->get_last_log_idx());
                 }
-                latest_snapshot_path = path;
-                latest_snapshot_meta = snapshot->snapshot_meta;
-                ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), path);
+                else
+                {
+                    auto [path, error_code] = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                    if (error_code)
+                    {
+                        throw Exception(
+                            ErrorCodes::SYSTEM_ERROR,
+                            "Snapshot {} was created failed, error: {}",
+                            snapshot->snapshot_meta->get_last_log_idx(),
+                            error_code.message());
+                    }
+                    latest_snapshot_path = path;
+                    latest_snapshot_meta = snapshot->snapshot_meta;
+                    ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
+                    LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), path);
+                }
             }
 
             {
@@ -400,13 +424,22 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         }
 
         when_done(ret, exception);
+
+        return ret ? latest_snapshot_path : "";
     };
 
 
     if (keeper_context->server_state == KeeperContext::Phase::SHUTDOWN)
     {
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
-        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+        auto snapshot_path = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+
+        if (!snapshot_path.empty() && snapshot_manager_s3)
+        {
+            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_path);
+            snapshot_manager_s3->uploadSnapshot(snapshot_path, /* asnyc_upload */ false);
+        }
+
         return;
     }
 
@@ -463,13 +496,15 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        ::close(fd);
+        int err = ::close(fd);
+        chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
     return 0;
 }
 
@@ -513,8 +548,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
         true /*is_local*/);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
-            throw Exception(
-                ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
+            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
 }
 
 void KeeperStateMachine::shutdownStorage()
@@ -631,6 +665,14 @@ ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
         return ClusterConfig::deserialize(*tmp);
     }
     return nullptr;
+}
+
+void KeeperStateMachine::recalculateStorageStats()
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    LOG_INFO(log, "Recalculating storage stats");
+    storage->recalculateStats();
+    LOG_INFO(log, "Done recalculating storage stats");
 }
 
 }

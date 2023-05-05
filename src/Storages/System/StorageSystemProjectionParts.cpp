@@ -11,7 +11,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 namespace DB
 {
@@ -200,9 +200,9 @@ void StorageSystemProjectionParts::processNextStorage(
         if (part->isStoredOnDisk())
         {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getDiskName());
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getFullPath());
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
         }
         else
         {

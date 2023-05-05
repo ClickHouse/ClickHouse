@@ -348,7 +348,7 @@ public:
 
         Columns default_cols(result_types.size());
         for (size_t i = 0; i < result_types.size(); ++i)
-            /// Dictinonary may have non-standart default values specified
+            /// Dictinonary may have non-standard default values specified
             default_cols[i] = result_types[i]->createColumnConstWithDefaultValue(out_null_map.size());
 
         Columns result_columns = getColumns(attribute_names, result_types, key_columns, key_types, default_cols);

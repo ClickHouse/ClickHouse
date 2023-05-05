@@ -63,6 +63,10 @@ def test_read_write_multinode(started_cluster):
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3")
 
+        # Cleanup
+        if node1_zk.exists("/test_read_write_multinode_node1") != None:
+            node1_zk.delete("/test_read_write_multinode_node1")
+
         node1_zk.create("/test_read_write_multinode_node1", b"somedata1")
         node2_zk.create("/test_read_write_multinode_node2", b"somedata2")
         node3_zk.create("/test_read_write_multinode_node3", b"somedata3")
@@ -104,6 +108,10 @@ def test_watch_on_follower(started_cluster):
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3")
+
+        # Cleanup
+        if node1_zk.exists("/test_data_watches") != None:
+            node1_zk.delete("/test_data_watches")
 
         node1_zk.create("/test_data_watches")
         node2_zk.set("/test_data_watches", b"hello")
@@ -163,6 +171,10 @@ def test_session_expiration(started_cluster):
         node3_zk = get_fake_zk("node3", timeout=3.0)
         print("Node3 session id", node3_zk._session_id)
 
+        # Cleanup
+        if node3_zk.exists("/test_ephemeral_node") != None:
+            node3_zk.delete("/test_ephemeral_node")
+
         node3_zk.create("/test_ephemeral_node", b"world", ephemeral=True)
 
         with PartitionManager() as pm:
@@ -201,13 +213,18 @@ def test_follower_restart(started_cluster):
     try:
         wait_nodes()
         node1_zk = get_fake_zk("node1")
-
-        node1_zk.create("/test_restart_node", b"hello")
-
-        node3.restart_clickhouse(kill=True)
-
         node3_zk = get_fake_zk("node3")
 
+        # Cleanup
+        if node1_zk.exists("/test_restart_node") != None:
+            node1_zk.delete("/test_restart_node")
+
+        node1_zk.create("/test_restart_node", b"hello")
+        node3.restart_clickhouse(kill=True)
+
+        wait_nodes()
+
+        node3_zk = get_fake_zk("node3")
         # got data from log
         assert node3_zk.get("/test_restart_node")[0] == b"hello"
 
@@ -225,11 +242,11 @@ def test_follower_restart(started_cluster):
 
 def test_simple_replicated_table(started_cluster):
     wait_nodes()
+
     for i, node in enumerate([node1, node2, node3]):
+        node.query("DROP TABLE IF EXISTS t SYNC")
         node.query(
-            "CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{}') ORDER BY tuple()".format(
-                i + 1
-            )
+            f"CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{i + 1}') ORDER BY tuple()"
         )
 
     node2.query("INSERT INTO t SELECT number FROM numbers(10)")

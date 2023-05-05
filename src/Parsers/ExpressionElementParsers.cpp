@@ -1,14 +1,15 @@
 #include <cerrno>
 #include <cstdlib>
-
 #include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <Parsers/DumpASTNode.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/BinStringDecodeHelper.h>
 
+#include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -27,16 +28,17 @@
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnsMatcher.h>
-
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/parseIntervalKind.h>
+#include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserCase.h>
-
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-
+#include <Parsers/ParserExplainQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
@@ -52,25 +54,116 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/*
+ * Build an AST with the following structure:
+ *
+ * ```
+ * SelectWithUnionQuery (children 1)
+ *  ExpressionList (children 1)
+ *   SelectQuery (children 2)
+ *    ExpressionList (children 1)
+ *     Asterisk
+ *    TablesInSelectQuery (children 1)
+ *     TablesInSelectQueryElement (children 1)
+ *      TableExpression (children 1)
+ *       Function <...>
+ * ```
+ */
+static ASTPtr buildSelectFromTableFunction(const std::shared_ptr<ASTFunction> & ast_function)
+{
+    auto result_select_query = std::make_shared<ASTSelectWithUnionQuery>();
+
+    {
+        auto select_ast = std::make_shared<ASTSelectQuery>();
+        select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+        select_ast->select()->children.push_back(std::make_shared<ASTAsterisk>());
+
+        auto list_of_selects = std::make_shared<ASTExpressionList>();
+        list_of_selects->children.push_back(select_ast);
+
+        result_select_query->children.push_back(std::move(list_of_selects));
+        result_select_query->list_of_selects = result_select_query->children.back();
+
+        {
+            auto tables = std::make_shared<ASTTablesInSelectQuery>();
+            select_ast->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+            auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
+            auto table_expr = std::make_shared<ASTTableExpression>();
+            tables->children.push_back(tables_elem);
+            tables_elem->table_expression = table_expr;
+            tables_elem->children.push_back(table_expr);
+
+            table_expr->table_function = ast_function;
+            table_expr->children.push_back(table_expr->table_function);
+        }
+    }
+
+    return result_select_query;
+}
 
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTPtr select_node;
     ParserSelectWithUnionQuery select;
+    ParserExplainQuery explain;
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
 
-    if (!select.parse(pos, select_node, expected))
+    ASTPtr result_node = nullptr;
+
+    if (ASTPtr select_node; select.parse(pos, select_node, expected))
+    {
+        result_node = std::move(select_node);
+    }
+    else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
+    {
+        const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
+
+        if (explain_query.getTableFunction() || explain_query.getTableOverride())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
+
+        /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
+        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
+
+        String kind_str = ASTExplainQuery::toString(explain_query.getKind());
+
+        String settings_str;
+        if (ASTPtr settings_ast = explain_query.getSettings())
+        {
+            if (!settings_ast->as<ASTSetQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
+            settings_str = queryToString(settings_ast);
+        }
+
+        const ASTPtr & explained_ast = explain_query.getExplainedQuery();
+        if (explained_ast)
+        {
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str),
+                explained_ast);
+            result_node = buildSelectFromTableFunction(view_explain);
+        }
+        else
+        {
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str));
+            result_node = buildSelectFromTableFunction(view_explain);
+        }
+    }
+    else
+    {
         return false;
+    }
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
 
     node = std::make_shared<ASTSubquery>();
-    node->children.push_back(select_node);
+    node->children.push_back(result_node);
     return true;
 }
 
@@ -158,7 +251,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     std::vector<String> parts;
-    std::vector<ASTPtr> params;
+    ASTs params;
     const auto & list = id_list->as<ASTExpressionList &>();
     for (const auto & child : list.children)
     {
@@ -765,21 +858,72 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!pos.isValid())
         return false;
 
-    /** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
-      * Copy is needed to use strto* functions, which require 0-terminated string.
-      */
-    static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
+    auto try_read_float = [&](const char * it, const char * end)
+    {
+        std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
+        char * str_end;
+        errno = 0;    /// Functions strto* don't clear errno.
+        /// The usage of strtod is needed, because we parse hex floating point literals as well.
+        Float64 float_value = std::strtod(buf.c_str(), &str_end);
+        if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
+        {
+            if (float_value < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Logical error: token number cannot begin with minus, "
+                                "but parsed float number is less than zero.");
 
-    if (pos->size() > MAX_LENGTH_OF_NUMBER)
+            if (negative)
+                float_value = -float_value;
+
+            res = float_value;
+
+            auto literal = std::make_shared<ASTLiteral>(res);
+            literal->begin = literal_begin;
+            literal->end = ++pos;
+            node = literal;
+
+            return true;
+        }
+
+        expected.add(pos, "number");
+        return false;
+    };
+
+    /// NaN and Inf
+    if (pos->type == TokenType::BareWord)
+    {
+        return try_read_float(pos->begin, pos->end);
+    }
+
+    if (pos->type != TokenType::Number)
     {
         expected.add(pos, "number");
         return false;
     }
 
+    /** Maximum length of number. 319 symbols is enough to write maximum double in decimal form.
+      * Copy is needed to use strto* functions, which require 0-terminated string.
+      */
+    static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
+
     char buf[MAX_LENGTH_OF_NUMBER + 1];
 
-    size_t size = pos->size();
-    memcpy(buf, pos->begin, size);
+    size_t buf_size = 0;
+    for (const auto * it = pos->begin; it != pos->end; ++it)
+    {
+        if (*it != '_')
+        {
+            buf[buf_size] = *it;
+            ++buf_size;
+        }
+        if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
+        {
+            expected.add(pos, "number");
+            return false;
+        }
+    }
+
+    size_t size = buf_size;
     buf[size] = 0;
     char * start_pos = buf;
 
@@ -850,29 +994,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
 
-    char * pos_double = buf;
-    errno = 0;    /// Functions strto* don't clear errno.
-    Float64 float_value = std::strtod(buf, &pos_double);
-    if (pos_double == buf + pos->size() && errno != ERANGE)
-    {
-        if (float_value < 0)
-            throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
-
-        if (negative)
-            float_value = -float_value;
-
-        res = float_value;
-
-        auto literal = std::make_shared<ASTLiteral>(res);
-        literal->begin = literal_begin;
-        literal->end = ++pos;
-        node = literal;
-
-        return true;
-    }
-
-    expected.add(pos, "number");
-    return false;
+    return try_read_float(buf, buf + buf_size);
 }
 
 
@@ -899,6 +1021,38 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
+inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str)
+{
+    auto literal = std::make_shared<ASTLiteral>(str);
+    literal->begin = pos;
+    literal->end = ++pos;
+    node = literal;
+    return true;
+}
+
+inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, bool hex, size_t word_size)
+{
+    const char * str_begin = pos->begin + 2;
+    const char * str_end = pos->end - 1;
+    if (str_begin == str_end)
+        return makeStringLiteral(pos, node, "");
+
+    PODArray<UInt8> res;
+    res.resize((pos->size() + word_size) / word_size + 1);
+    char * res_begin = reinterpret_cast<char *>(res.data());
+    char * res_pos = res_begin;
+
+    if (hex)
+    {
+        hexStringDecode(str_begin, str_end, res_pos);
+    }
+    else
+    {
+        binStringDecode(str_begin, str_end, res_pos);
+    }
+
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
+}
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -909,6 +1063,18 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     if (pos->type == TokenType::StringLiteral)
     {
+        if (*pos->begin == 'x' || *pos->begin == 'X')
+        {
+            constexpr size_t word_size = 2;
+            return makeHexOrBinStringLiteral(pos, node, true, word_size);
+        }
+
+        if (*pos->begin == 'b' || *pos->begin == 'B')
+        {
+            constexpr size_t word_size = 8;
+            return makeHexOrBinStringLiteral(pos, node, false, word_size);
+        }
+
         ReadBufferFromMemory in(pos->begin, pos->size());
 
         try
@@ -935,11 +1101,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
-    auto literal = std::make_shared<ASTLiteral>(s);
-    literal->begin = pos;
-    literal->end = ++pos;
-    node = literal;
-    return true;
+    return makeStringLiteral(pos, node, s);
 }
 
 template <typename Collection>
@@ -1029,7 +1191,167 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
 template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-template bool ParserCollectionOfLiterals<Map>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+
+namespace
+{
+
+class ICollection;
+using Collections = std::vector<std::unique_ptr<ICollection>>;
+
+class ICollection
+{
+public:
+    virtual ~ICollection() = default;
+    virtual bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) = 0;
+};
+
+template <class Container, TokenType end_token>
+class CommonCollection : public ICollection
+{
+public:
+    explicit CommonCollection(const IParser::Pos & pos) : begin(pos) {}
+
+    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
+
+private:
+    Container container;
+    IParser::Pos begin;
+};
+
+class MapCollection : public ICollection
+{
+public:
+    explicit MapCollection(const IParser::Pos & pos) : begin(pos) {}
+
+    bool parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map) override;
+
+private:
+    Map container;
+    IParser::Pos begin;
+};
+
+bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & /*expected*/, bool allow_map)
+{
+    if (allow_map && pos->type == TokenType::OpeningCurlyBrace)
+        collections.push_back(std::make_unique<MapCollection>(pos));
+    else if (pos->type == TokenType::OpeningRoundBracket)
+        collections.push_back(std::make_unique<CommonCollection<Tuple, TokenType::ClosingRoundBracket>>(pos));
+    else if (pos->type == TokenType::OpeningSquareBracket)
+        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>(pos));
+    else
+        return false;
+
+    ++pos;
+    return true;
+}
+
+template <class Container, TokenType end_token>
+bool CommonCollection<Container, end_token>::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map)
+{
+    if (node)
+    {
+        container.push_back(std::move(node->as<ASTLiteral &>().value));
+        node.reset();
+    }
+
+    ASTPtr literal;
+    ParserLiteral literal_p;
+    ParserToken comma_p(TokenType::Comma);
+    ParserToken end_p(end_token);
+
+    while (true)
+    {
+        if (end_p.ignore(pos, expected))
+        {
+            auto result = std::make_shared<ASTLiteral>(std::move(container));
+            result->begin = begin;
+            result->end = pos;
+
+            node = std::move(result);
+            break;
+        }
+
+        if (!container.empty() && !comma_p.ignore(pos, expected))
+            return false;
+
+        if (literal_p.parse(pos, literal, expected))
+            container.push_back(std::move(literal->as<ASTLiteral &>().value));
+        else
+            return parseAllCollectionsStart(pos, collections, expected, allow_map);
+    }
+
+    return true;
+}
+
+bool MapCollection::parse(IParser::Pos & pos, Collections & collections, ASTPtr & node, Expected & expected, bool allow_map)
+{
+    if (node)
+    {
+        container.push_back(std::move(node->as<ASTLiteral &>().value));
+        node.reset();
+    }
+
+    ASTPtr literal;
+    ParserLiteral literal_p;
+    ParserToken comma_p(TokenType::Comma);
+    ParserToken colon_p(TokenType::Colon);
+    ParserToken end_p(TokenType::ClosingCurlyBrace);
+
+    while (true)
+    {
+        if (end_p.ignore(pos, expected))
+        {
+            auto result = std::make_shared<ASTLiteral>(std::move(container));
+            result->begin = begin;
+            result->end = pos;
+
+            node = std::move(result);
+            break;
+        }
+
+        if (!container.empty() && !comma_p.ignore(pos, expected))
+            return false;
+
+        if (!literal_p.parse(pos, literal, expected))
+            return false;
+
+        if (!colon_p.parse(pos, literal, expected))
+            return false;
+
+        container.push_back(std::move(literal->as<ASTLiteral &>().value));
+
+        if (literal_p.parse(pos, literal, expected))
+            container.push_back(std::move(literal->as<ASTLiteral &>().value));
+        else
+            return parseAllCollectionsStart(pos, collections, expected, allow_map);
+    }
+
+    return true;
+}
+
+}
+
+
+bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    Collections collections;
+
+    if (!parseAllCollectionsStart(pos, collections, expected, allow_map))
+        return false;
+
+    while (!collections.empty())
+    {
+        if (!collections.back()->parse(pos, collections, node, expected, allow_map))
+            return false;
+
+        if (node)
+            collections.pop_back();
+    }
+
+    return true;
+}
+
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1107,10 +1429,12 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
+    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
+
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word)
+    if (!has_as_word && !is_quoted)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,
@@ -1126,54 +1450,6 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
-
-
-bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword columns("COLUMNS");
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(false, true), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserStringLiteral regex;
-
-    if (!columns.ignore(pos, expected))
-        return false;
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ++pos;
-
-    ASTPtr column_list;
-    ASTPtr regex_node;
-    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    ASTPtr res;
-    if (column_list)
-    {
-        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
-        list_matcher->column_list = column_list;
-        res = list_matcher;
-    }
-    else
-    {
-        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res = regexp_matcher;
-    }
-
-    ParserColumnsTransformers transformers_p(allowed_transformers);
-    ASTPtr transformer;
-    while (transformers_p.parse(pos, transformer, expected))
-    {
-        res->children.push_back(transformer);
-    }
-    node = std::move(res);
-    return true;
-}
-
 
 bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1200,7 +1476,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto opos = pos;
         if (ParserExpression().parse(pos, lambda, expected))
         {
-            if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
                 if (func->arguments->children.size() != 2)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda requires two arguments");
@@ -1217,6 +1493,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
                     lambda_arg = *opt_arg_name;
                 else
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
+
+                func->is_lambda_function = true;
             }
             else
             {
@@ -1345,7 +1623,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
-            replacement->expr = std::move(expr);
+            replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
         };
@@ -1385,13 +1663,21 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ++pos;
         auto asterisk = std::make_shared<ASTAsterisk>();
+        auto transformers = std::make_shared<ASTColumnsTransformerList>();
         ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
         while (transformers_p.parse(pos, transformer, expected))
         {
-            asterisk->children.push_back(transformer);
+            transformers->children.push_back(transformer);
         }
-        node = asterisk;
+
+        if (!transformers->children.empty())
+        {
+            asterisk->transformers = std::move(transformers);
+            asterisk->children.push_back(asterisk->transformers);
+        }
+
+        node = std::move(asterisk);
         return true;
     }
     return false;
@@ -1400,7 +1686,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserCompoundIdentifier(true, true).parse(pos, node, expected))
+    if (!ParserCompoundIdentifier(false, true).parse(pos, node, expected))
         return false;
 
     if (pos->type != TokenType::Dot)
@@ -1412,17 +1698,157 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ++pos;
 
     auto res = std::make_shared<ASTQualifiedAsterisk>();
-    res->children.push_back(node);
+    auto transformers = std::make_shared<ASTColumnsTransformerList>();
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
     {
-        res->children.push_back(transformer);
+        transformers->children.push_back(transformer);
     }
+
+    res->qualifier = std::move(node);
+    res->children.push_back(res->qualifier);
+
+    if (!transformers->children.empty())
+    {
+        res->transformers = std::move(transformers);
+        res->children.push_back(res->transformers);
+    }
+
     node = std::move(res);
     return true;
 }
 
+/// Parse (columns_list) or ('REGEXP').
+static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected & expected, ParserColumnsTransformers::ColumnTransformers allowed_transformers)
+{
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(false, true), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserStringLiteral regex;
+
+    ASTPtr column_list;
+    ASTPtr regex_node;
+    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto transformers = std::make_shared<ASTColumnsTransformerList>();
+    ParserColumnsTransformers transformers_p(allowed_transformers);
+    ASTPtr transformer;
+    while (transformers_p.parse(pos, transformer, expected))
+    {
+        transformers->children.push_back(transformer);
+    }
+
+    ASTPtr res;
+    if (column_list)
+    {
+        auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
+
+        list_matcher->column_list = std::move(column_list);
+        list_matcher->children.push_back(list_matcher->column_list);
+
+        if (!transformers->children.empty())
+        {
+            list_matcher->transformers = std::move(transformers);
+            list_matcher->children.push_back(list_matcher->transformers);
+        }
+
+        node = std::move(list_matcher);
+    }
+    else
+    {
+        auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
+        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+
+        if (!transformers->children.empty())
+        {
+            regexp_matcher->transformers = std::move(transformers);
+            regexp_matcher->children.push_back(regexp_matcher->transformers);
+        }
+
+        node = std::move(regexp_matcher);
+    }
+
+    return true;
+}
+
+bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword columns("COLUMNS");
+
+    if (!columns.ignore(pos, expected))
+        return false;
+
+    return parseColumnsMatcherBody(pos, node, expected, allowed_transformers);
+}
+
+bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (!ParserCompoundIdentifier(false, true).parse(pos, node, expected))
+        return false;
+
+    auto identifier_node = node;
+    auto & identifier_node_typed = identifier_node->as<ASTIdentifier &>();
+    auto & name_parts = identifier_node_typed.name_parts;
+
+    /// ParserCompoundIdentifier parse identifier.COLUMNS
+    if (name_parts.size() == 1 || name_parts.back() != "COLUMNS")
+        return false;
+
+    name_parts.pop_back();
+    identifier_node = std::make_shared<ASTIdentifier>(std::move(name_parts), false, std::move(node->children));
+
+    if (!parseColumnsMatcherBody(pos, node, expected, allowed_transformers))
+        return false;
+
+    if (auto * columns_list_matcher = node->as<ASTColumnsListMatcher>())
+    {
+        auto result = std::make_shared<ASTQualifiedColumnsListMatcher>();
+        result->qualifier = std::move(identifier_node);
+        result->column_list = std::move(columns_list_matcher->column_list);
+
+        result->children.push_back(result->qualifier);
+        result->children.push_back(result->column_list);
+
+        if (columns_list_matcher->transformers)
+        {
+            result->transformers = std::move(columns_list_matcher->transformers);
+            result->children.push_back(result->transformers);
+        }
+
+        node = std::move(result);
+    }
+    else if (auto * column_regexp_matcher = node->as<ASTColumnsRegexpMatcher>())
+    {
+        auto result = std::make_shared<ASTQualifiedColumnsRegexpMatcher>();
+        result->setPattern(column_regexp_matcher->getPattern(), false);
+        result->setMatcher(column_regexp_matcher->getMatcher());
+
+        result->qualifier = std::move(identifier_node);
+        result->children.push_back(result->qualifier);
+
+        if (column_regexp_matcher->transformers)
+        {
+            result->transformers = std::move(column_regexp_matcher->transformers);
+            result->children.push_back(result->transformers);
+        }
+
+        node = std::move(result);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher expected to be list or regexp");
+    }
+
+    return true;
+}
 
 bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1727,8 +2153,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set("SET");
     ParserKeyword s_recompress("RECOMPRESS");
     ParserKeyword s_codec("CODEC");
-    ParserToken s_comma(TokenType::Comma);
-    ParserToken s_eq(TokenType::Equals);
+    ParserKeyword s_materialize("MATERIALIZE");
+    ParserKeyword s_remove("REMOVE");
+    ParserKeyword s_modify("MODIFY");
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
@@ -1736,8 +2163,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
-    ParserList parser_assignment_list(
-        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+    if (s_materialize.checkWithoutMoving(pos, expected) ||
+        s_remove.checkWithoutMoving(pos, expected) ||
+        s_modify.checkWithoutMoving(pos, expected))
+
+        return false;
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -1795,6 +2225,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_set.ignore(pos))
         {
+            ParserList parser_assignment_list(
+                std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
+
             if (!parser_assignment_list.parse(pos, group_by_assignments, expected))
                 return false;
         }

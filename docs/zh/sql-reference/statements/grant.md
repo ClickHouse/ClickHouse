@@ -471,5 +471,3 @@ GRANT INSERT(x,y) ON db.table TO john
 ### ADMIN OPTION {#admin-option-privilege}
 
 `ADMIN OPTION` 权限允许用户将他们的角色分配给其它用户
-
-[原始文档](https://clickhouse.com/docs/en/query_language/grant/) <!--hide-->

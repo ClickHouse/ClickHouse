@@ -5,6 +5,15 @@
 #include <Interpreters/Context.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IVolume.h>
+#include <Common/CurrentMetrics.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesUnknown;
+}
 
 namespace DB
 {
@@ -17,7 +26,6 @@ using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
 using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
-
 
 /*
  * Used to account amount of temporary data written to disk.
@@ -38,8 +46,12 @@ public:
         : volume(std::move(volume_)), limit(limit_)
     {}
 
+    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * file_cache_, size_t limit_)
+        : volume(std::move(volume_)), file_cache(file_cache_), limit(limit_)
+    {}
+
     explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, size_t limit_)
-        : parent(std::move(parent_)), volume(parent->volume), limit(limit_)
+        : parent(std::move(parent_)), volume(parent->volume), file_cache(parent->file_cache), limit(limit_)
     {}
 
     /// TODO: remove
@@ -47,10 +59,12 @@ public:
     VolumePtr getVolume() const { return volume; }
 
 protected:
-    void deltaAllocAndCheck(int compressed_delta, int uncompressed_delta);
+    void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
-    VolumePtr volume;
+
+    VolumePtr volume = nullptr;
+    FileCache * file_cache = nullptr;
 
     StatAtomic stat;
     size_t limit = 0;
@@ -65,15 +79,23 @@ protected:
 class TemporaryDataOnDisk : private TemporaryDataOnDiskScope
 {
     friend class TemporaryFileStream; /// to allow it to call `deltaAllocAndCheck` to account data
+
 public:
     using TemporaryDataOnDiskScope::StatAtomic;
 
-    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
-        : TemporaryDataOnDiskScope(std::move(parent_), 0)
-    {}
+    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_);
+
+    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Metric metric_scope);
 
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    TemporaryFileStream & createStream(const Block & header, CurrentMetrics::Value metric_scope, size_t max_file_size = 0);
+    TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
+
+    /// Write raw data directly into buffer.
+    /// Differences from `createStream`:
+    ///   1) it doesn't account data in parent scope
+    ///   2) returned buffer owns resources (instead of TemporaryDataOnDisk itself)
+    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
+    WriteBufferPtr createRawStream(size_t max_file_size = 0);
 
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
@@ -81,8 +103,13 @@ public:
     const StatAtomic & getStat() const { return stat; }
 
 private:
+    FileSegmentsHolderPtr createCacheFile(size_t max_file_size);
+    TemporaryFileOnDiskHolder createRegularFile(size_t max_file_size);
+
     mutable std::mutex mutex;
     std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
+
+    typename CurrentMetrics::Metric current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
 };
 
 /*
@@ -99,33 +126,42 @@ public:
         /// Non-atomic because we don't allow to `read` or `write` into single file from multiple threads
         size_t compressed_size = 0;
         size_t uncompressed_size = 0;
+        size_t num_rows = 0;
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
+    TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_);
 
-    void write(const Block & block);
+    size_t write(const Block & block);
+    void flush();
+
     Stat finishWriting();
     bool isWriteFinished() const;
 
     Block read();
 
-    const String & path() const { return file->getPath(); }
+    String getPath() const;
+
     Block getHeader() const { return header; }
+
+    /// Read finished and file released
+    bool isEof() const;
 
     ~TemporaryFileStream();
 
 private:
     void updateAllocAndCheck();
 
-    /// Finalize everything, close reader and writer, delete file
-    void finalize();
-    bool isFinalized() const;
+    /// Release everything, close reader and writer, delete file
+    void release();
 
     TemporaryDataOnDisk * parent;
 
     Block header;
 
+    /// Data can be stored in file directly or in the cache
     TemporaryFileOnDiskHolder file;
+    FileSegmentsHolderPtr segment_holder;
 
     Stat stat;
 

@@ -3,10 +3,10 @@
 #include <cstring>
 #include <iostream>
 #include <Core/Defines.h>
-#include <Common/Stopwatch.h>
-#include <Common/TargetSpecific.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <Common/Stopwatch.h>
+#include <Common/TargetSpecific.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -81,7 +81,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined(__riscv)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined(__riscv)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -272,7 +272,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined (__riscv)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined (__riscv)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
@@ -598,6 +598,9 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
 
         copy_end = op + length;
+
+        if (unlikely(copy_end > output_end))
+            return false;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
           * The worst case when offset = 1 and length = 4

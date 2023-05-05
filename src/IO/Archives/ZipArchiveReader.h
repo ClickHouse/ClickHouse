@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveReader.h>

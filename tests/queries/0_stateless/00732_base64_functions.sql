@@ -14,3 +14,6 @@ SELECT base64Decode(val, 'excess argument') FROM (select arrayJoin(['', 'Zg==', 
 SELECT tryBase64Decode('Zm9vYmF=Zm9v', 'excess argument'); -- { serverError 42 }
 
 SELECT base64Decode('Zm9vYmF=Zm9v'); -- { serverError 117 }
+
+select base64Encode(toFixedString('foo', 3));
+select base64Decode(toFixedString('Zm9v', 4));

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 
@@ -8,7 +8,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {
@@ -30,7 +29,7 @@ public:
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration,
+        const StoragePostgreSQL::Configuration & configuration,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);
 
@@ -67,13 +66,14 @@ protected:
 private:
     String metadata_path;
     ASTPtr database_engine_define;
-    StoragePostgreSQLConfiguration configuration;
+    StoragePostgreSQL::Configuration configuration;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
 
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
     BackgroundSchedulePool::TaskHolder cleaner_task;
+    Poco::Logger * log;
 
     String getTableNameForLogs(const String & table_name) const;
 

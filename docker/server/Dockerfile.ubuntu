@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
@@ -9,19 +9,20 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
+    && apt-get upgrade -yq \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
         ca-certificates \
         dirmngr \
-        gnupg \
-        locales \
+        gnupg2 \
         wget \
+        locales \
         tzdata \
     && apt-get clean
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="22.9.3.18"
+ARG VERSION="23.4.2.11"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image
@@ -79,6 +80,9 @@ RUN arch=${TARGETARCH:-amd64} \
         /tmp/* \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
+
+RUN apt-get autoremove --purge -yq libksba8 && \
+    apt-get autoremove -yq
 
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)

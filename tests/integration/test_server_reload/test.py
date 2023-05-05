@@ -12,6 +12,7 @@ import pymysql.connections
 import pymysql.err
 import pytest
 import sys
+import os
 import time
 import logging
 from helpers.cluster import ClickHouseCluster, run_and_check
@@ -33,6 +34,10 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/default_passwd.xml"],
     with_zookeeper=True,
+    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    env_variables={
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS")
+    },
 )
 
 
@@ -112,11 +117,15 @@ def get_pgsql_client(cluster, port):
             time.sleep(0.1)
 
 
+@contextlib.contextmanager
 def get_grpc_channel(cluster, port):
     host_port = cluster.get_instance_ip("instance") + f":{port}"
     channel = grpc.insecure_channel(host_port)
     grpc.channel_ready_future(channel).result(timeout=10)
-    return channel
+    try:
+        yield channel
+    finally:
+        channel.close()
 
 
 def grpc_query(channel, query_text):
@@ -146,7 +155,7 @@ def configure_from_zk(zk, querier=None):
             zk.create(path=path, value=value, makepath=True)
             has_changed = True
         except NodeExistsError:
-            if zk.get(path) != value:
+            if zk.get(path)[0] != value:
                 zk.set(path=path, value=value)
                 has_changed = True
         if has_changed and querier is not None:
@@ -238,16 +247,17 @@ def test_change_postgresql_port(cluster, zk):
 
 def test_change_grpc_port(cluster, zk):
     with default_client(cluster, zk) as client:
-        grpc_channel = get_grpc_channel(cluster, port=9100)
-        assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
-        with sync_loaded_config(client.query):
-            zk.set("/clickhouse/ports/grpc", b"9090")
-        with pytest.raises(
-            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
-        ):
-            grpc_query(grpc_channel, "SELECT 1")
-        grpc_channel_on_new_port = get_grpc_channel(cluster, port=9090)
-        assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
+        with get_grpc_channel(cluster, port=9100) as grpc_channel:
+            assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
+            with sync_loaded_config(client.query):
+                zk.set("/clickhouse/ports/grpc", b"9090")
+            with pytest.raises(
+                grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+            ):
+                grpc_query(grpc_channel, "SELECT 1")
+
+        with get_grpc_channel(cluster, port=9090) as grpc_channel_on_new_port:
+            assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
 
 
 def test_remove_tcp_port(cluster, zk):
@@ -292,14 +302,14 @@ def test_remove_postgresql_port(cluster, zk):
 
 def test_remove_grpc_port(cluster, zk):
     with default_client(cluster, zk) as client:
-        grpc_channel = get_grpc_channel(cluster, port=9100)
-        assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
-        with sync_loaded_config(client.query):
-            zk.delete("/clickhouse/ports/grpc")
-        with pytest.raises(
-            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
-        ):
-            grpc_query(grpc_channel, "SELECT 1")
+        with get_grpc_channel(cluster, port=9100) as grpc_channel:
+            assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
+            with sync_loaded_config(client.query):
+                zk.delete("/clickhouse/ports/grpc")
+            with pytest.raises(
+                grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+            ):
+                grpc_query(grpc_channel, "SELECT 1")
 
 
 def test_change_listen_host(cluster, zk):

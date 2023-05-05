@@ -6,6 +6,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/pathUtils.h>
 
@@ -119,7 +120,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         Coordination::read(node.stat.pzxid, in);
         if (!path.empty())
         {
-            node.stat.dataLength = node.getData().length();
+            node.stat.dataLength = static_cast<Int32>(node.getData().length());
             node.seq_num = node.stat.cversion;
             storage.container.insertOrReplace(path, node);
 
@@ -465,7 +466,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
     if (request == nullptr)
         return true;
 
-    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests) // -V522
+    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests)
         if (subrequest == nullptr)
             return true;
     return false;

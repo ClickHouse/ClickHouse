@@ -1,76 +1,78 @@
 #include "Storages/StorageS3Cluster.h"
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
 #include "Common/Exception.h"
-#include <Common/Throttler.h>
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
-#include <Core/UUID.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadHelpers.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
-#include "Processors/ISource.h"
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/getVirtualsForStorage.h>
+#include <Storages/StorageDictionary.h>
+#include <Storages/addColumnsStructureToQueryWithClusterEngine.h>
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
 
-#include <ios>
 #include <memory>
 #include <string>
-#include <thread>
-#include <cassert>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StorageS3Cluster::StorageS3Cluster(
-    const StorageS3ClusterConfiguration & configuration_,
+    const Configuration & configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
-    : IStorage(table_id_)
-    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.rw_settings, configuration_.headers}
-    , filename(configuration_.url)
+    ContextPtr context_,
+    bool structure_argument_was_provided_,
+    bool format_argument_was_provided_)
+    : IStorageCluster(table_id_)
+    , log(&Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"))
+    , s3_configuration{configuration_}
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
     , compression_method(configuration_.compression_method)
+    , structure_argument_was_provided(structure_argument_was_provided_)
+    , format_argument_was_provided(format_argument_was_provided_)
 {
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
     StorageInMemoryMetadata storage_metadata;
-    StorageS3::updateS3Configuration(context_, s3_configuration);
+    updateConfigurationIfChanged(context_);
 
     if (columns_.empty())
     {
-        const bool is_key_with_globs = filename.find_first_of("*?{") != std::string::npos;
-
         /// `distributed_processing` is set to false, because this code is executed on the initiator, so there is no callback set
         /// for asking for the next tasks.
         /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
-        auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
-            /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
+        auto columns = StorageS3::getTableStructureFromDataImpl(s3_configuration, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -89,6 +91,33 @@ StorageS3Cluster::StorageS3Cluster(
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
 }
 
+void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
+{
+    s3_configuration.update(local_context);
+}
+
+namespace
+{
+
+void addColumnsStructureToQueryWithS3ClusterEngine(ASTPtr & query, const String & structure, bool format_argument_was_provided, const String & function_name)
+{
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
+    if (!expression_list)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function {}, got '{}'", function_name, queryToString(query));
+
+    auto structure_literal = std::make_shared<ASTLiteral>(structure);
+
+    if (!format_argument_was_provided)
+    {
+        auto format_literal = std::make_shared<ASTLiteral>("auto");
+        expression_list->children.push_back(format_literal);
+    }
+
+    expression_list->children.push_back(structure_literal);
+}
+
+}
+
 /// The code executes on initiator
 Pipe StorageS3Cluster::read(
     const Names & column_names,
@@ -97,19 +126,28 @@ Pipe StorageS3Cluster::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+    size_t /*num_streams*/)
 {
-    StorageS3::updateS3Configuration(context, s3_configuration);
+    updateConfigurationIfChanged(context);
 
-    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-
-    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.uri, query_info.query, virtual_block, context);
-    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String { return iterator->next(); });
+    auto cluster = getCluster(context);
+    auto extension = getTaskIteratorExtension(query_info.query, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+    Block sample_block;
+    ASTPtr query_to_send = query_info.query;
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+        sample_block = interpreter.getSampleBlock();
+        query_to_send = interpreter.getQueryInfo().query->clone();
+    }
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
@@ -117,34 +155,41 @@ Pipe StorageS3Cluster::read(
 
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
-    for (const auto & replicas : cluster->getShardsAddresses())
+    if (!structure_argument_was_provided)
+        addColumnsStructureToQueryWithS3ClusterEngine(
+            query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), format_argument_was_provided, getName());
+
+    RestoreQualifiedNamesVisitor::Data data;
+    data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
+    data.remote_table.database = context->getCurrentDatabase();
+    data.remote_table.table = getName();
+    RestoreQualifiedNamesVisitor(data).visit(query_to_send);
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+        /* only_replace_current_database_function_= */false,
+        /* only_replace_in_join_= */true);
+    visitor.visit(query_to_send);
+
+    auto new_context = IStorageCluster::updateSettingsForTableFunctionCluster(context, context->getSettingsRef());
+    const auto & current_settings = new_context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+    for (const auto & shard_info : cluster->getShardsInfo())
     {
-        /// There will be only one replica, because we consider each replica as a shard
-        for (const auto & node : replicas)
+        auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+        for (auto & try_result : try_results)
         {
-            auto connection = std::make_shared<Connection>(
-                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
-                "S3ClusterInititiator",
-                node.compression,
-                node.secure
-            );
-
-
-            /// For unknown reason global context is passed to IStorage::read() method
-            /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                connection,
-                queryToString(query_info.original_query),
-                header,
-                context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                RemoteQueryExecutor::Extension{.task_iterator = callback});
+                    std::vector<IConnectionPool::Entry>{try_result},
+                    queryToString(query_to_send),
+                    sample_block,
+                    new_context,
+                    /*throttler=*/nullptr,
+                    scalars,
+                    Tables(),
+                    processed_stage,
+                    extension);
 
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
+            remote_query_executor->setLogger(log);
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
         }
     }
 
@@ -164,6 +209,19 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
+
+ClusterPtr StorageS3Cluster::getCluster(ContextPtr context) const
+{
+    return context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+}
+
+RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, ContextPtr context) const
+{
+    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
+        *s3_configuration.client, s3_configuration.url, query, virtual_block, context);
+    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
+    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+}
 
 NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {

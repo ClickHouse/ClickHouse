@@ -34,7 +34,7 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
 class TestKeeper final : public IKeeper
 {
 public:
-    TestKeeper(const zkutil::ZooKeeperArgs & args_);
+    explicit TestKeeper(const zkutil::ZooKeeperArgs & args_);
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
@@ -91,7 +91,7 @@ public:
 
     void finalize(const String & reason) override;
 
-    DB::KeeperApiVersion getApiVersion() override
+    DB::KeeperApiVersion getApiVersion() const override
     {
         return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
     }
@@ -146,4 +146,3 @@ private:
 };
 
 }
-

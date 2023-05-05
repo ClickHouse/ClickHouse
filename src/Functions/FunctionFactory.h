@@ -37,7 +37,6 @@ public:
     template <typename Function>
     void registerFunction(const std::string & name, Documentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
-
         if constexpr (std::is_base_of_v<IFunction, Function>)
             registerFunction(name, &adaptFunctionToOverloadResolver<Function>, std::move(doc), case_sensitiveness);
         else
@@ -87,5 +86,7 @@ private:
 
     String getFactoryName() const override { return "FunctionFactory"; }
 };
+
+const String & getFunctionCanonicalNameIfAny(const String & name);
 
 }
