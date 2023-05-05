@@ -162,7 +162,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         const ColumnNumbersList grouping_set_keys;
 
         ActionsVisitor::Data visitor_data(
-            context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true, false,
+            context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true,
             { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
 
         ActionsVisitor(visitor_data).visit(node);

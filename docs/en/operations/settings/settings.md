@@ -890,7 +890,7 @@ Write time that processor spent during execution/waiting for data to `system.pro
 
 See also:
 
-- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md)
 - [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
@@ -1027,7 +1027,7 @@ Timeout to close idle TCP connections after specified number of seconds.
 
 Possible values:
 
-- Positive integer (0 - close immediatly, after 0 seconds).
+- Positive integer (0 - close immediately, after 0 seconds).
 
 Default value: 3600.
 
@@ -1123,7 +1123,7 @@ Could be used for throttling speed when replicating the data to add or replace n
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.
 
-Default value: 50.
+Default value: 1000.
 
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
@@ -1512,6 +1512,26 @@ Possible values:
 
 Default value: `0`.
 
+## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
+
+The maximum amount of memory (in bytes) the current user may allocate in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
+
+## query_cache_max_entries {#query-cache-max-entries}
+
+The maximum number of query results the current user may store in the query cache. 0 means unlimited.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: 0 (no restriction).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables the quorum writes.
@@ -1713,7 +1733,7 @@ Possible values:
 
 Default value: 1.
 
-By default, async inserts are inserted into replicated tables by the `INSERT` statement enabling [async_isnert](#async-insert) are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
+By default, async inserts are inserted into replicated tables by the `INSERT` statement enabling [async_insert](#async-insert) are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
 For the replicated tables, by default, only 10000 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-async-inserts), [replicated_deduplication_window_seconds_for_async_inserts](merge-tree-settings.md/#replicated-deduplication-window-seconds-async-inserts)).
 We recommend enabling the [async_block_ids_cache](merge-tree-settings.md/#use-async-block-ids-cache) to increase the efficiency of deduplication.
 This function does not work for non-replicated tables.
@@ -1919,8 +1939,8 @@ Do not merge aggregation states from different servers for distributed query pro
 Possible values:
 
 - `0` — Disabled (final query processing is done on the initiator node).
-- `1` - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
-- `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+- `1` - Do not merge aggregation states from different servers for distributed query processing (query completely processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+- `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completely on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 Default value: `0`
 
@@ -4105,6 +4125,47 @@ Possible values:
 - 1 - enabled
 
 Default value: `0`.
+
+## async_socket_for_remote {#async_socket_for_remote}
+
+Enables asynchronous read from socket while executing remote query.
+
+Enabled by default.
+
+## async_query_sending_for_remote {#async_query_sending_for_remote}
+
+Enables asynchronous connection creation and query sending while executing remote query.
+
+Enabled by default.
+
+## use_hedged_requests {#use_hedged_requests}
+
+Enables hedged requests logic for remote queries. It allows to establish many connections with different replicas for query.
+New connection is enabled in case existent connection(s) with replica(s) were not established within `hedged_connection_timeout`
+or no data was received within `receive_data_timeout`. Query uses the first connection which send non empty progress packet (or data packet, if `allow_changing_replica_until_first_data_packet`);
+other connections are cancelled. Queries with `max_parallel_replicas > 1` are supported.
+
+Enabled by default.
+
+## hedged_connection_timeout {#hedged_connection_timeout}
+
+If we can't establish connection with replica after this timeout in hedged requests, we start working with the next replica without cancelling connection to the previous.
+Timeout value is in milliseconds.
+
+Default value: `50`.
+
+## receive_data_timeout {#receive_data_timeout}
+
+This timeout is set when the query is sent to the replica in hedged requests, if we don't receive first packet of data and we don't make any progress in query execution after this timeout,
+we start working with the next replica, without cancelling connection to the previous.
+Timeout value is in milliseconds.
+
+Default value: `2000`
+
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
+
+If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
+(but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
 
 ## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterwards, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.

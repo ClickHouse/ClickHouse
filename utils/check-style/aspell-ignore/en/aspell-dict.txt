@@ -91,6 +91,7 @@ LOCALTIMESTAMP
 LibFuzzer
 LineAsString
 LinksDeployment
+LLVM's
 LowCardinality
 MEMTABLE
 MVCC
@@ -121,6 +122,7 @@ OpenStack
 OpenTelemetry
 PAAMAYIM
 Parsers
+ParquetMetadata
 Postgres
 Precompiled
 PrettyCompact
@@ -293,6 +295,7 @@ dragonbox
 durations
 endian
 enum
+encodings
 exFAT
 fastops
 fcoverage

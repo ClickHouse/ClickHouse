@@ -26,12 +26,13 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/IOThreadPool.h>
+#include <IO/SharedThreadPools.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
@@ -133,6 +134,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
+
+    OutdatedPartsLoadingThreadPool::initialize(
+        config().getUInt("max_outdated_parts_loading_thread_pool_size", 16),
+        0, // We don't need any threads one all the parts will be loaded
+        config().getUInt("outdated_part_loading_thread_pool_queue_size", 10000));
 }
 
 
@@ -699,46 +705,27 @@ void LocalServer::processConfig()
 [[ maybe_unused ]] static std::string getHelpHeader()
 {
     return
-        "Usage: clickhouse local [initial table definition] [--query <query>]\n"
+        "usage: clickhouse-local [initial table definition] [--query <query>]\n"
 
-        "clickhouse-local allows to execute SQL queries on your data files without running clickhouse-server.\n\n"
+        "clickhouse-local allows to execute SQL queries on your data files via single command line call."
+        " To do so, initially you need to define your data source and its format."
+        " After you can execute your SQL queries in usual manner.\n"
 
-        "It can run as command line tool that does single action or as interactive client."
-        " For interactive experience you can just run 'clickhouse local' or add --interactive argument to your command."
-        " It will set up tables, run queries and pass control as if it is clickhouse-client."
-        " Then you can execute your SQL queries in usual manner."
-        " Non-interactive mode requires query as an argument and exits when queries finish."
-        " Multiple SQL queries can be passed as --query argument.\n\n"
-
-        "To configure initial environment two ways are supported: queries or command line parameters."
-
+        "There are two ways to define initial table keeping your data."
         " Either just in first query like this:\n"
         "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
-        "Or through corresponding command line parameters --table --structure --input-format and --file.\n\n"
-
-        "clickhouse-local supports all features and engines of ClickHouse."
-        " You can query data from remote engines and store results locally or other way around."
-        " For table engines that actually store data on a disk like Log and MergeTree"
-        " clickhouse-local puts data to temporary directory that is not reused between runs.\n\n"
-        "clickhouse-local can be used to query data from stopped clickhouse-server installation with --path to"
-        " local directory with data.\n";
+        "Either through corresponding command line parameters --table --structure --input-format and --file.";
 }
 
 
 [[ maybe_unused ]] static std::string getHelpFooter()
 {
     return
-        "Note: If you have clickhouse installed on your system you can use 'clickhouse-local'"
-        " invocation with a dash.\n\n"
         "Example printing memory used by each Unix user:\n"
         "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
         "clickhouse-local -S \"user String, mem Float64\" -q"
             " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
-            " BY mem_total DESC FORMAT PrettyCompact\"\n\n"
-        "Example reading file from S3, converting format and writing to a file:\n"
-        "clickhouse-local --query \"SELECT c1 as version, c2 as date "
-        "FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv')"
-        " INTO OUTFILE '/tmp/versions.json'\"";
+            " BY mem_total DESC FORMAT PrettyCompact\"";
 }
 
 
@@ -746,7 +733,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 {
 #if defined(FUZZING_MODE)
     std::cout <<
-        "Usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
+        "usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
         "Note: It is important not to use only one letter keys with single dash for \n"
         "for clickhouse-local arguments. It may work incorrectly.\n"
 
@@ -914,5 +901,4 @@ catch (...)
 {
     return 1;
 }
-
 #endif
