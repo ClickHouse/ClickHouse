@@ -15,6 +15,8 @@ SELECT
 FROM system.replicas
 INNER JOIN system.parts USING (database, table)
 WHERE database = currentDatabase()
+ORDER BY
+    table,zookeeper_name
 GROUP BY
     table,zookeeper_name
 FORMAT CSV;
