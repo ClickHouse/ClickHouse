@@ -231,8 +231,13 @@ namespace
             }
         }
 
-        if (grant_queries && databases)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both `grants` and `allow_databases` can't be specified");
+        bool access_management = config.getBool(user_config + ".access_management", false);
+        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
+        bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
+
+        if (grant_queries)
+            if (databases || dictionaries || access_management || named_collection_control || show_named_collections_secrets)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Any other access control settings can't be specified with `grants`");
 
         if (grant_queries)
         {
@@ -289,20 +294,17 @@ namespace
                     user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
             }
 
-            bool access_management = config.getBool(user_config + ".access_management", false);
             if (!access_management)
             {
                 user->access.revoke(AccessType::ACCESS_MANAGEMENT);
                 user->access.revokeGrantOption(AccessType::ALL);
             }
 
-            bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
             if (!named_collection_control)
             {
                 user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
             }
 
-            bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
             if (!show_named_collections_secrets)
             {
                 user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);

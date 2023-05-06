@@ -22,6 +22,6 @@ protected:
 
 private:
     bool attach_mode = false;
-    bool allow_no_grantees = false;
+    bool allow_no_grantees = false;  /// if set, the parser will allow grant queries without any grantees.
 };
 }
