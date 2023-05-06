@@ -28,17 +28,24 @@ class WriteBufferUDPReplication : public BufferWithOwnMemory<WriteBuffer>
 public:
     WriteBufferUDPReplication(std::ostream & _out, UDPReplicationPack & _resp) : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE), out_str(&_out), resp(&_resp)
     {
+      res_str = new std::istream(nullptr);
+    }
+
+    ~WriteBufferUDPReplication() override
+    {
+      delete res_str;
     }
 
     std::string res()
     {
-      return res_str.str();
+      return res_s;
     }
 
 private:
     std::ostream* out_str;
     UDPReplicationPack * resp;
-    std::ostringstream res_str;
+    std::istream* res_str;
+    std::string res_s;
     std::mutex mutex;
     std::unique_ptr<WriteBufferFromOStream> out;
     Progress accumulated_progress;
@@ -57,7 +64,12 @@ private:
         out->position() = position();
         out->next();
 
-        res_str << out_str->rdbuf();
+        res_str->rdbuf(out_str->rdbuf());
+
+        res_s += std::string{ std::istreambuf_iterator<char>(*res_str),
+               std::istreambuf_iterator<char>() };
+
+        out_str->clear();
     }
 
     void writeSummary()

@@ -119,6 +119,7 @@ void ENetServer::run()
                         out.finalize();
 
                         auto response_str = resp_pck.serialize();
+
                         response_str += "\r" + out.res();
 
                         unsigned char response_cstr[response_str.size()];
