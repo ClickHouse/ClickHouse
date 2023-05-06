@@ -136,6 +136,7 @@ if (TARGET ch_contrib::hdfs)
 endif()
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/ObjectStorages/Web)
 
 add_headers_and_sources(dbms Storages/Cache)
@@ -508,6 +509,10 @@ endif()
 
 if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
+endif()
+
+if (TARGET ch_contrib::bcrypt)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::bcrypt)
 endif()
 
 if (TARGET ch_contrib::msgpack)

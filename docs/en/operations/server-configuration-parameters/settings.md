@@ -208,7 +208,7 @@ Default value: `3600` (1 hour).
 ## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
 
 Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previousely "hidden"
+If some subdirectory is not used by clickhouse-server and it was previously "hidden"
 (see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec))
 and this directory was not modified for last
 `database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory.
@@ -1334,7 +1334,7 @@ The trailing slash is mandatory.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## prometheus {#server_configuration_parameters-prometheus}
+## Prometheus {#server_configuration_parameters-prometheus}
 
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
@@ -1349,13 +1349,25 @@ Settings:
 **Example**
 
 ``` xml
- <prometheus>
-    <endpoint>/metrics</endpoint>
-    <port>9363</port>
-    <metrics>true</metrics>
-    <events>true</events>
-    <asynchronous_metrics>true</asynchronous_metrics>
-</prometheus>
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <!-- highlight-start -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+    <!-- highlight-end -->
+</clickhouse>
+```
+
+Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
+```bash
+curl 127.0.0.1:9363/metrics
 ```
 
 ## query_log {#server_configuration_parameters-query-log}
@@ -2066,3 +2078,20 @@ Possible values:
 - Positive integer.
 
 Default value: `10000`.
+
+## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
+
+Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
+table functions, and dictionaries.
+
+User wishing to see secrets must also have
+[`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
+turned on and a
+[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
