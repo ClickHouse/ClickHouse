@@ -467,7 +467,7 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
     {
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-        /// fullfill sort prefix columns with last row values or defaults
+        /// fulfill sort prefix columns with last row values or defaults
         if (!last_row_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_row_sort_prefix, 0);
         else
@@ -479,7 +479,7 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
     {
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-        /// fullfill sort prefix columns with last row values or defaults
+        /// fulfill sort prefix columns with last row values or defaults
         if (!last_row_sort_prefix.empty())
             copyRowFromColumns(res_sort_prefix_columns, last_row_sort_prefix, 0);
         else
