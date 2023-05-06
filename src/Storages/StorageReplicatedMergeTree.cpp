@@ -8263,7 +8263,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
-    if (part.getState() == MergeTreeDataPartState::Temporary || part.getState() == MergeTreeDataPartState::Outdated)
+    if (part.getState() == MergeTreeDataPartState::Temporary && part.is_temp)
     {
         /// Part {} is in temporary state and has it_temp flag. it means that it is under construction.
         /// That path hasn't been added to active set, no commit procedure has begun.
