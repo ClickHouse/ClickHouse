@@ -501,7 +501,7 @@ public:
                 non_joined_blocks = hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
             }
         }
-        // For right/full join, non_joined_blocks is not null.
+        // For right/full join, non_joined_blocks is not null
         // For inner/left join, non_joined_blocks is null, and return a empty block directly.
         std::lock_guard lock(mutex);
         if (non_joined_blocks)
