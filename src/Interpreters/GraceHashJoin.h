@@ -145,8 +145,6 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-    mutable bool has_initialized_non_joined_blocks = false;
-    mutable std::shared_ptr<NonJoinedBlocksStream> non_joined_blocks = nullptr;
 };
 
 }

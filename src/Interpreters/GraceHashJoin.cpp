@@ -524,16 +524,7 @@ private:
 IBlocksStreamPtr
 GraceHashJoin::getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size_) const
 {
-    if (!has_initialized_non_joined_blocks) [[unlikely]]
-    {
-        std::lock_guard lock(hash_join_mutex);
-        if (!has_initialized_non_joined_blocks)
-        {
-            has_initialized_non_joined_blocks = true;
-            non_joined_blocks = std::make_shared<NonJoinedBlocksStream>(hash_join, left_sample_block_, result_sample_block_, max_block_size_);
-        }
-    }
-    return non_joined_blocks;
+    return std::make_shared<NonJoinedBlocksStream>(hash_join, left_sample_block_, result_sample_block_, max_block_size_);
 }
 
 class GraceHashJoin::DelayedBlocks : public IBlocksStream
@@ -580,7 +571,7 @@ public:
                     is_left_reader_finished = true;
                 }
             }
-            if (is_left_reader_finished)
+            if (is_left_reader_finished || !block)
             {
                 return non_joined_blocks_iter.next();
             }
@@ -625,7 +616,7 @@ public:
 
     Names left_key_names;
     Names right_key_names;
-    bool is_left_reader_finished = false;
+    std::atomic<bool> is_left_reader_finished = false;
     NonJoinedBlocksStream non_joined_blocks_iter;
 };
 
