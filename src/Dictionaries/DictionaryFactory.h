@@ -54,14 +54,16 @@ public:
         bool created_from_ddl)>;
 
     bool isComplex(const std::string & layout_type) const;
+    bool convertToComplex(std::string & layout_type) const;
 
-    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex);
+    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex = true);
 
 private:
     struct RegisteredLayout
     {
         LayoutCreateFunction layout_create_function;
         bool is_layout_complex;
+        bool has_layout_complex;
     };
 
     using LayoutRegistry = std::unordered_map<std::string, RegisteredLayout>;

@@ -609,6 +609,12 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 
+    if (pk_attrs.size() > 1 && !complex
+        && DictionaryFactory::instance().convertToComplex(dictionary_layout->layout_type))
+    {
+        complex = true;
+    }
+
     auto all_attr_names_and_types = buildDictionaryAttributesConfiguration(
         xml_document, structure_element, query.dictionary_attributes_list, pk_attrs);
 
