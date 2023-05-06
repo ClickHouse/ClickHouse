@@ -644,7 +644,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         bool can_use_query_cache =
-            settings.allow_experimental_query_cache && settings.use_query_cache
+            settings.allow_experimental_query_cache && settings.use_query_cache && !internal
             && !ast->as<ASTExplainQuery>();
 
         if (!async_insert)
