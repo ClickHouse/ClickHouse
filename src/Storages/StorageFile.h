@@ -75,6 +75,8 @@ public:
 
     bool prefersLargeBlocks() const override;
 
+    bool parallelizeOutputAfterReading(ContextPtr context) const override;
+
     bool supportsPartitionBy() const override { return true; }
 
     ColumnsDescription getTableStructureFromFileDescriptor(ContextPtr context);
