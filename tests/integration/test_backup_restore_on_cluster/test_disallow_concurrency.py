@@ -84,7 +84,7 @@ def drop_after_test():
         yield
     finally:
         node0.query(
-            "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY",
+            "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC",
             settings={
                 "distributed_ddl_task_timeout": 360,
             },
@@ -154,7 +154,7 @@ def test_concurrent_backups_on_same_node():
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -206,7 +206,7 @@ def test_concurrent_restores_on_same_node():
     nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -251,7 +251,7 @@ def test_concurrent_restores_on_different_node():
     nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
