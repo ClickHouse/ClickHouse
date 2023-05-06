@@ -28,13 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// A helper function to simplify comparisons of valid YYYY-MM-DD values for <,>,=
-inline constexpr Int64 YearMonthDayToSingleInt(Int64 year, Int64 month, Int64 day)
-{
-    return year * 512 + month * 32 + day;
-}
-
-/// Common logic to handle numeric arguments like year, month, day, hour, minute, second
+/// Functions common to makeDate, makeDate32, makeDateTime, makeDateTime64
 class FunctionWithNumericParamsBase : public IFunction
 {
 public:
@@ -49,9 +43,151 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
 protected:
-    template <class ArgumentNames>
-    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const ArgumentNames & argument_names, size_t optional_argument_count) const
+};
+
+/// Common implementation for makeDate, makeDate32
+template <typename Traits>
+class FunctionMakeDate : public FunctionWithNumericParamsBase
+{
+private:
+    static constexpr std::array argument_names_month_day = {"year", "month", "day"};
+    static constexpr std::array argument_names_dayofyear = {"year", "dayofyear"};
+
+public:
+    static constexpr auto name = Traits::name;
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMakeDate>(); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != argument_names_month_day.size() && arguments.size() != argument_names_dayofyear.size())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires {} or {} arguments, but {} given",
+                getName(), argument_names_month_day.size(), argument_names_dayofyear.size(), arguments.size());
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            DataTypePtr argument_type = arguments[i].type;
+            if (!isNumber(argument_type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Argument '{}' for function {} must be a number",
+                        (arguments.size() == argument_names_month_day.size()) ? argument_names_month_day[i] : argument_names_dayofyear[i], getName());
+
+        }
+
+        return std::make_shared<typename Traits::ReturnDataType>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        Columns converted_arguments;
+        const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat32>();
+        converted_arguments.clear();
+        for (const auto & argument : arguments)
+        {
+            ColumnPtr argument_column = castColumn(argument, converted_argument_type);
+            argument_column = argument_column->convertToFullColumnIfConst();
+            converted_arguments.push_back(argument_column);
+        }
+
+        auto res_column = Traits::ReturnDataType::ColumnType::create(input_rows_count);
+        auto & result_data = res_column->getData();
+
+        const auto & date_lut = DateLUT::instance();
+        const Int32 max_days_since_epoch = date_lut.makeDayNum(Traits::MAX_DATE[0], Traits::MAX_DATE[1], Traits::MAX_DATE[2]);
+
+        if (converted_arguments.size() == argument_names_month_day.size())
+        {
+            const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
+            const auto & month_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[1]).getData();
+            const auto & day_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[2]).getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const auto year = year_data[i];
+                const auto month = month_data[i];
+                const auto day = day_data[i];
+
+                Int32 day_num = 0;
+
+                if (year >= Traits::MIN_YEAR &&
+                    year <= Traits::MAX_YEAR &&
+                    month >= 1 && month <= 12 &&
+                    day >= 1 && day <= 31)
+                {
+                    Int32 days_since_epoch = date_lut.makeDayNum(static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day));
+                    if (days_since_epoch <= max_days_since_epoch)
+                        day_num = days_since_epoch;
+                }
+
+                result_data[i] = day_num;
+            }
+        }
+        else
+        {
+            /// case argument_names_dayofyear:
+            const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
+            const auto & dayofyear_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[1]).getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const auto year = year_data[i];
+                const auto dayofyear = dayofyear_data[i];
+
+                Int32 day_num = 0;
+
+                if (year >= Traits::MIN_YEAR &&
+                    year <= Traits::MAX_YEAR &&
+                    dayofyear >= 1 && dayofyear <= 365)
+                {
+                    Int32 days_since_epoch = date_lut.makeDayNum(static_cast<Int16>(year), 1, 1) + static_cast<Int32>(dayofyear) - 1;
+                    if (days_since_epoch <= max_days_since_epoch)
+                        day_num = days_since_epoch;
+                }
+
+                result_data[i] = day_num;
+            }
+        }
+
+        return res_column;
+    }
+};
+
+struct MakeDateTraits
+{
+    static constexpr auto name = "makeDate";
+    using ReturnDataType = DataTypeDate;
+
+    static constexpr auto MIN_YEAR = 1970;
+    static constexpr auto MAX_YEAR = 2149;
+    /// This date has the maximum day number that fits in 16-bit uint
+    static constexpr std::array MAX_DATE = {MAX_YEAR, 6, 6};
+};
+
+struct MakeDate32Traits
+{
+    static constexpr auto name = "makeDate32";
+    using ReturnDataType = DataTypeDate32;
+
+    static constexpr auto MIN_YEAR = 1900;
+    static constexpr auto MAX_YEAR = 2299;
+    static constexpr std::array MAX_DATE = {MAX_YEAR, 12, 31};
+};
+
+/// Common implementation for makeDateTime, makeDateTime64
+class FunctionMakeDateTimeBase : public FunctionWithNumericParamsBase
+{
+protected:
+    static constexpr std::array argument_names = {"year", "month", "day", "hour", "minute", "second"};
+
+    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, size_t optional_argument_count) const
     {
         if (arguments.size() < argument_names.size() || arguments.size() > argument_names.size() + optional_argument_count)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -67,125 +203,16 @@ protected:
         }
     }
 
-    template <class ArgumentNames>
-    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, const ArgumentNames & argument_names, Columns & converted_arguments) const
+    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, Columns & converted_arguments) const
     {
         const DataTypePtr converted_argument_type = std::make_shared<DataTypeFloat32>();
         converted_arguments.clear();
-        converted_arguments.reserve(arguments.size());
         for (size_t i = 0; i < argument_names.size(); ++i)
         {
             ColumnPtr argument_column = castColumn(arguments[i], converted_argument_type);
             argument_column = argument_column->convertToFullColumnIfConst();
             converted_arguments.push_back(argument_column);
         }
-    }
-};
-
-/// Common implementation for makeDate, makeDate32
-template <typename Traits>
-class FunctionMakeDate : public FunctionWithNumericParamsBase
-{
-private:
-    static constexpr std::array argument_names = {"year", "month", "day"};
-
-public:
-    static constexpr auto name = Traits::name;
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMakeDate>(); }
-
-    String getName() const override { return name; }
-
-    bool isVariadic() const override { return false; }
-
-    size_t getNumberOfArguments() const override { return argument_names.size(); }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        checkRequiredArguments(arguments, argument_names, 0);
-
-        return std::make_shared<typename Traits::ReturnDataType>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        Columns converted_arguments;
-        convertRequiredArguments(arguments, argument_names, converted_arguments);
-
-        auto res_column = Traits::ReturnDataType::ColumnType::create(input_rows_count);
-        auto & result_data = res_column->getData();
-
-        const auto & year_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[0]).getData();
-        const auto & month_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[1]).getData();
-        const auto & day_data = typeid_cast<const ColumnFloat32 &>(*converted_arguments[2]).getData();
-
-        const auto & date_lut = DateLUT::instance();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            const auto year = year_data[i];
-            const auto month = month_data[i];
-            const auto day = day_data[i];
-
-            Int32 day_num = 0;
-
-            if (year >= Traits::MIN_YEAR &&
-                year <= Traits::MAX_YEAR &&
-                month >= 1 && month <= 12 &&
-                day >= 1 && day <= 31 &&
-                YearMonthDayToSingleInt(static_cast<Int64>(year), static_cast<Int64>(month), static_cast<Int64>(day)) <= Traits::MAX_DATE)
-            {
-                day_num = date_lut.makeDayNum(static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day));
-            }
-
-            result_data[i] = day_num;
-        }
-
-        return res_column;
-    }
-};
-
-struct MakeDateTraits
-{
-    static constexpr auto name = "makeDate";
-    using ReturnDataType = DataTypeDate;
-
-    static constexpr auto MIN_YEAR = 1970;
-    static constexpr auto MAX_YEAR = 2149;
-    /// This date has the maximum day number that fits in 16-bit uint
-    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 6, 6);
-};
-
-struct MakeDate32Traits
-{
-    static constexpr auto name = "makeDate32";
-    using ReturnDataType = DataTypeDate32;
-
-    static constexpr auto MIN_YEAR = 1900;
-    static constexpr auto MAX_YEAR = 2299;
-    static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 12, 31);
-};
-
-/// Common implementation for makeDateTime, makeDateTime64
-class FunctionMakeDateTimeBase : public FunctionWithNumericParamsBase
-{
-protected:
-    static constexpr std::array argument_names = {"year", "month", "day", "hour", "minute", "second"};
-
-public:
-    bool isVariadic() const override { return true; }
-
-    size_t getNumberOfArguments() const override { return 0; }
-
-protected:
-    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, size_t optional_argument_count) const
-    {
-        FunctionWithNumericParamsBase::checkRequiredArguments(arguments, argument_names, optional_argument_count);
-    }
-
-    void convertRequiredArguments(const ColumnsWithTypeAndName & arguments, Columns & converted_arguments) const
-    {
-        FunctionWithNumericParamsBase::convertRequiredArguments(arguments, argument_names, converted_arguments);
     }
 
     template <typename T>
@@ -437,7 +464,7 @@ private:
 
 REGISTER_FUNCTION(MakeDate)
 {
-    factory.registerFunction<FunctionMakeDate<MakeDateTraits>>();
+    factory.registerFunction<FunctionMakeDate<MakeDateTraits>>({}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionMakeDate<MakeDate32Traits>>();
     factory.registerFunction<FunctionMakeDateTime>();
     factory.registerFunction<FunctionMakeDateTime64>();
