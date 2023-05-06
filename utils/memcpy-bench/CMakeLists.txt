@@ -1,6 +1,5 @@
 # memcpy_jart.S contains position dependent code
 if (CMAKE_POSITION_INDEPENDENT_CODE OR NOT OS_LINUX OR NOT ARCH_AMD64)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Not building memcpy-bench due to PIC enabled or not Linux or not x86")
     return ()
 endif ()
 
