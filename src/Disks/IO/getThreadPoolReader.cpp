@@ -32,24 +32,24 @@ IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type)
     {
         case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
         {
-            static auto asynchronous_remote_fs_reader = getThreadPoolReaderImpl(type, config);
+            static auto asynchronous_remote_fs_reader = createThreadPoolReader(type, config);
             return *asynchronous_remote_fs_reader;
         }
         case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
         {
-            static auto asynchronous_local_fs_reader = getThreadPoolReaderImpl(type, config);
+            static auto asynchronous_local_fs_reader = createThreadPoolReader(type, config);
             return *asynchronous_local_fs_reader;
         }
         case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
         {
-            static auto synchronous_local_fs_reader = getThreadPoolReaderImpl(type, config);
+            static auto synchronous_local_fs_reader = createThreadPoolReader(type, config);
             return *synchronous_local_fs_reader;
         }
     }
 #endif
 }
 
-std::unique_ptr<IAsynchronousReader> getThreadPoolReaderImpl(
+std::unique_ptr<IAsynchronousReader> createThreadPoolReader(
     FilesystemReaderType type, const Poco::Util::AbstractConfiguration & config)
 {
     switch (type)

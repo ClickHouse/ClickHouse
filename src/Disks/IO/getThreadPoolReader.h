@@ -16,7 +16,7 @@ enum class FilesystemReaderType
 
 IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type);
 
-std::unique_ptr<IAsynchronousReader> getThreadPoolReaderImpl(
+std::unique_ptr<IAsynchronousReader> createThreadPoolReader(
     FilesystemReaderType type,
     const Poco::Util::AbstractConfiguration & config);
 
