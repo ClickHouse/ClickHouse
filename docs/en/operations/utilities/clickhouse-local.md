@@ -6,6 +6,10 @@ sidebar_label: clickhouse-local
 
 # clickhouse-local
 
+## Related Content
+
+- Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
+
 ## When to use clickhouse-local vs. ClickHouse
 
 `clickhouse-local` is an easy-to-use version of ClickHouse that is ideal for developers who need to perform fast processing on local and remote files using SQL without having to install a full database server. With `clickhouse-local`, developers can use SQL commands (using the [ClickHouse SQL dialect](../../sql-reference/index.md)) directly from the command line, providing a simple and efficient way to access ClickHouse features without the need for a full ClickHouse installation. One of the main benefits of `clickhouse-local` is that it is already included when installing [clickhouse-client](https://clickhouse.com/docs/en/integrations/sql-clients/clickhouse-client-local). This means that developers can get started with `clickhouse-local` quickly, without the need for a complex installation process.
@@ -37,9 +41,9 @@ If the file is sitting on the same machine as `clickhouse-local`, use the `file`
 ```
 
 ClickHouse knows the file uses a tab-separated format from filename extension. If you need to explicitly specify the format, simply add one of the [many ClickHouse input formats](../../interfaces/formats.md):
-    ```bash
-    ./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
-    ```
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
 
 The `file` table function creates a table, and you can use `DESCRIBE` to see the inferred schema:
 
@@ -176,25 +180,25 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 
 Arguments:
 
--   `-S`, `--structure` — table structure for input data.
--   `--input-format` — input format, `TSV` by default.
--   `-f`, `--file` — path to data, `stdin` by default.
--   `-q`, `--query` — queries to execute with `;` as delimeter. You must specify either `query` or `queries-file` option.
--   `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
--   `-N`, `--table` — table name where to put output data, `table` by default.
--   `--format`, `--output-format` — output format, `TSV` by default.
--   `-d`, `--database` — default database, `_local` by default.
--   `--stacktrace` — whether to dump debug output in case of exception.
--   `--echo` — print query before execution.
--   `--verbose` — more details on query execution.
--   `--logger.console` — Log to console.
--   `--logger.log` — Log file name.
--   `--logger.level` — Log level.
--   `--ignore-error` — do not stop processing if a query failed.
--   `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
--   `--no-system-tables` — do not attach system tables.
--   `--help` — arguments references for `clickhouse-local`.
--   `-V`, `--version` — print version information and exit.
+- `-S`, `--structure` — table structure for input data.
+- `--input-format` — input format, `TSV` by default.
+- `-f`, `--file` — path to data, `stdin` by default.
+- `-q`, `--query` — queries to execute with `;` as delimiter. You must specify either `query` or `queries-file` option.
+- `--queries-file` - file path with queries to execute. You must specify either `query` or `queries-file` option.
+- `-N`, `--table` — table name where to put output data, `table` by default.
+- `--format`, `--output-format` — output format, `TSV` by default.
+- `-d`, `--database` — default database, `_local` by default.
+- `--stacktrace` — whether to dump debug output in case of exception.
+- `--echo` — print query before execution.
+- `--verbose` — more details on query execution.
+- `--logger.console` — Log to console.
+- `--logger.log` — Log file name.
+- `--logger.level` — Log level.
+- `--ignore-error` — do not stop processing if a query failed.
+- `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+- `--no-system-tables` — do not attach system tables.
+- `--help` — arguments references for `clickhouse-local`.
+- `-V`, `--version` — print version information and exit.
 
 Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 

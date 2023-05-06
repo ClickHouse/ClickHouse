@@ -30,7 +30,6 @@ protected:
     void consumePartialResult(Chunk) override;
 
     size_t total_rows = 0;
-    size_t terminal_width = 0;
     size_t prev_partial_block_rows = 0;
 
     size_t row_number_width = 7; // "10000. "
