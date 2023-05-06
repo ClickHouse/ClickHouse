@@ -108,6 +108,12 @@ Result:
 
 Like [makeDateTime](#makedatetime) but produces a [DateTime64](../../sql-reference/data-types/datetime64.md).
 
+**Syntax**
+
+``` sql
+makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
+```
+
 ## timeZone
 
 Returns the timezone of the server.
