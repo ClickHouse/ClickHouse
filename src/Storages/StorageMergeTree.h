@@ -113,6 +113,8 @@ public:
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
+    size_t getNumberOfUnfinishedMutations() const override;
+
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
 private:
