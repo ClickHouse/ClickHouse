@@ -46,17 +46,17 @@ namespace CurrentMetrics
 namespace DB
 {
 
-    namespace ErrorCodes
-    {
-        extern const int UNKNOWN_DATABASE;
-        extern const int UNKNOWN_TABLE;
-        extern const int TABLE_ALREADY_EXISTS;
-        extern const int DATABASE_ALREADY_EXISTS;
-        extern const int DATABASE_NOT_EMPTY;
-        extern const int DATABASE_ACCESS_DENIED;
-        extern const int LOGICAL_ERROR;
-        extern const int HAVE_DEPENDENT_OBJECTS;
-    }
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
+    extern const int TABLE_ALREADY_EXISTS;
+    extern const int DATABASE_ALREADY_EXISTS;
+    extern const int DATABASE_NOT_EMPTY;
+    extern const int DATABASE_ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
+    extern const int HAVE_DEPENDENT_OBJECTS;
+}
 
     class DatabaseNameHints : public IHints<1, DatabaseNameHints>
     {
