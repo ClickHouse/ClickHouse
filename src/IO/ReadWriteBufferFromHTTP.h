@@ -379,11 +379,6 @@ namespace detail
                     if constexpr (!for_object_info)
                         content_encoding = response.get("Content-Encoding", "");
 
-                    std::ostringstream ss;
-                    response.write(ss);
-
-                    LOG_INFO(log, "ENET RECEIVED {}", ss.str());
-
                     return result_istr;
                 }
             }

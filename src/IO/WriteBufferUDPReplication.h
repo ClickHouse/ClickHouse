@@ -56,7 +56,8 @@ private:
     {
         std::lock_guard lock(mutex);
 
-        if (!out) {
+        if (!out)
+        {
           out = std::make_unique<WriteBufferFromOStream>(*out_str, working_buffer.size(), working_buffer.begin());
         }
 
