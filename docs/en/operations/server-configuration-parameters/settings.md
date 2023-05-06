@@ -458,12 +458,22 @@ Examples:
 
 ## interserver_http_port {#interserver-http-port}
 
-Port for exchanging data between ClickHouse servers.
+Port for exchanging data between ClickHouse servers using usual way.
 
 **Example**
 
 ``` xml
 <interserver_http_port>9009</interserver_http_port>
+```
+
+## interserver_udt_port {#interserver-udt-port}
+
+Port for exchanging data between ClickHouse servers through UDT protocol.
+
+**Example**
+
+``` xml
+<interserver_udt_port>9019</interserver_udt_port>
 ```
 
 ## interserver_http_host {#interserver-http-host}
