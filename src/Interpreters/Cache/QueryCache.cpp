@@ -208,6 +208,9 @@ void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
     if (skip_insert)
         return;
 
+    if (chunk.empty())
+        return;
+
     std::lock_guard lock(mutex);
 
     switch (chunk_type)
