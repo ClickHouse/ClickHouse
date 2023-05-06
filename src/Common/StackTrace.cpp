@@ -344,7 +344,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    DB::WriteBufferFromOwnString out;
 
     using enum DB::Dwarf::LocationInfoMode;
     const auto mode = fatal ? FULL_WITH_INLINE : FAST;
@@ -361,6 +360,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
         const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
 
+        DB::WriteBufferFromOwnString out;
         out << i << ". ";
 
         if (std::error_code ec; object && std::filesystem::exists(object->name, ec) && !ec)
