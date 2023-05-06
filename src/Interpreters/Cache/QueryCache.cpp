@@ -208,6 +208,12 @@ void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
     if (skip_insert)
         return;
 
+    /// Reading from the query cache is implemented using processor `SourceFromChunks` which inherits from `ISource`.
+    /// The latter has logic which finishes processing (= calls `.finish()` on the output port + returns `Status::Finished`)
+    /// when the derived class returns an empty chunk. If this empty chunk is not the last chunk,
+    /// i.e. if it is followed by non-empty chunks, the query result will be incorrect.
+    /// This situation should theoretically never occur in practice but who knows...
+    /// To be on the safe side, writing into the query cache now rejects empty chunks and thereby avoids this scenario.
     if (chunk.empty())
         return;
 
