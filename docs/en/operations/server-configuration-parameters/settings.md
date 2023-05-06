@@ -208,7 +208,7 @@ Default value: `3600` (1 hour).
 ## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
 
 Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previousely "hidden"
+If some subdirectory is not used by clickhouse-server and it was previously "hidden"
 (see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec))
 and this directory was not modified for last
 `database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory.
