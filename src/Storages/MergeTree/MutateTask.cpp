@@ -1838,6 +1838,8 @@ bool MutateTask::prepare()
     if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
+        ctx->new_data_part->has_exclusive_blobs = true;
+
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
     else /// TODO: check that we modify only non-key columns in this case.
@@ -1864,6 +1866,8 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             ctx->mrk_extension);
+
+        ctx->new_data_part->has_exclusive_blobs = std::nullopt; // that means that unlocking in zookeper needed
 
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
     }

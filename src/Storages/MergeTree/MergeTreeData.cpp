@@ -8233,6 +8233,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+    new_data_part->has_exclusive_blobs = true;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
     new_data_part_storage->beginTransaction();

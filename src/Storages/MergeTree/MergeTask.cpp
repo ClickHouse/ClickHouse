@@ -209,6 +209,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
+    global_ctx->new_data_part->has_exclusive_blobs = true;
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;

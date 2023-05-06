@@ -218,6 +218,8 @@ public:
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
+    std::optional<bool> has_exclusive_blobs = std::nullopt;
+
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 

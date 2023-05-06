@@ -918,6 +918,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
         new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         new_data_part->is_temp = true;
+        new_data_part->has_exclusive_blobs = false;
         new_data_part->modification_time = time(nullptr);
         new_data_part->loadColumnsChecksumsIndexes(true, false);
     }
