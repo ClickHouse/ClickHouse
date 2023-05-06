@@ -43,7 +43,8 @@ private:
         const MutableColumnRawPtrs & res_interpolate_columns,
         const MutableColumnRawPtrs & res_sort_prefix_columns,
         const MutableColumnRawPtrs & res_other_columns,
-        std::pair<size_t, size_t> range);
+        std::pair<size_t, size_t> range,
+        bool new_sorting_prefix);
 
     void saveLastRow(const MutableColumns & result_columns);
     void interpolate(const MutableColumns & result_columns, Block & interpolate_block);
@@ -80,7 +81,6 @@ private:
     std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     Columns last_row;
-    bool first = true;              /// flag to determine if transform is/will be called for the first time
     bool all_chunks_processed = false;    /// flag to determine if we have already processed all chunks
 };
 

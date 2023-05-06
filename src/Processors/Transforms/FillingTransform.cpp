@@ -410,20 +410,22 @@ void FillingTransform::initColumns(
 
 bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, MutableColumns & result_columns)
 {
+    /// true means we'll generate rows for empty result set
+    const bool no_data_processed = last_row.empty();
+
     logDebug("generateSuffixIfNeeded() filling_row", filling_row);
     logDebug("generateSuffixIfNeeded() next_row", next_row);
-    logDebug("generateSuffixIfNeeded() first", first);
+    logDebug("generateSuffixIfNeeded() no_data_processed", no_data_processed);
 
-    first = last_row.empty();
     /// Determines should we insert filling row before start generating next rows.
-    bool should_insert_first = next_row < filling_row || first;
+    bool should_insert_first = next_row < filling_row || no_data_processed;
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         next_row[i] = filling_row.getFillDescription(i).fill_to;
 
     logDebug("generateSuffixIfNeeded() next_row updated", next_row);
 
-    if (!first && filling_row >= next_row)
+    if (!no_data_processed && filling_row >= next_row)
     {
         logDebug("generateSuffixIfNeeded()", "no need to generate suffix");
         return false;
@@ -450,7 +452,7 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
         res_sort_prefix_columns,
         res_other_columns);
 
-    if (first)
+    if (no_data_processed)
         filling_row.initFromDefaults();
 
     /// if any rows was processed and there is sort prefix, get last row sort prefix
@@ -532,13 +534,14 @@ void FillingTransform::transformRange(
     const MutableColumnRawPtrs & res_interpolate_columns,
     const MutableColumnRawPtrs & res_sort_prefix_columns,
     const MutableColumnRawPtrs & res_other_columns,
-    std::pair<size_t, size_t> range)
+    std::pair<size_t, size_t> range,
+    const bool new_sorting_prefix)
 {
     const size_t range_begin = range.first;
     const size_t range_end = range.second;
 
     Block interpolate_block;
-    if (first)
+    if (new_sorting_prefix)
     {
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
@@ -558,7 +561,6 @@ void FillingTransform::transformRange(
             }
             filling_row[i] = current_value;
         }
-        first = false;
     }
 
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
@@ -663,6 +665,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (sort_prefix.empty())
     {
+        constexpr bool new_sort_prefix = true;
         transformRange(
             input_fill_columns,
             input_interpolate_columns,
@@ -673,7 +676,8 @@ void FillingTransform::transform(Chunk & chunk)
             res_interpolate_columns,
             res_sort_prefix_columns,
             res_other_columns,
-            {0, num_rows});
+            {0, num_rows},
+            new_sort_prefix);
 
         saveLastRow(result_columns);
         size_t num_output_rows = result_columns[0]->size();
@@ -683,6 +687,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     /// check if last row in prev chunk had the same sorting prefix as the first in new one
     /// if not, we need to reinitialize filling row
+    bool new_sort_prefix = last_row.empty();
     if (!last_row.empty())
     {
         ColumnRawPtrs last_sort_prefix_columns;
@@ -690,13 +695,13 @@ void FillingTransform::transform(Chunk & chunk)
         for (size_t pos : sort_prefix_positions)
             last_sort_prefix_columns.push_back(last_row[pos].get());
 
-        first = false;
+        new_sort_prefix = false;
         for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
         {
             const int res = input_sort_prefix_columns[i]->compareAt(0, 0, *last_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
             if (res != 0)
             {
-                first = true;
+                new_sort_prefix = true;
                 break;
             }
         }
@@ -730,11 +735,12 @@ void FillingTransform::transform(Chunk & chunk)
             res_interpolate_columns,
             res_sort_prefix_columns,
             res_other_columns,
-            {row_ind, current_sort_prefix_end_pos});
+            {row_ind, current_sort_prefix_end_pos},
+            new_sort_prefix);
 
         logDebug("range end", current_sort_prefix_end_pos);
         row_ind = current_sort_prefix_end_pos;
-        first = true;
+        new_sort_prefix = true;
     }
 
     saveLastRow(result_columns);
