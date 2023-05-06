@@ -93,7 +93,7 @@ struct ExpBufferAllocationPolicy : DB::IBufferAllocationPolicy
 namespace DB
 {
 
-IBufferAllocationPolicy::~IBufferAllocationPolicy() { }
+IBufferAllocationPolicy::~IBufferAllocationPolicy() = default;
 
 IBufferAllocationPolicyPtr ChooseBufferPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings_)
 {
