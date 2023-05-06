@@ -17,6 +17,7 @@ INNER JOIN system.parts USING (database, table)
 WHERE database = currentDatabase()
 GROUP BY
     table,zookeeper_name
+ORDER BY table
 FORMAT CSV;
 
 DROP TABLE t1;
