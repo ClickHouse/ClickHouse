@@ -414,6 +414,7 @@ bool FillingTransform::generateSuffixIfNeeded(const Columns & input_columns, Mut
     logDebug("generateSuffixIfNeeded() next_row", next_row);
     logDebug("generateSuffixIfNeeded() first", first);
 
+    first = last_row.empty();
     /// Determines should we insert filling row before start generating next rows.
     bool should_insert_first = next_row < filling_row || first;
 
@@ -588,6 +589,7 @@ void FillingTransform::transformRange(
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+            logDebug("filling_row should_insert_first", filling_row);
         }
 
         while (filling_row.next(next_row))
@@ -595,6 +597,7 @@ void FillingTransform::transformRange(
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
             copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+            logDebug("filling_row", filling_row);
         }
 
         copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
