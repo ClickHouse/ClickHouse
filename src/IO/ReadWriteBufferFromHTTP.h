@@ -230,7 +230,7 @@ namespace detail
 
                     memset(&(serv_addr.sin_zero), '\0', 8);
 
-                    // connect to the server, implict bind
+                    // connect to the server, implicit bind
                     if (UDT::ERROR == UDT::connect(client, reinterpret_cast<sockaddr*>(&serv_addr), sizeof(serv_addr)))
                     {
                         return istr;
@@ -271,7 +271,8 @@ namespace detail
 
                     LOG_INFO(log, "Received UDT packet");
 
-                    for (auto [key, value]: resp.data) {
+                    for (auto [key, value]: resp.data)
+                    {
                         if (key == "server_protocol_version")
                         {
                             response.set("Set-Cookie", key + '=' + value);

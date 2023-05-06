@@ -64,7 +64,8 @@ void UDTServer::run()
 
     UDT::listen(serv, 10);
 
-    while (!_stopped) {
+    while (!_stopped)
+    {
 
         UDPReplicationPack pck;
         UDPReplicationPack resp_pck;
