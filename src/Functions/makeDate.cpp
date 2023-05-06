@@ -51,7 +51,7 @@ public:
 
 protected:
     template <class ArgumentNames>
-    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const ArgumentNames & argument_names, const size_t optional_argument_count) const
+    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const ArgumentNames & argument_names, size_t optional_argument_count) const
     {
         if (arguments.size() < argument_names.size() || arguments.size() > argument_names.size() + optional_argument_count)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -63,7 +63,7 @@ protected:
             DataTypePtr argument_type = arguments[i].type;
             if (!isNumber(argument_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument '{}' for function {} must be a number", std::string(argument_names[i]), getName());
+                    "Argument '{}' for function {} must be a number", argument_names[i], getName());
         }
     }
 
@@ -145,7 +145,6 @@ public:
     }
 };
 
-/// makeDate(year, month, day)
 struct MakeDateTraits
 {
     static constexpr auto name = "makeDate";
@@ -157,7 +156,6 @@ struct MakeDateTraits
     static constexpr auto MAX_DATE = YearMonthDayToSingleInt(MAX_YEAR, 6, 6);
 };
 
-/// makeDate32(year, month, day)
 struct MakeDate32Traits
 {
     static constexpr auto name = "makeDate32";
@@ -180,7 +178,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
 protected:
-    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, const size_t optional_argument_count) const
+    void checkRequiredArguments(const ColumnsWithTypeAndName & arguments, size_t optional_argument_count) const
     {
         FunctionWithNumericParamsBase::checkRequiredArguments(arguments, argument_names, optional_argument_count);
     }
@@ -235,7 +233,7 @@ protected:
 class FunctionMakeDateTime : public FunctionMakeDateTimeBase
 {
 private:
-    static constexpr std::array<const char*, 1> optional_argument_names = {"timezone"};
+    static constexpr std::array optional_argument_names = {"timezone"};
 
 public:
     static constexpr auto name = "makeDateTime";
@@ -304,7 +302,7 @@ public:
 class FunctionMakeDateTime64 : public FunctionMakeDateTimeBase
 {
 private:
-    static constexpr std::array<const char*, 3> optional_argument_names = {"fraction", "precision", "timezone"};
+    static constexpr std::array optional_argument_names = {"fraction", "precision", "timezone"};
     static constexpr UInt8 DEFAULT_PRECISION = 3;
 
 public:
