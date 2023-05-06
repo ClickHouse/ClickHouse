@@ -720,7 +720,6 @@ class IColumn;
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
     M(Bool, allow_experimental_hash_functions, false, "Enable experimental hash functions (hashid, etc)", 0) \
     M(Bool, allow_experimental_object_type, false, "Allow Object and JSON data types", 0) \
-    M(Bool, allow_experimental_query_cache, false, "Enable experimental query cache", 0) \
     M(String, insert_deduplication_token, "", "If not empty, used for duplicate detection instead of data digest", 0) \
     M(String, ann_index_select_query_params, "", "Parameters passed to ANN indexes in SELECT queries, the format is 'param1=x, param2=y, ...'", 0) \
     M(UInt64, max_limit_for_ann_queries, 1000000, "Maximum limit value for using ANN indexes is used to prevent memory overflow in search queries for indexes", 0) \
