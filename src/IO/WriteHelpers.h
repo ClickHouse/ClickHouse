@@ -316,6 +316,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
             pos = next_pos;
             switch (*pos)
             {
+                case quote_character:
+                {
+                    if constexpr (escape_quote_with_quote)
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
+                    break;
+                }
                 case '\b':
                     writeChar('\\', buf);
                     writeChar('b', buf);
@@ -344,15 +353,6 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
-                case quote_character:
-                {
-                    if constexpr (escape_quote_with_quote)
-                        writeChar(quote_character, buf);
-                    else
-                        writeChar('\\', buf);
-                    writeChar(quote_character, buf);
-                    break;
-                }
                 default:
                     writeChar(*pos, buf);
             }
@@ -1172,32 +1172,44 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-template <typename T>
+
+template <std::endian endian, typename T>
 requires is_arithmetic_v<T> && (sizeof(T) <= 8)
-inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryEndian(T x, WriteBuffer & buf)
 {
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        if constexpr (sizeof(x) == 2)
-            x = __builtin_bswap16(x);
-        else if constexpr (sizeof(x) == 4)
-            x = __builtin_bswap32(x);
-        else if constexpr (sizeof(x) == 8)
-            x = __builtin_bswap64(x);
-    }
+    if constexpr (std::endian::native != endian)
+        x = std::byteswap(x);
     writePODBinary(x, buf);
 }
 
-template <typename T>
+template <std::endian endian, typename T>
 requires is_big_int_v<T>
-inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+inline void writeBinaryEndian(const T & x, WriteBuffer & buf)
 {
-    for (size_t i = 0; i != std::size(x.items); ++i)
+    if constexpr (std::endian::native == endian)
     {
-        const auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
-        writeBinaryBigEndian(item, buf);
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[i], buf);
+    }
+    else
+    {
+        for (size_t i = 0; i != std::size(x.items); ++i)
+            writeBinaryEndian<endian>(x.items[std::size(x.items) - i - 1], buf);
     }
 }
+
+template <typename T>
+inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
+{
+    writeBinaryEndian<std::endian::little>(x, buf);
+}
+
+template <typename T>
+inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
+{
+    writeBinaryEndian<std::endian::big>(x, buf);
+}
+
 
 struct PcgSerializer
 {

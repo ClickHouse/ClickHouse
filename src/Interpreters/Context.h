@@ -7,7 +7,6 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
-#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -17,7 +16,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <IO/IResourceManager.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -26,12 +24,10 @@
 #include "config.h"
 
 #include <boost/container/flat_set.hpp>
-#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -41,6 +37,8 @@ struct OvercommitTracker;
 
 namespace DB
 {
+
+class ASTSelectQuery;
 
 struct ContextSharedPart;
 class ContextAccess;
@@ -191,6 +189,9 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 class MergeTreeMetadataCache;
 using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 #endif
+
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -397,6 +398,10 @@ private:
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
+
+    /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
+    /// mutation tasks of one mutation executed against different parts of the same table.
+    PreparedSetsCachePtr prepared_sets_cache;
 
 public:
     /// Some counters for current query execution.
@@ -675,6 +680,7 @@ public:
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
 
+    bool displaySecretsInShowAndSelect() const;
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
@@ -918,7 +924,7 @@ public:
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 
-    std::shared_ptr<Clusters> getClusters() const;
+    std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
@@ -1127,6 +1133,9 @@ public:
 
     ParallelReplicasMode getParallelReplicasMode() const;
 
+    void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
+    PreparedSetsCachePtr getPreparedSetsCache() const;
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
@@ -1134,6 +1143,7 @@ private:
 
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateAccessRights();
+    void recalculateAccessRightsIfNeeded(std::string_view setting_name);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
@@ -1147,6 +1157,9 @@ private:
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
 
     DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
+
+    /// Expect lock for shared->clusters_mutex
+    std::shared_ptr<Clusters> getClustersImpl(std::lock_guard<std::mutex> & lock) const;
 
     /// Throttling
 public:

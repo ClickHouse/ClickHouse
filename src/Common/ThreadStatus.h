@@ -41,7 +41,6 @@ class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
-class ThreadGroupSwitcher;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -58,15 +57,15 @@ using ThreadStatusPtr = ThreadStatus *;
   * Create via CurrentThread::initializeQuery (for queries) or directly (for various background tasks).
   * Use via CurrentThread::getGroup.
   */
-class ThreadGroupStatus;
-using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
-class ThreadGroupStatus
+class ThreadGroup
 {
 public:
-    ThreadGroupStatus();
+    ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    ThreadGroupStatus(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -104,9 +103,9 @@ public:
     void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue);
 
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
-    static ThreadGroupStatusPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    static ThreadGroupStatusPtr createForBackgroundProcess(ContextPtr storage_context);
+    static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     void linkThread(UInt64 thread_it);
@@ -119,6 +118,21 @@ private:
     /// Set of all thread ids which has been attached to the group
     std::unordered_set<UInt64> thread_ids;
 };
+
+/**
+ * Since merge is executed with multiple threads, this class
+ * switches the parent MemoryTracker as part of the thread group to account all the memory used.
+ */
+class ThreadGroupSwitcher : private boost::noncopyable
+{
+public:
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group);
+    ~ThreadGroupSwitcher();
+
+private:
+    ThreadGroupPtr prev_thread_group;
+};
+
 
 /**
  * We use **constinit** here to tell the compiler the current_thread variable is initialized.
@@ -163,7 +177,7 @@ public:
 
 private:
     /// Group of threads, to which this thread attached
-    ThreadGroupStatusPtr thread_group;
+    ThreadGroupPtr thread_group;
 
     /// Is set once
     ContextWeakPtr global_context;
@@ -174,7 +188,7 @@ private:
     using FatalErrorCallback = std::function<void()>;
     FatalErrorCallback fatal_error_callback;
 
-    ThreadGroupStatus::SharedData local_data;
+    ThreadGroup::SharedData local_data;
 
     bool performance_counters_finalized = false;
 
@@ -215,7 +229,7 @@ public:
     ThreadStatus();
     ~ThreadStatus();
 
-    ThreadGroupStatusPtr getThreadGroup() const;
+    ThreadGroupPtr getThreadGroup() const;
 
     const String & getQueryId() const;
 
@@ -239,7 +253,7 @@ public:
     void setInternalThread();
 
     /// Attaches slave thread to existing thread group
-    void attachToGroup(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
+    void attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached = true);
 
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachFromGroup();
@@ -287,7 +301,7 @@ private:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 
-    void attachToGroupImpl(const ThreadGroupStatusPtr & thread_group_);
+    void attachToGroupImpl(const ThreadGroupPtr & thread_group_);
 };
 
 /**

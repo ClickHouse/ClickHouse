@@ -11,24 +11,6 @@ namespace DB
 {
 
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group)
-{
-    chassert(thread_group);
-
-    /// might be nullptr
-    prev_thread_group = CurrentThread::getGroup();
-
-    CurrentThread::detachFromGroupIfNotDetached();
-    CurrentThread::attachToGroup(thread_group);
-}
-
-ThreadGroupSwitcher::~ThreadGroupSwitcher()
-{
-    CurrentThread::detachFromGroupIfNotDetached();
-    if (prev_thread_group)
-        CurrentThread::attachToGroup(prev_thread_group);
-}
-
 MergeListElement::MergeListElement(
     const StorageID & table_id_,
     FutureMergedMutatedPartPtr future_part,
@@ -49,6 +31,7 @@ MergeListElement::MergeListElement(
         source_part_paths.emplace_back(source_part->getDataPartStorage().getFullPath());
 
         total_size_bytes_compressed += source_part->getBytesOnDisk();
+        total_size_bytes_uncompressed += source_part->getTotalColumnsSize().data_uncompressed;
         total_size_marks += source_part->getMarksCount();
         total_rows_count += source_part->index_granularity.getTotalRows();
     }
@@ -59,7 +42,7 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    thread_group = ThreadGroupStatus::createForBackgroundProcess(context);
+    thread_group = ThreadGroup::createForBackgroundProcess(context);
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -75,6 +58,7 @@ MergeInfo MergeListElement::getInfo() const
     res.progress = progress.load(std::memory_order_relaxed);
     res.num_parts = num_parts;
     res.total_size_bytes_compressed = total_size_bytes_compressed;
+    res.total_size_bytes_uncompressed = total_size_bytes_uncompressed;
     res.total_size_marks = total_size_marks;
     res.total_rows_count = total_rows_count;
     res.bytes_read_uncompressed = bytes_read_uncompressed.load(std::memory_order_relaxed);

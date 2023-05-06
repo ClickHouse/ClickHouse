@@ -15,6 +15,7 @@
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
@@ -338,6 +339,31 @@ void ZooKeeper::createAncestors(const std::string & path)
             break;
         createIfNotExists(path.substr(0, pos), "");
         ++pos;
+    }
+}
+
+void ZooKeeper::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
+{
+    std::vector<std::string> paths_to_check;
+    size_t pos = 1;
+    while (true)
+    {
+        pos = path.find('/', pos);
+        if (pos == std::string::npos)
+            break;
+        paths_to_check.emplace_back(path.substr(0, pos));
+        ++pos;
+    }
+
+    MultiExistsResponse response = exists(paths_to_check);
+
+    for (size_t i = 0; i < paths_to_check.size(); ++i)
+    {
+        if (response[i].error != Coordination::Error::ZOK)
+        {
+            /// Ephemeral nodes cannot have children
+            requests.emplace_back(makeCreateRequest(paths_to_check[i], "", CreateMode::Persistent));
+        }
     }
 }
 
@@ -820,7 +846,7 @@ bool ZooKeeper::expired()
     return impl->isExpired();
 }
 
-DB::KeeperApiVersion ZooKeeper::getApiVersion()
+DB::KeeperApiVersion ZooKeeper::getApiVersion() const
 {
     return impl->getApiVersion();
 }
@@ -1280,7 +1306,6 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path)
     request->path = path;
     return request;
 }
-
 
 std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {
