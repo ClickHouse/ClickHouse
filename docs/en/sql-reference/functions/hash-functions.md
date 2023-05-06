@@ -64,7 +64,7 @@ This is a cryptographic hash function. It works at least three times faster than
 The function [interprets](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
 1.  The first and the second hash value are concatenated to an array which is hashed.
-2.  The previously calculated hash value and the hash of the third input paramter are hashed in a similar way.
+2.  The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
 3.  This calculation is repeated for all remaining hash values of the original input.
 
 **Arguments**
