@@ -469,6 +469,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+    new_data_part->has_exclusive_blobs = true;
 
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
