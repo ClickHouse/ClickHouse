@@ -8275,7 +8275,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         /// In opposition, when the part has been mutated in generally it hardlinks the files.
         /// Therefore remote data is shared, it has to be unlocked in the keper.
         /// In order to track all that cases has_exclusive_blobs optional value is used
-        /// If has_exclusive_blobs is determined, then CH traked the parts origin from the creation
+        /// If has_exclusive_blobs is determined, then CH tracked the parts origin from the creation
 
         if (part.has_exclusive_blobs.has_value())
         {
