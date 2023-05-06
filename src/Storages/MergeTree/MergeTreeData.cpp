@@ -122,6 +122,9 @@ namespace ProfileEvents
     extern const Event MergedIntoWideParts;
     extern const Event MergedIntoCompactParts;
     extern const Event MergedIntoInMemoryParts;
+    extern const Event RejectedMutations;
+    extern const Event DelayedMutations;
+    extern const Event DelayedMutationsMilliseconds;
 }
 
 namespace CurrentMetrics
@@ -179,6 +182,7 @@ namespace ErrorCodes
     extern const int SERIALIZATION_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
+    extern const int TOO_MANY_MUTATIONS;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -4389,6 +4393,51 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
+void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
+{
+    const auto settings = getSettings();
+    const auto & query_settings = query_context->getSettingsRef();
+
+    size_t num_mutations_to_delay = query_settings.number_of_mutations_to_delay
+        ? query_settings.number_of_mutations_to_delay
+        : settings->number_of_mutations_to_delay;
+
+    size_t num_mutations_to_throw = query_settings.number_of_mutations_to_throw
+        ? query_settings.number_of_mutations_to_throw
+        : settings->number_of_mutations_to_throw;
+
+    if (!num_mutations_to_delay && !num_mutations_to_throw)
+        return;
+
+    size_t num_unfinished_mutations = getNumberOfUnfinishedMutations();
+    if (num_mutations_to_throw && num_unfinished_mutations >= num_mutations_to_throw)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedMutations);
+        throw Exception(ErrorCodes::TOO_MANY_MUTATIONS,
+            "Too many unfinished mutations ({}) in table {}",
+            num_unfinished_mutations, getLogName());
+    }
+
+    if (num_mutations_to_delay && num_unfinished_mutations >= num_mutations_to_delay)
+    {
+        if (!num_mutations_to_throw)
+            num_mutations_to_throw = num_mutations_to_delay * 2;
+
+        size_t mutations_over_threshold = num_unfinished_mutations - num_mutations_to_delay;
+        size_t allowed_mutations_over_threshold = num_mutations_to_throw - num_mutations_to_delay;
+
+        double delay_factor = std::min(static_cast<double>(mutations_over_threshold) / allowed_mutations_over_threshold, 1.0);
+        size_t delay_milliseconds = static_cast<size_t>(std::lerp(settings->min_delay_to_mutate_ms, settings->max_delay_to_mutate_ms, delay_factor));
+
+        ProfileEvents::increment(ProfileEvents::DelayedMutations);
+        ProfileEvents::increment(ProfileEvents::DelayedMutationsMilliseconds, delay_milliseconds);
+
+        if (until)
+            until->tryWait(delay_milliseconds);
+        else
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_milliseconds));
+    }
+}
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
