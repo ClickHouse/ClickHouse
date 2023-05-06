@@ -7,7 +7,6 @@
 
 namespace DB
 {
-struct ContextSharedPart;
 
 NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
 {
@@ -34,23 +33,19 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     res_columns[6]->insert(context->getZooKeeper()->getApiVersion());
     res_columns[7]->insert(context->getZooKeeper()->getClientID());
 
-    std::map<String, zkutil::ZooKeeperPtr>::iterator iter;
-
-    for (iter = context->getAuxiliaryZooKeepers().begin(); iter !=
-         context->getAuxiliaryZooKeepers().end(); iter ++)
+    for (const auto & elem : context->getAuxiliaryZooKeepers())
     {
-        res_columns[0]->insert(iter->first);
-        res_columns[1]->insert(iter->second->getConnectedZooKeeperHost());
-        res_columns[1]->insert(iter->second->getConnectedZooKeeperHost());
-        res_columns[2]->insert(iter->second->getConnectedZooKeeperPort());
-        res_columns[3]->insert(iter->second->getConnectedZooKeeperIndex());
-        res_columns[4]->insert(iter->second->getSessionUptime());
-        res_columns[5]->insert(iter->second->expired());
-        res_columns[6]->insert(iter->second->getApiVersion());
-        res_columns[7]->insert(iter->second->getClientID());
+        res_columns[0]->insert(elem.first);
+        res_columns[1]->insert(elem.second->getConnectedZooKeeperHost());
+        res_columns[1]->insert(elem.second->getConnectedZooKeeperHost());
+        res_columns[2]->insert(elem.second->getConnectedZooKeeperPort());
+        res_columns[3]->insert(elem.second->getConnectedZooKeeperIndex());
+        res_columns[4]->insert(elem.second->getSessionUptime());
+        res_columns[5]->insert(elem.second->expired());
+        res_columns[6]->insert(elem.second->getApiVersion());
+        res_columns[7]->insert(elem.second->getClientID());
     }
 
 }
 
 }
-

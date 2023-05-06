@@ -1967,7 +1967,6 @@ ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedEx
     return *shared->external_user_defined_executable_functions_loader;
 }
 
-
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard lock(shared->embedded_dictionaries_mutex);
@@ -2695,7 +2694,6 @@ UInt32 Context::getZooKeeperSessionUptime() const
         return 0;
     return shared->zookeeper->getSessionUptime();
 }
-
 
 void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
 {
