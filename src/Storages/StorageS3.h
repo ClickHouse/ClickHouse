@@ -364,6 +364,8 @@ private:
 
     bool supportsSubsetOfColumns() const override;
 
+    bool prefersLargeBlocks() const override;
+
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const KeysWithInfo::const_iterator & begin,
         const KeysWithInfo::const_iterator & end,
