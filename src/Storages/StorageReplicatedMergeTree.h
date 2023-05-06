@@ -703,7 +703,7 @@ private:
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
-    mutable std::mutex currently_fetching_parts_mutex;
+    std::mutex currently_fetching_parts_mutex;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);

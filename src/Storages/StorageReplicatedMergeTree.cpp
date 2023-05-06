@@ -8263,7 +8263,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
-    if (part.getState() == MergeTreeDataPartState::Temporary && part.is_temp)
+    if (part.getState() == MergeTreeDataPartState::Temporary || part.getState() == MergeTreeDataPartState::Outdated)
     {
         /// Part {} is in temporary state and has it_temp flag. it means that it is under construction.
         /// That path hasn't been added to active set, no commit procedure has begun.
@@ -8274,16 +8274,16 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         /// When the part has been merged then remote data can be removed, part owns it.
         /// In opposition, when the part has been mutated in generally it hardlinks the files.
         /// Therefore remote data is shared, it has to be unlocked in the keper.
+        /// In order to track all that cases has_exclusive_blobs optional value is used
+        /// If has_exclusive_blobs is determined, then CH traked the parts origin from the creation
 
-        std::lock_guard lock(currently_fetching_parts_mutex);
-        if (!currently_fetching_parts.contains(part.name))
+        if (part.has_exclusive_blobs.has_value())
         {
-            LOG_TRACE(log, "Part {} is temporary result of failed fetch."
-                           "Remove it without unlocking shared state preserving shared data.", part.name);
-            return std::make_pair(false, NameSet{});
+            LOG_INFO(log, "Looks like CH knows the origin of that part. "
+                          "Part {} can be deleted without unlocking shared data in zookeeper. "
+                          "Part data is {}", part.name, part.has_exclusive_blobs.value() ? "exclusive" : "shared");
+            return std::make_pair(part.has_exclusive_blobs.value(), NameSet{});
         }
-
-        /// The other cases (merge/mutate) is harder to distinguish. Fall back to unlock part in the keper.
     }
 
     if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
